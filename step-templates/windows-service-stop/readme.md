@@ -1,1 +1,1 @@
-Stops a Windows Service.
+Stops a Windows Service if it is currently running. If the service is not found, it will be ignored. However if the service is found, but for whatever reason cannot be stopped, it will return an error.
