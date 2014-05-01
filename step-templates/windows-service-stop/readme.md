@@ -1,0 +1,1 @@
+Stops a Windows Service.
