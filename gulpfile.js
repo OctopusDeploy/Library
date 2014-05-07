@@ -9,6 +9,7 @@ var inject = require('gulp-inject');
 var clean = require('gulp-clean');
 var jshint = require('gulp-jshint');
 var rename = require('gulp-rename');
+var ngHtml2Js = require("gulp-ng-html2js");
 
 gulp.task('scripts-app', ['clean'], function() {
   return gulp.src(['app/**/*_module.js', 'app/**/*.js'])
@@ -28,7 +29,20 @@ gulp.task('scripts-vendor', ['clean'], function() {
     .pipe(gulp.dest('build'));
 });
 
-gulp.task('scripts', ['scripts-app', 'scripts-vendor'], function() {
+gulp.task('templates', ['clean'], function(){
+  return gulp.src('app/**/*.tpl.html')
+    .pipe(ngHtml2Js({
+      moduleName: 'octopus-library',
+      rename: function (url) {
+        return url.replace('.tpl.html', '.html');
+      }
+    }))
+    .pipe(concat("3-templates.js"))
+    .pipe(uglify())
+    .pipe(gulp.dest('build'));
+});
+
+gulp.task('scripts', ['scripts-app', 'scripts-vendor', 'templates'], function() {
 });
 
 gulp.task('styles', ['clean'], function() {
