@@ -1,0 +1,1 @@
+Ensures that the [Chocolatey package manager](https://chocolatey.org) is installed and on the path. Chocolatey can then be used in other steps to install applications and Windows components published in the Chocolatey repository.
