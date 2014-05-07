@@ -1,1 +1,0 @@
-Restarts a Windows Service. If the service is not running then it will be started.
