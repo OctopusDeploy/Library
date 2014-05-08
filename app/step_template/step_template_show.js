@@ -1,8 +1,8 @@
 var module = angular.module('octopus-library');
 
-module.controller('StepTemplateShowController', function($scope, $routeParams, stepTemplates){
-  var name = $routeParams.name;
+module.controller('StepTemplateShowController', function($scope, $routeParams, library){
+  var id = $routeParams.id;
 
-  $scope.stepTemplate = _.find(stepTemplates, function(t){ return t.Name === name; });
+  $scope.stepTemplate = library.get(id);
 });
 
