@@ -11,13 +11,18 @@ var rename = require('gulp-rename');
 var ngHtml2Js = require("gulp-ng-html2js");
 var header = require("gulp-header");
 var footer = require("gulp-footer");
+var replace = require('gulp-replace');
 
 gulp.task('step-templates', ['clean'], function() {
   return gulp.src(['step-templates/*.json'])
+    .pipe(replace('\r', ' '))
+    .pipe(replace('\n', ' '))
     .pipe(concat('4-step-templates.js', {newLine: ','}))
     .pipe(header('angular.module("octopus-library").factory("stepTemplates", function() { return ['))
     .pipe(footer(']; });'))
     .pipe(jshint())
+    .pipe(jshint.reporter('default'))
+    .pipe(jshint.reporter('fail'))
     .pipe(uglify())
     .pipe(gulp.dest('build'));
 });
@@ -25,6 +30,8 @@ gulp.task('step-templates', ['clean'], function() {
 gulp.task('scripts-app', ['clean'], function() {
   return gulp.src(['app/**/*_module.js', 'app/**/*.js'])
     .pipe(jshint())
+    .pipe(jshint.reporter('default'))
+    .pipe(jshint.reporter('fail'))
     .pipe(concat('2-app.js'))
     .pipe(uglify({mangle: false}))
     .pipe(gulp.dest('build'));
@@ -33,7 +40,8 @@ gulp.task('scripts-app', ['clean'], function() {
 gulp.task('scripts-vendor', ['clean'], function() {
   return gulp.src([
       'bower_components/angular/angular.min.js',
-      'bower_components/angular-route/angular-route.min.js'
+      'bower_components/angular-route/angular-route.min.js',
+      'bower_components/underscore/underscore.js'
     ])
     .pipe(concat('1-vendor.js'))
     .pipe(gulp.dest('build'));
@@ -41,12 +49,7 @@ gulp.task('scripts-vendor', ['clean'], function() {
 
 gulp.task('views', ['clean'], function(){
   return gulp.src('app/**/*.tpl.html')
-    .pipe(ngHtml2Js({
-      moduleName: 'octopus-library',
-      rename: function (url) {
-        return url.replace('.tpl.html', '.html');
-      }
-    }))
+    .pipe(ngHtml2Js({moduleName: 'octopus-library'}))
     .pipe(concat("3-views.js"))
     .pipe(uglify())
     .pipe(gulp.dest('build'));
