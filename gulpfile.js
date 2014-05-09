@@ -14,6 +14,7 @@ var footer = require("gulp-footer");
 var replace = require('gulp-replace');
 var sourceUrl = require('gulp-source-url');
 var filter = require('gulp-filter');
+var insert = require('gulp-insert');
 
 var reExt = function(ext) {
   return rename(function(path) { path.extname = ext; })
@@ -48,15 +49,16 @@ gulp.task('scripts-app', ['clean'], function() {
     .pipe(gulp.dest('build'));
 });
 
-var notMinJS = filter('!*.min.js');
-var minJS = filter('*.min.js');
-
 gulp.task('scripts-vendor', ['clean'], function() {
+  var notMinJS = filter('!*.min.js');
+  var minJS = filter('*.min.js');
+
   return gulp.src([
       'bower_components/angular/angular.min.js',
       'bower_components/angular-route/angular-route.min.js',
       'bower_components/underscore/underscore.js',
-      'bower_components/showdown/src/showdown.js'
+      'bower_components/showdown/src/showdown.js',
+      'vendor/highlightjs/highlight.pack.js'
     ])
     .pipe(notMinJS)
     .pipe(uglify())
@@ -79,11 +81,13 @@ gulp.task('views', ['clean'], function(){
     .pipe(gulp.dest('build'));
 });
 
-gulp.task('scripts', ['scripts-app', 'scripts-vendor', 'views', 'step-templates'], function() {
-});
+gulp.task('scripts', ['scripts-app', 'scripts-vendor', 'views', 'step-templates']);
 
 gulp.task('styles', ['clean'], function() {
-  return gulp.src(['app/**/*.css'])
+  return gulp.src([
+      'vendor/highlightjs/styles/github.css',
+      'app/**/*.css'
+    ])
     .pipe(concat('app.css'))
     .pipe(minifyCss())
     .pipe(gulp.dest('build'));
@@ -108,7 +112,10 @@ gulp.task('html-release', ['rev'], function() {
 });
 
 gulp.task('html-debug', ['rev'], function() {
+  var notMinJS = filter('!*.min.js');
+
   return gulp.src('build/**/*.*')
+    .pipe(notMinJS)
     .pipe(inject('app/app.html', {
       addRootSlash: false,
       ignorePath: '/build/'
@@ -118,15 +125,13 @@ gulp.task('html-debug', ['rev'], function() {
 });
 
 gulp.task('clean', function() {
-  return gulp.src(['build', 'dist'], {read: false})
+  return gulp.src(['build', 'dist', 'tmp'], {read: false})
     .pipe(clean());
 });
 
-gulp.task('build', ['html-debug', 'html-release'], function() {
-});
+gulp.task('build', ['html-debug', 'html-release']);
 
-gulp.task('default', ['build'], function() {
-});
+gulp.task('default', ['build']);
 
 gulp.task('watch', ['build'],  function(){
   gulp.watch(['app/**/*'], ['build']);
