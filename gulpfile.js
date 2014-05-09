@@ -49,13 +49,14 @@ gulp.task('scripts-app', ['clean'], function() {
 });
 
 var notMinJS = filter('!*.min.js');
-var minJS = filter('*.min.js')
+var minJS = filter('*.min.js');
 
 gulp.task('scripts-vendor', ['clean'], function() {
   return gulp.src([
       'bower_components/angular/angular.min.js',
       'bower_components/angular-route/angular-route.min.js',
-      'bower_components/underscore/underscore.js'
+      'bower_components/underscore/underscore.js',
+      'bower_components/showdown/src/showdown.js'
     ])
     .pipe(notMinJS)
     .pipe(uglify())
