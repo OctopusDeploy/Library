@@ -12,6 +12,12 @@ var ngHtml2Js = require("gulp-ng-html2js");
 var header = require("gulp-header");
 var footer = require("gulp-footer");
 var replace = require('gulp-replace');
+var sourceUrl = require('gulp-source-url');
+var filter = require('gulp-filter');
+
+var reExt = function(ext) {
+  return rename(function(path) { path.extname = ext; })
+};
 
 gulp.task('step-templates', ['clean'], function() {
   return gulp.src(['step-templates/*.json'])
@@ -23,7 +29,9 @@ gulp.task('step-templates', ['clean'], function() {
     .pipe(jshint())
     .pipe(jshint.reporter('default'))
     .pipe(jshint.reporter('fail'))
+    .pipe(gulp.dest('build'))
     .pipe(uglify())
+    .pipe(reExt('.min.js'))
     .pipe(gulp.dest('build'));
 });
 
@@ -32,10 +40,16 @@ gulp.task('scripts-app', ['clean'], function() {
     .pipe(jshint())
     .pipe(jshint.reporter('default'))
     .pipe(jshint.reporter('fail'))
+    .pipe(sourceUrl())
     .pipe(concat('2-app.js'))
+    .pipe(gulp.dest('build'))
     .pipe(uglify({mangle: false}))
+    .pipe(reExt('.min.js'))
     .pipe(gulp.dest('build'));
 });
+
+var notMinJS = filter('!*.min.js');
+var minJS = filter('*.min.js')
 
 gulp.task('scripts-vendor', ['clean'], function() {
   return gulp.src([
@@ -43,7 +57,14 @@ gulp.task('scripts-vendor', ['clean'], function() {
       'bower_components/angular-route/angular-route.min.js',
       'bower_components/underscore/underscore.js'
     ])
+    .pipe(notMinJS)
+    .pipe(uglify())
+    .pipe(reExt('.min.js'))
+    .pipe(notMinJS.restore())
+    .pipe(minJS)
     .pipe(concat('1-vendor.js'))
+    .pipe(gulp.dest('build'))
+    .pipe(reExt('.min.js'))
     .pipe(gulp.dest('build'));
 });
 
@@ -51,7 +72,9 @@ gulp.task('views', ['clean'], function(){
   return gulp.src('app/**/*.tpl.html')
     .pipe(ngHtml2Js({moduleName: 'octopus-library'}))
     .pipe(concat("3-views.js"))
+    .pipe(gulp.dest('build'))
     .pipe(uglify())
+    .pipe(reExt('.min.js'))
     .pipe(gulp.dest('build'));
 });
 
@@ -66,7 +89,7 @@ gulp.task('styles', ['clean'], function() {
 });
 
 gulp.task('rev', ['scripts', 'styles'], function() {
-  return gulp.src(['build/**/*.css', 'build/**/*.js'])
+  return gulp.src(['build/**/*.css', 'build/**/*.min.js'])
     .pipe(rev())
     .pipe(gulp.dest('dist'))
     .pipe(rev.manifest())
