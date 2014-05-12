@@ -15,6 +15,7 @@ var replace = require('gulp-replace');
 var sourceUrl = require('gulp-source-url');
 var filter = require('gulp-filter');
 var insert = require('gulp-insert');
+var express = require('express');
 
 var reExt = function(ext) {
   return rename(function(path) { path.extname = ext; })
@@ -58,6 +59,7 @@ gulp.task('scripts-vendor', ['clean'], function() {
       'bower_components/angular-route/angular-route.min.js',
       'bower_components/underscore/underscore.js',
       'bower_components/showdown/src/showdown.js',
+      'bower_components/zeroclipboard/zeroclipboard.min.js',
       'vendor/highlight.js/highlight.js'
     ])
     .pipe(notMinJS)
@@ -94,6 +96,14 @@ gulp.task('styles', ['clean'], function() {
     .pipe(gulp.dest('build'));
 });
 
+gulp.task('assets', ['clean'], function(){
+  return gulp.src([
+      'bower_components/zeroclipboard/zeroclipboard.swf'
+    ])
+    .pipe(gulp.dest('build'))
+    .pipe(gulp.dest('dist'));
+});
+
 gulp.task('rev', ['scripts', 'styles'], function() {
   return gulp.src(['build/**/*.css', 'build/**/*.min.js'])
     .pipe(rev())
@@ -102,7 +112,7 @@ gulp.task('rev', ['scripts', 'styles'], function() {
     .pipe(gulp.dest('build'));
 });
 
-gulp.task('html-release', ['rev'], function() {
+gulp.task('html-release', ['rev', 'assets'], function() {
   return gulp.src('dist/**/*.*')
     .pipe(inject('app/app.html', {
       addRootSlash: false,
@@ -112,7 +122,7 @@ gulp.task('html-release', ['rev'], function() {
     .pipe(gulp.dest('dist'));
 });
 
-gulp.task('html-debug', ['rev'], function() {
+gulp.task('html-debug', ['rev', 'assets'], function() {
   var notMinJS = filter('!*.min.js');
 
   return gulp.src('build/**/*.*')
@@ -135,5 +145,9 @@ gulp.task('build', ['html-debug', 'html-release']);
 gulp.task('default', ['build']);
 
 gulp.task('watch', ['build'],  function(){
+  var app = express();
+  app.use(express.static('build'));
+  app.listen(4000);
+
   gulp.watch(['app/**/*'], ['build']);
 });
