@@ -6,6 +6,6 @@ module.directive('itemSummary', function() {
     scope: {
       model: '='
     },
-    templateUrl: 'listing/item_summary/item_summary.tpl.html'
+    templateUrl: 'areas/listing/item_summary/item_summary.tpl.html'
   };
 });

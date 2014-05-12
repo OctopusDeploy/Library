@@ -4,6 +4,6 @@ module.directive('navigation', function(){
   return {
     restrict: 'E',
     replace: true,
-    templateUrl: 'navigation/navigation.tpl.html'
+    templateUrl: 'areas/navigation/navigation.tpl.html'
   };
 });

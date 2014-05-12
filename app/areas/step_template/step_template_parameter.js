@@ -7,6 +7,6 @@ module.directive('stepTemplateParameter', function(){
     scope: {
       model: '='
     },
-    templateUrl: 'step_template/step_template_parameter.tpl.html'
+    templateUrl: 'areas/step_template/step_template_parameter.tpl.html'
   };
 });

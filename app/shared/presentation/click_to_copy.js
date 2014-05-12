@@ -4,7 +4,8 @@ module.directive('clickToCopy', function(){
   return {
     restrict: 'A',
     scope: {
-      clickToCopy: '='
+      clickToCopy: '=',
+      onCopied: '&'
     },
     link: function(scope, el) {
       el.attr('data-clipboard-text', (scope.clickToCopy || '').toString());
@@ -14,6 +15,11 @@ module.directive('clickToCopy', function(){
       clip.on('load', function(client) {
         client.on('complete', function() {
           el.addClass('copied');
+          if (typeof scope.onCopied === 'function') {
+            scope.$apply(function(){
+              scope.onCopied();
+            });
+          }
         });
       });
     }
