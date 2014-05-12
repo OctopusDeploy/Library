@@ -8,7 +8,7 @@ module.config(function(){
     var VAR = {
       className: 'variable',
       variants: [
-        {begin: /\$[\w\d][\w\d_]*/}
+        {begin: /\$[\w\d][\w\d_:]*/}
       ]
     };
     var QUOTE_STRING = {
