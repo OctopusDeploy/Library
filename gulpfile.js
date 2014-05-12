@@ -58,7 +58,7 @@ gulp.task('scripts-vendor', ['clean'], function() {
       'bower_components/angular-route/angular-route.min.js',
       'bower_components/underscore/underscore.js',
       'bower_components/showdown/src/showdown.js',
-      'vendor/highlightjs/highlight.pack.js'
+      'vendor/highlight.js/highlight.js'
     ])
     .pipe(notMinJS)
     .pipe(uglify())
@@ -86,7 +86,7 @@ gulp.task('scripts', ['scripts-app', 'scripts-vendor', 'views', 'step-templates'
 gulp.task('styles', ['clean'], function() {
   return gulp.src([
       'bower_components/normalize.css/normalize.css',
-      'vendor/highlightjs/styles/github.css',
+      'vendor/highlight.js/styles/github.css',
       'app/**/*.css'
     ])
     .pipe(concat('app.css'))
