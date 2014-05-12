@@ -85,6 +85,7 @@ gulp.task('scripts', ['scripts-app', 'scripts-vendor', 'views', 'step-templates'
 
 gulp.task('styles', ['clean'], function() {
   return gulp.src([
+      'bower_components/normalize.css/normalize.css',
       'vendor/highlightjs/styles/github.css',
       'app/**/*.css'
     ])
