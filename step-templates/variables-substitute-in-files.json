@@ -1,0 +1,32 @@
+{
+    "Id": "ActionTemplates-33",
+    "Name": "Variables - Substitute in Files",
+    "Description": "Transforms files using the Octopus `#{Variable}` substitution syntax.",
+    "ActionType": "Octopus.Script",
+    "Version": 14,
+    "Properties": {
+        "Octopus.Action.Script.ScriptBody": "Add-Type -Path ($OctopusParameters['Octopus.Tentacle.Agent.ProgramDirectoryPath'] + \"\\Octopus.Platform.dll\")\r\n\r\nfunction Execute-Template($templateFile, $outputFile)\r\n{\r\n    Write-Output \"Loading template file $templateFile...\"\r\n     \r\n    $contents = [System.IO.File]::ReadAllText($templateFile)\r\n    \r\n    $template = $null\r\n    $parseErr = $null\r\n    \r\n    if (-not [Octopus.Platform.Variables.Templates.Parser.TemplateParser]::TryParseTemplate($contents, [ref] $template, [ref] $parseErr))\r\n    {\r\n        throw \"The file contents could not be parsed as a valid Octopus template: $parseErr\"\r\n    }\r\n    \r\n    Write-Output \"Binding variables...\"\r\n    \r\n    $binding = [Octopus.Platform.Variables.Templates.Binder.PropertyListBinder]::CreateFrom($OctopusParameters)\r\n    \r\n    $newContents = New-Object System.Text.StringBuilder\r\n    $writer = New-Object System.IO.StringWriter $newContents\r\n    \r\n    Write-Output \"Evaluating template...\"\r\n    \r\n    [Octopus.Platform.Variables.Templates.Evaluator.TemplateEvaluator]::Evaluate($template, $binding, $writer)\r\n    \r\n    $writer.Dispose()\r\n    \r\n    Write-Output \"Writing result to $outputFile...\"\r\n    \r\n    [System.IO.File]::WriteAllText($outputFile, $newContents.ToString())\r\n}\r\n\r\n\r\n$SubsTemplatePathGlobs.Split(\";\") | foreach {\r\n    $glob = $_.Trim()\r\n    Write-Output \"Searching for files that match $glob...\"\r\n\r\n    $matches = $null\r\n    $splits = $glob.Split(@('/**/'), [System.StringSplitOptions]::RemoveEmptyEntries)\r\n    if ($splits.Length -eq 1) {\r\n        $splits = $glob.Split(@('\\**\\'), [System.StringSplitOptions]::RemoveEmptyEntries)\r\n    }\r\n    \r\n    if ($splits.Length -eq 1) {\r\n        $matches = ls $glob\r\n    } else {\r\n        if ($splits.Length -eq 2) {\r\n            pushd $splits[0]\r\n            $matches = ls $splits[1] -Recurse\r\n            popd\r\n        } else {\r\n            $splits\r\n            throw \"The segment '**' can only appear once, as a directory name, in the glob expression\"\r\n        }\r\n    }\r\n\r\n    $matches | foreach {\r\n        $tpl = $_.FullName\r\n        $dest = $tpl\r\n        if (-not [string]::IsNullOrWhiteSpace($SubsTrimSuffix)) {\r\n            $lx = $tpl.LastIndexOf($SubsTrimSuffix)\r\n            if ($lx -eq -1) {\r\n                Write-Output \"File $tpl does not end with the $SubsTrimSuffix suffix, so will be overwritten\"\r\n            } else {\r\n                $dest = $tpl.Substring(0,$lx)\r\n            }\r\n        }\r\n        Execute-Template -templateFile $tpl -outputFile $dest\r\n    }\r\n}\r\n\r\n\r\nWrite-Output \"Done.\"\r\n"
+    },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+        "Name": "SubsTemplatePathGlobs",
+        "Label": "Template files",
+        "HelpText": "A semicolon-separated list of path expressions that match the template files to be processed.\n\nSimple globbing is supported, for example `C:\\Files\\**\\*.tmpl` will match files in `C:\\Files` and any subdirectory.",
+        "DefaultValue": null
+    },
+    {
+        "Name": "SubsTrimSuffix",
+        "Label": "Trim filename suffix",
+        "HelpText": "If specified, the results of evaluating the templates will be written to new files by trimming the specified suffix from the end of the filename. For example, specifying `.tmpl` will cause the file `Settings.ini.tmpl` to be transformed into `Settings.ini`.\n\nIf omitted, the files will be transformed in-place.",
+        "DefaultValue": null
+    }
+  ],
+  "LastModifiedOn": "2014-05-08T03:50:43.932+00:00",
+  "LastModifiedBy": "nblumhardt@octopushq.local",
+  "$Meta": {
+      "ExportedAt": "2014-05-08T03:59:00.803Z",
+      "OctopusVersion": "2.5.0.0",
+      "Type": "ActionTemplate"
+  }
+}
