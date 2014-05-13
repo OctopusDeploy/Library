@@ -15,6 +15,7 @@ module.factory('library', function(stepTemplates) {
         OctopusVersion: t.$Meta.OctopusVersion,
         ExportedAt: t.$Meta.ExportedAt,
         Type: t.$Meta.Type,
+        Author: t.LastModifiedBy,
         Body: t
       };
     })

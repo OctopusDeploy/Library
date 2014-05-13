@@ -61,7 +61,8 @@ gulp.task('scripts-vendor', ['clean'], function() {
       'bower_components/showdown/src/showdown.js',
       'bower_components/zeroclipboard/zeroclipboard.min.js',
       'vendor/highlight.js/highlight.js',
-      'bower_components/rem-unit-polyfill/src/rem.min.js'
+      'bower_components/rem-unit-polyfill/src/rem.min.js',
+      'bower_components/moment/moment.js'
     ])
     .pipe(notMinJS)
     .pipe(uglify())
@@ -97,13 +98,25 @@ gulp.task('styles', ['clean'], function() {
     .pipe(gulp.dest('build'));
 });
 
-gulp.task('assets', ['clean'], function(){
+gulp.task('flash', ['clean'], function(){
   return gulp.src([
+      // Ideally this wouldn't go into the root dir, but having trouble
+      // configuring the library to do otherwise.
       'bower_components/zeroclipboard/zeroclipboard.swf'
     ])
     .pipe(gulp.dest('build'))
     .pipe(gulp.dest('dist'));
 });
+
+gulp.task('images', ['clean'], function(){
+    return gulp.src([
+      'app/img/*'
+    ])
+    .pipe(gulp.dest('build/img'))
+    .pipe(gulp.dest('dist/img'));
+});
+
+gulp.task('assets', ['images', 'flash']);
 
 gulp.task('rev', ['scripts', 'styles'], function() {
   return gulp.src(['build/**/*.css', 'build/**/*.min.js'])
