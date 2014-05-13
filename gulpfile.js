@@ -60,7 +60,8 @@ gulp.task('scripts-vendor', ['clean'], function() {
       'bower_components/underscore/underscore.js',
       'bower_components/showdown/src/showdown.js',
       'bower_components/zeroclipboard/zeroclipboard.min.js',
-      'vendor/highlight.js/highlight.js'
+      'vendor/highlight.js/highlight.js',
+      'bower_components/rem-unit-polyfill/src/rem.min.js'
     ])
     .pipe(notMinJS)
     .pipe(uglify())
