@@ -2,9 +2,10 @@ var module = angular.module('octopus-library');
 
 module.factory('searchCriteria', function() {
   return {
-    create: function() {
+    create: function(max) {
       var result = {
-        text: ''
+        text: '',
+        maxResults: max
       };
 
       result.filter = function(item){
