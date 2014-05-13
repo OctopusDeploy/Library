@@ -22,7 +22,7 @@ npm install bower -g
 Then, from the root of the repository, restore the build-time and run-time dependencies:
 
 ```
-bower install
+npm install
 ```
 
 To build the site:
