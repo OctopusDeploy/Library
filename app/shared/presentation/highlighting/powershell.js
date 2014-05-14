@@ -31,12 +31,12 @@ module.config(function(){
 
     return {
       aliases: ['ps'],
-      lexemes: /-?[a-z\.]+/,
+      lexemes: /-?[A-z\.\-]+/,
       case_insensitive: true,
       keywords: {
         keyword: 'if else foreach return function',
         literal: '$null $true $false',
-        built_in: 'new-object write-host write-output',
+        built_in: 'new-object write-host write-output invoke-expression',
         operator: '-ne -eq -lt -gt -not -lte -gte'
       },
       contains: [
