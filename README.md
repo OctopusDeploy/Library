@@ -12,9 +12,7 @@ Organization
 Building the site
 -----------------
 
-You'll need Node.js installed on your system.
-
-First, the globally-installed build tools if you don't have them already:
+You'll need Node.js installed on your system. If you don't have them already, install [Bower](https://bower.io) and [gulp.js](https://gulpjs.com).
 
 ```
 npm install gulp -g
@@ -25,7 +23,6 @@ Then, from the root of the repository, restore the build-time and run-time depen
 
 ```
 npm install
-bower install
 ```
 
 To build the site:
