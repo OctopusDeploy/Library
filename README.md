@@ -18,7 +18,7 @@ Have a great custom step that other Octopus users will love? Here's how to get i
 2. Clone your fork into a directory on your own machine
 3. _Export_ your template from the Octopus server
 4. Save the exported JSON to a file under `/step-templates`
-5. Check that the `LastModifiedBy` username is one you're happy to use on the site
+5. Check that the `LastModifiedBy` username is one you're happy to use on the site (ideally your plain GitHub username)
 6. Commit and push your changes to your fork
 7. View your fork in GitHub to create a _pull request_
 
