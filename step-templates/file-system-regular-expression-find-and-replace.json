@@ -1,0 +1,44 @@
+{
+  "Id": "ActionTemplates-66",
+  "Name": "File System - Regular Expression Find and Replace",
+  "Description": "Find and replace text matching a regular expression in one or more files.",
+  "ActionType": "Octopus.Script",
+  "Version": 6,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function Execute-RegexFindReplace($target, $find, $replace, $options) {\r\n    Write-Output \"Searching $target...\"\r\n    $orig = [System.IO.File]::ReadAllText($target)\r\n    \r\n    $regex = new-object System.Text.RegularExpressions.Regex($find, $options)\r\n    \r\n    $occurrences = $regex.Matches($orig).Count\r\n    if ($occurrences -gt 0) {\r\n        Write-Output \"Found $occurrences occurrence(s), replacing...\"\r\n        \r\n        $escReplaced = $replace.Replace(\"$\", \"$$\")\r\n        $replaced = $regex.Replace($orig, $escReplaced)\r\n        [System.IO.File]::WriteAllText($target, $replaced)\r\n    }\r\n}\r\n\r\nif ([string]::IsNullOrEmpty($RFRFindRegex)) {\r\n    throw \"A non-empty 'Pattern' is required\"\r\n}\r\n\r\n$options = [System.Text.RegularExpressions.RegexOptions]::None\r\n$RFROptions.Split(' ') | foreach {\r\n    $opt = $_.Trim()\r\n    $flag = [System.Enum]::Parse([System.Text.RegularExpressions.RegexOptions], $opt)\r\n    $options = $options -bor $flag\r\n}\r\n\r\nWrite-Output \"Replacing occurrences of '$RFRFindRegex' with '$RFRSubstitution' applying options $RFROptions\"\r\n\r\n$RFRCandidatePathGlobs.Split(\";\") | foreach {\r\n    $glob = $_.Trim()\r\n    Write-Output \"Searching for files that match $glob...\"\r\n\r\n    $matches = $null\r\n    $splits = $glob.Split(@('/**/'), [System.StringSplitOptions]::RemoveEmptyEntries)\r\n\r\n    if ($splits.Length -eq 1) {\r\n        $splits = $glob.Split(@('\\**\\'), [System.StringSplitOptions]::RemoveEmptyEntries)\r\n    }\r\n    \r\n    if ($splits.Length -eq 1) {\r\n        $matches = ls $glob\r\n    } else {\r\n        if ($splits.Length -eq 2) {\r\n            pushd $splits[0]\r\n            $matches = ls $splits[1] -Recurse\r\n            popd\r\n        } else {\r\n            $splits\r\n            throw \"The segment '**' can only appear once, as a directory name, in the glob expression\"\r\n\r\n        }\r\n    }\r\n\r\n    $matches | foreach {\r\n        \r\n        $target = $_.FullName\r\n\r\n        Execute-RegexFindReplace -target $target -find $RFRFindRegex -replace $RFRSubstitution -options $options\r\n    }\r\n}\r\n\r\n\r\nWrite-Output \"Done.\""
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "RFRCandidatePathGlobs",
+      "Label": "Files",
+      "HelpText": "The files to search. Wildcards `*` and `**` are supported. Paths must be fully-qualified, e.g. `C:\\MyApp\\**\\*.xml`. Separate multiple paths with `;` semicolons.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "RFRFindRegex",
+      "Label": "Pattern",
+      "HelpText": "The regular expression to find in the target files.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "RFRSubstitution",
+      "Label": "Substitution",
+      "HelpText": "The text to insert in place of each occurrence of _Pattern_. Regular expression [substitutions](http://msdn.microsoft.com/en-us/library/ewy2t5e0.aspx) are supported, so any literal `$` in the substitution pattern must be escaped by doubling (`$$`).",
+      "DefaultValue": null
+    },
+    {
+      "Name": "RFROptions",
+      "Label": "Options",
+      "HelpText": "A space-separated list of options from the [RegexOptions](http://msdn.microsoft.com/en-us/library/system.text.regularexpressions.regexoptions.aspx) enumeration.",
+      "DefaultValue": "ExplicitCapture"
+    }
+  ],
+  "LastModifiedOn": "2014-05-14T05:36:33.818+00:00",
+  "LastModifiedBy": "nblumhardt@octopusdeploy.com",
+  "$Meta": {
+    "ExportedAt": "2014-05-14T05:36:35.364Z",
+    "OctopusVersion": "2.4.4.0",
+    "Type": "ActionTemplate"
+  }
+}
