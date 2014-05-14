@@ -27,7 +27,7 @@ Someone from the Octopus team will review your request and help to make the step
 Here's a **checklist** to consider:
 
 * Is the template a minor variation on an existing one? If so, please consider improving the existing template if possible.
-* Is the name of the template consistent with the examples already in the library, in style, layout and casing?
+* Is the name of the template consistent with the examples already in the library, in style ("Noun - Verb"), layout and casing?
 * Are all parameters in the template consistent with the examples here, including help text documented with Markdown?
 * Is the description of the template complete, correct Markdown?
 * Is the `.json` filename consistent with the name of the template?
