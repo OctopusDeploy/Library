@@ -23,7 +23,7 @@ Have a great custom step that other Octopus users will love? Here's how to get i
 
 Someone from the Octopus team will review your request and help to make the step consistent with the others in the library. Once it's ready we'll merge it into the main repository and publish it to [the library site](http://library.octopusdeploy.com).
 
-Here's a checklist to consider:
+Here's a **checklist** to consider:
 
 * Is the template a minor variation on an existing one? If so, please consider improving the existing template if possible.
 * Is the name of the template consistent with the examples already in the library, in style, layout and casing?
@@ -33,6 +33,8 @@ Here's a checklist to consider:
 * Do scripts in the template validate required arguments and fail by returning a non-zere exit code when things go wrong?
 * Do scripts in the template produce worthwhile status messages as they execute?
 * Are you happy to contribute your template under the terms of the [license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE)? If you produced the template while working for your employer please obtain written permission from them before submitting it here.
+
+If you need help, feedback or a sanity check before investing time in a contribution, feel free to raise an issue on the tracker to discuss your idea first.
 
 Contributing to the website
 ---------------------------
