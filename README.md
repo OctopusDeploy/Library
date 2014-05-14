@@ -37,4 +37,4 @@ Here's a checklist to consider:
 Contributing to the website
 ---------------------------
 
-We also accept contributions to improve the [library.octopusdeploy.com](http://library.octopusdeploy.com) site. The process of contributing is similar to the process outlined for step templates above. There's some more information on working with the code on the [[wiki|BuildingTheSite]].
+We also accept contributions to improve the [library.octopusdeploy.com](http://library.octopusdeploy.com) site. The process of contributing is similar to the process outlined for step templates above. There's some more information on working with the code on the [wiki](https://github.com/OctopusDeploy/Library/wiki/BuildingTheSite).
