@@ -1,0 +1,44 @@
+{
+  "Id": "ActionTemplates-65",
+  "Name": "File System - Find and Replace",
+  "Description": "Find and replace text in one or more files.",
+  "ActionType": "Octopus.Script",
+  "Version": 6,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function Execute-FindReplace($target, $find, $replace, $ignoreCase) {\r\n    $options = [System.Text.RegularExpressions.RegexOptions]::None\r\n    if ($ignoreCase) {\r\n        $options = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase\r\n    }\r\n    \r\n    Write-Output \"Searching $target...\"\r\n    $orig = [System.IO.File]::ReadAllText($target)\r\n    \r\n    $escFind = [System.Text.RegularExpressions.Regex]::Escape($find)\r\n    $regex = new-object System.Text.RegularExpressions.Regex($escFind, $options)\r\n    $removed = $regex.Replace($orig, '')\r\n    \r\n    $occurrences = ($orig.Length - $removed.Length) / $find.Length\r\n    if ($occurrences -gt 0) {\r\n        Write-Output \"Found $occurrences occurrence(s), replacing...\"\r\n        \r\n        $escReplace = $replace.Replace('$', '$$')\r\n        $replaced = $regex.Replace($orig, $escReplace)\r\n        [System.IO.File]::WriteAllText($target, $replaced)\r\n    }\r\n}\r\n\r\nif ([string]::IsNullOrEmpty($FRFindText)) {\r\n    throw \"A non-empty 'Find' text block is required\"\r\n}\r\n\r\nWrite-Output \"Replacing occurrences of '$FRFindText' with '$FRReplaceText'\"\r\nif ([Boolean] $FRIgnoreCase) {\r\n    Write-Output \"Case will be ignored\"\r\n}\r\n\r\n$FRCandidatePathGlobs.Split(\";\") | foreach {\r\n    $glob = $_.Trim()\r\n    Write-Output \"Searching for files that match $glob...\"\r\n\r\n    $matches = $null\r\n    $splits = $glob.Split(@('/**/'), [System.StringSplitOptions]::RemoveEmptyEntries)\r\n\r\n    if ($splits.Length -eq 1) {\r\n        $splits = $glob.Split(@('\\**\\'), [System.StringSplitOptions]::RemoveEmptyEntries)\r\n    }\r\n    \r\n    if ($splits.Length -eq 1) {\r\n        $matches = ls $glob\r\n    } else {\r\n        if ($splits.Length -eq 2) {\r\n            pushd $splits[0]\r\n            $matches = ls $splits[1] -Recurse\r\n            popd\r\n        } else {\r\n            $splits\r\n            throw \"The segment '**' can only appear once, as a directory name, in the glob expression\"\r\n\r\n        }\r\n    }\r\n\r\n    $matches | foreach {\r\n        \r\n        $target = $_.FullName\r\n\r\n        Execute-FindReplace -target $target -find $FRFindText -replace $FRReplaceText -ignoreCase ([Boolean] $FRIgnoreCase)\r\n    }\r\n}\r\n\r\n\r\nWrite-Output \"Done.\""
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "FRCandidatePathGlobs",
+      "Label": "Files",
+      "HelpText": "The files to search. Wildcards `*` and `**` are supported. Paths must be fully-qualified, e.g. `C:\\MyApp\\**\\*.xml`. Separate multiple paths with `;` semicolons.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "FRFindText",
+      "Label": "Find",
+      "HelpText": "The text to find in the target files.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "FRReplaceText",
+      "Label": "Replace with",
+      "HelpText": "The replacement text to insert in place of each occurrence of _Find_.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "FRIgnoreCase",
+      "Label": "Ignore case",
+      "HelpText": "If **True**, variations on the character case of _Find_ will be considered a match, for example `Bar` will match `BAR` and `bar`. If **False** only exact matches will be considered.",
+      "DefaultValue": "False"
+    }
+  ],
+  "LastModifiedOn": "2014-05-14T05:29:37.321+00:00",
+  "LastModifiedBy": "nblumhardt@octopusdeploy.com",
+  "$Meta": {
+    "ExportedAt": "2014-05-14T05:38:42.041Z",
+    "OctopusVersion": "2.4.4.0",
+    "Type": "ActionTemplate"
+  }
+}
