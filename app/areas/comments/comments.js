@@ -1,15 +1,20 @@
 var module = angular.module('octopus-library');
 
-module.directive('comments', function($location, $window, $timeout){
+module.directive('comments', function($location, $window, $timeout, $document){
   return {
     restrict: 'E',
     replace: true,
-    templateUrl: 'areas/step_template/comments/comments.tpl.html',
+    templateUrl: 'areas/comments/comments.tpl.html',
     scope: {
       thread: '@'
     },
     link: function(scope) {
       var reset = function(){
+        var dummy = $document[0].getElementById('dummy_disqus_thread');
+        if (dummy) {
+          dummy.parentNode.removeChild(dummy);
+        }
+
         $window.DISQUS.reset({
           reload: true,
           config: function () {
