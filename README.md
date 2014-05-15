@@ -31,7 +31,7 @@ Here's a **checklist** to consider:
 * Are all parameters in the template consistent with the examples here, including help text documented with Markdown?
 * Is the description of the template complete, correct Markdown?
 * Is the `.json` filename consistent with the name of the template?
-* Do scripts in the template validate required arguments and fail by returning a non-zere exit code when things go wrong?
+* Do scripts in the template validate required arguments and fail by returning a non-zero exit code when things go wrong?
 * Do scripts in the template produce worthwhile status messages as they execute?
 * Are you happy to contribute your template under the terms of the [license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE)? If you produced the template while working for your employer please obtain written permission from them before submitting it here.
 
