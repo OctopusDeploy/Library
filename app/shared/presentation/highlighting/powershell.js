@@ -34,7 +34,7 @@ module.config(function(){
       lexemes: /-?[A-z\.\-]+/,
       case_insensitive: true,
       keywords: {
-        keyword: 'if else foreach return function',
+        keyword: 'if else foreach return function do while until',
         literal: '$null $true $false',
         built_in: 'new-object write-host write-output invoke-expression',
         operator: '-ne -eq -lt -gt -not -lte -gte'
