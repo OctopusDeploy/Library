@@ -10,18 +10,20 @@ module.directive('comments', function($location, $window, $timeout, $document){
     },
     link: function(scope) {
       var reset = function(){
-        var dummy = $document[0].getElementById('dummy_disqus_thread');
-        if (dummy) {
-          dummy.parentNode.removeChild(dummy);
-        }
-
-        $window.DISQUS.reset({
-          reload: true,
-          config: function () {
-            this.page.identifier = scope.thread;
-            this.page.url = $location.absUrl().replace('#', '#!');
+        $timeout(function() {
+          var dummy = $document[0].getElementById('dummy_disqus_thread');
+          if (dummy) {
+            dummy.parentNode.removeChild(dummy);
           }
-        });
+
+          $window.DISQUS.reset({
+            reload: true,
+            config: function () {
+              this.page.identifier = scope.thread;
+              this.page.url = $location.absUrl().replace('#', '#!');
+            }
+          });
+        }, 1000);
       };
       if (typeof $window.DISQUS === 'object') {
         reset();
