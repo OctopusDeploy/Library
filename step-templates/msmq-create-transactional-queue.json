@@ -1,0 +1,50 @@
+{
+  "Id": "ActionTemplates-129",
+  "Name": "MSMQ - Create Transactional Queue",
+  "Description": "Create one or more MSMQ transactional queues and configure permissions.",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "#Split the Queues into an array\r\n$arrQueues = $MSMQQueues.split(\";\")\r\nforeach ($Queue in $arrQueues) \r\n{\r\n    #Does Queue Exists Already?\r\n    $thisQueue = Get-MSMQQueue $Queue\r\n    if (!$thisQueue)\r\n    {\r\n        #not found, create\r\n        Write-Output \"Creating Queue: \" $Queue\r\n        New-MsmqQueue -Name \"$Queue\" -Transactional | Out-Null\r\n        $thisQueue = Get-MSMQQueue $Queue    \r\n    }\r\n    else\r\n    {\r\n        #keep rolling\r\n        Write-Output \"Queue Exists: \" $thisQueue.QueueName\r\n    }\r\n\r\n    #set acl for users\r\n    $arrUsers = $MSMQUsers.split(\";\")\r\n    foreach ($User in $arrUsers)     \r\n    {    \r\n        if ($User)\r\n        {    \r\n            Write-Output \"Adding ACL for User: \" $User        \r\n            \r\n            #fullcontrol\r\n            if ($User.Contains('Domain Admins'))\r\n            {\r\n                $arrPermissions = $MSMQPermFull.split(\";\")\r\n                foreach ($Permission in $arrPermissions)    \r\n                {\r\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Allow $Permission | Out-Null            \r\n                    Write-Output \"ACL Allow set: $Permission\"\r\n                }\r\n            }\r\n            else            \r\n            {\r\n                #allows\r\n                $arrPermissions = $MSMQPermAllow.split(\";\")\r\n                $ACLS = \"\"\r\n                foreach ($Permission in $arrPermissions)     \r\n                {\r\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Allow $Permission | Out-Null                \r\n                    $ACLS = \"$Permission,$ACLS\"                \r\n                }    \r\n                Write-Output \"ACL Allow set: $ACLS\"\r\n                \r\n                #denies\r\n                $arrPermissions = $MSMQPermDeny.split(\";\")\r\n                foreach ($Permission in $arrPermissions)     \r\n                {\r\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Deny $Permission | Out-Null\r\n                    Write-Output \"ACL Deny  set: $Permission\"\r\n                }\r\n            }\r\n        }\r\n    }    \r\n}"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "$MSMQQueues",
+      "Label": "Queue names",
+      "HelpText": "Queue names, separated by semicolons. Example: _Queue1;Queue2;Queue3_",
+      "DefaultValue": ""
+    },
+    {
+      "Name": "$MSMQUsers",
+      "Label": "Queue users",
+      "HelpText": "Users with access to the queue separated by semicolons. Example: _DOMAIN\\User1;DOMAIN\\User2_",
+      "DefaultValue": ""
+    },
+    {
+      "Name": "$MSMQPermAllow",
+      "Label": "Allowed permissions",
+      "HelpText": "Permissions granted to the queue users, separated by semicolons. Example: _DeleteMessage;PeekMessage;ReceiveMessage_",
+      "DefaultValue": "DeleteMessage;PeekMessage;ReceiveMessage;WriteMessage"
+    },
+    {
+      "Name": "$MSMQPermDeny",
+      "Label": "Denied permissions",
+      "HelpText": "Denied permissions, separated by semicolons: _TakeQueueOwnership_",
+      "DefaultValue": "TakeQueueOwnership"
+    },
+    {
+      "Name": "$MSMQPermFull",
+      "Label": "Domain admin permissions",
+      "HelpText": "Alternative permissions to grant domain admin users, separated by semicolons. Example: _FullControl_",
+      "DefaultValue": "FullControl"
+    }
+  ],
+  "LastModifiedOn": "2014-05-15T19:56:51.549+00:00",
+  "LastModifiedBy": "usopm",
+  "$Meta": {
+    "ExportedAt": "2014-05-15T20:13:42.096Z",
+    "OctopusVersion": "2.4.5.46",
+    "Type": "ActionTemplate"
+  }
+}

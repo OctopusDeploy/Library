@@ -23,14 +23,14 @@ var reExt = function(ext) {
 
 gulp.task('step-templates', ['clean'], function() {
   return gulp.src(['step-templates/*.json'])
+    .pipe(jshint())
+    .pipe(jshint.reporter('default'))
+    .pipe(jshint.reporter('fail'))
     .pipe(replace('\r', ' '))
     .pipe(replace('\n', ' '))
     .pipe(concat('4-step-templates.js', {newLine: ','}))
     .pipe(header('angular.module("octopus-library").factory("stepTemplates", function() { return ['))
     .pipe(footer(']; });'))
-    .pipe(jshint())
-    .pipe(jshint.reporter('default'))
-    .pipe(jshint.reporter('fail'))
     .pipe(gulp.dest('build'))
     .pipe(uglify())
     .pipe(reExt('.min.js'))
