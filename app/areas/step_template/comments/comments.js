@@ -1,6 +1,6 @@
 var module = angular.module('octopus-library');
 
-module.directive('comments', function($location){
+module.directive('comments', function($location, $window, $timeout){
   return {
     restrict: 'E',
     replace: true,
@@ -8,15 +8,27 @@ module.directive('comments', function($location){
     scope: {
       thread: '@'
     },
-    link: function() {
-      if (typeof DISQUS === 'object') {
-        DISQUS.reset({
+    link: function(scope) {
+      var reset = function(){
+        $window.DISQUS.reset({
           reload: true,
           config: function () {
             this.page.identifier = scope.thread;
-            this.page.url = $location.absUrl();
+            this.page.url = $location.absUrl().replace('#', '#!');
           }
         });
+      };
+      if (typeof $window.DISQUS === 'object') {
+        reset();
+      } else {
+        var attempt = function() {
+          if (typeof $window.DISQUS === 'object') {
+            reset();
+          } else {
+            $timeout(attempt, 500);
+          }
+        };
+        $timeout(attempt, 500);
       }
     }
   };

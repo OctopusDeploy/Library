@@ -2,7 +2,7 @@ var module = angular.module('octopus-library');
 
 module.factory('library', function(stepTemplates) {
   var makeId = function(type, name) {
-    var spinal = name.replace(' - ', '-').replace(' ', '-');
+    var spinal = name.replace(/ \- /g, '-').replace(/ /g, '-');
     return (type + '-' + spinal).toLowerCase();
   };
 
