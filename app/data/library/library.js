@@ -1,15 +1,20 @@
 var module = angular.module('octopus-library');
 
 module.factory('library', function(stepTemplates) {
+  var makeSlug = function(name) {
+    return name.replace(/ \- /g, '-').replace(/ /g, '-').toLowerCase();
+  };
+
   var makeId = function(type, name) {
-    var spinal = name.replace(/ \- /g, '-').replace(/ /g, '-');
-    return (type + '-' + spinal).toLowerCase();
+    var slug = makeSlug(name);
+    return type.toLowerCase() + '-' + slug;
   };
 
   var items = _.chain(stepTemplates)
     .map(function(t) {
       return {
         Id: makeId(t.$Meta.Type, t.Name),
+        Slug: makeSlug(t.Name),
         Name: t.Name,
         Description: t.Description,
         OctopusVersion: t.$Meta.OctopusVersion,
