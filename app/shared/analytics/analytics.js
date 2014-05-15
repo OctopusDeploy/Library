@@ -4,7 +4,7 @@ module.factory('analytics', function($location, $window) {
   var result = {};
 
   result.sendPageView = function() {
-    $window.ga('send', 'pageview', { path: $location.url() });
+    $window.ga('send', 'pageview', { path: $location.path() });
   };
 
   result.sendEvent = function(cat, name, value) {
