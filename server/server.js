@@ -26,3 +26,5 @@ var oneDay = 86400000;
 app.use(express.static(pub, { maxAge: oneDay }));
 
 app.listen(port);
+
+module.exports = app;

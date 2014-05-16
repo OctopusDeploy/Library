@@ -14,7 +14,6 @@ var footer = require("gulp-footer");
 var replace = require('gulp-replace');
 var sourceUrl = require('gulp-source-url');
 var filter = require('gulp-filter');
-var express = require('express');
 
 var reExt = function(ext) {
   return rename(function(path) { path.extname = ext; })
@@ -166,9 +165,9 @@ gulp.task('build', ['html-debug', 'html-release', 'server']);
 
 gulp.task('default', ['build']);
 
-gulp.task('watch', ['build'],  function(){
+gulp.task('watch', ['build'],  function(cb){
   process.env.PUBLIC = 'build/public';
-  require('./build/server.js');
+  var app = require('./build/server.js');
 
   gulp.watch(['app/**/*'], ['build']);
 });
