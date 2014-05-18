@@ -1,36 +1,36 @@
 {
   "Id": "ActionTemplates-1",
   "Name": "New Relic - Complete Deployment",
-  "Description": "To notify New Relic of a deployment, we POST the revision/version number from the Octopus deployment.",
+  "Description": "To notify [New Relic](https://newrelic.com) of a deployment, _POST_ the revision/version number from the Octopus deployment.",
   "ActionType": "Octopus.Script",
   "Version": 5,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "\r\n\t# in production, we need to\r\n\t#Create a URI instance since the HttpWebRequest.Create Method will escape the URL by default.\r\n\t$URL = \"http://api.newrelic.com/deployments.xml\"\r\n\t$post = \"deployment[account_id]($OctopusParameters['AccountId'])&deployment[user]=($OctopusParameters['User'])&deployment[app_id]=($OctopusParameters['AppId'])&deployment[revision]=($OctopusPackageVersion)\"\r\n\t$URI = New-Object System.Uri($URL,$true)\r\n \r\n\t#Create a request object using the URI\r\n\t$request = [System.Net.HttpWebRequest]::Create($URI)\r\n \r\n\t#Build up a nice User Agent\r\n\t$request.UserAgent = $(\r\n\t\"{0} (PowerShell {1}; .NET CLR {2}; {3})\" -f $UserAgent, \r\n\t$(if($Host.Version){$Host.Version}else{\"1.0\"}),\r\n\t[Environment]::Version,\r\n\t[Environment]::OSVersion.ToString().Replace(\"Microsoft Windows \", \"Win\")\r\n\t)\r\n  \r\n\t# $creds = New-Object System.Net.NetworkCredential($Username,$Password)\r\n\t# $request.Credentials = $creds\r\n \r\n\t#Since this is a POST we need to set the method type\r\n\t$request.Method = \"POST\"\r\n\t$request.Headers.Add(\"x-api-key\",\"($OctopusParameters['ApiKey'])\");\r\n \r\n\t#Set the Content Type as text/xml since the content will be a block of xml.\r\n\t$request.ContentType = \"application/x-www-form-urlencoded\"\r\n\t$request.Accept = \"text/xml\"\r\n \r\n\ttry {\r\n\t\t#Create a new stream writer to write the xml to the request stream.\r\n\t\t$stream = New-Object IO.StreamWriter $request.GetRequestStream()\r\n\t\t$stream.AutoFlush = $True\r\n\t\t$PostStr = [System.Text.Encoding]::UTF8.GetBytes($Post)\r\n\t\t$stream.Write($PostStr, 0,$PostStr.length)\r\n\t\t$stream.Close()\r\n     \r\n\t\t#Make the request and get the response\r\n\t\t$response = $request.GetResponse()    \r\n\t\t$response.Close()\r\n   \r\n\t\tif ([int]$response.StatusCode -eq 201) {\r\n\t\t\tWrite-Host \"NewRelic Deploy API called succeeded.\"\r\n\t\t} else {\r\n\t\t\tWrite-Host \"NewRelic Deploy API called failed.\"\r\n\t\t\texit 1\r\n\t\t}\r\n\t} catch [System.Net.WebException] {\r\n\t\t$res = $_.Exception.Response\r\n\t\t Write-Host \"NewRelic Deploy API called failed.\" \r\n\t\t exit 1\r\n\t}"
+    "Octopus.Action.Script.ScriptBody": "\r\n    # in production, we need to\r\n    #Create a URI instance since the HttpWebRequest.Create Method will escape the URL by default.\r\n    $URL = \"http://api.newrelic.com/deployments.xml\"\r\n    $post = \"deployment[account_id]($OctopusParameters['AccountId'])&deployment[user]=($OctopusParameters['User'])&deployment[app_id]=($OctopusParameters['AppId'])&deployment[revision]=($OctopusPackageVersion)\"\r\n    $URI = New-Object System.Uri($URL,$true)\r\n \r\n    #Create a request object using the URI\r\n    $request = [System.Net.HttpWebRequest]::Create($URI)\r\n \r\n    #Build up a nice User Agent\r\n    $request.UserAgent = $(\r\n    \"{0} (PowerShell {1}; .NET CLR {2}; {3})\" -f $UserAgent, \r\n    $(if($Host.Version){$Host.Version}else{\"1.0\"}),\r\n    [Environment]::Version,\r\n    [Environment]::OSVersion.ToString().Replace(\"Microsoft Windows \", \"Win\")\r\n    )\r\n  \r\n    # $creds = New-Object System.Net.NetworkCredential($Username,$Password)\r\n    # $request.Credentials = $creds\r\n \r\n    #Since this is a POST we need to set the method type\r\n    $request.Method = \"POST\"\r\n    $request.Headers.Add(\"x-api-key\",\"($OctopusParameters['ApiKey'])\");\r\n \r\n    #Set the Content Type as text/xml since the content will be a block of xml.\r\n    $request.ContentType = \"application/x-www-form-urlencoded\"\r\n    $request.Accept = \"text/xml\"\r\n \r\n    try {\r\n        #Create a new stream writer to write the xml to the request stream.\r\n        $stream = New-Object IO.StreamWriter $request.GetRequestStream()\r\n        $stream.AutoFlush = $True\r\n        $PostStr = [System.Text.Encoding]::UTF8.GetBytes($Post)\r\n        $stream.Write($PostStr, 0,$PostStr.length)\r\n        $stream.Close()\r\n     \r\n        #Make the request and get the response\r\n        $response = $request.GetResponse()    \r\n        $response.Close()\r\n   \r\n        if ([int]$response.StatusCode -eq 201) {\r\n            Write-Host \"NewRelic Deploy API called succeeded.\"\r\n        } else {\r\n            Write-Host \"NewRelic Deploy API called failed.\"\r\n            exit 1\r\n        }\r\n    } catch [System.Net.WebException] {\r\n        $res = $_.Exception.Response\r\n         Write-Host \"NewRelic Deploy API called failed.\" \r\n         exit 1\r\n    }"
   },
   "SensitiveProperties": {},
   "Parameters": [
     {
       "Name": "ApiKey",
       "Label": "Api key",
-      "HelpText": null,
+      "HelpText": "The New Relic API key.",
       "DefaultValue": null
     },
     {
       "Name": "AccountId",
       "Label": "Account ID",
-      "HelpText": "The account id for the New Relic account to be used.",
+      "HelpText": "The ID of the New Relic account to use.",
       "DefaultValue": null
     },
     {
       "Name": "User",
       "Label": "User",
-      "HelpText": "The name of the user/process that triggered this deployment",
+      "HelpText": "The name of the user/process that triggered this deployment.",
       "DefaultValue": null
     },
     {
       "Name": "AppId",
       "Label": "App ID",
-      "HelpText": "The ID # of the application",
+      "HelpText": "The New Relic ID of the application.",
       "DefaultValue": null
     }
   ],
