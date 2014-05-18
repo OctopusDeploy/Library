@@ -1,0 +1,44 @@
+{
+  "Id": "ActionTemplates-3",
+  "Name": "Windows - Local User",
+  "Description": "Configures a local user. (If assigning user rights the ntrights.exe file should be installed on the target server and added to the system path variable)",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$username = $OctopusParameters['Username']\r\n$password = $OctopusParameters['Password']\r\n$memberOf = $OctopusParameters['MemberOf']\r\n$userRights = $OctopusParameters['UserRights']\r\n\r\n# Add/Update User\r\n\r\n$user = Get-WmiObject Win32_UserAccount -filter \"LocalAccount=True AND Name='$username'\"\r\nif($user -eq $null)\r\n{\r\n    Write-Host \"Adding user\"\r\n    net user \"$username\" \"$password\" /add /expires:never /passwordchg:no /yes\r\n}\r\nelse\r\n{\r\n    Write-Host \"User already exists, updating password\"\r\n    net user \"$username\" \"$password\" /expires:never /passwordchg:no\r\n}\r\n\r\n# Ensure password never expires\r\n\r\nwrite \"Ensuring password never expires\"\r\n$user = Get-WmiObject Win32_UserAccount -filter \"LocalAccount=True AND Name='$username'\"\r\n$user.PasswordExpires = $false; \r\n$user.Put();\r\n\r\n# Add/Update group membership\r\n\r\nif($memberOf)\r\n{\r\n    $groups = $memberOf.Split(\",\")\r\n    foreach($group in $groups)\r\n    {\r\n        $ntGroup = [ADSI](\"WinNT://./$group\")\r\n        $members = $ntGroup.psbase.Invoke(\"Members\") | %{$_.GetType().InvokeMember(\"Name\", 'GetProperty', $null, $_, $null)}\r\n        if($members -contains \"$username\")\r\n        {\r\n            Write-Host \"User already a member of the $group group\" \r\n        }\r\n        else\r\n        {\r\n            Write-Host \"Adding to the $group group\"\r\n            net localgroup \"$group\" \"$username\" /add\r\n        }\r\n    }\r\n}\r\n\r\n# Add/Update user rights assignment\r\n\r\nif($userRights)\r\n{\r\n    $userRightsArr = $userRights.Split(\",\")\r\n    foreach($userRight in $userRightsArr)\r\n    {\r\n        Write-Host \"Granting $userRight right\"\r\n        & \"ntrights\" +r $userRight -u \"$username\"\r\n    }\r\n}\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Username",
+      "Label": "Username",
+      "HelpText": "The username",
+      "DefaultValue": null
+    },
+    {
+      "Name": "Password",
+      "Label": "Password",
+      "HelpText": "The password",
+      "DefaultValue": null
+    },
+    {
+      "Name": "MemberOf",
+      "Label": "Group memberships",
+      "HelpText": "A comma separated list of group memberships",
+      "DefaultValue": null
+    },
+    {
+      "Name": "UserRights",
+      "Label": "User rights",
+      "HelpText": "A comma separated list of user rights to assign (e.g. SeServiceLogonRight). See http://support.microsoft.com/kb/315276 for full list of rights",
+      "DefaultValue": null
+    }
+  ],
+  "LastModifiedOn": "2014-05-16T10:30:24.734+00:00",
+  "LastModifiedBy": "sportingsolutions",
+  "$Meta": {
+    "ExportedAt": "2014-05-16T10:30:58.052Z",
+    "OctopusVersion": "2.4.5.46",
+    "Type": "ActionTemplate"
+  }
+}
