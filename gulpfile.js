@@ -14,10 +14,24 @@ var footer = require("gulp-footer");
 var replace = require('gulp-replace');
 var sourceUrl = require('gulp-source-url');
 var filter = require('gulp-filter');
+var childProcess = require('child_process');
 
 var reExt = function(ext) {
   return rename(function(path) { path.extname = ext; })
 };
+
+gulp.task('prepare-snapshot', ['clean'], function(){
+  return gulp.src(['snapshot-sitemap.tpl.json'])
+    .pipe(inject(gulp.src(['step-templates/*.json'], {read: false}), {
+      starttag: '"urls": ["#!/listing"',
+      endtag: ']',
+      transform: function (filepath, file, i, length) {
+        return ',"#!/step-template/actiontemplate-' + filepath.replace('/step-templates/', '').replace('.json', '') + '"';
+      }
+    }))
+    .pipe(rename('snapshot-sitemap.json'))
+    .pipe(gulp.dest('tmp/html-snapshot'));
+});
 
 gulp.task('step-templates', ['clean'], function() {
   return gulp.src(['step-templates/*.json'])
@@ -161,7 +175,25 @@ gulp.task('server', ['clean'], function(){
     .pipe(gulp.dest('dist'));
 });
 
-gulp.task('build', ['html-debug', 'html-release', 'server']);
+gulp.task('baseline', ['html-debug', 'html-release', 'server']);
+
+gulp.task('snapshot', ['baseline', 'prepare-snapshot'], function(cb) {
+  process.env.PUBLIC = 'build/public';
+  var app = require('./build/server.js');
+
+  childProcess.exec('grunt', function(error, stdout, stderr){
+    console.log(stdout);
+    console.log(stderr);
+    console.log(error);
+
+    console.log(app);
+    app.close();
+
+    cb(error);
+  });
+});
+
+gulp.task('build', ['snapshot']);
 
 gulp.task('default', ['build']);
 
@@ -169,5 +201,5 @@ gulp.task('watch', ['build'],  function(cb){
   process.env.PUBLIC = 'build/public';
   var app = require('./build/server.js');
 
-  gulp.watch(['app/**/*'], ['build']);
+  gulp.watch(['app/**/*'], ['html-debug']);
 });

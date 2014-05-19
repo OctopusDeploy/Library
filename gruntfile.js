@@ -4,13 +4,7 @@ module.exports = function(grunt) {
   grunt.initConfig({
     htmlSnapshot: {
       all: {
-        options: {
-          snapshotPath: 'tmp/generated/',
-          sitePath: 'http://localhost:4000',
-          urls: [
-            '#!/listing',
-            '#!/step-template/actiontemplate-windows-scheduled-task-disable']
-        }
+        options: grunt.file.readJSON('tmp/html-snapshot/snapshot-sitemap.json')
       }
     }
   });
