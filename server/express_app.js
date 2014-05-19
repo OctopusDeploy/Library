@@ -7,7 +7,7 @@ module.exports = function() {
       var esc = req.query._escaped_fragment_;
       if (esc) {
         var relPath = esc.replace('#!', '').slice(1).replace(/\//g, '_') + ".gen.html";
-        res.sendfile(relPath, {root: root + '/generated' });
+        res.sendfile(relPath, {root: path.resolve(root, 'generated') });
       } else {
         next();
       }
@@ -15,7 +15,7 @@ module.exports = function() {
   };
 
   var port = process.env.PORT || 4000;
-  var pub = process.env.PUBLIC || './public';
+  var pub = process.env.OCTO_PUBLIC || 'public';
 
   var app = express();
 
@@ -24,7 +24,11 @@ module.exports = function() {
   app.use(fragmented(pub));
 
   app.get('/', function (req, res) {
-    res.sendfile(pub + '/index.html');
+    res.sendfile(path.resolve(pub, 'index.html'));
+  });
+
+  app.get('', function (req, res) {
+    res.sendfile(path.resolve(pub, 'index.html'));
   });
 
   var oneDay = 86400000;

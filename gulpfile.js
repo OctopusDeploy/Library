@@ -178,7 +178,7 @@ gulp.task('server', ['clean'], function(){
 gulp.task('baseline', ['html-debug', 'html-release', 'server']);
 
 var start = function() {
-  process.env.PUBLIC = 'build/public';
+  process.env.OCTO_PUBLIC = 'build/public';
 
   var expressApp = require('./build/express_app.js');
   return expressApp();
