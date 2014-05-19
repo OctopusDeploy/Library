@@ -1,0 +1,38 @@
+{
+  "Id": "ActionTemplates-10",
+  "Name": "File System - Grant Permissions",
+  "Description": "Grant read and write permissions to a folder or file",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$item = $OctopusParameters['Item']\r\n$readPermissionsTo = $OctopusParameters['ReadPermissionsTo']\r\n$writePermissionsTo = $OctopusParameters['WritePermissionsTo']\r\n\r\n# Check item exists\r\n\r\nif(!(Test-Path $item))\r\n{\r\n    throw \"$item does not exist\"\r\n}\r\n\r\n# Assign read permissions\r\n\r\nif($readPermissionsTo)\r\n{\r\n    $users = $readPermissionsTo.Split(\",\")\r\n    foreach($user in $users)\r\n    {\r\n        Write-Host \"Adding read permissions for $user\"\r\n        $acl = Get-Acl $item\r\n        $acl.SetAccessRuleProtection($False, $False)\r\n        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(\r\n                $user, \"Read\", \"ContainerInherit, ObjectInherit\", \"None\", \"Allow\")\r\n        $acl.AddAccessRule($rule)\r\n        Set-Acl $item $acl\r\n    }\r\n}\r\n\r\n# Assign write permissions\r\n\r\nif($writePermissionsTo)\r\n{\r\n    $users = $writePermissionsTo.Split(\",\")\r\n    foreach($user in $users)\r\n    {\r\n        Write-Host \"Adding write permissions for $user\"\r\n        $acl = Get-Acl $item\r\n        $acl.SetAccessRuleProtection($False, $False)\r\n        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(\r\n                $user, \"Write\", \"ContainerInherit, ObjectInherit\", \"None\", \"Allow\")\r\n        $acl.AddAccessRule($rule)\r\n        Set-Acl $item $acl\r\n    }\r\n}\r\n\r\nWrite-Host \"Complete\""
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Item",
+      "Label": "Item",
+      "HelpText": "The full path to the file or folder",
+      "DefaultValue": null
+    },
+    {
+      "Name": "ReadPermissionsTo",
+      "Label": "Read Users",
+      "HelpText": "A comma separated list of users to grant read permissions to",
+      "DefaultValue": null
+    },
+    {
+      "Name": "WritePermissionsTo",
+      "Label": "Write Users",
+      "HelpText": "A comma separated list of users to grant write permissions to",
+      "DefaultValue": null
+    }
+  ],
+  "LastModifiedOn": "2014-05-16T10:11:07.172+00:00",
+  "LastModifiedBy": "sportingsolutions",
+  "$Meta": {
+    "ExportedAt": "2014-05-16T10:11:12.098Z",
+    "OctopusVersion": "2.4.5.46",
+    "Type": "ActionTemplate"
+  }
+}

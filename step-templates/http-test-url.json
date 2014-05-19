@@ -1,0 +1,38 @@
+{
+  "Id": "ActionTemplates-2",
+  "Name": "HTTP - Test URL",
+  "Description": "Makes a GET request to a HTTP(S) end point and verifies that a particular status code is returned within a specified period of time",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$uri = $OctopusParameters['Uri']\r\n$expectedCode = [int] $OctopusParameters['ExpectedCode']\r\n$timeoutSeconds = [int] $OctopusParameters['TimeoutSeconds']\r\n\r\n# Make verification requests\r\n\r\nWrite-Host \"Starting verification requests\"\r\n$timer = [System.Diagnostics.Stopwatch]::StartNew()\r\n$success = $false\r\ndo\r\n{\r\n    try\r\n    {\r\n        $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing\r\n\r\n        if($response.StatusCode -eq $expectedCode)\r\n        {\r\n            $success = $true\r\n        }\r\n    }\r\n    catch\r\n    {\r\n        # Anything other than a 200 will throw an exception so\r\n        # we check the exception message which may contain the \r\n        # actual status code to verify\r\n\r\n        if($_.Exception -like \"*($expectedCode)*\")\r\n        {\r\n            $success = $true\r\n        }\r\n    }\r\n\r\n    if(!$success)\r\n    {\r\n        Start-Sleep -s 5\r\n    }\r\n}\r\nwhile(!$success -and $timer.Elapsed -le (New-TimeSpan -Seconds $timeoutSeconds))\r\n\r\n$timer.Stop()\r\n\r\n# Verify result\r\n\r\nif(!$success)\r\n{\r\n    throw \"verification failed\"\r\n}\r\n\r\nWrite-Host \"Verification successful\"\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Uri",
+      "Label": "URI",
+      "HelpText": "The full Uri of the endpoint",
+      "DefaultValue": null
+    },
+    {
+      "Name": "ExpectedCode",
+      "Label": "Expected code",
+      "HelpText": "The expected HTTP status code",
+      "DefaultValue": "200"
+    },
+    {
+      "Name": "TimeoutSeconds",
+      "Label": "Timeout (Seconds)",
+      "HelpText": "The number of seconds before the step fails and times out",
+      "DefaultValue": "60"
+    }
+  ],
+  "LastModifiedOn": "2014-05-16T10:17:07.191+00:00",
+  "LastModifiedBy": "sportingsolutions",
+  "$Meta": {
+    "ExportedAt": "2014-05-16T10:17:10.100Z",
+    "OctopusVersion": "2.4.5.46",
+    "Type": "ActionTemplate"
+  }
+}

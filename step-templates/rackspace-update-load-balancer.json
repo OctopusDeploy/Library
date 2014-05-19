@@ -1,0 +1,50 @@
+{
+  "Id": "ActionTemplates-4",
+  "Name": "Rackspace - Update Load Balancer",
+  "Description": "Change the condition of a node in a Rackspace Cloud Load Balancer.",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$username = $OctopusParameters['Username']\r\n$apiKey = $OctopusParameters['ApiKey']\r\n$loadbalanderId = $OctopusParameters['LoadBalancerID']\r\n$newNodeCondition = $OctopusParameters['NodeIpAddress']\r\n$ipAddress = $OctopusParameters['NewCondition']\r\n\r\nif ($newNodeCondition -ne \"ENABLED\" -and $newNodeCondition -ne \"DISABLED\" -and $newNodeCondition -ne \"DRAINING\")\r\n{\r\n    throw \"Condition must be one of 'ENABLED', 'DISABLED' or 'DRAINING'\"\r\n}\r\n\r\n# Get token and manipulation URL\r\n\r\n$tokensUri = \"https://lon.identity.api.rackspacecloud.com/v2.0/tokens\"\r\n$tokensBody = @\"\r\n{\r\n    \"auth\":\r\n    {\r\n       \"RAX-KSKEY:apiKeyCredentials\":\r\n       {  \r\n          \"username\": \"$username\",  \r\n          \"apiKey\": \"$apiKey\"\r\n       }\r\n    }  \r\n}\r\n\"@\r\n\r\nWrite-Host \"Sending request $tokensBody to $tokensUri\"\r\n\r\n$tokensResponse = Invoke-WebRequest -Uri $tokensUri -Method Post -Body $tokensBody -ContentType \"application/json\" -UseBasicParsing\r\n\r\nif ($tokensResponse.StatusCode -ne 200)\r\n{\r\n    throw \"Authorisation failed\"\r\n}\r\n\r\n$tokensObj = ConvertFrom-Json -InputObject $tokensResponse.Content\r\n\r\n$loadBalancerDetails = $tokensObj.access.serviceCatalog | Where {$_.name -eq \"cloudLoadBalancers\"}\r\n$endpoints = $loadBalancerDetails.endpoints | Select -First 1\r\n$loadbalancerUrl = $endpoints.publicURL\r\n$token = $tokensObj.access.token.id\r\n\r\n# Update node\r\n\r\n$header = @{}\r\n$header.Add(\"X-Auth-Token\", $token)\r\n$nodesUrl = \"$loadbalancerUrl/loadbalancers/$loadbalancerId/nodes\"\r\n\r\nWrite-Host \"Getting node details from $nodesUrl\"\r\n\r\n$nodesResponse = Invoke-WebRequest -Uri $nodesUrl -Method Get -Headers $header -ContentType \"application/json\" -UseBasicParsing\r\n\r\nif ($nodesResponse.StatusCode -ne 200)\r\n{\r\n    throw \"Getting load balancer details failed\"\r\n}\r\n\r\n$nodesObj = ConvertFrom-Json -InputObject $nodesResponse.Content\r\n$node = $nodesObj.nodes | Where {$_.address -eq $ipAddress}\r\n$nodeId = $node.id\r\n\r\n$updateBody = @\"\r\n{\r\n    \"node\": {\r\n        \"condition\" : \"$newNodeCondition\"\r\n    }\r\n}\r\n\"@\r\n$updateUrl = \"$loadbalancerUrl/loadbalancers/$loadbalancerId/nodes/$nodeId\"\r\n\r\nWrite-Host \"Updating node $nodeId to $newNodeCondition\"\r\nWrite-Host \"$updateBody\"\r\nWrite-Host \"$updateUrl\"\r\n\r\n$updateResponse = Invoke-WebRequest -Uri $updateUrl -Body $updateBody -Method Put -Headers $header -ContentType \"application/json\" -UseBasicParsing\r\n\r\nif ($updateResponse.StatusCode -ne 202)\r\n{\r\n    throw \"Updating load balancer failed\"\r\n}"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Username",
+      "Label": "Username",
+      "HelpText": "Rackspace control panel username",
+      "DefaultValue": null
+    },
+    {
+      "Name": "ApiKey",
+      "Label": "API key",
+      "HelpText": "Rackspace control panel user API key",
+      "DefaultValue": null
+    },
+    {
+      "Name": "LoadBalancerID",
+      "Label": "Load Balancer ID",
+      "HelpText": "ID of the load balancer, found on the details page in the Rackspace control panel",
+      "DefaultValue": null
+    },
+    {
+      "Name": "NodeIpAddress",
+      "Label": "Node IP address",
+      "HelpText": "IP address of load balanced node. Found on the load balancer details page of the Rackspace control panel",
+      "DefaultValue": null
+    },
+    {
+      "Name": "NewCondition",
+      "Label": "New Node Condition",
+      "HelpText": "Condition to set the node to. Can either be 'ENABLED', 'DISABLED' or 'DRAINING'",
+      "DefaultValue": null
+    }
+  ],
+  "LastModifiedOn": "2014-05-16T10:29:33.747+00:00",
+  "LastModifiedBy": "sportingsolutions",
+  "$Meta": {
+    "ExportedAt": "2014-05-16T10:29:42.481Z",
+    "OctopusVersion": "2.4.5.46",
+    "Type": "ActionTemplate"
+  }
+}
