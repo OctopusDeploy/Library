@@ -25,6 +25,6 @@ app.use(fragmented(pub));
 var oneDay = 86400000;
 app.use(express.static(pub, { maxAge: oneDay }));
 
-app.listen(port);
+var server = app.listen(port);
 
-module.exports = app;
+module.exports = server;

@@ -179,15 +179,12 @@ gulp.task('baseline', ['html-debug', 'html-release', 'server']);
 
 gulp.task('snapshot', ['baseline', 'prepare-snapshot'], function(cb) {
   process.env.PUBLIC = 'build/public';
-  var app = require('./build/server.js');
+  require('./build/server.js');
 
   childProcess.exec('grunt', function(error, stdout, stderr){
     console.log(stdout);
     console.log(stderr);
     console.log(error);
-
-    console.log(app);
-    app.close();
 
     cb(error);
   });
