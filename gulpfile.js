@@ -167,7 +167,7 @@ gulp.task('clean', function() {
 });
 
 gulp.task('server', ['clean'], function(){
-  return gulp.src(['package.json', 'server/server.js'])
+  return gulp.src(['package.json', 'server/server.js', 'server/express_app.js'])
     .pipe(jshint())
     .pipe(jshint.reporter('default'))
     .pipe(jshint.reporter('fail'))
@@ -177,9 +177,15 @@ gulp.task('server', ['clean'], function(){
 
 gulp.task('baseline', ['html-debug', 'html-release', 'server']);
 
-gulp.task('snapshot', ['baseline', 'prepare-snapshot'], function(cb) {
+var start = function() {
   process.env.PUBLIC = 'build/public';
-  var server = require('./build/server.js');
+
+  var expressApp = require('./build/express_app.js');
+  return expressApp();
+};
+
+gulp.task('snapshot', ['baseline', 'prepare-snapshot'], function(cb) {
+  var server = start();
 
   childProcess.exec('grunt', function(error, stdout, stderr){
     console.log(stdout);
@@ -192,13 +198,25 @@ gulp.task('snapshot', ['baseline', 'prepare-snapshot'], function(cb) {
   });
 });
 
-gulp.task('build', ['snapshot']);
+gulp.task('install-snapshot', ['snapshot'], function() {
+  return gulp.src(['tmp/generated/*.html'])
+    .pipe(reExt('.gen.html'))
+    .pipe(rename(function(path){
+      path.basename = path.basename.replace('snapshot____', '');
+    }))
+    .pipe(gulp.dest('build/public/generated'))
+    .pipe(gulp.dest('dist/public/generated'));
+});
+
+gulp.task('build', ['install-snapshot']);
 
 gulp.task('default', ['build']);
 
-gulp.task('watch', ['build'],  function(cb){
-  process.env.PUBLIC = 'build/public';
-  var app = require('./build/server.js');
+gulp.task('start', [], function(cb){
+  start();
+});
 
+gulp.task('watch', ['build'],  function(cb){
+  start();
   gulp.watch(['app/**/*'], ['html-debug']);
 });
