@@ -1,5 +1,6 @@
 var express = require('express');
 var compress = require('compression');
+var path = require('path');
 
 module.exports = function() {
   var fragmented = function (root) {
