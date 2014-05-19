@@ -14,14 +14,18 @@ module.exports = function() {
     };
   };
 
-  var port = parseInt(process.env.PORT || '4000', 10);
-  var pub = process.env.PUBLIC || __dirname + '/public';
+  var port = process.env.PORT || 4000;
+  var pub = process.env.PUBLIC || './public';
 
   var app = express();
 
   app.use(compress());
 
   app.use(fragmented(pub));
+
+  app.get('/', function (req, res) {
+    res.sendfile(pub + '/index.html');
+  });
 
   var oneDay = 86400000;
   app.use(express.static(pub, { maxAge: oneDay }));
