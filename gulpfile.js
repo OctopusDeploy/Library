@@ -190,7 +190,10 @@ gulp.task('snapshot', ['baseline', 'prepare-snapshot'], function(cb) {
   childProcess.exec('grunt', function(error, stdout, stderr){
     console.log(stdout);
     console.log(stderr);
-    console.log(error);
+
+    if (error) {
+      console.log(error);
+    }
 
     server.close();
 
