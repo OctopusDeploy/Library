@@ -1,0 +1,26 @@
+{
+  "Id": "ActionTemplates-66",
+  "Name": "Windows - Ensure Features Installed",
+  "Description": "Ensures that a set of Windows Features are installed on the system.",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$requiredFeatures = $OctopusParameters['WindowsFeatures'].split(\",\") | foreach { $_.trim() }\nif(! $requiredFeatures) {\n    Write-Output \"No required Windows Features specified...\"\n    exit\n}\n$requiredFeatures | foreach { $feature = DISM.exe /ONLINE /Get-FeatureInfo /FeatureName:$_; if($feature -like \"*Feature name $_ is unknown*\") { throw $feature } }\n\nWrite-Output \"Retrieving all Windows Features...\"\n$allFeatures = DISM.exe /ONLINE /Get-Features /FORMAT:List | Where-Object { $_.StartsWith(\"Feature Name\") -OR $_.StartsWith(\"State\") } \n$features = new-object System.Collections.ArrayList\nfor($i = 0; $i -lt $allFeatures.length; $i=$i+2) {\n    $feature = $allFeatures[$i]\n    $state = $allFeatures[$i+1]\n    $features.add(@{feature=$feature.split(\":\")[1].trim();state=$state.split(\":\")[1].trim()}) | OUT-NULL\n}\n\nWrite-Output \"Checking for missing Windows Features...\"\n$missingFeatures = new-object System.Collections.ArrayList\n$features | foreach { if( $requiredFeatures -contains $_.feature -and $_.state -eq 'Disabled') { $missingFeatures.add($_.feature) | OUT-NULL } }\nif(! $missingFeatures) {\n    Write-Output \"All required Windows Features are installed\"\n    exit\n}\nWrite-Output \"Installing missing Windows Features...\"\n$featureNameArgs = \"\"\n$missingFeatures | foreach { $featureNameArgs = $featureNameArgs + \" /FeatureName:\" + $_ }\n$dism = \"DISM.exe\"\n$arguments = \"/ONLINE /Enable-Feature $featureNameArgs\"\nWrite-Output \"Calling DISM with arguments: $arguments\"\nstart-process -NoNewWindow $dism $arguments"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "WindowsFeatures",
+      "Label": "Windows features",
+      "HelpText": "The set of Windows Features that should be installed on the system. This can be either a single Windows Feature or a comma separated list of Windows Features to check.\n\nExample 1: IIS-WebServer\n\nExample 2: IIS-WebServer, IIS-WindowsAuthentication",
+      "DefaultValue": null
+    }
+  ],
+  "LastModifiedOn": "2014-05-21T22:31:25.470+00:00",
+  "LastModifiedBy": "alfhenrik",
+  "$Meta": {
+    "ExportedAt": "2014-05-21T22:36:29.876Z",
+    "OctopusVersion": "2.4.4.43",
+    "Type": "ActionTemplate"
+  }
+}
