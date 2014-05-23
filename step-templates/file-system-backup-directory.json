@@ -1,0 +1,44 @@
+{
+  "Id": "ActionTemplates-33",
+  "Name": "File System - Backup Directory",
+  "Description": "Uses Robocopy to backup directories and files from a source to a destination.",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function Get-Stamped-Destination($destination) {\r\n\t$stampedFolderName = get-date -format \"yyyy-MM-dd\"\r\n\t$count = 1\r\n\t$stampedDestination = Join-Path $destination $stampedFolderName\r\n\twhile(Test-Path $stampedDestination) {\r\n\t\t$count++\r\n\t\t$stamped = $stampedFolderName + \"(\" + $count + \")\"\r\n\t\t$stampedDestination = Join-Path $destination $stamped\r\n\t}\r\n\treturn $stampedDestination\r\n}\r\n\r\n$source = $OctopusParameters['Source']\r\n$destination = $OctopusParameters['Destination']\r\n$CreateStampedBackupFolder = $OctopusParameters['CreateStampedBackupFolder']\r\nif($CreateStampedBackupFolder -like \"True\" ) {\r\n\t$destination = get-stamped-destination $destination\r\n}\r\n\r\n$options = $OctopusParameters['Options'] -split \"\\s+\"\r\nrobocopy $source $destination $options\r\n\r\nif($LastExitCode -gt 8) {\r\n    exit 1\r\n}\r\nelse {\r\n    exit 0\r\n}\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Source",
+      "Label": "Source",
+      "HelpText": "The source directory where files and folders will be copied from",
+      "DefaultValue": null
+    },
+    {
+      "Name": "Destination",
+      "Label": "Destination folder",
+      "HelpText": "The Destination where the files will be copied to.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "Options",
+      "Label": "Robocopy options",
+      "HelpText": "Robocopy accepts a few command line options (e.g. /S /E /Z). List of these can be [found here](http://ss64.com/nt/robocopy.html)",
+      "DefaultValue": "/E /V"
+    },
+    {
+      "Name": "CreateStampedBackupFolder",
+      "Label": "Create stamped backup folder",
+      "HelpText": "If set to _True_ then it will create a dated backup folder under the destination folder (e.g. c:\\backup\\2014-05-11)",
+      "DefaultValue": "True"
+    }
+  ],
+  "LastModifiedOn": "2014-05-22T02:58:03.139+00:00",
+  "LastModifiedBy": "bholdt",
+  "$Meta": {
+    "ExportedAt": "2014-05-22T02:58:41.985Z",
+    "OctopusVersion": "2.4.5.46",
+    "Type": "ActionTemplate"
+  }
+}
