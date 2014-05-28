@@ -1,11 +1,11 @@
 {
   "Id": "ActionTemplates-1",
-  "Name": "IIS ARR webfarm instance action",
-  "Description": "Calls all servers in the environment marked with the arr-server role with a webfarm instance action to perform.\n\nActions available: Start, GracefulStop, ForcefulStop, Drain",
+  "Name": "ARR WebFarm Action",
+  "Description": "Call ARR servers with a webfarm instance action",
   "ActionType": "Octopus.Script",
-  "Version": 6,
+  "Version": 7,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\"\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.Web.Administration\")\r\n\r\n# set up params\r\n$octopusUrl = $OctopusParameters['OctopusUrl']\r\n$apiKey = $OctopusParameters['ViewOnlyApiKey']\r\n$envId = $OctopusParameters['Octopus.Environment.Id']\r\n$roleName = \"arr-server\"\r\n$lwebfarmname = $OctopusParameters['WebFarmName']\r\n$lsitebinding = $OctopusParameters[$lwebfarmname]\r\n$lnewState = $OctopusParameters['ARRAction']\r\n\r\n# fetch ARR servers\r\n$envUrl = \"http://\" + $octopusUrl + \"/api/environments/\" + $envId + \"/machines\"\r\n$arrServers = ((Invoke-WebRequest -Uri $envUrl -Method Get -Headers @{\"X-Octopus-ApiKey\"=$apiKey}).Content | ConvertFrom-Json).Items | Where-Object { $_.Roles -eq $roleName }\r\n$arrServerNames = $machines | Select -ExpandProperty Name\r\n\r\n# perform the arr action on servers\r\n$ErrorActionPreference = \"SilentlyContinue\"\r\n[array]$errors\r\nforeach ($arrName in $arrServerNames)\r\n{\r\n\tWrite-Output \"Calling arr server $arrName $lwebfarmname $lsitebinding with new state $lnewState\"\r\n\t$serverManager = New-Object Microsoft.Web.Administration.ServerManager\r\n\t$serverManager = [Microsoft.Web.Administration.ServerManager]::OpenRemote($arrName)\r\n\ttry\r\n\t{\r\n\t\t$webFarm = $serverManager.GetApplicationHostConfiguration().GetSection(\"webFarms\").GetCollection() | Where-Object { $_.GetAttributeValue(\"name\") -eq $lwebfarmname }\r\n\t\t$serverInstance = $webFarm.GetCollection() | Where-Object { $_.GetAttributeValue(\"address\") -eq $lsitebinding }\r\n\t\t$moop = $serverInstance.GetChildElement(\"applicationRequestRouting\").Methods[\"SetState\"].CreateInstance()\r\n\t\t$moop.Input.SetAttributeValue(\"newState\", $lnewState)\r\n\t\t$moop.Execute()\r\n\t}\r\n\tcatch\r\n\t{\r\n\t\t$errors + \"Error calling arr server $arrName $lwebfarmname $lsitebinding $Error[0].Exception.Message\"\r\n\t}\r\n\tfinally\r\n\t{\r\n\t\tif ($serverManager -ne $null)\r\n\t\t{\r\n\t\t\t$serverManager.Dispose()\r\n\t\t}\r\n\t}\r\n}\r\nif ($errors.Count -gt 0)\r\n{\r\n\tWrite-Error $errors\r\n\texit 1\r\n}\r\nelse\r\n{\r\n\tWrite-Output \"Finished arr state change\"\r\n}\r\n$ErrorActionPreference = \"Stop\""
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\"\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.Web.Administration\")\r\n\r\n# set up params\r\n$octopusUrl = $OctopusParameters['OctopusUrl']\r\n$apiKey = $OctopusParameters['ViewOnlyApiKey']\r\n$envId = $OctopusParameters['Octopus.Environment.Id']\r\n$roleName = \"arr-server\"\r\n$lwebfarmname = $OctopusParameters['WebFarmName']\r\n$lsitebinding = $OctopusParameters['ServerAddress']\r\n$lnewState = $OctopusParameters['ARRAction']\r\n\r\n# fetch ARR servers\r\n$envUrl = \"http://\" + $octopusUrl + \"/api/environments/\" + $envId + \"/machines\"\r\n$arrServers = ((Invoke-WebRequest -Uri $envUrl -Method Get -Headers @{\"X-Octopus-ApiKey\"=$apiKey}).Content | ConvertFrom-Json).Items | Where-Object { $_.Roles -eq $roleName }\r\n$arrServerNames = $machines | Select -ExpandProperty Name\r\n\r\n# start of add to load\r\n$ErrorActionPreference = \"SilentlyContinue\"\r\n[array]$errors\r\nforeach ($arrName in $arrServerNames)\r\n{\r\n\tWrite-Output \"Calling arr server $arrName $lwebfarmname $lsitebinding with new state $lnewState\"\r\n\t$serverManager = New-Object Microsoft.Web.Administration.ServerManager\r\n\t$serverManager = [Microsoft.Web.Administration.ServerManager]::OpenRemote($arrName)\r\n\ttry\r\n\t{\r\n\t\t$webFarm = $serverManager.GetApplicationHostConfiguration().GetSection(\"webFarms\").GetCollection() | Where-Object { $_.GetAttributeValue(\"name\") -eq $lwebfarmname }\r\n\t\t$serverInstance = $webFarm.GetCollection() | Where-Object { $_.GetAttributeValue(\"address\") -eq $lsitebinding }\r\n\t\t$moop = $serverInstance.GetChildElement(\"applicationRequestRouting\").Methods[\"SetState\"].CreateInstance()\r\n\t\t$moop.Input.SetAttributeValue(\"newState\", $lnewState)\r\n\t\t$moop.Execute()\r\n\t}\r\n\tcatch\r\n\t{\r\n\t\t$errors + \"Error calling arr server $arrName $lwebfarmname $lsitebinding $Error[0].Exception.Message\"\r\n\t}\r\n\tfinally\r\n\t{\r\n\t\tif ($serverManager -ne $null)\r\n\t\t{\r\n\t\t\t$serverManager.Dispose()\r\n\t\t}\r\n\t}\r\n}\r\nif ($errors.Count -gt 0)\r\n{\r\n\tWrite-Error $errors\r\n\texit 1\r\n}\r\nelse\r\n{\r\n\tWrite-Output \"Finished arr state change\"\r\n}\r\n$ErrorActionPreference = \"Stop\""
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -13,37 +13,43 @@
       "Name": "ARRAction",
       "Label": "ARR webfarm instance action",
       "HelpText": "Actions available:\n- Start\n- GracefulStop\n- ForcefulStop\n- Drain",
-      "DefaultValue": ""
+      "DefaultValue": "Start"
     },
     {
       "Name": "WebFarmName",
-      "Label": "WebFarm name in ARR",
-      "HelpText": "This can be different to the website name in IIS",
+      "Label": "ARR webfarm name",
+      "HelpText": null,
       "DefaultValue": null
     },
     {
       "Name": "ViewOnlyApiKey",
-      "Label": "An Octopus API key with view only permissions",
-      "HelpText": "This script talks to OctopusDeploy via the API to fetch all ARR servers in an environment. It requires view only access.",
+      "Label": null,
+      "HelpText": null,
       "DefaultValue": null
     },
     {
-      "Name": "OctopusArrRollName",
-      "Label": "The server role name used to identify ARR servers",
-      "HelpText": "Have the ARR servers set up in your environments with a specific role.",
+      "Name": "ProxyRollName",
+      "Label": null,
+      "HelpText": null,
       "DefaultValue": "arr-server"
     },
     {
       "Name": "OctopusUrl",
-      "Label": "Url to talk to the OctopusServer",
+      "Label": null,
       "HelpText": null,
       "DefaultValue": ""
+    },
+    {
+      "Name": "ServerAddress",
+      "Label": "Address for the server that's in the ARR WebFarm",
+      "HelpText": "",
+      "DefaultValue": null
     }
   ],
-  "LastModifiedOn": "2014-05-28T11:55:23.003+00:00",
+  "LastModifiedOn": "2014-05-28T13:36:34.200+00:00",
   "LastModifiedBy": "BushiDan",
   "$Meta": {
-    "ExportedAt": "2014-05-28T11:55:24.162Z",
+    "ExportedAt": "2014-05-28T13:36:38.573Z",
     "OctopusVersion": "2.4.5.46",
     "Type": "ActionTemplate"
   }
