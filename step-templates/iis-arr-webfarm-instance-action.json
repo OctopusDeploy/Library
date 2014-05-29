@@ -1,55 +1,55 @@
 {
   "Id": "ActionTemplates-1",
-  "Name": "ARR WebFarm Action",
-  "Description": "Call ARR servers with a webfarm instance action",
+  "Name": "IIS ARR webfarm server action",
+  "Description": "Allows adding and removing load from IIS ARR webfarm servers. \n\nTo use this template you need the deployment tentacles to be able to reach the OctopusDeploy server via the API.\n\nARR is a reverse proxy/load balancer module that can be installed in to IIS. It uses the url rewrite module for it's rules.\n\nAdd the ARR servers in to the environment using a specific role \"arr-server\".\n\nThe template will query OctopusDeploy via its API to find all current ARR servers which allows for auto-scaling of ARR servers as well.\n\nWorks best when doing rolling deployments over load balanced servers.",
   "ActionType": "Octopus.Script",
-  "Version": 7,
+  "Version": 19,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\"\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.Web.Administration\")\r\n\r\n# set up params\r\n$octopusUrl = $OctopusParameters['OctopusUrl']\r\n$apiKey = $OctopusParameters['ViewOnlyApiKey']\r\n$envId = $OctopusParameters['Octopus.Environment.Id']\r\n$roleName = \"arr-server\"\r\n$lwebfarmname = $OctopusParameters['WebFarmName']\r\n$lsitebinding = $OctopusParameters['ServerAddress']\r\n$lnewState = $OctopusParameters['ARRAction']\r\n\r\n# fetch ARR servers\r\n$envUrl = \"http://\" + $octopusUrl + \"/api/environments/\" + $envId + \"/machines\"\r\n$arrServers = ((Invoke-WebRequest -Uri $envUrl -Method Get -Headers @{\"X-Octopus-ApiKey\"=$apiKey}).Content | ConvertFrom-Json).Items | Where-Object { $_.Roles -eq $roleName }\r\n$arrServerNames = $machines | Select -ExpandProperty Name\r\n\r\n# start of add to load\r\n$ErrorActionPreference = \"SilentlyContinue\"\r\n[array]$errors\r\nforeach ($arrName in $arrServerNames)\r\n{\r\n\tWrite-Output \"Calling arr server $arrName $lwebfarmname $lsitebinding with new state $lnewState\"\r\n\t$serverManager = New-Object Microsoft.Web.Administration.ServerManager\r\n\t$serverManager = [Microsoft.Web.Administration.ServerManager]::OpenRemote($arrName)\r\n\ttry\r\n\t{\r\n\t\t$webFarm = $serverManager.GetApplicationHostConfiguration().GetSection(\"webFarms\").GetCollection() | Where-Object { $_.GetAttributeValue(\"name\") -eq $lwebfarmname }\r\n\t\t$serverInstance = $webFarm.GetCollection() | Where-Object { $_.GetAttributeValue(\"address\") -eq $lsitebinding }\r\n\t\t$moop = $serverInstance.GetChildElement(\"applicationRequestRouting\").Methods[\"SetState\"].CreateInstance()\r\n\t\t$moop.Input.SetAttributeValue(\"newState\", $lnewState)\r\n\t\t$moop.Execute()\r\n\t}\r\n\tcatch\r\n\t{\r\n\t\t$errors + \"Error calling arr server $arrName $lwebfarmname $lsitebinding $Error[0].Exception.Message\"\r\n\t}\r\n\tfinally\r\n\t{\r\n\t\tif ($serverManager -ne $null)\r\n\t\t{\r\n\t\t\t$serverManager.Dispose()\r\n\t\t}\r\n\t}\r\n}\r\nif ($errors.Count -gt 0)\r\n{\r\n\tWrite-Error $errors\r\n\texit 1\r\n}\r\nelse\r\n{\r\n\tWrite-Output \"Finished arr state change\"\r\n}\r\n$ErrorActionPreference = \"Stop\""
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\"\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.Web.Administration\")\r\n\r\n# set up params\r\n$octopusUrl = $OctopusParameters['OctopusUrl']\r\n$apiKey = $OctopusParameters['OctopusViewOnlyApiKey']\r\n$envId = $OctopusParameters['Octopus.Environment.Id']\r\n$roleName = $OctopusParameters['ArrServerRoleName']\r\n$webFarmName = $OctopusParameters['WebFarmName']\r\n$siteBinding = $OctopusParameters['ServerAddress']\r\n$newState = $OctopusParameters['ARRAction']\r\n\r\n# fetch ARR servers\r\n$envUrl = $octopusUrl + \"api/environments/\" + $envId + \"/machines\"\r\n$response = Invoke-WebRequest -Uri $envUrl -Method Get -UseBasicParsing -Headers @{\"X-Octopus-ApiKey\"=$apiKey}\r\n$arrServers = ($response.Content | ConvertFrom-Json).Items | Where-Object { $_.Roles -eq $roleName }\r\n$arrServerNames = $arrServers | Select -ExpandProperty Name\r\n\r\nif ($arrServerNames -eq 0)\r\n{\r\n    Write-Error \"No arr-servers where found in the environment\"\r\n    exit 1\r\n}\r\n\r\n# start of add to load\r\n$ErrorActionPreference = \"SilentlyContinue\"\r\n[array]$errors\r\nforeach ($arrName in $arrServerNames)\r\n{\r\n\tWrite-Output \"Calling arr server $arrName $webFarmName $siteBinding with new state $newState\"\r\n\t$serverManager = New-Object Microsoft.Web.Administration.ServerManager\r\n\t$serverManager = [Microsoft.Web.Administration.ServerManager]::OpenRemote($arrName)\r\n\ttry\r\n\t{\r\n\t\t$webFarm = $serverManager.GetApplicationHostConfiguration().GetSection(\"webFarms\").GetCollection() | Where-Object { $_.GetAttributeValue(\"name\") -eq $webFarmName }\r\n\t\t$serverInstance = $webFarm.GetCollection() | Where-Object { $_.GetAttributeValue(\"address\") -eq $siteBinding }\r\n\t\t$setStateMethod = $serverInstance.GetChildElement(\"applicationRequestRouting\").Methods[\"SetState\"].CreateInstance()\r\n\t\t$setStateMethod.Input.SetAttributeValue(\"newState\", $newState)\r\n\t\t$setStateMethod.Execute()\r\n\t}\r\n\tcatch\r\n\t{\r\n\t\t$errors + \"Error calling arr server $arrName $webFarmName $siteBinding $Error[0].Exception.Message\"\r\n\t}\r\n\tfinally\r\n\t{\r\n\t\tif ($serverManager -ne $null)\r\n\t\t{\r\n\t\t\t$serverManager.Dispose()\r\n\t\t}\r\n\t}\r\n}\r\nif ($errors.Count -gt 0)\r\n{\r\n\tWrite-Error $errors\r\n\texit 1\r\n}\r\nelse\r\n{\r\n\tWrite-Output \"Finished arr state change\"\r\n}\r\n$ErrorActionPreference = \"Stop\""
   },
   "SensitiveProperties": {},
   "Parameters": [
     {
-      "Name": "ARRAction",
-      "Label": "ARR webfarm instance action",
-      "HelpText": "Actions available:\n- Start\n- GracefulStop\n- ForcefulStop\n- Drain",
-      "DefaultValue": "Start"
+      "Name": "LoadAction",
+      "Label": "LoadAction",
+      "HelpText": "Allows adding and removing load from the ARR WebFarm server instance\n\nActions available:\n- Start\n- GracefulStop\n- ForcefulStop\n- Drain",
+      "DefaultValue": ""
     },
     {
       "Name": "WebFarmName",
       "Label": "ARR webfarm name",
-      "HelpText": null,
+      "HelpText": "The IIS ARR WebFarm name, this can be different to the actual IIS Site name.",
       "DefaultValue": null
     },
     {
-      "Name": "ViewOnlyApiKey",
-      "Label": null,
-      "HelpText": null,
+      "Name": "OctopusViewOnlyApiKey",
+      "Label": "OctopusViewOnlyApiKey",
+      "HelpText": "A view only OctopusDeploy API key, this is used to query for servers marked with the arr-server role.\n\nCan be stored securely in a variable set.",
       "DefaultValue": null
     },
     {
-      "Name": "ProxyRollName",
-      "Label": null,
+      "Name": "ArrServerRoleName",
+      "Label": "ARR sever environment role name",
       "HelpText": null,
       "DefaultValue": "arr-server"
     },
     {
       "Name": "OctopusUrl",
-      "Label": null,
-      "HelpText": null,
-      "DefaultValue": ""
+      "Label": "Octopus Server url",
+      "HelpText": "Used to gain access back to the OctopusDeploy server using the API. This runs on the deploy tentacle so bi-direction communication is required.\n\nie\nhttp://octopus/",
+      "DefaultValue": "http://octopus/"
     },
     {
       "Name": "ServerAddress",
-      "Label": "Address for the server that's in the ARR WebFarm",
-      "HelpText": "",
-      "DefaultValue": null
+      "Label": "ServerAddress for the ARR webfarm server instance",
+      "HelpText": "ie \n1.1.1.1",
+      "DefaultValue": ""
     }
   ],
-  "LastModifiedOn": "2014-05-28T13:36:34.200+00:00",
+  "LastModifiedOn": "2014-05-29T13:15:31.597+00:00",
   "LastModifiedBy": "BushiDan",
   "$Meta": {
-    "ExportedAt": "2014-05-28T13:36:38.573Z",
+    "ExportedAt": "2014-05-29T13:21:12.968Z",
     "OctopusVersion": "2.4.5.46",
     "Type": "ActionTemplate"
   }
