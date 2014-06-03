@@ -1,0 +1,50 @@
+{
+  "Id": "ActionTemplates-13",
+  "Name": "Windows - Map Network Drive",
+  "Description": "Map a network drive.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "#http://gallery.technet.microsoft.com/scriptcenter/Powershell-Map-utility-to-444c1c95\r\nfunction Map ($computer){ \r\n \r\nfunction GetDriveType($DriveCode) { \r\n    switch ($DriveCode) \r\n        { 0 {\"Unknown\"}  \r\n        1 {\"No root directory\"}  \r\n        2 {\"Removable Disk\"}  \r\n        3 {\"Local Disk\"}  \r\n        4 {\"Network Drive\"}  \r\n        5 {\"Compact Disk\"}  \r\n        6 {\"RAM Disk\"}  \r\n        } # end switch \r\n    } # end function GetDriveType \r\n \r\nif ($computer -eq $null) {$computer='localhost'} \r\nGet-WmiObject -Class win32_logicaldisk -ComputerName $computer | select DeviceID, VolumeName, ` \r\n    @{n='DriveType'; e={GetDriveType($_.driveType)}}, ` \r\n    @{n='Size';e={\"{0:F2} GB\" -f ($_.Size / 1gb)}}, `     \r\n    @{n='FreeSpace';e={\"{0:F2} GB\" -f ($_.FreeSpace / 1gb)}} | Format-Table \r\n \r\n} \r\n\r\n$map = new-object -ComObject WScript.Network\r\nif (!(Test-Path $DriveLetter))\r\n{\r\n\t$map.MapNetworkDrive($DriveLetter, $MapPath, $MapPersist, $MapUser, $MapPass)\r\n\tWrite-Host \"Drive $DriveLetter mapped to $MapPath as user $MapUser.\"\r\n}\r\nelse\r\n{\r\n    Write-Host \"Drive $DriveLetter already in use.\"\r\n}\r\n\r\nMap ."
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "DriveLetter",
+      "Label": "Drive Letter",
+      "HelpText": "Enter a drive letter. Example \"H:\"",
+      "DefaultValue": null
+    },
+    {
+      "Name": "MapPath",
+      "Label": "Share/Server Path",
+      "HelpText": "Enter the share path.  Example \"\\\\server\\share\"",
+      ""DefaultValue": null
+    },
+    {
+      "Name": "MapPersist",
+      "Label": "Persist the mapping?",
+      "HelpText": "Persist the map.  Example \"True or False\"",
+      "DefaultValue": null
+    },
+    {
+      "Name": "MapUser",
+      "Label": "User to map drive as",
+      "HelpText": "Enter a user to map the drive as.  Example \"domain\\user\"",
+      "DefaultValue": null
+    },
+    {
+      "Name": "MapPass",
+      "Label": "Enter the password for the user",
+      "HelpText": "Enter the password for the user.  Example \"P@$$w0rd\"",
+      "DefaultValue": null
+    }
+  ],
+  "LastModifiedOn": "2014-05-19T19:57:03.481+00:00",
+  "LastModifiedBy": "Severswoed",
+  "$Meta": {
+    "ExportedAt": "2014-05-19T20:21:10.373Z",
+    "OctopusVersion": "2.4.5.46",
+    "Type": "ActionTemplate"
+  }
+}

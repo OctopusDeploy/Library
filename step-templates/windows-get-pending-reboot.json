@@ -1,0 +1,26 @@
+{
+  "Id": "ActionTemplates-65",
+  "Name": "Windows - Get Pending Reboot",
+  "Description": "Get pending reboot status from computer.",
+  "ActionType": "Octopus.Script",
+  "Version": 0,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$TempErrAct = $ErrorActionPreference \r\n    $ErrorActionPreference = \"Stop\"   \r\n    Foreach ($Computer in $ComputerName) \r\n      { \r\n        Try \r\n          { \r\n            # Setting pending values to false to cut down on the number of else statements \r\n            $PendFileRename,$Pending,$SCCM = $false,$false,$false \r\n\t\t\t\r\n            # Setting CBSRebootPend to null since not all versions of Windows has this value \r\n            $CBSRebootPend = $null \r\n\t\t\t\r\n            # Querying WMI for build version \r\n            $WMI_OS = Get-WmiObject -Class Win32_OperatingSystem -Property BuildNumber, CSName -ComputerName $Computer \r\n\t\t\t\r\n            # Making registry connection to the local/remote computer \r\n            $RegCon = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey([Microsoft.Win32.RegistryHive]\"LocalMachine\",$Computer) \r\n\t\t\t\r\n            # If Vista/2008 & Above query the CBS Reg Key \r\n            If ($WMI_OS.BuildNumber -ge 6001) \r\n              { \r\n                $RegSubKeysCBS = $RegCon.OpenSubKey(\"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\\").GetSubKeyNames() \r\n                $CBSRebootPend = $RegSubKeysCBS -contains \"RebootPending\" \r\n              }#End If ($WMI_OS.BuildNumber -ge 6001) \r\n\t\t\t  \r\n            # Query WUAU from the registry \r\n            $RegWUAU = $RegCon.OpenSubKey(\"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\\") \r\n            $RegWUAURebootReq = $RegWUAU.GetSubKeyNames() \r\n            $WUAURebootReq = $RegWUAURebootReq -contains \"RebootRequired\" \r\n\t\t\t\r\n            # Query PendingFileRenameOperations from the registry \r\n            $RegSubKeySM = $RegCon.OpenSubKey(\"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\\") \r\n            $RegValuePFRO = $RegSubKeySM.GetValue(\"PendingFileRenameOperations\",$null) \r\n\t\t\t\r\n            # Closing registry connection \r\n            $RegCon.Close() \r\n\t\t\t\r\n            # If PendingFileRenameOperations has a value set $RegValuePFRO variable to $true \r\n            If ($RegValuePFRO) \r\n              { \r\n                $PendFileRename = $true \r\n              }#End If ($RegValuePFRO) \r\n           \r\n            # If any of the variables are true, set $Pending variable to $true \r\n            If ($CBSRebootPend -or $WUAURebootReq -or $PendFileRename) \r\n              { \r\n                $Pending = $true \r\n              }#End If ($CBS -or $WUAU -or $PendFileRename) \r\n            # Creating Custom PSObject and Select-Object Splat \r\n\t\t\t$SelectSplat = @{ \r\n\t\t\t    Property=('Computer','CBServicing','WindowsUpdate','PendFileRename','PendFileRenVal','RebootPending') \r\n\t\t\t    } \r\n            New-Object -TypeName PSObject -Property @{ \r\n                Computer=$WMI_OS.CSName \r\n                CBServicing=$CBSRebootPend \r\n                WindowsUpdate=$WUAURebootReq \r\n                PendFileRename=$PendFileRename \r\n                PendFileRenVal=$RegValuePFRO \r\n                RebootPending=$Pending \r\n                } | Select-Object @SelectSplat \r\n          }#End Try \r\n        Catch \r\n          { \r\n            Write-Warning \"$Computer`: $_\" \r\n            # If $ErrorLog, log the file to a user specified location/path \r\n            If ($ErrorLog) \r\n              { \r\n                Out-File -InputObject \"$Computer`,$_\" -FilePath $ErrorLog -Append \r\n              }#End If ($ErrorLog) \r\n          }#End Catch \r\n      }#End Foreach ($Computer in $ComputerName) \r\n\t  $ErrorActionPreference = $TempErrAct "
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ComputerName",
+      "Label": "Computer Name",
+      "HelpText": "Computer Name to get pending reboot status from.",
+      "DefaultValue": null
+    }
+  ],
+  "LastModifiedOn": "2014-05-30T20:32:02.810+00:00",
+  "LastModifiedBy": "Severswoed",
+  "$Meta": {
+    "ExportedAt": "2014-05-30T20:34:01.920Z",
+    "OctopusVersion": "2.4.7.85",
+    "Type": "ActionTemplate"
+  }
+}
