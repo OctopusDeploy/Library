@@ -12,6 +12,12 @@ module.factory('library', function(stepTemplates) {
 
   var items = _.chain(stepTemplates)
     .map(function(t) {
+      if (t.Properties) {
+        var script = t.Properties['Octopus.Action.Script.ScriptBody'];
+        if (script) {
+          t.Properties['Octopus.Action.Script.ScriptBody'] = script.replace(/(\r\n)/gm, '\n');
+        }
+      }
       return {
         Id: makeId(t.$Meta.Type, t.Name),
         Slug: makeSlug(t.Name),
