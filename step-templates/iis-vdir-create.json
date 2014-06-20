@@ -1,0 +1,47 @@
+{
+  "Id": "ActionTemplates-161",
+  "Name": "IIS Virtual Directory - Create",
+  "Description": "Create an IIS virtual directory.",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "## --------------------------------------------------------------------------------------\r\n## Input\r\n## --------------------------------------------------------------------------------------\r\n\r\n$virtualPath = $OctopusParameters['VirtualPath']\r\n$physicalPath = $OctopusParameters['PhysicalPath']\r\n$parentSite = $OctopusParameters['ParentSite']\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Helpers\r\n## --------------------------------------------------------------------------------------\r\n# Helper for validating input parameters\r\nfunction Validate-Parameter([string]$foo, [string[]]$validInput, $parameterName) {\r\n    Write-Host \"${parameterName}: $foo\"\r\n    if (! $foo) {\r\n        throw \"No value was set for $parameterName, and it cannot be empty\"\r\n    }\r\n    \r\n    if ($validInput) {\r\n        if (! $validInput -contains $foo) {\r\n            throw \"'$input' is not a valid input for '$parameterName'\"\r\n        }\r\n    }\r\n    \r\n}\r\n\r\n# Helper to run a block with a retry if things go wrong\r\n$maxFailures = 5\r\n$sleepBetweenFailures = Get-Random -minimum 1 -maximum 4\r\nfunction Execute-WithRetry([ScriptBlock] $command) {\r\n\t$attemptCount = 0\r\n\t$operationIncomplete = $true\r\n\r\n\twhile ($operationIncomplete -and $attemptCount -lt $maxFailures) {\r\n\t\t$attemptCount = ($attemptCount + 1)\r\n\r\n\t\tif ($attemptCount -ge 2) {\r\n\t\t\tWrite-Output \"Waiting for $sleepBetweenFailures seconds before retrying...\"\r\n\t\t\tStart-Sleep -s $sleepBetweenFailures\r\n\t\t\tWrite-Output \"Retrying...\"\r\n\t\t}\r\n\r\n\t\ttry {\r\n\t\t\t& $command\r\n\r\n\t\t\t$operationIncomplete = $false\r\n\t\t} catch [System.Exception] {\r\n\t\t\tif ($attemptCount -lt ($maxFailures)) {\r\n\t\t\t\tWrite-Output (\"Attempt $attemptCount of $maxFailures failed: \" + $_.Exception.Message)\r\n\t\t\t\r\n\t\t\t}\r\n\t\t\telse {\r\n\t\t\t    throw \"Failed to execute command\"\r\n\t\t\t}\r\n\t\t}\r\n\t}\r\n}\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Configuration\r\n## --------------------------------------------------------------------------------------\r\nValidate-Parameter $virtualPath -parameterName \"Virtual path\"\r\nValidate-Parameter $physicalPath -parameterName \"Physical path\"\r\nValidate-Parameter $parentSite -parameterName \"Parent site\"\r\n\r\nAdd-PSSnapin WebAdministration -ErrorAction SilentlyContinue\r\nImport-Module WebAdministration -ErrorAction SilentlyContinue\r\n\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Run\r\n## --------------------------------------------------------------------------------------\r\n\r\nWrite-Host \"Getting web site $parentSite\"\r\n$site = Get-Website -name $parentSite\r\nif (!$site) {\r\n    throw \"The web site '$parentSite' does not exist. Please create the site first.\"\r\n}\r\n\r\n$parts = $virtualPath -split \"[/\\\\]\"\r\n$name = \"\"\r\n\r\nfor ($i = 0; $i -lt $parts.Length; $i++) {\r\n    $name = $name + \"/\" + $parts[$i]\r\n    $name = $name.TrimStart('/').TrimEnd('/')\r\n    if ($i -eq $parts.Length - 1) {\r\n        \r\n    }\r\n    elseif ([string]::IsNullOrEmpty($name) -eq $false -and $name -ne \"/\") {\r\n        Write-Host \"Ensuring parent exists: $name\"\r\n\r\n        $app = Get-WebApplication -Name $name -Site $parentSite\r\n\r\n        if (!$app) {\r\n            $vdir = Get-WebVirtualDirectory -Name $name -site $parentSite\r\n            if (!$vdir) {\r\n                throw \"The application or virtual directory '$name' does not exist\"\r\n            }\r\n        }\r\n    }\r\n}\r\n\r\n$existing = Get-WebVirtualDirectory -site $parentSite -Name $name\r\n\r\n\r\nExecute-WithRetry { \r\n    if (!$existing) {\r\n        Write-Host \"Creating virtual directory '$name'\"\r\n        New-WebVirtualDirectory -Site $parentSite -Name $name -PhysicalPath $physicalPath\r\n        Write-Host \"Virtual directory created\"\r\n    } else {\r\n        Write-Host \"The virtual directory '$name' already exists. Updating physical path:\"\r\n\r\n        Set-ItemProperty IIS:\\Sites\\$parentSite\\$name -name physicalPath -value $physicalPath\r\n\r\n        Write-Host \"Physical path changed to: $physicalPath\"\r\n    }\r\n}"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "VirtualPath",
+      "Label": "Virtual path",
+      "HelpText": "The name of the application to create. For example, to serve an application that will be available at `/myapp`, enter `myapp`. To create an application under a parent virtual directory or application, separate with slashes - for example: `/applications/myapp`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "PhysicalPath",
+      "Label": "Physical path",
+      "HelpText": "Physical folder that the application will serve files from. Example: `C:\\MyApp`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ParentSite",
+      "Label": "Parent site",
+      "HelpText": "The name of the IIS web site to attach the application to. For example, to put the application under the default web site, enter:\n\n    Default Web Site",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2014-06-18T08:58:49.337+00:00",
+  "LastModifiedBy": "paulstovell",
+  "$Meta": {
+    "ExportedAt": "2014-06-18T09:11:37.480Z",
+    "OctopusVersion": "2.5.0.0",
+    "Type": "ActionTemplate"
+  }
+}
