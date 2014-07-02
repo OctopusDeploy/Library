@@ -34,7 +34,7 @@ Here's a **checklist** to consider:
 * Do scripts in the template validate required arguments and fail by returning a non-zero exit code when things go wrong?
 * Do scripts in the template produce worthwhile status messages as they execute?
 * Are you happy to contribute your template under the terms of the [license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE)? If you produced the template while working for your employer please obtain written permission from them before submitting it here.
-* Are the default values of paramters validly applicable in other user's environments? Don't use the default values as examples if the user will have to change them
+* Are the default values of parameters validly applicable in other user's environments? Don't use the default values as examples if the user will have to change them
 
 If you need help, feedback or a sanity check before investing time in a contribution, feel free to raise an issue on the tracker to discuss your idea first.
 

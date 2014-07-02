@@ -1,0 +1,50 @@
+{
+  "Id": "ActionTemplates-1",
+  "Name": "SQL - Backup Database",
+  "Description": "Backup a MS SQL Server database to the file system.",
+  "ActionType": "Octopus.Script",
+  "Version": 7,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$ServerName = $OctopusParameters['Server']\r\n$DatabaseName = $OctopusParameters['Database']\r\n$BackupDirectory = $OctopusParameters['OutputDirectory']\r\n\r\n$SqlLogin = $OctopusParameters['SqlLogin']\r\n$SqlPassword = $OctopusParameters['$SqlPassword']\r\n\r\n$ErrorActionPreference = \"Stop\"\r\n\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SMO\") | Out-Null\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SmoExtended\") | Out-Null\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.ConnectionInfo\") | Out-Null\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SmoEnum\") | Out-Null\r\n \r\n$server = New-Object Microsoft.SqlServer.Management.Smo.Server $ServerName\r\n\r\nif ($SqlLogin -ne $null) {\r\n\r\n    if ($SqlPassword -eq $null) {\r\n        throw \"SQL Password must be specified when using SQL authentication.\"\r\n    }\r\n    \r\n    $server.ConnectionContext.LoginSecure = $false\r\n    $server.ConnectionContext.Login = $SqlLogin\r\n    $server.ConnectionContext.Password = $SqlPassword\r\n    \r\n    Write-Host \"Connecting to server using SQL authentication as $SqlLogin.\"\r\n    $server = New-Object Microsoft.SqlServer.Management.Smo.Server $server.ConnectionContext\r\n\r\n}\r\nelse {\r\n    Write-Host \"Connecting to server using Windows authentication.\"\r\n}\r\n\r\ntry {\r\n    $server.ConnectionContext.Connect()\r\n} catch {\r\n    Write-Error \"An error occurred connecting to the database server!`r`n$($_.Exception.ToString())\"\r\n}\r\n\r\n$database = $server.Databases | Where-Object { $_.Name -eq $DatabaseName }\r\n\r\nif ($database -eq $null) {\r\n    Write-Error \"Database $DatabaseName does not exist on $ServerName\"\r\n}\r\n\r\n$dbName = $database.Name\r\n \r\n$timestamp = Get-Date -format yyyy-MM-dd-HHmmss\r\n$targetPath = Join-Path $BackupDirectory ($dbName + \"_\" + $timestamp + \".bak\")\r\n\r\nif (-not (Test-Path $BackupDirectory)) {\r\n    Write-Host \"Creating output directory `\"$BackupDirectory`\".\"\r\n    New-Item $BackupDirectory -ItemType Directory | Out-Null\r\n}\r\n\r\nWrite-Host \"Attempting to backup database $ServerName.$dbName to `\"$targetPath`\".\"\r\n\r\n$smoBackup = New-Object Microsoft.SqlServer.Management.Smo.Backup\r\n$smoBackup.Action = \"Database\"\r\n$smoBackup.BackupSetDescription = \"Full Backup of \" + $dbName\r\n$smoBackup.BackupSetName = $dbName + \" Backup\"\r\n$smoBackup.Database = $dbName\r\n$smoBackup.MediaDescription = \"Disk\"\r\n$smoBackup.Devices.AddDevice($targetPath, \"File\")\r\n\r\ntry {\r\n    $smoBackup.SqlBackup($server)\r\n} catch {\r\n    Write-Error \"An error occurred backing up the database!`r`n$($_.Exception.ToString())\"\r\n}\r\n \r\nWrite-Host \"Backup completed successfully.\"\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Server",
+      "Label": "Server",
+      "HelpText": "The name of the SQL Server instance that the database resides in.",
+      "DefaultValue": "."
+    },
+    {
+      "Name": "Database",
+      "Label": "Database",
+      "HelpText": "The name of the database to back up.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "OutputDirectory",
+      "Label": "Output directory",
+      "HelpText": "The output directory to drop the database backup into.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "SqlLogin",
+      "Label": "SQL login",
+      "HelpText": "The SQL auth login to connect with. If specified, the SQL Password must also be entered.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "SqlPassword",
+      "Label": "SQL password",
+      "HelpText": "The password for the SQL auth login to connect with. Only used if SQL Login is specified.",
+      "DefaultValue": null
+    }
+  ],
+  "LastModifiedOn": "2014-06-24T02:48:39.211+00:00",
+  "LastModifiedBy": "ducas",
+  "$Meta": {
+    "ExportedAt": "2014-06-24T03:33:34.065Z",
+    "OctopusVersion": "2.4.9.167",
+    "Type": "ActionTemplate"
+  }
+}
