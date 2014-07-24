@@ -1,0 +1,29 @@
+{
+  "Id": "ActionTemplates-33",
+  "Name": "IIS Application Pool - Delete",
+  "Description": "Deletes an IIS Application Pool. \nCAUTION: Delete will proceed even if applications are using the Application Pool.",
+  "ActionType": "Octopus.Script",
+  "Version": 10,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "## --------------------------------------------------------------------------------------\r\n## Input\r\n## --------------------------------------------------------------------------------------\r\n\r\n$applicationPoolName = $OctopusParameters['ApplicationPoolName']\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Helpers\r\n## --------------------------------------------------------------------------------------\r\n# Helper for validating input parameters\r\nfunction Validate-Parameter([string]$foo, [string[]]$validInput, $parameterName) {\r\n    IF (! $parameterName -contains \"Password\") \r\n    { \r\n        Write-Host \"${parameterName}: $foo\" \r\n    }\r\n    if (! $foo) {\r\n        throw \"No value was set for $parameterName, and it cannot be empty\"\r\n    }\r\n}\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Configuration\r\n## --------------------------------------------------------------------------------------\r\nValidate-Parameter $applicationPoolName -parameterName \"Application Pool Name\"\r\n\r\n#Load Web Admin DLL\r\n[System.Reflection.Assembly]::LoadFrom( \"C:\\windows\\system32\\inetsrv\\Microsoft.Web.Administration.dll\" )\r\n\r\nAdd-PSSnapin WebAdministration -ErrorAction SilentlyContinue\r\nImport-Module WebAdministration -ErrorAction SilentlyContinue\r\n\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Run\r\n## --------------------------------------------------------------------------------------\r\n\r\n$iis = (New-Object Microsoft.Web.Administration.ServerManager)\r\n\r\n$pool = $iis.ApplicationPools.Where({$_.Name -eq $applicationPoolName}) | Select-Object -First 1\r\n\r\nIF ($pool -eq $null)\r\n{\r\n    Write-Output \"Could not find an Application Pool named '$applicationPoolName'\"\r\n}\r\nELSE\r\n{\r\n    Write-Output \"Removing Application Pool '$applicationPoolName'\"\r\n    $iis.ApplicationPools.Remove($pool)\r\n    $iis.CommitChanges()\r\n}\r\n\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ApplicationPoolName",
+      "Label": "Application Pool Name",
+      "HelpText": "The name of the application pool that the application will run under.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2014-07-24T20:51:48.154+00:00",
+  "LastModifiedBy": "trosenbaum@sbs.local",
+  "$Meta": {
+    "ExportedAt": "2014-07-24T21:00:29.105Z",
+    "OctopusVersion": "2.5.4.280",
+    "Type": "ActionTemplate"
+  }
+}
