@@ -1,44 +1,56 @@
 {
-  "Id": "ActionTemplates-3",
-  "Name": "Hipchat - Notify",
-  "Description": "Notify a HipChat room of a deployment outcome.",
+  "Id": "ActionTemplates-1",
+  "Name": "HipChat - Notify",
+  "Description": "Notifies a HipChat room of a deployment outcome.",
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 0,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "#---------\r\n$apitoken = $OctopusParameters['AuthToken']\r\n$roomid = $OctopusParameters['RoomId']\r\n$messageText = \"(successful)\"\r\n$color = 'green'\r\n\r\nif ($Octopus.Deployment.Error) {\r\n        $messageText = \"(failed)\"\r\n        $color = 'red'\r\n}\r\n\r\n$message = New-Object PSObject \r\n$message | Add-Member -MemberType NoteProperty -Name color -Value $color\r\n$message | Add-Member -MemberType NoteProperty -Name message -Value \"$messageText $($OctopusParameters['Octopus.Project.Name']) [v$($OctopusParameters['Octopus.Release.Number'])] deployed to $($OctopusParameters['Octopus.Environment.Name'])  on $($OctopusParameters['Octopus.Machine.Name'])\"\r\n$message | Add-Member -MemberType NoteProperty -Name notify -Value $false\r\n$message | Add-Member -MemberType NoteProperty -Name message_format -Value text\r\n\r\n\r\nif ($OctopusParameters['NotificationText']) {\r\n    $message = $OctopusParameters['NotificationText']\r\n    $colour = $OctopusParameters['NotificationColor']\r\n}        \r\n\r\n#Do the HTTP POST to HipChat\r\n$uri = \"https://api.hipchat.com/v2/room/$roomid/notification?auth_token=$apitoken\"\r\n$postBody = ConvertTo-Json -InputObject $message\r\n$postStr = [System.Text.Encoding]::UTF8.GetBytes($postBody)\r\n\r\n$webRequest = [System.Net.WebRequest]::Create($uri)\r\n$webRequest.ContentType = \"application/json\"\r\n$webrequest.ContentLength = $postStr.Length\r\n$webRequest.Method = \"POST\"\r\n\r\n$requestStream = $webRequest.GetRequestStream()\r\n$requestStream.Write($postStr, 0,$postStr.length)\r\n$requestStream.Close()\r\n\r\n[System.Net.WebResponse] $resp = $webRequest.GetResponse()\r\n$rs = $resp.GetResponseStream()\r\n\r\n[System.IO.StreamReader] $sr = New-Object System.IO.StreamReader -argumentList $rs\r\n$sr.ReadToEnd()"
+    "Octopus.Action.Script.ScriptBody": "#--------- Notify-Hipchat\r\n$apitoken = $OctopusParameters['AuthToken']\r\n$roomid = $OctopusParameters['RoomId']\r\n$messageText = \"(successful)\"\r\n$color = 'green'\r\n\r\nif ($OctopusParameters['Octopus.Deployment.Error']) {\r\n    $messageText = \"(failed)\"\r\n    $color = 'red'\r\n}\r\n\r\n$message = New-Object PSObject \r\n$message | Add-Member -MemberType NoteProperty -Name color -Value $color\r\n$message | Add-Member -MemberType NoteProperty -Name message -Value \"$messageText $($OctopusParameters['Octopus.Project.Name']) [v$($OctopusParameters['Octopus.Release.Number'])] deployed to $($OctopusParameters['Octopus.Environment.Name'])  on $($OctopusParameters['Octopus.Machine.Name'])\"\r\n$message | Add-Member -MemberType NoteProperty -Name notify -Value $false\r\n$message | Add-Member -MemberType NoteProperty -Name message_format -Value text\r\n\r\nif ($OctopusParameters['NotificationText']) {\r\n    $message = $OctopusParameters['NotificationText']\r\n    $colour = $OctopusParameters['NotificationColor']\r\n}        \r\n\r\n#Do the HTTP POST to HipChat\r\n$uri = \"https://api.hipchat.com/v2/room/$roomid/notification?auth_token=$apitoken\"\r\n$postBody = ConvertTo-Json -InputObject $message\r\n$postStr = [System.Text.Encoding]::UTF8.GetBytes($postBody)\r\n\r\n$webRequest = [System.Net.WebRequest]::Create($uri)\r\n$webRequest.ContentType = \"application/json\"\r\n$webrequest.ContentLength = $postStr.Length\r\n$webRequest.Method = \"POST\"\r\n\r\n$requestStream = $webRequest.GetRequestStream()\r\n$requestStream.Write($postStr, 0,$postStr.length)\r\n$requestStream.Close()\r\n\r\n[System.Net.WebResponse] $resp = $webRequest.GetResponse()\r\n$rs = $resp.GetResponseStream()\r\n\r\n[System.IO.StreamReader] $sr = New-Object System.IO.StreamReader -argumentList $rs\r\n$sr.ReadToEnd()"
   },
   "SensitiveProperties": {},
   "Parameters": [
     {
       "Name": "AuthToken",
-      "Label": "Auth Token",
+      "Label": "API Auth Token",
       "HelpText": "HipChat authentication token for a user who can post notifications to rooms",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "RoomId",
       "Label": "Room",
       "HelpText": "The room name that you wish to post a notification to",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "NotificationText",
       "Label": "Notification Text",
-      "HelpText": "An optional notification value. If not supplied you will receive a notification taking the following form:\n\n(successful) Project [version] deployed to Environment on Machine\n(failed) Project [version] deployed to Environment on Machine",
-      "DefaultValue": null
+      "HelpText": "An optional text override for the notification. Default is: <(succeeded) or (failed)> <Project> v<Release> deployed to <Environment> on <Machine>",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "NotificationColor",
       "Label": "Notification Color",
       "HelpText": "The color for the notification for the room. Default messages will receive green success, and red failure.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-07-25T07:05:44.012+00:00",
-  "LastModifiedBy": "stephen.godbold",
+  "LastModifiedOn": "2014-07-29T01:53:13.319+00:00",
+  "LastModifiedBy": "stephengodbold",
   "$Meta": {
-    "ExportedAt": "2014-07-25T07:05:50.733Z",
-    "OctopusVersion": "2.4.10.235",
+    "ExportedAt": "2014-07-29T01:56:04.693Z",
+    "OctopusVersion": "2.5.5.318",
     "Type": "ActionTemplate"
   }
 }
