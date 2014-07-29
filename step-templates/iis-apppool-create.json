@@ -1,16 +1,16 @@
 {
   "Id": "ActionTemplates-6",
-  "Name": "IIS Application Pool - Create",
+  "Name": "IIS AppPool - Create",
   "Description": "Creates or Reconfigures an IIS Application Pool",
   "ActionType": "Octopus.Script",
-  "Version": 27,
+  "Version": 29,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "## --------------------------------------------------------------------------------------\r\n## Input\r\n## --------------------------------------------------------------------------------------\r\n\r\n$applicationPoolName = $OctopusParameters['ApplicationPoolName']\r\n\r\n$applicationPoolIdentityType = $OctopusParameters['ApplicationPoolIdentityType']\r\nIF ($applicationPoolIdentityType -eq 3)\r\n{\r\n    $applicationPoolIdentityUser = $OctopusParameters['ApplicationPoolIdentityUser']\r\n    $applicationPoolIdentityPassword = $OctopusParameters['ApplicationPoolIdentityPassword']\r\n}\r\n\r\n$applicationPoolAutoStart = $OctopusParameters['ApplicationPoolAutoStart']\r\n$applicationPoolEnable32BitAppOnWin64 = $OctopusParameters['ApplicationPoolEnable32BitAppOnWin64']\r\n\r\n$applicationPoolManagedRuntimeVersion = $OctopusParameters['ApplicationPoolManagedRuntimeVersion']\r\n$applicationPoolManagedPipelineMode = $OctopusParameters['ApplicationPoolManagedPipelineMode']\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Helpers\r\n## --------------------------------------------------------------------------------------\r\n# Helper for validating input parameters\r\nfunction Validate-Parameter([string]$foo, [string[]]$validInput, $parameterName) {\r\n    IF (! $parameterName -contains \"Password\") \r\n    { \r\n        Write-Host \"${parameterName}: $foo\" \r\n    }\r\n    if (! $foo) {\r\n        throw \"No value was set for $parameterName, and it cannot be empty\"\r\n    }\r\n}\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Configuration\r\n## --------------------------------------------------------------------------------------\r\nValidate-Parameter $applicationPoolName -parameterName \"Application Pool Name\"\r\nValidate-Parameter $applicationPoolIdentityType -parameterName \"Identity Type\"\r\nIF ($applicationPoolIdentityType -eq 3)\r\n{\r\n    Validate-Parameter $applicationPoolIdentityUser -parameterName \"Identity UserName\"\r\n    Validate-Parameter $applicationPoolIdentityPassword -parameterName \"Identity Password\"\r\n}\r\nValidate-Parameter $applicationPoolAutoStart -parameterName \"AutoStart\"\r\nValidate-Parameter $applicationPoolEnable32BitAppOnWin64 -parameterName \"Enable 32-Bit Apps on 64-bit Windows\"\r\n\r\nValidate-Parameter $applicationPoolManagedRuntimeVersion -parameterName \"Managed Runtime Version\"\r\nValidate-Parameter $applicationPoolManagedPipelineMode -parameterName \"Managed Pipeline Mode\"\r\n\r\n#Load Web Admin DLL\r\n[System.Reflection.Assembly]::LoadFrom( \"C:\\windows\\system32\\inetsrv\\Microsoft.Web.Administration.dll\" )\r\n\r\nAdd-PSSnapin WebAdministration -ErrorAction SilentlyContinue\r\nImport-Module WebAdministration -ErrorAction SilentlyContinue\r\n\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Run\r\n## --------------------------------------------------------------------------------------\r\n\r\n$iis = (New-Object Microsoft.Web.Administration.ServerManager)\r\n\r\n$pool = $iis.ApplicationPools.Where({$_.Name -eq $applicationPoolName}) | Select-Object -First 1\r\n\r\nIF ($pool -eq $null)\r\n{\r\n    Write-Output \"Creating Application Pool '$applicationPoolName'\"\r\n    $iis.ApplicationPools.Add($applicationPoolName)\r\n    $iis.CommitChanges()\r\n}\r\nELSE\r\n{\r\n    Write-Output \"Application Pool '$applicationPoolName' already exists, reconfiguring.\"   \r\n}\r\n\r\n$pool = $iis.ApplicationPools.Where({$_.Name -eq $applicationPoolName}) | Select-Object -First 1\r\n\r\nWrite-Output \"Setting: AutoStart = $applicationPoolAutoStart\"\r\n$pool.AutoStart = $applicationPoolAutoStart;\r\n\r\nWrite-Output \"Setting: Enable32BitAppOnWin64 = $applicationPoolEnable32BitAppOnWin64\"\r\n$pool.Enable32BitAppOnWin64 = $applicationPoolEnable32BitAppOnWin64;\r\n\r\nWrite-Output \"Setting: IdentityType = $applicationPoolIdentityType\"\r\n$pool.ProcessModel.IdentityType = $applicationPoolIdentityType\r\n\r\nIF ($applicationPoolIdentityType -eq 3)\r\n{\r\n    Write-Output \"Setting: UserName = $applicationPoolIdentityUser\"\r\n    $pool.ProcessModel.UserName = $applicationPoolIdentityUser\r\n    \r\n    Write-Output \"Setting: Password = [Omitted For Security]\"\r\n    $pool.ProcessModel.Password = $applicationPoolIdentityPassword\r\n}\r\n\r\nWrite-Output \"Setting: ManagedRuntimeVersion = $applicationPoolManagedRuntimeVersion\"\r\n$pool.ManagedRuntimeVersion = $applicationPoolManagedRuntimeVersion\r\n\r\nWrite-Output \"Setting: ManagedPipelineMode = $applicationPoolManagedPipelineMode\"\r\n$pool.ManagedPipelineMode = $applicationPoolManagedPipelineMode\r\n\r\n$iis.CommitChanges()\r\n"
+    "Octopus.Action.Script.ScriptBody": "## --------------------------------------------------------------------------------------\r\n## Input\r\n## --------------------------------------------------------------------------------------\r\n\r\n$appPoolName = $OctopusParameters['AppPoolName']\r\n\r\n$appPoolIdentityType = $OctopusParameters['AppPoolIdentityType']\r\nIF ($appPoolIdentityType -eq 3)\r\n{\r\n    $appPoolIdentityUser = $OctopusParameters['AppPoolIdentityUser']\r\n    $appPoolIdentityPassword = $OctopusParameters['AppPoolIdentityPassword']\r\n}\r\n\r\n$appPoolAutoStart = $OctopusParameters['AppPoolAutoStart']\r\n$appPoolEnable32BitAppOnWin64 = $OctopusParameters['AppPoolEnable32BitAppOnWin64']\r\n\r\n$appPoolManagedRuntimeVersion = $OctopusParameters['AppPoolManagedRuntimeVersion']\r\n$appPoolManagedPipelineMode = $OctopusParameters['AppPoolManagedPipelineMode']\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Helpers\r\n## --------------------------------------------------------------------------------------\r\n# Helper for validating input parameters\r\nfunction Validate-Parameter([string]$foo, [string[]]$validInput, $parameterName) {\r\n    IF (! $parameterName -contains \"Password\") \r\n    { \r\n        Write-Host \"${parameterName}: $foo\" \r\n    }\r\n    if (! $foo) {\r\n        throw \"No value was set for $parameterName, and it cannot be empty\"\r\n    }\r\n}\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Configuration\r\n## --------------------------------------------------------------------------------------\r\nValidate-Parameter $appPoolName -parameterName \"Application Pool Name\"\r\nValidate-Parameter $appPoolIdentityType -parameterName \"Identity Type\"\r\nIF ($appPoolIdentityType -eq 3)\r\n{\r\n    Validate-Parameter $appPoolIdentityUser -parameterName \"Identity UserName\"\r\n    Validate-Parameter $appPoolIdentityPassword -parameterName \"Identity Password\"\r\n}\r\nValidate-Parameter $appPoolAutoStart -parameterName \"AutoStart\"\r\nValidate-Parameter $appPoolEnable32BitAppOnWin64 -parameterName \"Enable 32-Bit Apps on 64-bit Windows\"\r\n\r\nValidate-Parameter $appPoolManagedRuntimeVersion -parameterName \"Managed Runtime Version\"\r\nValidate-Parameter $appPoolManagedPipelineMode -parameterName \"Managed Pipeline Mode\"\r\n\r\n#Load Web Admin DLL\r\n[System.Reflection.Assembly]::LoadFrom( \"C:\\windows\\system32\\inetsrv\\Microsoft.Web.Administration.dll\" )\r\n\r\nAdd-PSSnapin WebAdministration -ErrorAction SilentlyContinue\r\nImport-Module WebAdministration -ErrorAction SilentlyContinue\r\n\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Run\r\n## --------------------------------------------------------------------------------------\r\n\r\n$iis = (New-Object Microsoft.Web.Administration.ServerManager)\r\n\r\n$pool = $iis.ApplicationPools | Where {$_.Name -eq $appPoolName} | Select-Object -First 1\r\n\r\nIF ($pool -eq $null)\r\n{\r\n    Write-Output \"Creating Application Pool '$appPoolName'\"\r\n    $iis.ApplicationPools.Add($appPoolName)\r\n    $iis.CommitChanges()\r\n}\r\nELSE\r\n{\r\n    Write-Output \"Application Pool '$appPoolName' already exists, reconfiguring.\"   \r\n}\r\n\r\n$pool = $iis.ApplicationPools | Where {$_.Name -eq $appPoolName} | Select-Object -First 1\r\n\r\nWrite-Output \"Setting: AutoStart = $appPoolAutoStart\"\r\n$pool.AutoStart = $appPoolAutoStart;\r\n\r\nWrite-Output \"Setting: Enable32BitAppOnWin64 = $appPoolEnable32BitAppOnWin64\"\r\n$pool.Enable32BitAppOnWin64 = $appPoolEnable32BitAppOnWin64;\r\n\r\nWrite-Output \"Setting: IdentityType = $appPoolIdentityType\"\r\n$pool.ProcessModel.IdentityType = $appPoolIdentityType\r\n\r\nIF ($appPoolIdentityType -eq 3)\r\n{\r\n    Write-Output \"Setting: UserName = $appPoolIdentityUser\"\r\n    $pool.ProcessModel.UserName = $appPoolIdentityUser\r\n    \r\n    Write-Output \"Setting: Password = [Omitted For Security]\"\r\n    $pool.ProcessModel.Password = $appPoolIdentityPassword\r\n}\r\n\r\nWrite-Output \"Setting: ManagedRuntimeVersion = $appPoolManagedRuntimeVersion\"\r\n$pool.ManagedRuntimeVersion = $appPoolManagedRuntimeVersion\r\n\r\nWrite-Output \"Setting: ManagedPipelineMode = $appPoolManagedPipelineMode\"\r\n$pool.ManagedPipelineMode = $appPoolManagedPipelineMode\r\n\r\n$iis.CommitChanges()\r\n"
   },
   "SensitiveProperties": {},
   "Parameters": [
     {
-      "Name": "ApplicationPoolName",
+      "Name": "AppPoolName",
       "Label": "Application Pool Name",
       "HelpText": "The name of the application pool that the application will run under.",
       "DefaultValue": null,
@@ -19,7 +19,7 @@
       }
     },
     {
-      "Name": "ApplicationPoolIdentityType",
+      "Name": "AppPoolIdentityType",
       "Label": "Identity Type",
       "HelpText": "The type of identity that the application pool will be using.",
       "DefaultValue": "3",
@@ -29,7 +29,7 @@
       }
     },
     {
-      "Name": "ApplicationPoolIdentityUser",
+      "Name": "AppPoolIdentityUser",
       "Label": "Specific User Name",
       "HelpText": "_(Specific User)_ The user name to use with the application pool identity.",
       "DefaultValue": null,
@@ -38,7 +38,7 @@
       }
     },
     {
-      "Name": "ApplicationPoolIdentityPassword",
+      "Name": "AppPoolIdentityPassword",
       "Label": "Specific User Password",
       "HelpText": "_(Specific User)_ The password for the specific user to use with the application pool identity.",
       "DefaultValue": null,
@@ -47,7 +47,7 @@
       }
     },
     {
-      "Name": "ApplicationPoolEnable32BitAppOnWin64",
+      "Name": "AppPoolEnable32BitAppOnWin64",
       "Label": "Enable 32-Bit Applications",
       "HelpText": "Allows the application pool to run 32-bit applications when running on 64-bit windows.",
       "DefaultValue": "True",
@@ -56,7 +56,7 @@
       }
     },
     {
-      "Name": "ApplicationPoolAutoStart",
+      "Name": "AppPoolAutoStart",
       "Label": "Start Automatically",
       "HelpText": "Automatically start the application pool when the application pool is created or whenever IIS is started.",
       "DefaultValue": "True",
@@ -65,7 +65,7 @@
       }
     },
     {
-      "Name": "ApplicationPoolManagedRuntimeVersion",
+      "Name": "AppPoolManagedRuntimeVersion",
       "Label": "Managed Runtime Version",
       "HelpText": "Specifies the CLR version to be used by the application pool.",
       "DefaultValue": "v4.0",
@@ -75,7 +75,7 @@
       }
     },
     {
-      "Name": "ApplicationPoolManagedPipelineMode",
+      "Name": "AppPoolManagedPipelineMode",
       "Label": "Managed Pipeline Mode",
       "HelpText": "Specifies the request-processing mode that is used to process requests for managed content.",
       "DefaultValue": "Integrated",
@@ -85,11 +85,11 @@
       }
     }
   ],
-  "LastModifiedOn": "2014-07-24T20:27:26.199+00:00",
-  "LastModifiedBy": "trosenbaum@sbs.local",
+  "LastModifiedOn": "2014-07-29T17:00:10.062+00:00",
+  "LastModifiedBy": "zagrophyte",
   "$Meta": {
-    "ExportedAt": "2014-07-24T21:00:17.290Z",
-    "OctopusVersion": "2.5.4.280",
+    "ExportedAt": "2014-07-29T17:06:12.559Z",
+    "OctopusVersion": "2.5.5.318",
     "Type": "ActionTemplate"
   }
 }
