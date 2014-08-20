@@ -1,0 +1,56 @@
+{
+  "Id": "ActionTemplates-69",
+  "Name": "SQL - Backup Database",
+  "Description": "Backup a MS SQL Server database to the file system.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$ServerName = $OctopusParameters['Server']\n$DatabaseName = $OctopusParameters['Database']\n$BackupDirectory = $OctopusParameters['OutputDirectory']\n\n$CompressionOption = $OctopusParameters['Compression']\n\n$SqlLogin = $OctopusParameters['SqlLogin']\n$SqlPassword = $OctopusParameters['SqlPassword']\n\n$ErrorActionPreference = \"Stop\"\n\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SMO\") | Out-Null\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SmoExtended\") | Out-Null\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.ConnectionInfo\") | Out-Null\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SmoEnum\") | Out-Null\n \n$server = New-Object Microsoft.SqlServer.Management.Smo.Server $ServerName\n\nif ($SqlLogin -ne $null) {\n\n    if ($SqlPassword -eq $null) {\n        throw \"SQL Password must be specified when using SQL authentication.\"\n    }\n    \n    $server.ConnectionContext.LoginSecure = $false\n    $server.ConnectionContext.Login = $SqlLogin\n    $server.ConnectionContext.Password = $SqlPassword\n    \n    Write-Host \"Connecting to server using SQL authentication as $SqlLogin.\"\n    $server = New-Object Microsoft.SqlServer.Management.Smo.Server $server.ConnectionContext\n\n}\nelse {\n    Write-Host \"Connecting to server using Windows authentication.\"\n}\n\ntry {\n    $server.ConnectionContext.Connect()\n} catch {\n    Write-Error \"An error occurred connecting to the database server!`r`n$($_.Exception.ToString())\"\n}\n\n$database = $server.Databases | Where-Object { $_.Name -eq $DatabaseName }\n\nif ($database -eq $null) {\n    Write-Error \"Database $DatabaseName does not exist on $ServerName\"\n}\n\n$dbName = $database.Name\n \n$timestamp = Get-Date -format yyyy-MM-dd-HHmmss\n$targetPath = Join-Path $BackupDirectory ($dbName + \"_\" + $timestamp + \".bak\")\n\nif (-not (Test-Path $BackupDirectory)) {\n    Write-Host \"Creating output directory `\"$BackupDirectory`\".\"\n    New-Item $BackupDirectory -ItemType Directory | Out-Null\n}\n\nWrite-Host \"Attempting to backup database $ServerName.$dbName to `\"$targetPath`\".\"\n\n$smoBackup = New-Object Microsoft.SqlServer.Management.Smo.Backup\n$smoBackup.Action = \"Database\"\n$smoBackup.BackupSetDescription = \"Full Backup of \" + $dbName\n$smoBackup.BackupSetName = $dbName + \" Backup\"\n$smoBackup.Database = $dbName\n$smoBackup.MediaDescription = \"Disk\"\n$smoBackup.Devices.AddDevice($targetPath, \"File\")\n$smoBackup.CompressionOption = $CompressionOption\n\ntry {\n    $smoBackup.SqlBackup($server)\n} catch {\n    Write-Error \"An error occurred backing up the database!`r`n$($_.Exception.ToString())\"\n}\n \nWrite-Host \"Backup completed successfully.\"\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Server",
+      "Label": "Server",
+      "HelpText": "The name of the SQL Server instance that the database resides in.",
+      "DefaultValue": "."
+    },
+    {
+      "Name": "Database",
+      "Label": "Database",
+      "HelpText": "The name of the database to back up.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "OutputDirectory",
+      "Label": "Output directory",
+      "HelpText": "The output directory to drop the database backup into.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "SqlLogin",
+      "Label": "SQL login",
+      "HelpText": "The SQL auth login to connect with. If specified, the SQL Password must also be entered.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "SqlPassword",
+      "Label": "SQL password",
+      "HelpText": "The password for the SQL auth login to connect with. Only used if SQL Login is specified.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "Compression",
+      "Label": "Compression Option",
+      "HelpText": "- 0  -   Use the default backup compression server configuration\n- 1  -   Enable the backup compression\n- 2  -   Disable the backup compression",
+      "DefaultValue": "1"
+    }
+  ],
+  "LastModifiedOn": "2014-07-08T21:27:48.184+00:00",
+  "LastModifiedBy": "joewaid",
+  "$Meta": {
+    "ExportedAt": "2014-07-08T21:32:13.798Z",
+    "OctopusVersion": "2.4.7.85",
+    "Type": "ActionTemplate"
+  }
+}

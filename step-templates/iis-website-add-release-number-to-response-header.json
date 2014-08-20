@@ -1,0 +1,32 @@
+{
+  "Id": "ActionTemplates-97",
+  "Name": "IIS Website - Add Release Number to Response Header",
+  "Description": "Adds the Octopus Release number to the response header. When you browser to your site you can look at the response header to verify the build number that is loading",
+  "ActionType": "Octopus.Script",
+  "Version": 7,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "write-host \"#Adding release number to response header\"\n\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.Web.Administration\") | Out-Null\n$iis = new-object Microsoft.Web.Administration.ServerManager\n$config = $iis.GetWebConfiguration($OctopusParameters['webSiteName'])\n$httpProtocolSection = $config.GetSection(\"system.webServer/httpProtocol\")\n$customHeadersCollection = $httpProtocolSection.GetCollection(\"customHeaders\")\n\n$update = $false\n\nforeach($path in $customHeadersCollection.GetCollection()) { \n    if ($path.GetAttributeValue(\"name\") -eq $OctopusParameters['FieldName']) {\n        write-host \"Release number is already in the response header, skipping\"\n        $update = $false\n        break\n    } else {\n        $update = $true\n    }\n}\n\nif ($update)\n{\n    write-host \"Adding release number\"\n    $addElement = $customHeadersCollection.CreateElement(\"add\")\n    $addElement[\"name\"] = $OctopusParameters['FieldName']\n    $addElement[\"value\"] = $OctopusParameters[\"Octopus.Step.Package.NuGetPackageVersion\"]\n    $customHeadersCollection.Add($addElement)\n    $iis.CommitChanges() | Write-Host\n}"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "FieldName",
+      "Label": "Field name",
+      "HelpText": "The name of the the Field name you want the release to show as.",
+      "DefaultValue": "rel"
+    },
+    {
+      "Name": "WebsiteName",
+      "Label": "Website name",
+      "HelpText": "The name of the site in IIS",
+      "DefaultValue": null
+    }
+  ],
+  "LastModifiedOn": "2014-07-31T20:47:43.457+00:00",
+  "LastModifiedBy": "emailbob",
+  "$Meta": {
+    "ExportedAt": "2014-07-31T20:51:22.736Z",
+    "OctopusVersion": "2.4.5.46",
+    "Type": "ActionTemplate"
+  }
+}
