@@ -1,44 +1,52 @@
 {
-  "Id": "ActionTemplates-1",
+  "Id": "ActionTemplates-99",
   "Name": "New Relic - Complete Deployment",
-  "Description": "To notify [New Relic](https://newrelic.com) of a deployment, _POST_ the revision/version number from the Octopus deployment.",
+  "Description": "Notifies [New Relic](https://newrelic.com) of a deployment.\nSends the revision/version number, deployer, etc from the Octopus deployment.",
   "ActionType": "Octopus.Script",
-  "Version": 5,
+  "Version": 9,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "\n    # in production, we need to\n    #Create a URI instance since the HttpWebRequest.Create Method will escape the URL by default.\n    $URL = \"http://api.newrelic.com/deployments.xml\"\n    $post = \"deployment[account_id]($OctopusParameters['AccountId'])&deployment[user]=($OctopusParameters['User'])&deployment[app_id]=($OctopusParameters['AppId'])&deployment[revision]=($OctopusPackageVersion)\"\n    $URI = New-Object System.Uri($URL,$true)\n \n    #Create a request object using the URI\n    $request = [System.Net.HttpWebRequest]::Create($URI)\n \n    #Build up a nice User Agent\n    $request.UserAgent = $(\n    \"{0} (PowerShell {1}; .NET CLR {2}; {3})\" -f $UserAgent, \n    $(if($Host.Version){$Host.Version}else{\"1.0\"}),\n    [Environment]::Version,\n    [Environment]::OSVersion.ToString().Replace(\"Microsoft Windows \", \"Win\")\n    )\n  \n    # $creds = New-Object System.Net.NetworkCredential($Username,$Password)\n    # $request.Credentials = $creds\n \n    #Since this is a POST we need to set the method type\n    $request.Method = \"POST\"\n    $request.Headers.Add(\"x-api-key\",\"($OctopusParameters['ApiKey'])\");\n \n    #Set the Content Type as text/xml since the content will be a block of xml.\n    $request.ContentType = \"application/x-www-form-urlencoded\"\n    $request.Accept = \"text/xml\"\n \n    try {\n        #Create a new stream writer to write the xml to the request stream.\n        $stream = New-Object IO.StreamWriter $request.GetRequestStream()\n        $stream.AutoFlush = $True\n        $PostStr = [System.Text.Encoding]::UTF8.GetBytes($Post)\n        $stream.Write($PostStr, 0,$PostStr.length)\n        $stream.Close()\n     \n        #Make the request and get the response\n        $response = $request.GetResponse()    \n        $response.Close()\n   \n        if ([int]$response.StatusCode -eq 201) {\n            Write-Host \"NewRelic Deploy API called succeeded.\"\n        } else {\n            Write-Host \"NewRelic Deploy API called failed.\"\n            exit 1\n        }\n    } catch [System.Net.WebException] {\n        $res = $_.Exception.Response\n         Write-Host \"NewRelic Deploy API called failed.\" \n         exit 1\n    }"
+    "Octopus.Action.Script.ScriptBody": "Add-Type -AssemblyName System.Web\r\n\r\n$accountId = $OctopusParameters['AccountId']\r\n$apiKey = $OctopusParameters['ApiKey']\r\n$user = $OctopusParameters['User']\r\n$appId = $OctopusParameters['AppId']\r\n\r\n#http://docs.octopusdeploy.com/display/OD/System+variables\r\n$releaseNumber = $OctopusParameters['Octopus.Release.Number']\r\n$releaseNotes = $OctopusParameters['Octopus.Release.Notes']\r\n$machineName = $OctopusParameters['Octopus.Machine.Name']\r\n$projectName = $OctopusParameters['Octopus.Project.Name']\r\n$deploymentLink = $OctopusParameters['Octopus.Web.DeploymentLink']\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Helpers\r\n## --------------------------------------------------------------------------------------\r\n# Helper for validating input parameters\r\nfunction Validate-Parameter([string]$foo, [string[]]$validInput, $parameterName) {\r\n    Write-Host \"${parameterName}: $foo\"\r\n    if (! $foo) {\r\n        throw \"No value was set for $parameterName, and it cannot be empty\"\r\n    }\r\n    \r\n    if ($validInput) {\r\n        if (! $validInput -contains $foo) {\r\n            throw \"'$input' is not a valid input for '$parameterName'\"\r\n        }\r\n    }\r\n}\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Configuration\r\n## --------------------------------------------------------------------------------------\r\nValidate-Parameter $accountId -parameterName \"Account ID\"\r\nValidate-Parameter $apiKey -parameterName \"Api Key\"\r\nValidate-Parameter $user -parameterName \"User\"\r\n\r\nif (!$appId) {\r\n    Write-Host \"NewRelic Deploy - AppId has not been set yet. Skipping call to API.\"\r\n    exit 0\r\n}\r\n\r\nWrite-Host \"NewRelic Deploy - Notify deployment by $user - App $appId - Rev $revision\"\r\n\r\n# encode the variables for the post\r\n$user = [System.Web.HttpUtility]::UrlEncode($user)\r\n$description = [System.Web.HttpUtility]::UrlEncode(\"Octopus deployment of $projectName to $machineName. ($deploymentLink)\")\r\n$releaseNumber = [System.Web.HttpUtility]::UrlEncode($releaseNumber)\r\n$releaseNotes = [System.Web.HttpUtility]::UrlEncode($releaseNotes)\r\n\r\n$post =  \"deployment[account_id]=$accountId\" + `\r\n        \"&deployment[user]=$user\" + `\r\n        \"&deployment[app_id]=$appId\" + `\r\n        \"&deployment[description]=$description\" + `\r\n        \"&deployment[revision]=$releaseNumber\" + `\r\n        \"&deployment[changelog]=$releaseNotes\"\r\n\r\n# in production, we need to\r\n#Create a URI instance since the HttpWebRequest.Create Method will escape the URL by default.\r\n$URL = \"http://api.newrelic.com/deployments.xml\"\r\n$URI = New-Object System.Uri($URL,$true)\r\n\r\n#Create a request object using the URI\r\n$request = [System.Net.HttpWebRequest]::Create($URI)\r\n\r\n#Build up a nice User Agent\r\n$request.UserAgent = $(\r\n    \"{0} (PowerShell {1}; .NET CLR {2}; {3})\" -f $UserAgent, \r\n    $(if($Host.Version){$Host.Version}else{\"1.0\"}),\r\n    [Environment]::Version,\r\n    [Environment]::OSVersion.ToString().Replace(\"Microsoft Windows \", \"Win\")\r\n)\r\n\r\n# $creds = New-Object System.Net.NetworkCredential($Username,$Password)\r\n# $request.Credentials = $creds\r\n\r\n#Since this is a POST we need to set the method type\r\n$request.Method = \"POST\"\r\n$request.Headers.Add(\"x-api-key\",\"$apiKey\");\r\n\r\n#Set the Content Type as text/xml since the content will be a block of xml.\r\n$request.ContentType = \"application/x-www-form-urlencoded\"\r\n$request.Accept = \"text/xml\"\r\n\r\ntry {\r\n    #Create a new stream writer to write the xml to the request stream.\r\n    $stream = New-Object IO.StreamWriter $request.GetRequestStream()\r\n    $stream.AutoFlush = $True\r\n    $PostStr = [System.Text.Encoding]::UTF8.GetBytes($Post)\r\n    $stream.Write($PostStr, 0,$PostStr.length)\r\n    $stream.Close()\r\n \r\n    #Make the request and get the response\r\n    $response = $request.GetResponse()    \r\n    $response.Close()\r\n\r\n    if ([int]$response.StatusCode -eq 201) {\r\n        Write-Host \"NewRelic Deploy - API called succeeded.\"\r\n    } else {\r\n        Write-Host \"NewRelic Deploy - API called failed.\"\r\n        exit 1\r\n    }\r\n} catch [System.Net.WebException] {\r\n    $res = $_.Exception.Response\r\n     Write-Host \"NewRelic Deploy - API called failed.\" \r\n     exit 1\r\n}"
   },
   "SensitiveProperties": {},
   "Parameters": [
     {
       "Name": "ApiKey",
-      "Label": "Api key",
-      "HelpText": "The New Relic API key.",
-      "DefaultValue": null
+      "Label": "Api Key",
+      "HelpText": "Your New Relic API key.",
+      "DefaultValue": null,
+      "DisplaySettings": {}
     },
     {
       "Name": "AccountId",
       "Label": "Account ID",
-      "HelpText": "The ID of the New Relic account to use.",
-      "DefaultValue": null
+      "HelpText": "The ID of your New Relic account.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "User",
       "Label": "User",
       "HelpText": "The name of the user/process that triggered this deployment.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {}
     },
     {
       "Name": "AppId",
       "Label": "App ID",
-      "HelpText": "The New Relic ID of the application.",
-      "DefaultValue": null
+      "HelpText": "The ID of the application in New Relic RPM.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-05-16T06:27:24.892+00:00",
-  "LastModifiedBy": "Tazer",
+  "LastModifiedOn": "2014-08-20T11:08:56.879+00:00",
+  "LastModifiedBy": "DavidDeSloovere",
   "$Meta": {
-    "ExportedAt": "2014-05-16T06:28:33.927Z",
-    "OctopusVersion": "2.4.5.46",
+    "ExportedAt": "2014-08-20T11:10:31.485Z",
+    "OctopusVersion": "2.5.7.384",
     "Type": "ActionTemplate"
   }
 }
