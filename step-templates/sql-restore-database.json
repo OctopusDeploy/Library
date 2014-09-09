@@ -1,0 +1,84 @@
+{
+  "Id": "ActionTemplates-69",
+  "Name": "SQL - Restore Database",
+  "Description": "Restore a MS SQL Server database to the file system.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$ServerName = $OctopusParameters['Server']\r\n$DatabaseName = $OctopusParameters['Database']\r\n$BackupDirectory = $OctopusParameters['BackupDirectory']\r\n$CompressionOption = [int]$OctopusParameters['Compression']\r\n$Devices = [int]$OctopusParameters['Devices']\r\n$Stamp = $OctopusParameters['Stamp']\r\n$SqlLogin = $OctopusParameters['SqlLogin']\r\n$SqlPassword = $OctopusParameters['SqlPassword']\r\n$ErrorActionPreference = \"Stop\"\r\n\r\nfunction ConnectToDatabase()\r\n{\r\n    param($server, $SqlLogin, $SqlPassword)\r\n        \r\n    if ($SqlLogin -ne $null) {\r\n\r\n        if ($SqlPassword -eq $null) {\r\n            throw \"SQL Password must be specified when using SQL authentication.\"\r\n        }\r\n    \r\n        $server.ConnectionContext.LoginSecure = $false\r\n        $server.ConnectionContext.Login = $SqlLogin\r\n        $server.ConnectionContext.Password = $SqlPassword\r\n    \r\n        Write-Host \"Connecting to server using SQL authentication as $SqlLogin.\"\r\n        $server = New-Object Microsoft.SqlServer.Management.Smo.Server $server.ConnectionContext\r\n    }\r\n    else {\r\n        Write-Host \"Connecting to server using Windows authentication.\"\r\n    }\r\n\r\n    try {\r\n        $server.ConnectionContext.Connect()\r\n    } catch {\r\n        Write-Error \"An error occurred connecting to the database server!`r`n$($_.Exception.ToString())\"\r\n    }\r\n}\r\n\r\nfunction AddPercentHandler {\r\n    param($smoBackupRestore, $action)\r\n\r\n    $percentEventHandler = [Microsoft.SqlServer.Management.Smo.PercentCompleteEventHandler] { Write-Host $dbName $action $_.Percent \"%\" }\r\n    $completedEventHandler = [Microsoft.SqlServer.Management.Common.ServerMessageEventHandler] { Write-Host $_.Error.Message}\r\n        \r\n    $smoBackupRestore.add_PercentComplete($percentEventHandler)\r\n    $smoBackupRestore.add_Complete($completedEventHandler)\r\n    $smoBackupRestore.PercentCompleteNotification=10\r\n}\r\n\r\nfunction CreatDevice {\r\n    param($smoBackupRestore, $directory, $name)\r\n\r\n    $devicePath = Join-Path $directory ($name)\r\n    $smoBackupRestore.Devices.AddDevice($devicePath, \"File\")    \r\n    return $devicePath\r\n}\r\n\r\nfunction CreateDevices {\r\n    param($smoBackupRestore, $devices, $directory, $dbName)\r\n        \r\n    $targetPaths = New-Object System.Collections.Generic.List[System.String]\r\n    \r\n    if ($devices -eq 1){\r\n        $deviceName = $dbName + \"_\" + $timestamp + \".bak\"\r\n        $targetPath = CreatDevice $smoBackupRestore $directory $deviceName\r\n        $targetPaths.Add($targetPath)\r\n    } else {\r\n        for ($i=1; $i -le $devices; $i++){\r\n            $deviceName = $dbName + \"_\" + $timestamp + \"_\" + $i + \".bak\"\r\n            $targetPath = CreatDevice $smoBackupRestore $directory $deviceName\r\n            $targetPaths.Add($targetPath)\r\n        }\r\n    }\r\n    return $targetPaths\r\n}\r\n\r\nfunction RestoreDatabase {\r\n    param($dbName, $devices)\r\n\r\n    $smoRestore = New-Object Microsoft.SqlServer.Management.Smo.Restore\r\n    $targetPaths = CreateDevices $smoRestore $devices $BackupDirectory $dbName $timestamp\r\n\r\n    Write-Host \"Attempting to restore database $ServerName.$dbName from:\"\r\n    $targetPaths\r\n    Write-Host \"\"\r\n\r\n    foreach ($path in $targetPaths) {\r\n        if (-not (Test-Path $path)) {\r\n            Write-Host \"Cannot find backup device \"($path)\r\n            return          \r\n        }\r\n    }\r\n    \r\n    if ($server.Databases[$dbName] -ne $null)  \r\n    {  \r\n        $server.KillAllProcesses($dbName)\r\n        $server.KillDatabase($dbName)\r\n    }\r\n\r\n    $smoRestore.Action = \"Database\"\r\n    $smoRestore.NoRecovery = $false;\r\n    $smoRestore.ReplaceDatabase = $true;\r\n    $smoRestore.Database = $dbName\r\n    \r\n    try {\r\n        AddPercentHandler $smoRestore \"restored\"\r\n        $smoRestore.SqlRestore($server)\r\n    } catch {\r\n        Write-Error \"An error occurred restoring the database!`r`n$($_.Exception.ToString())\"\r\n    }\r\n        \r\n    Write-Host \"Restore completed successfully.\"\r\n}\r\n\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SMO\") | Out-Null\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SmoExtended\") | Out-Null\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.ConnectionInfo\") | Out-Null\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SmoEnum\") | Out-Null\r\n \r\n$server = New-Object Microsoft.SqlServer.Management.Smo.Server $ServerName\r\n\r\nConnectToDatabase $server $SqlLogin $SqlPassword\r\n\r\n$database = $server.Databases | Where-Object { $_.Name -eq $DatabaseName }\r\n$timestamp = if(-not [string]::IsNullOrEmpty($Stamp)) { $Stamp } else { Get-Date -format yyyy-MM-dd-HHmmss }\r\n\r\nRestoreDatabase $DatabaseName $Devices"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Server",
+      "Label": "Server",
+      "HelpText": "The name of the SQL Server instance that the database resides in.",
+      "DefaultValue": ".",
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "Database",
+      "Label": "Database",
+      "HelpText": "The name of the database to restore.",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "BackupDirectory",
+      "Label": "Backup Directory",
+      "HelpText": "The backup directory to retrieve the database backup from.",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "SqlLogin",
+      "Label": "SQL login",
+      "HelpText": "The SQL auth login to connect with. If specified, the SQL Password must also be entered.",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "SqlPassword",
+      "Label": "SQL password",
+      "HelpText": "The password for the SQL auth login to connect with. Only used if SQL Login is specified.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "Compression",
+      "Label": "Compression Option",
+      "HelpText": "- 0  -   Use the default backup compression server configuration\n- 1  -   Enable the backup compression\n- 2  -   Disable the backup compression",
+      "DefaultValue": "1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "0|Default\n1|Enabled\n2|Disabled"
+      }
+    },
+    {
+      "Name": "Devices",
+      "Label": "Devices",
+      "HelpText": "The number of backup devices to use for the backup.",
+      "DefaultValue": "1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "1|1\n2|2\n3|3\n4|4"
+      }
+    },
+    {
+      "Name": "Stamp",
+      "Label": "Backup file suffix",
+      "HelpText": "Specify a suffix to add to the backup file names. If left blank the backup will use the current timestamp.",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    }
+  ],
+  "LastModifiedOn": "2014-09-09T02:10:20.193+00:00",
+  "LastModifiedBy": "emilol",
+  "$Meta": {
+    "ExportedAt": "2014-09-09T02:11:32.466Z",
+    "OctopusVersion": "2.5.8.447",
+    "Type": "ActionTemplate"
+  }
+}
