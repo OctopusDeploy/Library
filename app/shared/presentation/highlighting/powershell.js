@@ -5,6 +5,14 @@ module.config(function(){
   var hljs = window.hljs;
 
   hljs.registerLanguage('powershell', function (hljs) {
+    var backtickEscape = {
+      begin: '`[\\s\\S]',
+      relevance: 0
+    };
+    var dollarEscape = {
+      begin: '\\$\\$[\\s\\S]',
+      relevance: 0
+    };
     var VAR = {
       className: 'variable',
       variants: [
@@ -15,12 +23,11 @@ module.config(function(){
       className: 'string',
       begin: /"/, end: /"/,
       contains: [
-        hljs.BACKSLASH_ESCAPE,
+        backtickEscape,
         VAR,
         {
           className: 'variable',
-          begin: /\$/, end: /[^A-z]/,
-          contains: [hljs.BACKSLASH_ESCAPE]
+          begin: /\$[A-z]/, end: /[^A-z]/
         }
       ]
     };
@@ -36,7 +43,7 @@ module.config(function(){
       keywords: {
         keyword: 'if else foreach return function do while until',
         literal: '$null $true $false',
-        built_in: 'new-object write-host write-output invoke-expression',
+        built_in: 'new-object write-host write-output invoke-expression test-path write-warning write-error select-object where-object',
         operator: '-ne -eq -lt -gt -not -lte -gte'
       },
       contains: [

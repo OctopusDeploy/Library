@@ -1,0 +1,44 @@
+{
+  "Id": "ActionTemplates-33",
+  "Name": "File System - Backup Directory",
+  "Description": "Uses Robocopy to backup directories and files from a source to a destination.",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function Get-Stamped-Destination($destination) {\n\t$stampedFolderName = get-date -format \"yyyy-MM-dd\"\n\t$count = 1\n\t$stampedDestination = Join-Path $destination $stampedFolderName\n\twhile(Test-Path $stampedDestination) {\n\t\t$count++\n\t\t$stamped = $stampedFolderName + \"(\" + $count + \")\"\n\t\t$stampedDestination = Join-Path $destination $stamped\n\t}\n\treturn $stampedDestination\n}\n\n$source = $OctopusParameters['Source']\n$destination = $OctopusParameters['Destination']\n$CreateStampedBackupFolder = $OctopusParameters['CreateStampedBackupFolder']\nif($CreateStampedBackupFolder -like \"True\" ) {\n\t$destination = get-stamped-destination $destination\n}\n\n$options = $OctopusParameters['Options'] -split \"\\s+\"\nrobocopy $source $destination $options\n\nif($LastExitCode -gt 8) {\n    exit 1\n}\nelse {\n    exit 0\n}\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Source",
+      "Label": "Source",
+      "HelpText": "The source directory where files and folders will be copied from",
+      "DefaultValue": null
+    },
+    {
+      "Name": "Destination",
+      "Label": "Destination folder",
+      "HelpText": "The Destination where the files will be copied to.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "Options",
+      "Label": "Robocopy options",
+      "HelpText": "Robocopy accepts a few command line options (e.g. /S /E /Z). List of these can be [found here](http://ss64.com/nt/robocopy.html)",
+      "DefaultValue": "/E /V"
+    },
+    {
+      "Name": "CreateStampedBackupFolder",
+      "Label": "Create stamped backup folder",
+      "HelpText": "If set to _True_ then it will create a dated backup folder under the destination folder (e.g. c:\\backup\\2014-05-11)",
+      "DefaultValue": "True"
+    }
+  ],
+  "LastModifiedOn": "2014-05-22T02:58:03.139+00:00",
+  "LastModifiedBy": "bholdt",
+  "$Meta": {
+    "ExportedAt": "2014-05-22T02:58:41.985Z",
+    "OctopusVersion": "2.4.5.46",
+    "Type": "ActionTemplate"
+  }
+}
