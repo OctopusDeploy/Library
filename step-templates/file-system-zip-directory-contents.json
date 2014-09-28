@@ -1,0 +1,66 @@
+{
+  "Id": "ActionTemplates-102",
+  "Name": "File System - Zip Directory Contents",
+  "Description": "Creates a zip archive that contains the files and directories from the specified directory, uses the specified compression level, and optionally includes the base directory.\n\nRequires .NET 4.5 as it relies on the `System.IO.Compression.ZipFile` class.",
+  "ActionType": "Octopus.Script",
+  "Version": 10,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$SourceDirectoryName = $OctopusParameters['SourceDirectoryName']\r\n$DestinationArchiveFileName = $OctopusParameters['DestinationArchiveFileName']\r\n$CompressionLevel = $OctopusParameters['CompressionLevel']\r\n$IncludeBaseDirectory = $OctopusParameters['IncludeBaseDirectory']\r\n$OverwriteDestination = $OctopusParameters['OverwriteDestination']\r\n\r\nif (!$SourceDirectoryName)\r\n{\r\n    Write-Error \"No Source Directory name was specified. Please specify the name of the directory to that will be zipped.\"\r\n    exit -2\r\n}\r\n\r\nif (!$DestinationArchiveFileName)\r\n{\r\n    Write-Error \"No Destination Archive File name was specified. Please specify the name of the zip file to be created.\"\r\n    exit -2\r\n}\r\n\r\nif (($OverwriteDestination) -and (Test-Path $DestinationArchiveFileName))\r\n{\r\n    Write-Host \"$DestinationArchiveFileName already exists. Will delete it before we create a new zip file with the same name.\"\r\n    Remove-Item $DestinationArchiveFileName\r\n}\r\n\r\nWrite-Host \"Creating Zip file $DestinationArchiveFileName with the contents of directory $DestinationArchiveFileName using compression level $CompressionLevel\"\r\n\r\n[Reflection.Assembly]::LoadWithPartialName(\"System.IO.Compression.FileSystem\")\r\n[System.IO.Compression.ZipFile]::CreateFromDirectory($SourceDirectoryName, $DestinationArchiveFileName, $CompressionLevel, $IncludeBaseDirectory)\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "SourceDirectoryName",
+      "Label": "Source Directory",
+      "HelpText": "The path to the directory to be archived, specified as a relative or absolute path.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DestinationArchiveFileName",
+      "Label": "Destination Archive File",
+      "HelpText": "The path of the archive to be created, specified as a relative or absolute path.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "CompressionLevel",
+      "Label": "Compression Level",
+      "HelpText": "Indicates whether to emphasize speed or compression effectiveness when creating the entry.",
+      "DefaultValue": "Optimal",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Optimal|Optimal\nFastest|Fastest\nNoCompression|No Compression"
+      }
+    },
+    {
+      "Name": "IncludeBaseDirectory",
+      "Label": "Include Base Directory",
+      "HelpText": "Include the directory name from Source Directory at the root of the archive.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "OverwriteDestination",
+      "Label": "Overwrite Destination If Exists",
+      "HelpText": "Overwrite the destination archive file if it already exists.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2014-09-28T03:51:38.817+00:00",
+  "LastModifiedBy": "caioproiete",
+  "$Meta": {
+    "ExportedAt": "2014-09-28T03:52:02.427Z",
+    "OctopusVersion": "2.5.8.447",
+    "Type": "ActionTemplate"
+  }
+}
