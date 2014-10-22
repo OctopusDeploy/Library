@@ -1,0 +1,38 @@
+{
+  "Id": "ActionTemplates-1",
+  "Name": "TopShelf - Install Service",
+  "Description": "Installs a TopShelf service using the default HostFactory definition.\n\nIf the service with the same name already exists it will be stopped and reconfigured to use the service executable from this deployed Octopus package.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$ExistingService = Get-Service $ServiceName -ErrorAction SilentlyContinue\nif ($ExistingService)\n{\n    Write-Host \"Windows Service '$ServiceName' found, removing service.\"\n    if ($TheService.Status -eq 'Running')\n    {\n        Write-Host \"Stopping '$ServiceName'...\"\n        $TheService.Stop()\n    }\n    \n    & sc.exe delete $ExistingService\n}\n\n$ServicePath = (Join-Path $PackageInstallDirectory \"$ServiceName.exe\")\nif (-not (Test-Path $ServicePath)) {\n    Throw \"Cannot find service to install at '$ServicePath'\"\n}\n\nWrite-Host \"Install '$ServiceName' installing.\"\nWrite-Host \"Path: '$ServicePath'\"\n\n& (Resolve-Path $ServicePath) install start | Write-Host\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ServiceName",
+      "Label": "Service Name",
+      "HelpText": "Name of the Top Shelf service to install",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "PackageInstallDirectory",
+      "Label": "Package Install Directory",
+      "HelpText": "The directory where the service was deployed, e.g. `#{Octopus.Action[Deploy Service].Output.Package.InstallationDirectoryPath}`",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2014-10-22T01:51:00.888+00:00",
+  "LastModifiedBy": "dennisroche",
+  "$Meta": {
+    "ExportedAt": "2014-10-22T01:57:23.784Z",
+    "OctopusVersion": "2.5.10.567",
+    "Type": "ActionTemplate"
+  }
+}
