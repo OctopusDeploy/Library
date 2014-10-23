@@ -1,0 +1,38 @@
+{
+  "Id": "ActionTemplates-1",
+  "Name": "TopShelf - Install Service",
+  "Description": "Installs a TopShelf service using the default HostFactory definition.\n\nIf the service with the same name already exists it will be stopped and reconfigured to use the service executable from this deployed Octopus package.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$ExistingService = Get-Service $ServiceName -ErrorAction SilentlyContinue\nif ($ExistingService)\n{\n    Write-Host \"Windows Service '$ServiceName' found, removing service.\"\n    if ($ExistingService.Status -eq 'Running')\n    {\n        Write-Host \"Stopping '$ServiceName'...\"\n        $ExistingService.Stop()\n    }\n    \n    & sc.exe delete $ExistingService\n}\n\n$ServicePath = (Join-Path $InstallationDirectory \"$ServiceName.exe\")\nif (-not (Test-Path $ServicePath)) {\n    Throw \"Cannot find service to install at '$ServicePath'\"\n}\n\nWrite-Host \"Install '$ServiceName' installing.\"\nWrite-Host \"Path: '$ServicePath'\"\n\n& (Resolve-Path $ServicePath) install start | Write-Host\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ServiceName",
+      "Label": "Service Name",
+      "HelpText": "Name of the Top Shelf service to install. This must be the same as the executable name.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "InstallationDirectory",
+      "Label": "Install Directory",
+      "HelpText": "The directory where the service was deployed, e.g. `Output.Package.InstallationDirectoryPath` or `Output.Package.CustomInstallationDirectory`.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "dennisroche",
+  "LastModifiedOn": "2014-10-23T04:06:18.437+00:00",
+  "$Meta": {
+    "ExportedAt": "2014-10-23T04:09:53.546Z",
+    "OctopusVersion": "2.5.10.567",
+    "Type": "ActionTemplate"
+  }
+}
