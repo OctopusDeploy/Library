@@ -1,0 +1,85 @@
+{
+  "Id": "ActionTemplates-133",
+  "Name": "NetScaler ADC - Enable or Disable Service",
+  "Description": "Enables or disables a load balancing service i Citrix NetScaler ADC. For documentation, see https://github.com/jnus/NetScalerPSLib\n",
+  "ActionType": "Octopus.Script",
+  "Version": 21,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "param(\r\n        [string]$NSAddress,\r\n        [string]$ServiceName,\r\n        [string]$Action,\r\n        [string]$NSUserName,\r\n        [string]$NSPassword,\r\n        [string]$NSProtocol\r\n)\r\n\r\n\r\n$ErrorActionPreference = \"Stop\"\r\n\r\nfunction Connect-NSAppliance {\r\n    <#\r\n    .SYNOPSIS\r\n        Connect to NetScaler Appliance\r\n    .DESCRIPTION\r\n        Connect to NetScaler Appliance. A custom web request session object will be returned\r\n    .PARAMETER NSAddress\r\n        NetScaler Management IP address\r\n    .PARAMETER NSName\r\n        NetScaler DNS name or FQDN\r\n    .PARAMETER NSUserName\r\n        UserName to access the NetScaler appliance\r\n    .PARAMETER NSPassword\r\n        Password to access the NetScaler appliance\r\n    .PARAMETER Timeout\r\n        Timeout in seconds to for the token of the connection to the NetScaler appliance. 900 is the default admin configured value.\r\n    .EXAMPLE\r\n         $Session = Connect-NSAppliance -NSAddress 10.108.151.1\r\n    .EXAMPLE\r\n         $Session = Connect-NSAppliance -NSName mynetscaler.mydomain.com\r\n    .OUTPUTS\r\n        CustomPSObject\r\n    .NOTES\r\n        Copyright (c) Citrix Systems, Inc. All rights reserved.\r\n    #>\r\n    [CmdletBinding()]\r\n    param (\r\n        [Parameter(Mandatory=$true,ParameterSetName='Address')] [string]$NSAddress,\r\n        [Parameter(Mandatory=$true,ParameterSetName='Name')] [string]$NSName,\r\n        [Parameter(Mandatory=$false)] [string]$NSUserName=\"nsroot\",\r\n        [Parameter(Mandatory=$false)] [string]$NSPassword=\"nsroot\",\r\n        [Parameter(Mandatory=$false)] [int]$Timeout=900\r\n    )\r\n    Write-Verbose \"$($MyInvocation.MyCommand): Enter\"\r\n\r\n    if ($PSCmdlet.ParameterSetName -eq 'Address') {\r\n        Write-Verbose \"Validating IP Address\"\r\n        $IPAddressObj = New-Object -TypeName System.Net.IPAddress -ArgumentList 0\r\n        if (-not [System.Net.IPAddress]::TryParse($NSAddress,[ref]$IPAddressObj)) {\r\n            throw \"'$NSAddress' is an invalid IP address\"\r\n        }\r\n        $nsEndpoint = $NSAddress\r\n    } elseif ($PSCmdlet.ParameterSetName -eq 'Name') {\r\n        $nsEndpoint = $NSName\r\n    }\r\n\r\n\r\n    $login = @{\"login\" = @{\"username\"=$NSUserName;\"password\"=$NSPassword;\"timeout\"=$Timeout}}\r\n    $loginJson = ConvertTo-Json $login\r\n\r\n    try {\r\n        Write-Verbose \"Calling Invoke-RestMethod for login\"\r\n        $response = Invoke-RestMethod -Uri \"$($Script:NSURLProtocol)://$nsEndpoint/nitro/v1/config/login\" -Body $loginJson -Method POST -SessionVariable saveSession -ContentType application/json\r\n\r\n        if ($response.severity -eq \"ERROR\") {\r\n            throw \"Error. See response: `n$($response | fl * | Out-String)\"\r\n        } else {\r\n            Write-Verbose \"Response:`n$(ConvertTo-Json $response | Out-String)\"\r\n        }\r\n    }\r\n    catch [Exception] {\r\n        throw $_\r\n    }\r\n\r\n\r\n    $nsSession = New-Object -TypeName PSObject\r\n    $nsSession | Add-Member -NotePropertyName Endpoint -NotePropertyValue $nsEndpoint -TypeName String\r\n    $nsSession | Add-Member -NotePropertyName WebSession  -NotePropertyValue $saveSession -TypeName Microsoft.PowerShell.Commands.WebRequestSession\r\n\r\n    Write-Verbose \"$($MyInvocation.MyCommand): Exit\"\r\n\r\n    return $nsSession\r\n}\r\n\r\nfunction Set-NSMgmtProtocol {\r\n    <#\r\n    .SYNOPSIS\r\n        Set $Script:NSURLProtocol, this will be used for all subsequent invocation of NITRO APIs\r\n    .DESCRIPTION\r\n        Set $Script:NSURLProtocol\r\n    .PARAMETER Protocol\r\n        Protocol, acceptable values are \"http\" and \"https\"\r\n    .EXAMPLE\r\n        Set-Protocol -Protocol https\r\n    .NOTES\r\n        Copyright (c) Citrix Systems, Inc. All rights reserved.\r\n    #>\r\n    [CmdletBinding()]\r\n    param (\r\n        [Parameter(Mandatory=$true)] [ValidateSet(\"http\",\"https\")] [string]$Protocol\r\n    )\r\n\r\n    Write-Verbose \"$($MyInvocation.MyCommand): Enter\"\r\n\r\n    $Script:NSURLProtocol = $Protocol\r\n\r\n    Write-Verbose \"$($MyInvocation.MyCommand): Exit\"\r\n}\r\n\r\nfunction Invoke-NSNitroRestApi {\r\n    <#\r\n    .SYNOPSIS\r\n        Invoke NetScaler NITRO REST API\r\n    .DESCRIPTION\r\n        Invoke NetScaler NITRO REST API\r\n    .PARAMETER NSSession\r\n        An existing custom NetScaler Web Request Session object returned by Connect-NSAppliance\r\n    .PARAMETER OperationMethod\r\n        Specifies the method used for the web request\r\n    .PARAMETER ResourceType\r\n        Type of the NS appliance resource\r\n    .PARAMETER ResourceName\r\n        Name of the NS appliance resource, optional\r\n    .PARAMETER Action\r\n        Name of the action to perform on the NS appliance resource\r\n    .PARAMETER Payload\r\n        Payload  of the web request, in hashtable format\r\n    .PARAMETER GetWarning\r\n        Switch parameter, when turned on, warning message will be sent in 'message' field and 'WARNING' value is set in severity field of the response in case there is a warning.\r\n        Turned off by default\r\n    .PARAMETER OnErrorAction\r\n        Use this parameter to set the onerror status for nitro request. Applicable only for bulk requests.\r\n        Acceptable values: \"EXIT\", \"CONTINUE\", \"ROLLBACK\", default to \"EXIT\"\r\n    .EXAMPLE\r\n        Invoke NITRO REST API to add a DNS Server resource.\r\n        $payload = @{ip=\"10.8.115.210\"}\r\n        Invoke-NSNitroRestApi -NSSession $Session -OperationMethod POST -ResourceType dnsnameserver -Payload $payload -Action add\r\n    .OUTPUTS\r\n        Only when the OperationMethod is GET:\r\n        PSCustomObject that represents the JSON response content. This object can be manipulated using the ConvertTo-Json Cmdlet.\r\n    .NOTES\r\n        Copyright (c) Citrix Systems, Inc. All rights reserved.\r\n    #>\r\n    [CmdletBinding()]\r\n    param (\r\n        [Parameter(Mandatory=$true)] [PSObject]$NSSession,\r\n        [Parameter(Mandatory=$true)] [ValidateSet(\"DELETE\",\"GET\",\"POST\",\"PUT\")] [string]$OperationMethod,\r\n        [Parameter(Mandatory=$true)] [string]$ResourceType,\r\n        [Parameter(Mandatory=$false)] [string]$ResourceName,\r\n        [Parameter(Mandatory=$false)] [string]$Action,\r\n        [Parameter(Mandatory=$false)] [ValidateScript({$OperationMethod -eq \"GET\"})] [hashtable]$Arguments=@{},\r\n        [Parameter(Mandatory=$false)] [ValidateScript({$OperationMethod -ne \"GET\"})] [hashtable]$Payload=@{},\r\n        [Parameter(Mandatory=$false)] [switch]$GetWarning=$false,\r\n        [Parameter(Mandatory=$false)] [ValidateSet(\"EXIT\", \"CONTINUE\", \"ROLLBACK\")] [string]$OnErrorAction=\"EXIT\"\r\n    )\r\n\r\n    Write-Verbose \"$($MyInvocation.MyCommand): Enter\"\r\n\r\n    Write-Verbose \"Building URI\"\r\n    $uri = \"$($Script:NSURLProtocol)://$($NSSession.Endpoint)/nitro/v1/config/$ResourceType\"\r\n    if (-not [string]::IsNullOrEmpty($ResourceName)) {\r\n        $uri += \"/$ResourceName\"\r\n    }\r\n    if ($OperationMethod -ne \"GET\") {\r\n        if (-not [string]::IsNullOrEmpty($Action)) {\r\n            $uri += \"?action=$Action\"\r\n        }\r\n    } else {\r\n        if ($Arguments.Count -gt 0) {\r\n            $uri += \"?args=\"\r\n            $argsList = @()\r\n            foreach ($arg in $Arguments.GetEnumerator()) {\r\n                $argsList += \"$($arg.Name):$([System.Uri]::EscapeDataString($arg.Value))\"\r\n            }\r\n            $uri += $argsList -join ','\r\n        }\r\n        #TODO: Add filter, view, and pagesize\r\n    }\r\n    Write-Verbose \"URI: $uri\"\r\n\r\n    if ($OperationMethod -ne \"GET\") {\r\n        Write-Verbose \"Building Payload\"\r\n        $warning = if ($GetWarning) { \"YES\" } else { \"NO\" }\r\n        $hashtablePayload = @{}\r\n        $hashtablePayload.\"params\" = @{\"warning\"=$warning;\"onerror\"=$OnErrorAction;<#\"action\"=$Action#>}\r\n        $hashtablePayload.$ResourceType = $Payload\r\n        $jsonPayload = ConvertTo-Json $hashtablePayload -Depth ([int]::MaxValue)\r\n        Write-Verbose \"JSON Payload:`n$jsonPayload\"\r\n    }\r\n\r\n    try {\r\n        Write-Verbose \"Calling Invoke-RestMethod\"\r\n        $restParams = @{\r\n            Uri = $uri\r\n            ContentType = \"application/json\"\r\n            Method = $OperationMethod\r\n            WebSession = $NSSession.WebSession\r\n            ErrorVariable = \"restError\"\r\n        }\r\n\r\n        if ($OperationMethod -ne \"GET\") {\r\n            $restParams.Add(\"Body\",$jsonPayload)\r\n        }\r\n\r\n        $response = Invoke-RestMethod @restParams\r\n\r\n        if ($response) {\r\n            if ($response.severity -eq \"ERROR\") {\r\n                throw \"Error. See response: `n$($response | fl * | Out-String)\"\r\n            } else {\r\n                Write-Verbose \"Response:`n$(ConvertTo-Json $response | Out-String)\"\r\n            }\r\n        }\r\n    }\r\n    catch [Exception] {\r\n        if ($ResourceType -eq \"reboot\" -and $restError[0].Message -eq \"The underlying connection was closed: The connection was closed unexpectedly.\") {\r\n            Write-Verbose \"Connection closed due to reboot\"\r\n        } else {\r\n            throw $_\r\n        }\r\n    }\r\n\r\n    Write-Verbose \"$($MyInvocation.MyCommand): Exit\"\r\n\r\n    if ($OperationMethod -eq \"GET\") {\r\n        return $response\r\n    }\r\n}\r\n\r\n$psver = $PSVersionTable.PSVersion.Major\r\nif ($psver -eq \"1\" -or $psver -eq \"2\") {\r\n    Write-Error \"NetScaler ADC Enable Disable Service requires PowerShell v3 or newer. Installed version v$psver\"\r\n    return -1\r\n}\r\n\r\n$NSAddress = $OctopusParameters['HostName']\r\n$NSUserName = $OctopusParameters['Username']\r\n$NSPassword = $OctopusParameters['Password']\r\n$NSProtocol=\"http\"\r\n$Action = $OctopusParameters['EnableOrDisable']\r\n$ServiceName = $OctopusParameters['ServiceName']\r\n$GracefulShutdown = $OctopusParameters['Graceful']\r\n$GraceFulShutdownDelay = $OctopusParameters['GracefulDelay']\r\n\r\nif(!$NSAddress) {\r\n    Write-Error \"No NetScaler address specified. Please specify an address\"\r\n    exit -2\r\n}\r\n\r\nif(!$NSUserName) {\r\n    Write-Error \"No username specified. Please specify a username\"\r\n    exit -2\r\n}\r\n\r\nif(!$NSPassword) {\r\n    Write-Error \"No password specified. Please specify a password\"\r\n    exit -2\r\n}\r\n\r\nif(!$Action) {\r\n    Write-Error \"No action set. Action must either be enable or disable. Please select an action\"\r\n    exit -2\r\n}\r\n\r\nif(!$GracefulShutdown) {\r\n    Write-Error \"Graceful shutdown not selected. Must either be yes or no. Please select an option\"\r\n    exit -2\r\n}\r\n\r\nif(!$ServiceName) {\r\n    Write-Error \"Service name must be specified. Please specify service name\"\r\n    exist -2\r\n}\r\n\r\n\r\nSet-NSMgmtProtocol -Protocol $NSProtocol\r\n$myNSSession = Connect-NSAppliance -NSAddress $NSAddress -NSUserName $NSUserName -NSPassword $NSPassword\r\n$payload = @{name=$ServiceName}\r\nif($Action -eq \"disable\") {\r\n    $payload = @{name=$ServiceName;graceful=$GracefulShutdown;delay=$GraceFulShutdownDelay}\r\n}\r\n\r\nInvoke-NSNitroRestApi -NSSession $myNSSession -OperationMethod POST -ResourceType service -Payload $payload -Action $Action\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "EnableOrDisable",
+      "Label": "Service status",
+      "HelpText": "Option whether to disable og enable a Load Balancing Service",
+      "DefaultValue": "enable",
+      "DisplaySettings": {
+        "Octopus.SelectOptions": "enable|Enable\ndisable|Disable",
+        "Octopus.ControlType": "Select"
+      }
+    },
+    {
+      "Name": "ServiceName",
+      "Label": "LB Service Name",
+      "HelpText": "Load Balancing Service Name to enable or diable",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HostName",
+      "Label": "NetScaler ADC host name",
+      "HelpText": "Address of the primary NetScaler ADC instance",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Username",
+      "Label": "NetScaler ADC username",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Password",
+      "Label": "NetScaler ADC password",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Graceful",
+      "Label": "Graceful shutdown",
+      "HelpText": "The service is disabled only when all the current active client connections are closed by either the server or the client",
+      "DefaultValue": "Yes",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "YES|Yes\nNO|No"
+      }
+    },
+    {
+      "Name": "GracefulDelay",
+      "Label": "Graceful Delay (s)",
+      "HelpText": "The time in seconds after which the service is marked as OUT OF SERVICE.",
+      "DefaultValue": "300",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-01-29T21:49:05.609+00:00",
+  "LastModifiedBy": "jasper@sovs.net",
+  "$Meta": {
+    "ExportedAt": "2015-01-29T21:49:10.234Z",
+    "OctopusVersion": "2.6.0.778",
+    "Type": "ActionTemplate"
+  }
+}
