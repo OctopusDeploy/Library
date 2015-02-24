@@ -1,0 +1,56 @@
+{
+  "Id": "ActionTemplates-97",
+  "Name": "Clear EdgeCast CDN Cache",
+  "Description": "This step will clear (purge) the EdgeCast CDN Cache",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function Clear-EdgeCastCache\n{\n    [CmdletBinding()]\n    Param\n    (\n        # CDN Account number, can be found in MCC\n        [Parameter(Mandatory=$true)]\n        $AccountNumber,\n\n        # API Token\n        [Parameter(Mandatory=$true)]\n        [string]$ApiToken,\n\n         # A string that indicates the CDN or edge CNAME URL for the asset or the location that will be purged from our edge servers. Make sure to include the proper protocol (i.e., http:// or rtmp://).\n        [Parameter(Mandatory=$true)]\n        [string]\n        $MediaPath,\n\n        #An integer that indicates the service for which an asset will be purged. It should be replaced with the ID associated with the desired service., default is 3. HTTP Large\n        [ValidateSet(2,3,8,14)]\n        [int]\n        $MediaType=3\n    )\n\n    Begin\n    {\n        $uri = \"https://api.edgecast.com/v2/mcc/customers/$AccountNumber/edge/purge\"\n\n        $headers = @{\n            'Authorization' = \"tok:\" + $ApiToken\n            'Accept' = 'Application/JSON'\n            'Content-Type' = 'Application/JSON'\n            }\n        $RequestParameters = @{\n            'MediaPath'=$MediaPath\n            'MediaType'=$MediaType\n        }\n\n        $body = ConvertTo-Json $RequestParameters\n\n    }\n    Process\n    {\n        Write-Verbose \"Request body $body\"\n    \t$request = Invoke-RestMethod -Method PUT -Uri $uri -Headers $headers -Body $body -DisableKeepAlive\n        $request\n\n    }\n    End\n    {\n    }\n}\n\nClear-EdgeCastCache -AccountNumber $AccountNumber -ApiToken $ApiToken -MediaPath $MediaPath -MediaType $MediaType -Verbose\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "AccountNumber",
+      "Label": null,
+      "HelpText": "CDN Account number, can be found in MCC",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ApiToken",
+      "Label": null,
+      "HelpText": "API token for accessing the EdgeCast API for the account",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "MediaPath",
+      "Label": null,
+      "HelpText": "A string that indicates the CDN or edge CNAME URL for the asset or the location that will be purged from our edge servers. Make sure to include the proper protocol (i.e., http:// or rtmp://).",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "MediaType",
+      "Label": "MediaType",
+      "HelpText": "An integer that indicates the service for which an asset will be purged. It should be replaced with the ID associated with the desired service., default is 3. HTTP Large",
+      "DefaultValue": "3",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-02-20T13:45:59.125+00:00",
+  "LastModifiedBy": "yooakim",
+  "$Meta": {
+    "ExportedAt": "2015-02-20T16:10:46.008Z",
+    "OctopusVersion": "2.6.2.845",
+    "Type": "ActionTemplate"
+  }
+}
