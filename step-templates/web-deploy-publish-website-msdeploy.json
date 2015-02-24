@@ -3,9 +3,9 @@
   "Name": "Web Deploy - Publish Website (MSDeploy)",
   "Description": "Ensures that the Web Deploy 3.5 is installed on the system. The installer is downloaded from http://www.iis.net/downloads/microsoft/web-deploy if required.",
   "ActionType": "Octopus.Script",
-  "Version": 4,
+  "Version": 5,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.Web.Deployment\")\n\n# A collection of functions that can be used by script steps to determine where packages installed\n# by previous steps are located on the filesystem.\n \nfunction Find-InstallLocations {\n    $result = @()\n    $OctopusParameters.Keys | foreach {\n        if ($_.EndsWith('].Output.Package.InstallationDirectoryPath')) {\n            $result += $OctopusParameters[$_]\n        }\n    }\n    return $result\n}\n \nfunction Find-InstallLocation($stepName) {\n    $result = $OctopusParameters.Keys | where {\n        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\n    } | select -first 1\n \n    if ($result) {\n        return $OctopusParameters[$result]\n    }\n \n    throw \"No install location found for step: $stepName\"\n}\n \nfunction Find-SingleInstallLocation {\n    $all = @(Find-InstallLocations)\n    if ($all.Length -eq 1) {\n        return $all[0]\n    }\n    if ($all.Length -eq 0) {\n        throw \"No package steps found\"\n    }\n    throw \"Multiple package steps have run; please specify a single step\"\n}\n\nfunction Test-LastExit($cmd) {\n    if ($LastExitCode -ne 0) {\n        Write-Host \"##octopus[stderr-error]\"\n        write-error \"$cmd failed with exit code: $LastExitCode\"\n    }\n}\n\n$stepName = $OctopusParameters['WebDeployPackageStepName']\n\n$stepPath = \"\"\nif (-not [string]::IsNullOrEmpty($stepName)) {\n    Write-Host \"Finding path to package step: $stepName\"\n    $stepPath = Find-InstallLocation $stepName\n} else {\n    $stepPath = Find-SingleInstallLocation\n}\nWrite-Host \"Package was installed to: $stepPath\"\n\nWrite-Host \"##octopus[stderr-progress]\"\n \nWrite-Host \"Publishing Website\"\n\n$websiteName = $OctopusParameters['WebsiteName']\n$publishUrl = $OctopusParameters['PublishUrl']\n\n$destBaseOptions = new-object Microsoft.Web.Deployment.DeploymentBaseOptions\n$destBaseOptions.UserName = $OctopusParameters['Username']\n$destBaseOptions.Password = $OctopusParameters['Password']\n$destBaseOptions.ComputerName = \"https://$publishUrl/msdeploy.axd?site=$websiteName\"\n$destBaseOptions.AuthenticationType = \"Basic\"\n\n$syncOptions = new-object Microsoft.Web.Deployment.DeploymentSyncOptions\n$syncOptions.WhatIf = $false\n$syncOptions.UseChecksum = $true\n\n$enableAppOfflineRule = $OctopusParameters['EnableAppOfflineRule']\nif($enableAppOfflineRule -eq $true)\n{\n    $appOfflineRule = $null\n    $availableRules = [Microsoft.Web.Deployment.DeploymentSyncOptions]::GetAvailableRules()\n    if (!$availableRules.TryGetValue('AppOffline', [ref]$appOfflineRule))\n    {\n        throw \"Failed to find AppOffline Rule\"\n    }\n    else\n    {\n        $syncOptions.Rules.Add($appOfflineRule)\n        Write-Host \"Enabled AppOffline Rule\"\n    }\n}\n\n$deploymentObject = [Microsoft.Web.Deployment.DeploymentManager]::CreateObject(\"contentPath\", $stepPath)\n\n$deploymentObject.SyncTo(\"contentPath\", $websiteName, $destBaseOptions, $syncOptions)"
+    "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.Web.Deployment\")\n\n# A collection of functions that can be used by script steps to determine where packages installed\n# by previous steps are located on the filesystem.\n \nfunction Find-InstallLocations {\n    $result = @()\n    $OctopusParameters.Keys | foreach {\n        if ($_.EndsWith('].Output.Package.InstallationDirectoryPath')) {\n            $result += $OctopusParameters[$_]\n        }\n    }\n    return $result\n}\n \nfunction Find-InstallLocation($stepName) {\n    $result = $OctopusParameters.Keys | where {\n        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\n    } | select -first 1\n \n    if ($result) {\n        return $OctopusParameters[$result]\n    }\n \n    throw \"No install location found for step: $stepName\"\n}\n \nfunction Find-SingleInstallLocation {\n    $all = @(Find-InstallLocations)\n    if ($all.Length -eq 1) {\n        return $all[0]\n    }\n    if ($all.Length -eq 0) {\n        throw \"No package steps found\"\n    }\n    throw \"Multiple package steps have run; please specify a single step\"\n}\n\nfunction Test-LastExit($cmd) {\n    if ($LastExitCode -ne 0) {\n        Write-Host \"##octopus[stderr-error]\"\n        write-error \"$cmd failed with exit code: $LastExitCode\"\n    }\n}\n\n$stepName = $OctopusParameters['WebDeployPackageStepName']\n\n$stepPath = \"\"\nif (-not [string]::IsNullOrEmpty($stepName)) {\n    Write-Host \"Finding path to package step: $stepName\"\n    $stepPath = Find-InstallLocation $stepName\n} else {\n    $stepPath = Find-SingleInstallLocation\n}\nWrite-Host \"Package was installed to: $stepPath\"\n\nWrite-Host \"##octopus[stderr-progress]\"\n \n$websiteName = $OctopusParameters['WebsiteName']\n$publishUrl = $OctopusParameters['PublishUrl']\n\n$destBaseOptions = new-object Microsoft.Web.Deployment.DeploymentBaseOptions\n$destBaseOptions.UserName = $OctopusParameters['Username']\n$destBaseOptions.Password = $OctopusParameters['Password']\n$destBaseOptions.ComputerName = \"https://$publishUrl/msdeploy.axd?site=$websiteName\"\n$destBaseOptions.AuthenticationType = \"Basic\"\n\n$syncOptions = new-object Microsoft.Web.Deployment.DeploymentSyncOptions\n$syncOptions.WhatIf = $false\n$syncOptions.UseChecksum = $true\n\n$enableAppOfflineRule = $OctopusParameters['EnableAppOfflineRule']\nif($enableAppOfflineRule -eq $true)\n{\n    $appOfflineRule = $null\n    $availableRules = [Microsoft.Web.Deployment.DeploymentSyncOptions]::GetAvailableRules()\n    if (!$availableRules.TryGetValue('AppOffline', [ref]$appOfflineRule))\n    {\n        throw \"Failed to find AppOffline Rule\"\n    }\n    else\n    {\n        $syncOptions.Rules.Add($appOfflineRule)\n        Write-Host \"Enabled AppOffline Rule\"\n    }\n}\n\n$skipPaths = $OctopusParameters['SkipSyncPaths'].Split(\";\", [System.StringSplitOptions]::RemoveEmptyEntries)\nforeach($item in $skipPaths) {\n    \n    $index = $skipPaths.IndexOf($item)\n    \n    Write-Host \"Skipping sync of AbsolutePath: $item.\"\n    \n    $name = \"SkipDirective$index\"\n    $value = \"absolutePath=$item\"\n    \n    $skipDirective = new-object Microsoft.Web.Deployment.DeploymentSkipDirective($name, $value)\n    $destBaseOptions.SkipDirectives.Add($skipDirective)\n}\n\nWrite-Host \"Publishing Website\"\n\n$deploymentObject = [Microsoft.Web.Deployment.DeploymentManager]::CreateObject(\"contentPath\", $stepPath)\n\n$changes = $deploymentObject.SyncTo(\"contentPath\", $websiteName, $destBaseOptions, $syncOptions)\n\n#Write out all the changes.\n$changes | Select-Object -Property *\n"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -39,7 +39,7 @@
     },
     {
       "Name": "WebDeployPackageStepName",
-      "Label": "Package step name",
+      "Label": "Package Step Name",
       "HelpText": "Name of the previously-deployed package step that contains the files that you want to deploy.",
       "DefaultValue": null,
       "DisplaySettings": {}
@@ -52,13 +52,22 @@
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
       }
+    },
+    {
+      "Name": "SkipSyncPaths",
+      "Label": "Skip Paths From Sync",
+      "HelpText": "Semi-colon separated, absolute reg-ex paths to skip/not-sync during deployment. Handy for folders that you don't want deleted etc. (Escape slashes)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-10-07T06:24:17.221+00:00",
+  "LastModifiedOn": "2015-02-24T13:10:19.439+00:00",
   "LastModifiedBy": "sam.thwaites",
   "$Meta": {
-    "ExportedAt": "2014-10-07T06:33:48.637Z",
-    "OctopusVersion": "2.5.8.447",
+    "ExportedAt": "2015-02-24T13:19:40.915Z",
+    "OctopusVersion": "2.5.12.666",
     "Type": "ActionTemplate"
   }
 }
