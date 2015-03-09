@@ -15,7 +15,7 @@ module.factory('searchCriteria', function() {
 
         var lc = result.text.toLowerCase();
         return item.Name.toLowerCase().indexOf(lc) !== -1 ||
-          item.Description.toLowerCase().indexOf(lc) !== -1;
+          ((item.Description !== null) && (item.Description.toLowerCase().indexOf(lc) !== -1));
       };
 
       return result;
