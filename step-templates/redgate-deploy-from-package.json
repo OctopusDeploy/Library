@@ -1,0 +1,102 @@
+{
+  "Id": "ActionTemplates-35",
+  "Name": "Redgate - Deploy from Package",
+  "Description": "Deploys a package containing a database schema (created by Red Gate's DLM tools) to a SQL Server database, without a review step.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Check if SQL Release is installed.\r\n$sqlReleaseModule = Get-Module -ListAvailable -Name SQLRelease\r\nif ($sqlReleaseModule -eq $null) { \r\n    throw \"Cannot find SQL Release on your Octopus Tentacle. If SQL Release is installed, try restarting the Tentacle service for it to be detected.\"\r\n}\r\n\r\n# Check the parameters.\r\nif (-NOT $SQLReleaseTargetDatabaseName) { throw \"You must enter a value for 'Target database name'.\" }\r\nif (-NOT $SQLReleaseTargetDatabaseServer) { throw \"You must enter a value for 'Target SQL Server instance'.\" } \r\nif (-NOT $SQLReleaseNuGetDbPackageDownloadStepName) { throw \"You must enter a value for 'Database package step'.\" } \r\n\r\n# Get the NuGet package installation directory path.\r\n$packageExtractPath = $OctopusParameters[\"Octopus.Action[$SQLReleaseNuGetDbPackageDownloadStepName].Output.Package.InstallationDirectoryPath\"]\r\nif($packageExtractPath -eq $null) {\r\n    throw \"The 'Database package download step' is not a 'Deploy a NuGet package' step: '$SQLReleaseNuGetDbPackageDownloadStepName'\"\r\n}\r\n\r\n# Directory containing the extracted database package.\r\n$databaseStatePath = Join-Path -path $packageExtractPath -childPath \"db\\state\" \r\n\r\n$targetDB = New-DatabaseConnection -ServerInstance $SQLReleaseTargetDatabaseServer -Database $SQLReleaseTargetDatabaseName -Username $SQLReleaseTargetUsername -Password $SQLReleaseTargetPassword | Test-DatabaseConnection\r\n$ignoreStaticData = $SQLReleaseIgnoreStaticData -eq \"True\"\r\n\r\n# Create database deployment resources from the NuGet package to the database\r\nif ($SQLReleaseFilterPath) {\r\n    if ($SQLReleaseCompareOptions) {\r\n        $release = New-DatabaseRelease -Target $targetDB -Source $databaseStatePath -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel -IgnoreStaticData:$ignoreStaticData -FilterPath $SQLReleaseFilterPath -SQLCompareOptions $SQLReleaseCompareOptions -Verbose\r\n    } else {\r\n        $release = New-DatabaseRelease -Target $targetDB -Source $databaseStatePath -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel -IgnoreStaticData:$ignoreStaticData -FilterPath $SQLReleaseFilterPath -Verbose\r\n    }\r\n} else {\r\n    if ($SQLReleaseCompareOptions) {\r\n        $release = New-DatabaseRelease -Target $targetDB -Source $databaseStatePath -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel -IgnoreStaticData:$ignoreStaticData -SQLCompareOptions $SQLReleaseCompareOptions -Verbose\r\n    } else {\r\n        $release = New-DatabaseRelease -Target $targetDB -Source $databaseStatePath -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel -IgnoreStaticData:$ignoreStaticData -Verbose\r\n    }\r\n}\r\n\r\n# Deploy the schema change\r\n$release | Use-DatabaseRelease -DeployTo $targetDB -Verbose"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "SQLReleaseNuGetDbPackageDownloadStepName",
+      "Label": "Database package step",
+      "HelpText": "Select the step in this project which downloads the database package.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Name": "SQLReleaseTargetDatabaseServer",
+      "Label": "Target SQL Server instance",
+      "HelpText": "The fully qualified SQL Server instance name for the target database.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SQLReleaseTargetDatabaseName",
+      "Label": "Target database name",
+      "HelpText": "The name of the database to deploy changes to. This must be an existing database.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SQLReleaseTargetUsername",
+      "Label": "Username (optional)",
+      "HelpText": "The SQL Server username used to connect to the database. If you leave this field and 'Password' blank, Windows authentication will be used to connect instead, using the account that runs the Tentacle service.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SQLReleaseTargetPassword",
+      "Label": "Password (optional)",
+      "HelpText": "You must enter a password if you entered a username.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "SQLReleaseFilterPath",
+      "Label": "Filter path (optional)",
+      "HelpText": "Specify the location of a SQL Compare filter file (.scpf), which defines objects to include/exclude in the schema comparison. Filter files are generated by SQL Source Control.\n\nFor more help see [Using SQL Compare filters in SQL Release](http://documentation.red-gate.com/display/SR1/Using+SQL+Compare+filters+in+SQL+Release).",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SQLReleaseCompareOptions",
+      "Label": "SQL Compare options (optional)",
+      "HelpText": "Enter SQL Compare options to apply when generating the update script. Use a comma-separated list to enter multiple values. For more help see [Using SQL Compare options in SQL Release](http://documentation.red-gate.com/display/SR1/Using+SQL+Compare+options+in+SQL+Release).",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SQLReleaseTransactionIsolationLevel",
+      "Label": "Transaction isolation level (optional)",
+      "HelpText": "Select the transaction isolation level to be used in deployment scripts.",
+      "DefaultValue": "Serializable",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Serializable\nSnapshot\nRepeatableRead\nReadCommitted\nReadUncommitted"
+      }
+    },
+    {
+      "Name": "SQLReleaseIgnoreStaticData",
+      "Label": "Ignore static data",
+      "HelpText": "Exclude changes to static data when generating the deployment resources.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-02-13T16:17:00.000+00:00",
+  "LastModifiedBy": "SQLReleaseSupport@red-gate.com",
+  "$Meta": {
+    "ExportedAt": "2015-02-11T16:58:17.256Z",
+    "OctopusVersion": "2.6.0.751",
+    "Type": "ActionTemplate"
+  }
+}
