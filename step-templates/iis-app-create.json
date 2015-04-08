@@ -1,63 +1,63 @@
 {
-  "Id": "ActionTemplates-130",
-  "Name": "IIS Application - Create",
-  "Description": "Create an IIS virtual application (a virtual directory with an application pool)",
-  "ActionType": "Octopus.Script",
-  "Version": 7,
-  "Properties": {
-    "Octopus.Action.Script.ScriptBody": "\n## --------------------------------------------------------------------------------------\n## Input\n## --------------------------------------------------------------------------------------\n\n$virtualPath = $OctopusParameters['VirtualPath']\n$physicalPath = $OctopusParameters['PhysicalPath']\n$applicationPoolName = $OctopusParameters['ApplicationPoolName']\n$parentSite = $OctopusParameters['ParentSite']\n$bindingProtocols = $OctopusParameters['BindingProtocols']\n\n## --------------------------------------------------------------------------------------\n## Helpers\n## --------------------------------------------------------------------------------------\n# Helper for validating input parameters\nfunction Validate-Parameter($foo, [string[]]$validInput, $parameterName) {\n    Write-Host \"${parameterName}: ${foo}\"\n    if (! $foo) {\n        throw \"$parameterName cannot be empty, please specify a value\"\n    }\n    \n    if ($validInput) {\n        @($foo) | % { \n                if ($validInput -notcontains $_) {\n                    throw \"'$_' is not a valid input for '$parameterName'\"\n                }\n             }  \n        }   \n}\n\n# Helper to run a block with a retry if things go wrong\n$maxFailures = 5\n$sleepBetweenFailures = Get-Random -minimum 1 -maximum 4\nfunction Execute-WithRetry([ScriptBlock] $command) {\n\t$attemptCount = 0\n\t$operationIncomplete = $true\n\n\twhile ($operationIncomplete -and $attemptCount -lt $maxFailures) {\n\t\t$attemptCount = ($attemptCount + 1)\n\n\t\tif ($attemptCount -ge 2) {\n\t\t\tWrite-Output \"Waiting for $sleepBetweenFailures seconds before retrying...\"\n\t\t\tStart-Sleep -s $sleepBetweenFailures\n\t\t\tWrite-Output \"Retrying...\"\n\t\t}\n\n\t\ttry {\n\t\t\t& $command\n\n\t\t\t$operationIncomplete = $false\n\t\t} catch [System.Exception] {\n\t\t\tif ($attemptCount -lt ($maxFailures)) {\n\t\t\t\tWrite-Output (\"Attempt $attemptCount of $maxFailures failed: \" + $_.Exception.Message)\n\t\t\t\n\t\t\t}\n\t\t\telse {\n\t\t\t    throw \"Failed to execute command\"\n\t\t\t}\n\t\t}\n\t}\n}\n\n## --------------------------------------------------------------------------------------\n## Configuration\n## --------------------------------------------------------------------------------------\nValidate-Parameter $virtualPath -parameterName \"Virtual path\"\nValidate-Parameter $physicalPath -parameterName \"Physical path\"\nValidate-Parameter $applicationPoolName -parameterName \"Application pool\"\nValidate-Parameter $parentSite -parameterName \"Parent site\"\n\nAdd-PSSnapin WebAdministration -ErrorAction SilentlyContinue\nImport-Module WebAdministration -ErrorAction SilentlyContinue\n\n\n## --------------------------------------------------------------------------------------\n## Run\n## --------------------------------------------------------------------------------------\n\nWrite-Host \"Getting web site $parentSite\"\n$site = Get-Website -name $parentSite\nif (!$site) {\n    throw \"The web site '$parentSite' does not exist. Please create the site first.\"\n}\n\n$parts = $virtualPath -split \"[/\\\\]\"\n$name = \"\"\n\nfor ($i = 0; $i -lt $parts.Length; $i++) {\n    $name = $name + \"/\" + $parts[$i]\n    $name = $name.TrimStart('/').TrimEnd('/')\n    if ($i -eq $parts.Length - 1) {\n        \n    }\n    elseif ([string]::IsNullOrEmpty($name) -eq $false -and $name -ne \"/\") {\n        Write-Host \"Ensuring parent exists: $name\"\n\n        $app = Get-WebApplication -Name $name -Site $parentSite\n\n        if (!$app) {\n            $vdir = Get-WebVirtualDirectory -Name $name -site $parentSite\n            if (!$vdir) {\n                throw \"The application or virtual directory '$name' does not exist\"\n            }\n        }\n    }\n}\n\n$existing = Get-WebApplication -site $parentSite -Name $name\n\n\nExecute-WithRetry { \n    if (!$existing) {\n        Write-Host \"Creating web application '$name'\"\n        New-WebApplication -Site $parentSite -Name $name -ApplicationPool $applicationPoolName -PhysicalPath $physicalPath\n        Write-Host \"Web application created\"\n    } else {\n        Write-Host \"The web application '$name' already exists. Updating physical path:\"\n\n        Set-ItemProperty IIS:\\Sites\\$parentSite\\$name -name physicalPath -value $physicalPath\n\n        Write-Host \"Physical path changed to: $physicalPath\"\n    }\n    \n    Set-ItemProperty IIS:\\Sites\\$parentSite\\$name -name EnabledProtocols -value '$bindingProtocols' \n}"
-  },
-  "SensitiveProperties": {},
-  "Parameters": [
-    {
-      "Name": "VirtualPath",
-      "Label": "Virtual path",
-      "HelpText": "The name of the application to create. For example, to serve an application that will be available at `/myapp`, enter `myapp`. To create an application under a parent virtual directory or application, separate with slashes - for example: `/applications/myapp`",
-      "DefaultValue": "",
-      "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
-      }
+    "Id": "ActionTemplates-130",
+    "Name": "IIS Application - Create",
+    "Description": "Create an IIS virtual application (a virtual directory with an application pool)",
+    "ActionType": "Octopus.Script",
+    "Version": 7,
+    "Properties": {
+        "Octopus.Action.Script.ScriptBody": "\n## --------------------------------------------------------------------------------------\n## Input\n## --------------------------------------------------------------------------------------\n\n$virtualPath = $OctopusParameters['VirtualPath']\n$physicalPath = $OctopusParameters['PhysicalPath']\n$applicationPoolName = $OctopusParameters['ApplicationPoolName']\n$parentSite = $OctopusParameters['ParentSite']\n$bindingProtocols = $OctopusParameters['BindingProtocols']\n\n## --------------------------------------------------------------------------------------\n## Helpers\n## --------------------------------------------------------------------------------------\n# Helper for validating input parameters\nfunction Validate-Parameter($foo, [string[]]$validInput, $parameterName) {\n    Write-Host \"${parameterName}: ${foo}\"\n    if (! $foo) {\n        throw \"$parameterName cannot be empty, please specify a value\"\n    }\n    \n    if ($validInput) {\n        @($foo) | % { \n                if ($validInput -notcontains $_) {\n                    throw \"'$_' is not a valid input for '$parameterName'\"\n                }\n             }  \n        }   \n}\n\n# Helper to run a block with a retry if things go wrong\n$maxFailures = 5\n$sleepBetweenFailures = Get-Random -minimum 1 -maximum 4\nfunction Execute-WithRetry([ScriptBlock] $command) {\n\t$attemptCount = 0\n\t$operationIncomplete = $true\n\n\twhile ($operationIncomplete -and $attemptCount -lt $maxFailures) {\n\t\t$attemptCount = ($attemptCount + 1)\n\n\t\tif ($attemptCount -ge 2) {\n\t\t\tWrite-Output \"Waiting for $sleepBetweenFailures seconds before retrying...\"\n\t\t\tStart-Sleep -s $sleepBetweenFailures\n\t\t\tWrite-Output \"Retrying...\"\n\t\t}\n\n\t\ttry {\n\t\t\t& $command\n\n\t\t\t$operationIncomplete = $false\n\t\t} catch [System.Exception] {\n\t\t\tif ($attemptCount -lt ($maxFailures)) {\n\t\t\t\tWrite-Output (\"Attempt $attemptCount of $maxFailures failed: \" + $_.Exception.Message)\n\t\t\t\n\t\t\t}\n\t\t\telse {\n\t\t\t    throw \"Failed to execute command\"\n\t\t\t}\n\t\t}\n\t}\n}\n\n## --------------------------------------------------------------------------------------\n## Configuration\n## --------------------------------------------------------------------------------------\nValidate-Parameter $virtualPath -parameterName \"Virtual path\"\nValidate-Parameter $physicalPath -parameterName \"Physical path\"\nValidate-Parameter $applicationPoolName -parameterName \"Application pool\"\nValidate-Parameter $parentSite -parameterName \"Parent site\"\n\nAdd-PSSnapin WebAdministration -ErrorAction SilentlyContinue\nImport-Module WebAdministration -ErrorAction SilentlyContinue\n\n\n## --------------------------------------------------------------------------------------\n## Run\n## --------------------------------------------------------------------------------------\n\nWrite-Host \"Getting web site $parentSite\"\n$site = Get-Website -name $parentSite\nif (!$site) {\n    throw \"The web site '$parentSite' does not exist. Please create the site first.\"\n}\n\n$parts = $virtualPath -split \"[/\\\\]\"\n$name = \"\"\n\nfor ($i = 0; $i -lt $parts.Length; $i++) {\n    $name = $name + \"/\" + $parts[$i]\n    $name = $name.TrimStart('/').TrimEnd('/')\n    if ($i -eq $parts.Length - 1) {\n        \n    }\n    elseif ([string]::IsNullOrEmpty($name) -eq $false -and $name -ne \"/\") {\n        Write-Host \"Ensuring parent exists: $name\"\n\n        $app = Get-WebApplication -Name $name -Site $parentSite\n\n        if (!$app) {\n            $vdir = Get-WebVirtualDirectory -Name $name -site $parentSite\n            if (!$vdir) {\n                throw \"The application or virtual directory '$name' does not exist\"\n            }\n        }\n    }\n}\n\n$existing = Get-WebApplication -site $parentSite -Name $name\n\n\nExecute-WithRetry { \n    if (!$existing) {\n        Write-Host \"Creating web application '$name'\"\n        New-WebApplication -Site $parentSite -Name $name -ApplicationPool $applicationPoolName -PhysicalPath $physicalPath\n        Write-Host \"Web application created\"\n    } else {\n        Write-Host \"The web application '$name' already exists. Updating physical path:\"\n\n        Set-ItemProperty IIS:\\Sites\\$parentSite\\$name -name physicalPath -value $physicalPath\n\n        Write-Host \"Physical path changed to: $physicalPath\"\n    }\n    \n    Write-Host \"Enabling '$bindingProtocols' protocols\"\n    Set-ItemProperty IIS:\\Sites\\$parentSite\\$name -name enabledProtocols -value $bindingProtocols\n}"
     },
-    {
-      "Name": "PhysicalPath",
-      "Label": "Physical path",
-      "HelpText": "Physical folder that the application will serve files from. Example: `C:\\MyApp`.",
-      "DefaultValue": "",
-      "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
-      }
-    },
-    {
-      "Name": "ApplicationPoolName",
-      "Label": "Application pool",
-      "HelpText": "The name of the application pool that the application will run under. The application pool must already exist.",
-      "DefaultValue": null,
-      "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
-      }
-    },
-    {
-      "Name": "ParentSite",
-      "Label": "Parent site",
-      "HelpText": "The name of the IIS web site to attach the application to. For example, to put the application under the default web site, enter:\n\n    Default Web Site",
-      "DefaultValue": null,
-      "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
-      }
-    },
-    {
-      "Name": "BindingProtocols",
-      "Label": "Protocols",
-      "HelpText": "The protocols to use for the application",
-      "DefaultValue": "http",
-      "DisplaySettings": {}
+    "SensitiveProperties": { },
+    "Parameters": [
+        {
+            "Name": "VirtualPath",
+            "Label": "Virtual path",
+            "HelpText": "The name of the application to create. For example, to serve an application that will be available at `/myapp`, enter `myapp`. To create an application under a parent virtual directory or application, separate with slashes - for example: `/applications/myapp`",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Name": "PhysicalPath",
+            "Label": "Physical path",
+            "HelpText": "Physical folder that the application will serve files from. Example: `C:\\MyApp`.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Name": "ApplicationPoolName",
+            "Label": "Application pool",
+            "HelpText": "The name of the application pool that the application will run under. The application pool must already exist.",
+            "DefaultValue": null,
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Name": "ParentSite",
+            "Label": "Parent site",
+            "HelpText": "The name of the IIS web site to attach the application to. For example, to put the application under the default web site, enter:\n\n    Default Web Site",
+            "DefaultValue": null,
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Name": "BindingProtocols",
+            "Label": "Protocols",
+            "HelpText": "The protocols to use for the application",
+            "DefaultValue": "http",
+            "DisplaySettings": { }
+        }
+    ],
+    "LastModifiedOn": "2015-04-07T23:50:27.909+00:00",
+    "LastModifiedBy": "nshenoy",
+    "$Meta": {
+        "ExportedAt": "2015-04-07T23:52:22.641Z",
+        "OctopusVersion": "2.6.0.778",
+        "Type": "ActionTemplate"
     }
-  ],
-  "LastModifiedOn": "2015-04-06T16:40:18.188+00:00",
-  "LastModifiedBy": "nshenoy",
-  "$Meta": {
-    "ExportedAt": "2015-04-06T19:12:31.542Z",
-    "OctopusVersion": "2.6.0.778",
-    "Type": "ActionTemplate"
-  }
 }
