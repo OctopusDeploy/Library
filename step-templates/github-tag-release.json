@@ -1,0 +1,83 @@
+{
+  "Id": "ActionTemplates-97",
+  "Name": "GitHub - Tag/Release",
+  "Description": "Tag a GitHub repository with a label.",
+  "ActionType": "Octopus.Script",
+  "Version": 28,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Copyright (c) Microsoft. All rights reserved.\n\n$username = $OctopusParameters['GitHub.Username']\n$email = $OctopusParameters['GitHub.Email']\n$repositoryUrl = \"https://\" + $username + \":\" + $OctopusParameters['GitHub.Password'] + \"@github.com/\" + $OctopusParameters['GitHub.Organization'] + \"/\" + $OctopusParameters['GitHub.Repository'] + \".git\"\n$label = $OctopusParameters['GitHub.Label']\n$targetEnvironment = $OctopusParameters['Octopus.Environment.Name']\n$commitMessage = \"Deployed version $label to $targetEnvironment\"\n$checkoutDirectory = \"C:\\\\Temp\\\\\" + $OctopusParameters['Octopus.Environment.Name'] + \"\\\\\" + $label\n$workingDirectory = $checkoutDirectory + \"\\\\\" + $OctopusParameters['GitHub.Repository']\n\nWrite-Host \"Creating directory $checkoutDirectory\"\nmd $checkoutDirectory\ncd $checkoutDirectory\n\nWrite-Host (\"git clone {0} --branch {1} --single-branch --quiet\" -f $repositoryUrl, $OctopusParameters['GitHub.BranchName'])\ngit clone $repositoryUrl --branch $OctopusParameters['GitHub.BranchName'] --single-branch --quiet | Out-Null\n\ncd $workingDirectory\n\ngit config user.name '$username' | Out-Null\ngit config user.email '$email' | Out-Null\n\nWrite-Host (\"git tag -a {0} -m '{1}'\" -f $label, $commitMessage)\ngit tag -a $label -m $commitMessage | Out-Null\n\nWrite-Host (\"git push origin {0} -quiet\" -f $label)\ngit push origin $label --quiet | Out-Null\n\ncd C:\\\nRemove-Item -Recurse -Force $checkoutDirectory\nWrite-Host \"Removed directory $checkoutDirectory\""
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "GitHub.Repository",
+      "Label": "GitHub Repository Name",
+      "HelpText": "The name of the GitHub repository (e.g. OctopusDeploy.Library).",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "GitHub.BranchName",
+      "Label": "GitHub Branch Name",
+      "HelpText": "The branch to label.",
+      "DefaultValue": "master",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "GitHub.Organization",
+      "Label": "GitHub Organization",
+      "HelpText": "The GitHub organization name.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "GitHub.Username",
+      "Label": "GitHub Username",
+      "HelpText": "The GitHub username used to tag the repository.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "GitHub.Password",
+      "Label": "GitHub Password",
+      "HelpText": "The GitHub password for the user that will tag the repository.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "GitHub.Email",
+      "Label": "GitHub Email Address",
+      "HelpText": "The email address of the user tagging the GitHub repository.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "GitHub.Label",
+      "Label": "GitHub Label",
+      "HelpText": "The label to tag the GitHub repository with.",
+      "DefaultValue": "#{Octopus.Release.Number}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-04-24T07:47:46.390+00:00",
+  "LastModifiedBy": "xavierdecoster",
+  "$Meta": {
+    "ExportedAt": "2015-04-24T07:48:34.723Z",
+    "OctopusVersion": "2.6.5.1010",
+    "Type": "ActionTemplate"
+  }
+}
