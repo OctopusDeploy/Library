@@ -1,0 +1,56 @@
+{
+  "Id": "ActionTemplates-257",
+  "Name": "Create Scheduled Task From XML",
+  "Description": null,
+  "ActionType": "Octopus.Script",
+  "Version": 14,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "Function Create-ScheduledTask($xmlFileName, $taskName, $username, $password){\r\n\t$Command = \"schtasks.exe /create /tn $($taskName) /RU $($username) /RP $($password) /XML $($xmlFileName)\"\r\n\r\n\tWrite-Host $Command\r\n\tInvoke-Expression $Command\r\n }\r\n\r\n Function Delete-ScheduledTask($TaskName) {   \r\n\t$Command = \"schtasks.exe /delete /tn `\"$TaskName`\" /F\"            \r\n\tInvoke-Expression $Command \r\n}\r\n\r\n Function Stop-ScheduledTask($TaskName) {  \r\n\t$Command = \"schtasks.exe /end /tn `\"$TaskName`\"\"            \r\n\tInvoke-Expression $Command \r\n}\r\n\r\nFunction Start-ScheduledTask($TaskName) {   \r\n\t$Command = \"schtasks.exe /run /tn `\"$TaskName`\"\"            \r\n\tInvoke-Expression $Command \r\n}\r\n\r\nFunction ScheduledTask-Exists($taskName) {\r\n   $schedule = new-object -com Schedule.Service \r\n   $schedule.connect() \r\n   $tasks = $schedule.getfolder(\"\\\").gettasks(0)\r\n\r\n   foreach ($task in ($tasks | select Name)) {\r\n\t  #echo \"TASK: $($task.name)\"\r\n\t  if($task.Name -eq $taskName) {\r\n\t\t #write-output \"$task already exists\"\r\n\t\t return $true\r\n\t  }\r\n   }\r\n\r\n   return $false\r\n} \r\n\r\n\r\n$xmlFileName = $OctopusParameters['xmlFileName']\r\n$taskName = $OctopusParameters['taskName']\r\n$username = $OctopusParameters['userName']\r\n$password = $OctopusParameters['password']\r\n\r\nif((ScheduledTask-Exists($taskName))){\r\n\tWrite-Output \"$taskName already exists, Tearing down...\"\r\n\tWrite-Output \"Stopping $taskName...\"\r\n\tStop-ScheduledTask($taskName)\r\n\tWrite-Output \"Successfully Stopped $taskName\"\r\n\tWrite-Output \"Deleting $taskName...\"\r\n\tDelete-ScheduledTask($taskName)\r\n\tWrite-Output \"Successfully Deleted $taskName\"\r\n}\r\n\r\nCreate-ScheduledTask \"$($xmlFileName)\" $taskName $username $password"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "xmlFileName",
+      "Label": "Xml File Name",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "taskName",
+      "Label": "Task Name",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "username",
+      "Label": "User Name",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "password",
+      "Label": "Password",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-03-17T20:57:42.457+00:00",
+  "LastModifiedBy": "jobennett",
+  "$Meta": {
+    "ExportedAt": "2015-04-28T15:39:56.357Z",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  }
+}
