@@ -1,0 +1,48 @@
+{
+  "Id": "ActionTemplates-39",
+  "Name": "SQL - Drop Database Using SMO",
+  "Description": "This uses Sql Management Objects to drop a database if it exists. If the username and password are both empty then it will attempt a trusted connection.",
+  "ActionType": "Octopus.Script",
+  "Version": 7,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SMO\") | out-null\n\ntry\n{    \n    $server = new-object ('Microsoft.SqlServer.Management.Smo.Server') $SqlServer\n    \n    if ($SqlUsername -eq \"\" -and $SqlPassword -eq \"\")\n    {\n        $server.ConnectionContext.LoginSecure = $true\n    } else {\n        $server.ConnectionContext.LoginSecure = $false\n        $server.ConnectionContext.set_Login($SqlUsername)\n        $server.ConnectionContext.set_Password($SqlPassword)      \n    }\n\n\tif ($server.databases[$SqlDatabase] -ne $null)\n\t{\n    \t$server.killallprocesses($SqlDatabase)\n    \t$server.databases[$SqlDatabase].drop()\n\t}\n}\ncatch\n{    \n    $error[0] | format-list -force\n    Exit 1\n}\n    "
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "SqlServer",
+      "Label": "Sql Server",
+      "HelpText": "SQL Server Instance with Port",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "SqlUsername",
+      "Label": "Sql Username (optional)",
+      "HelpText": "The SQL Account which has access to Create SQL Database",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "SqlPassword",
+      "Label": "Sql Password (optional)",
+      "HelpText": "The password for the SQL Account",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "SqlDatabase",
+      "Label": "Sql Database",
+      "HelpText": "Name of Database to be Dropped",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    }
+  ],
+  "LastModifiedOn": "2015-05-20T13:00:03.245+00:00",
+  "LastModifiedBy": "software-programmer",
+  "$Meta": {
+    "ExportedAt": "2015-05-20T13:00:12.964Z",
+    "OctopusVersion": "2.6.5.1010",
+    "Type": "ActionTemplate"
+  }
+}
