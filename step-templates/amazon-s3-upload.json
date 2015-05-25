@@ -1,0 +1,65 @@
+{
+  "Id": "ActionTemplates-2",
+  "Name": "Amazon S3 Upload",
+  "Description": "Upload files and folders to an S3 bucket from a specified location.\n\nEither specify a single file or a folder containing the files and folders to be uploaded.\n\n**Important!** _For this plugin to function, you must install [AWS Tools for Windows PowerShell](http://aws.amazon.com/powershell/) on your tentacle server._\n",
+  "ActionType": "Octopus.Script",
+  "Version": 9,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$region = $OctopusParameters['Region']\r\n$folder = $OctopusParameters['Folder']\r\n$bucket = $OctopusParameters['Bucket']\r\n$accessKey = $OctopusParameters['S3AccessKey']\r\n$secretKey = $OctopusParameters['S3SecretKey']\r\n\r\nSet-AWSCredentials -AccessKey $accessKey -SecretKey $secretKey -StoreAs S3Creds\r\nSet-DefaultAWSRegion -Region $region\r\n\r\nFunction Upload($item) {\r\n    foreach ($i in Get-ChildItem $item)\r\n    {\r\n        if((Get-Item $i.FullName) -is [System.IO.DirectoryInfo]){\r\n            Write-S3Object -ProfileName S3Creds -BucketName $bucket -KeyPrefix $i -Folder $i.FullName\r\n        } else {\r\n            Write-S3Object -ProfileName S3Creds -BucketName $bucket -Key $i -File $i.FullName\r\n        }\r\n    }\r\n}\r\n\r\nUpload($folder)\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Region",
+      "Label": "Region",
+      "HelpText": "A region is the location that your S3 bucket was created.\n\nAmazon has many different region names and you [can read more about Amazon Region names here](http://docs.aws.amazon.com/general/latest/gr/rande.html).\n\n**Default Region**\nIf you didn't specify a region when setting up your S3 buckets, you may be using the default. According to Amazon:\n>  For accounts created on or after March 8, 2013, the default region is us-west-2; for older accounts, the default region is us-east-1.\n\n**Examples of region names include:**\n\n- eu-west-1\n- ap-southeast-1\n- us-east-1",
+      "DefaultValue": "eu-west-1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Bucket",
+      "Label": "Bucket Name",
+      "HelpText": "This is the name of the bucket on S3 that you'd like your files and folders uploaded to.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Folder",
+      "Label": "Source Folder",
+      "HelpText": "This is the local folder located on your tentacle server that you'd like to upload to S3\n\nExample: _C:\\Deployment\\S3Distributables_",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "S3AccessKey",
+      "Label": "Access Key ID",
+      "HelpText": "Your public S3 Key.\n\nThis can be found by clicking _My Account/Consoles_ and navigating to _Security Credentials_.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "S3SecretKey",
+      "Label": "Secret Access Key",
+      "HelpText": "Your private S3 Key.\n\nThis can be found by clicking _My Account/Consoles_ and navigating to _Security Credentials_.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-05-01T11:00:13.067+00:00",
+  "LastModifiedBy": "JamieDixon",
+  "$Meta": {
+    "ExportedAt": "2015-05-01T11:00:49.224Z",
+    "OctopusVersion": "2.6.5.1010",
+    "Type": "ActionTemplate"
+  }
+}
