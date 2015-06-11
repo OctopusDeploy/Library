@@ -1,11 +1,11 @@
 {
-  "Id": "ActionTemplates-8",
+  "Id": "ActionTemplates-9",
   "Name": "IIS AppPool - Stop",
   "Description": "Stops an IIS Application Pool",
   "ActionType": "Octopus.Script",
-  "Version": 8,
+  "Version": 9,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "# Load IIS module:\nImport-Module WebAdministration\n\n# Get AppPool Name\n$appPoolName = $OctopusParameters['appPoolName']\n\n# Stop App Pool if not already stopped\nif ((Get-WebAppPoolState($appPoolName)).Value -ne \"Stopped\"){\n    Write-Output \"Stopping IIS app pool $appPoolName\"\n    Stop-WebAppPool $appPoolName\n}\n\n"
+    "Octopus.Action.Script.ScriptBody": "# Load IIS module:\nImport-Module WebAdministration\n\n# Get AppPool Name\n$appPoolName = $OctopusParameters['appPoolName']\n# Get the number of retries\n$retries = $OctopusParameters['appPoolCheckRetries']\n# Get the number of attempts\n$delay = $OctopusParameters['appPoolCheckDelay']\n\n# Stop App Pool if not already stopped\nif ((Get-WebAppPoolState($appPoolName)).Value -ne \"Stopped\"){\n    Write-Output \"Stopping IIS app pool $appPoolName\"\n    Stop-WebAppPool $appPoolName\n\n    $state = Get-WebAppPoolState $appPoolName\n    $counter = 1\n    \n    # Wait for the app pool to the \"Stopped\" before proceeding\n    do{ \n        $status = (Get-WebAppPoolState $appPoolName).Value\n        Write-Output \"$counter/$retries Waiting for IIS app pool $appPoolName to shut down completely. Current status: $status\"\n        $counter++\n        Start-Sleep -Milliseconds $delay\n    }\n    while($state.Value -ne 'Stopped' -and $counter -le $retries)  \n    \n    # Throw an error if the app pool is not stopped\n    if($counter -ge $retries) { \n        throw \"Could not shut down IIS app pool $appPoolName. `nTry to increase the number of retries ($retries) or delay between attempts ($delay milliseconds).\" }\n}"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -13,14 +13,33 @@
       "Name": "AppPoolName",
       "Label": "Application pool name",
       "HelpText": "The name of the application pool in IIS.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "AppPoolCheckDelay",
+      "Label": "Status check interval",
+      "HelpText": "The delay, in milliseconds,  between each attemt to query the application pool to see if its status is \"Stopped\"",
+      "DefaultValue": "500",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AppPoolCheckRetries",
+      "Label": "Status check retries",
+      "HelpText": "The number of retries before an error is thrown.",
+      "DefaultValue": "20",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-05-16T05:49:00.237+00:00",
-  "LastModifiedBy": "pascaln2",
+  "LastModifiedOn": "2015-04-30T08:44:38.960+00:00",
+  "LastModifiedBy": "oskaremil",
   "$Meta": {
-    "ExportedAt": "2014-05-16T06:10:21.049Z",
-    "OctopusVersion": "2.4.5.46",
+    "ExportedAt": "2015-04-30T08:44:40.269Z",
+    "OctopusVersion": "2.5.11.614",
     "Type": "ActionTemplate"
   }
 }
