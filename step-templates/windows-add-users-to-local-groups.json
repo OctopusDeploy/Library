@@ -1,0 +1,38 @@
+{
+  "Id": "ActionTemplates-481",
+  "Name": "Windows - Add Users to Local Groups",
+  "Description": "Add a list of users to a list of Local Groups",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\r\nparam(\r\n    [string]$UserNames,\r\n    [string]$GroupNames\r\n) \r\n\r\n$ErrorActionPreference = \"Stop\" \r\n\r\nfunction Get-Param($Name, [switch]$Required, $Default) {\r\n    $result = $null\r\n\r\n    if ($OctopusParameters -ne $null) {\r\n        $result = $OctopusParameters[$Name]\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        $variable = Get-Variable $Name -EA SilentlyContinue   \r\n        if ($variable -ne $null) {\r\n            $result = $variable.Value\r\n        }\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        if ($Required) {\r\n            throw \"Missing parameter value $Name\"\r\n        } else {\r\n            $result = $Default\r\n        }\r\n    }\r\n\r\n    return $result\r\n}\r\n\r\nfunction isValidUser ( $user ) {\r\n    \r\n    if($user.Guid -and ($user.SchemaClassName -eq \"User\")){\r\n        return $true\r\n    }\r\n    \r\n    Write-Host \"ERROR - `\"WinNT://$($user.Name)`\" not found\"\r\n    return $false\r\n}\r\n\r\nfunction isValidGroup ( $group ) {\r\n    \r\n    if( $group.Guid -and ($group.SchemaClassName -eq \"Group\") ) {\r\n        Write-Host \"the group $($group.Guid) was found\" -ForegroundColor green\r\n        return $true\r\n    }\r\n\r\n    Write-Host \"ERROR - `\"WinNT://$($Env:COMPUTERNAME)/$($group.Name)`\" not found\" -ForegroundColor red\r\n    return $false\r\n}\r\n\r\nfunction isUserInGroup($user, $groupName){\r\n\r\n    Write-Host \"Checking to see if $($user.Name) is in $($group.Name)\"\r\n\r\n    if(!(isValidGroup $group)){\r\n        throw \"Could not find group $($group.Name)\"\r\n    }\r\n\r\n    $members = @($group.psbase.Invoke(\"Members\")) \r\n    \r\n    Write-Host \"There are $($members.Count) members in $($group.Name)\"\r\n    \r\n    $isInGroup = ($members | foreach {$_.GetType().InvokeMember(\"Name\", 'GetProperty', $null, $_, $null)}) -contains \"$($user.Name)\"\r\n        \r\n    if($isInGroup) {\r\n        Write-Host \"User $($user.Name) is already a part of `\"$($group.Name)`\"\" -ForegroundColor Yellow\r\n    } else {\r\n        Write-Host \"User $($user.Name) is not a part of `\"$($group.Name)`\"\" -ForegroundColor Green\r\n    }\r\n    \r\n    return $isInGroup\r\n}\r\n\r\nfunction FormatUserNameForQuery([string]$userName)\r\n{\r\n    return $userName.Trim().Replace(\"\\\", \"/\")\r\n}\r\n\r\n& {\r\n    param(\r\n        [string]$UserNames,\r\n        [string]$GroupNames\r\n    ) \r\n\r\n    Write-Host \"Windows - Add Users to Local Groups\"\r\n    Write-Host \"UserNames: $UserNames\"\r\n    Write-Host \"GroupNames: $GroupNames\"\r\n\r\n    $UserNames.Split(\";\") | foreach {\r\n        \r\n        $userName = FormatUserNameForQuery $_\r\n        $user = [ADSI]\"WinNT://$userName\"\r\n        \r\n        $userDoesNotExist = !(isValidUser $user)\r\n        \r\n        if( $userDoesNotExist )\r\n        {\r\n            throw \"User $userName was not found\"\r\n        }\r\n\r\n        Write-Host \"Current user $userName\"\r\n\r\n        $GroupNames.Split(\";\") | foreach {\r\n            \r\n            $groupName = $_.Trim()\r\n            $group = [ADSI]\"WinNT://$Env:COMPUTERNAME/$groupName\"\r\n           \r\n            $groupDoesNotExist = !(isValidGroup $group)\r\n            \r\n            if($groupDoesNotExist)\r\n            {\r\n                throw \"Group $groupName was not found\"\r\n            }\r\n\r\n            Write-Host \"Current group $groupName\"\r\n\r\n            $isInGroup = isUserInGroup $user $group\r\n\r\n            if( $isInGroup ) {\r\n                \r\n                Write-Host \"Skipping...\"\r\n                \r\n                continue\r\n            }\r\n\r\n            Write-Host \"Adding $userName to $groupName\" -ForegroundColor Cyan\r\n            \r\n            $group.psbase.Invoke(\"Add\",$user.Path)\r\n\r\n            Write-Host \"SUCCESS - added $userName to $groupName\" -ForegroundColor Green\r\n        }\r\n    }\r\n\r\n } `\r\n (Get-Param 'UserNames' -Required) `\r\n (Get-Param 'GroupNames' -Required)"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "UserNames",
+      "Label": "User Names",
+      "HelpText": "List of user names separated by ;",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "GroupNames",
+      "Label": "Group Names",
+      "HelpText": "list of group names separated by ;",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-05-19T19:47:40.330+00:00",
+  "LastModifiedBy": "jobennett",
+  "$Meta": {
+    "ExportedAt": "2015-05-19T19:57:11.048Z",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  }
+}
