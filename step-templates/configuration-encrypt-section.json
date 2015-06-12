@@ -1,0 +1,56 @@
+{
+  "Id": "ActionTemplates-68",
+  "Name": "Configuration - Encrypt Section",
+  "Description": "Encrypts an configuration section for the specified file in a given directory.",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\" \r\nfunction Get-Parameter($Name, $Default, [switch]$Required) {\r\n    $result = $null\r\n\r\n    if ($OctopusParameters -ne $null) {\r\n        $result = $OctopusParameters[$Name]\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        if ($Required) {\r\n            throw \"Missing parameter value $Name\"\r\n        } else {\r\n            $result = $Default\r\n        }\r\n    }\r\n\r\n    return $result\r\n}\r\n\r\nfunction HandleError($message) {\r\n\tif (!$whatIf) {\r\n\t\tthrow $message\r\n\t} else {\r\n\t\tWrite-Host $message -Foreground Yellow\r\n\t}\r\n}\r\n\r\n$websiteDirectory = Get-Parameter \"WebsiteDirectory\" -Required\r\n$sectionToEncrypt = Get-Parameter \"SectionToEncrypt\" -Required\r\n$provider = Get-Parameter \"Provider\" \"\"\r\n$configFile = Get-Parameter \"ConfigFile\" \"web.config\"\r\n\r\nWrite-Host \"Configuration - Encrypt .config\"\r\nWrite-Host \"WebsiteDirectory: $websiteDirectory\"\r\nWrite-Host \"SectionToEncrypt: $sectionToEncrypt\"\r\nWrite-Host \"Provider: $provider\"\r\nWrite-Host \"ConfigFile: $configFile\"\r\n\r\n\r\nif (!(Test-Path $websiteDirectory)) {\r\n\tHandleError \"The directory $websiteDirectory must exist\"\r\n}\r\n\r\n$configFilePath = Join-Path $websiteDirectory $configFile\r\nWrite-Host \"configFilePath: $configFilePath\"\r\nif (!(Test-Path $configFilePath)) {\r\n\tHandleError \"Specified file $configFile or a Web.Config file must exist in the directory $websiteDirectory\"\r\n}\r\n\r\n$frameworkPath = [System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory();\r\n$regiis = \"$frameworkPath\\aspnet_regiis.exe\"\r\n\r\nif (!(Test-Path $regiis)) {\r\n\tHandleError \"The tool aspnet_regiis does not exist in the directory $frameworkPath\"\r\n}\r\n\r\n# Create a temp directory to work out of and copy our config file to web.config\r\n$tempPath = Join-Path $websiteDirectory $([guid]::NewGuid()).ToString()\r\nif (!$whatIf) {\r\n\tNew-Item $tempPath -ItemType \"directory\"\r\n} else {\r\n\tWrite-Host \"WhatIf: New-Item $tempPath -ItemType \"\"directory\"\"\" -Foreground Yellow\r\n}\r\n\r\n$tempFile = Join-Path $tempPath \"web.config\"\r\nif (!$whatIf) {\r\n\tCopy-Item $configFilePath $tempFile\r\n} else {\r\n\tWrite-Host \"WhatIf: Copy-Item $configFilePath $tempFile\" -Foreground Yellow\r\n}\r\n\r\n# Determine arguments\r\nif ($provider) {\r\n\t$args = \"-pef\", $sectionToEncrypt, $tempPath, \"-prov\", $provider\r\n} else {\r\n\t$args = \"-pef\", $sectionToEncrypt, $tempPath\r\n}\r\n\r\n# Encrypt Web.Config file in directory\r\nif (!$whatIf) {\r\n\t& $regiis $args\r\n} else {\r\n\tWrite-Host \"WhatIf: $regiis $args\" -Foreground Yellow\r\n}\r\n\r\n# Copy the web.config back to original file and delete the temp dir\r\nif (!$whatIf) {\r\n\tCopy-Item $tempFile $configFilePath -Force\r\n\tRemove-Item $tempPath -Recurse\r\n} else {\r\n\tWrite-Host \"WhatIf: Copy-Item $tempFile $configFilePath -Force\" -Foreground Yellow\r\n\tWrite-Host \"WhatIf: Remove-Item $tempPath -Recurse\" -Foreground Yellow\r\n}\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "WebsiteDirectory",
+      "Label": "Website directory",
+      "HelpText": "The path to the website physical directory that contains a `Web.Config` file. \n\nYou can get the InstallationDirectoryPath like so `#{Octopus.Action[StepName].Output.Package.InstallationDirectoryPath}`",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SectionToEncrypt",
+      "Label": "Section to encrypt",
+      "HelpText": "The name of the section in the web config to encrypt e.g. `appSettings`, `connectionStrings` etc.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Provider",
+      "Label": "Provider Name",
+      "HelpText": "The provider to use for encryption",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ConfigFile",
+      "Label": "Configuration File",
+      "HelpText": "The configuration file to encrypt.",
+      "DefaultValue": "web.config",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2014-12-08T20:03:23.131+00:00",
+  "LastModifiedBy": "JCapriotti",
+  "$Meta": {
+    "ExportedAt": "2014-12-08T20:06:03.283Z",
+    "OctopusVersion": "2.5.10.567",
+    "Type": "ActionTemplate"
+  }
+}
