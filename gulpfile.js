@@ -15,6 +15,7 @@ var replace = require('gulp-replace');
 var sourceUrl = require('gulp-source-url');
 var filter = require('gulp-filter');
 var childProcess = require('child_process');
+var mapStream = require('map-stream');
 
 var reExt = function(ext) {
   return rename(function(path) { path.extname = ext; })
@@ -209,6 +210,20 @@ gulp.task('install-snapshot', ['snapshot'], function() {
     }))
     .pipe(gulp.dest('build/public/generated'))
     .pipe(gulp.dest('dist/public/generated'));
+});
+
+gulp.task('expand-step-templates' , function() {
+  return gulp.src(['step-template/*.json'])
+    .pipe(change( function(content) {
+      contentJson = JSON.parse(content);
+      scriptBody = contentJson.Properties["Octopus.Action.Script.ScriptBody"];
+      return scriptBody;
+    }))
+    .pipe(rename(function (path) {
+      path.dirname += "../tmp/step-template";
+      path.extname = ".ps1"
+    }))
+    .gulp.dest('tmp/html-snapshot');
 });
 
 gulp.task('build', ['install-snapshot']);
