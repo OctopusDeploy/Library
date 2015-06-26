@@ -15,7 +15,7 @@ var replace = require('gulp-replace');
 var sourceUrl = require('gulp-source-url');
 var filter = require('gulp-filter');
 var childProcess = require('child_process');
-var mapStream = require('map-stream');
+var data = require('gulp-data');
 
 var reExt = function(ext) {
   return rename(function(path) { path.extname = ext; })
@@ -213,17 +213,23 @@ gulp.task('install-snapshot', ['snapshot'], function() {
 });
 
 gulp.task('expand-step-templates' , function() {
-  return gulp.src(['step-template/*.json'])
-    .pipe(change( function(content) {
-      contentJson = JSON.parse(content);
-      scriptBody = contentJson.Properties["Octopus.Action.Script.ScriptBody"];
-      return scriptBody;
+  return gulp.src(['step-templates/*.json'])
+    .pipe(data(function(file) {
+      var content = String(file.contents);
+      try{
+        var json = JSON.parse(content);
+      } catch(ex){
+        console.log("warning failed to parse \n" + content);
+        return new Buffer(file.contents).attributes;
+      }
+      file.contents = new Buffer(json.Properties["Octopus.Action.Script.ScriptBody"]);
+      return content.attributes;
     }))
-    .pipe(rename(function (path) {
-      path.dirname += "../tmp/step-template";
-      path.extname = ".ps1"
+    .pipe(rename({
+      dirname: "step-templates",
+      extname: ".ps1"
     }))
-    .gulp.dest('tmp/html-snapshot');
+    .pipe(gulp.dest('tmp'));
 });
 
 gulp.task('build', ['install-snapshot']);
