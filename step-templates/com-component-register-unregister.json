@@ -1,0 +1,68 @@
+{
+  "Id": "ActionTemplates-483",
+  "Name": "COM Component - Register/Unregister",
+  "Description": "Use RegAsm registers your .NET assembly to be COM-viewable.",
+  "ActionType": "Octopus.Script",
+  "Version": 13,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\r\nparam(\r\n    [string]$DllFilePaths,\r\n    [string]$IncludeCodepath,\r\n    [string]$Version,\r\n    [string]$IsFramework64,\r\n    [string]$Uninstall\r\n)\r\n\r\n$ErrorActionPreference = \"Stop\" \r\n\r\nfunction Get-Param($Name, [switch]$Required, $Default) {\r\n    $result = $null\r\n\r\n    if ($OctopusParameters -ne $null) {\r\n        $result = $OctopusParameters[$Name]\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        $variable = Get-Variable $Name -EA SilentlyContinue   \r\n        if ($variable -ne $null) {\r\n            $result = $variable.Value\r\n        }\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        if ($Required) {\r\n            throw \"Missing parameter value $Name\"\r\n        } else {\r\n            $result = $Default\r\n        }\r\n    }\r\n\r\n    return $result\r\n}\r\n\r\n& {\r\n    param(\r\n        [string]$DllFilePaths,\r\n        [string]$IncludeCodepath,\r\n        [string]$Version,\r\n        [string]$IsFramework64,\r\n        [string]$Uninstall\r\n    ) \r\n\r\n    $isUninstall = $($Uninstall.ToLower() -eq 'true')\r\n\r\n    Write-Host \"COM Component - Register\"\r\n    Write-Host \"IncludeCodepath: $IncludeCodepath\"\r\n    Write-Host \"Version: $Version\"\r\n    Write-Host \"IsFramework64: $IsFramework64\"\r\n    Write-Host \"Uninstall: $Uninstall\"\r\n\r\n    $DllFilePaths.split(\";\") | ForEach {\r\n        \r\n        $dllFilePath = $_.Trim();\r\n\r\n        if($dllFilePath.Length -lt 1)\r\n        {\r\n            break\r\n        }\r\n\r\n        if(!(Test-Path \"$dllFilePath\"))\r\n        {\r\n            Write-Host \"FILE NOT FOUND $dllFilePath.\" -ForegroundColor Yellow\r\n            break\r\n        }\r\n\r\n        Write-Host \"Attempting to register $dllFilePath\"\r\n    \r\n        $pinfo = New-Object System.Diagnostics.ProcessStartInfo\r\n\r\n        $folderPathVersion = \"v2.0.50727\"\r\n        $folderPathFramework = \"Framework\"\r\n\r\n        if ($Version -eq 'V4') { \r\n            Write-Host \"Setting version to 4\"\r\n            $folderPathVersion = \"v4.0.30319\"\r\n        } else {\r\n            Write-Host \"Setting version to 2\"\r\n        }\r\n\r\n        if ($IsFramework64 -eq 'yes') { \r\n            Write-Host \"Setting framework to 64\"\r\n            $folderPathFramework = \"Framework64\"\r\n        } else {\r\n            Write-Host \"Setting framework to 32\"\r\n        }\r\n\r\n        Write-Host \"Registering with: $env:windir\\Microsoft.NET\\$folderPathFramework\\$folderPathVersion\\RegAsm.exe\"\r\n\r\n        $pinfo.FileName = \"$env:windir\\Microsoft.NET\\$folderPathFramework\\$folderPathVersion\\RegAsm.exe\"\r\n\r\n    \r\n        $pinfo.RedirectStandardError = $true\r\n        $pinfo.RedirectStandardOutput = $true\r\n        $pinfo.UseShellExecute = $false\r\n\r\n        if ($IncludeCodepath -eq \"yes\") {\r\n            Write-Host \"Registering with codebase parameter to specify dll location\"\r\n            $pinfo.Arguments = \"$dllFilePath /codebase\"\r\n        }\r\n        else {\r\n            $pinfo.Arguments = \"$dllFilePath\"\r\n        }\r\n\r\n        if($isUninstall){\r\n            $pinfo.Arguments = \"$pinfo.Arguments /u\"\r\n        }\r\n        \r\n        $p = New-Object System.Diagnostics.Process\r\n\r\n        $p.StartInfo = $pinfo\r\n\r\n        Write-Host \"Command:\"\r\n        Write-Host \"$pinfo.FileName $pinfo.Arguments\"\r\n        \r\n        if ($p.Start())\r\n        {\r\n            Write-Host $p.StandardOutput.ReadToEnd()\r\n\r\n            switch($p.ExitCode)\r\n            {\r\n                0 {}\r\n                100 { # It failed to unregister a component, don't throw an error.\r\n                    Write-Host \"FAILED with exit code $($p.ExitCode) \" -ForegroundColor Red \r\n                    Write-Host $p.StandardError.ReadToEnd()\r\n\r\n                    break\r\n                }\r\n                default {\r\n                    Write-Host \"FAILED with exit code $($p.ExitCode) \" -ForegroundColor Red \r\n                    throw $p.StandardError.ReadToEnd()\r\n                }\r\n            }\r\n            \r\n            Write-Host \"SUCCESS- Register\" -ForegroundColor Green \r\n        }  \r\n    }\r\n\r\n } `\r\n (Get-Param 'DllFilePaths' -Required) `\r\n (Get-Param 'IncludeCodepath' -Required) `\r\n (Get-Param 'Version' -Required) `\r\n (Get-Param 'IsFramework64' -Required) `\r\n (Get-Param 'Uninstall' -Required)"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "DllFilePaths",
+      "Label": "DllFilePaths",
+      "HelpText": "A list of dll paths separated by ;",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "IncludeCodePath",
+      "Label": "Include /codepath parameter",
+      "HelpText": "If true, will include /codepath option to regasm.",
+      "DefaultValue": "Yes",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Yes\nNo"
+      }
+    },
+    {
+      "Name": "Version",
+      "Label": ".NET Framework Version to Use",
+      "HelpText": "V2 will use %windir%\\framework\\v2.*\\regasm.exe, V4 will use %windir%\\framework\\v2.*\\regasm.exe",
+      "DefaultValue": "V2",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "V2\nV4"
+      }
+    },
+    {
+      "Name": "IsFramework64",
+      "Label": "Use Framework64 Folder?",
+      "HelpText": "Specifies if %windir%\\Microsoft.NET\\Framework or \\Framework64 should be used.",
+      "DefaultValue": "Yes",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Yes\nNo"
+      }
+    },
+    {
+      "Name": "Uninstall",
+      "Label": "Un-register",
+      "HelpText": "set weather you would like to Un-Register",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-06-29T20:49:54.242+00:00",
+  "LastModifiedBy": "jbennett",
+  "$Meta": {
+    "ExportedAt": "2015-06-29T21:05:23.309Z",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  }
+}
