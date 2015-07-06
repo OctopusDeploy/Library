@@ -1,11 +1,11 @@
 {
   "Id": "ActionTemplates-2",
   "Name": "Redgate - Deploy from Database",
-  "Description": "Uses Redgate's [SQL Release](http://www.red-gate.com/sqlreleaseproductpage) to deploy the schema of a SQL Server database to another SQL Server database without a review step.",
+  "Description": "Uses Redgate's [SQL Release](http://www.red-gate.com/sqlreleaseproductpage) to deploy a source schema to a SQL Server database without a review step.",
   "ActionType": "Octopus.Script",
-  "Version": 24,
-  "Properties": {    
-    "Octopus.Action.Script.ScriptBody": "# Check if SQL Release is installed.\r\n$sqlReleaseModule = Get-Module -ListAvailable -Name SQLRelease\r\nif ($sqlReleaseModule -eq $null) { \r\n    throw \"Cannot find SQL Release on your Octopus Tentacle. If SQL Release is installed, try restarting the Tentacle service for it to be detected.\"\r\n}\r\n\r\n# Check the parameters.\r\nif (-NOT $SQLReleaseSourceDatabaseName) { throw \"You must enter a value for 'Source database name'.\" }\r\nif (-NOT $SQLReleaseSourceDatabaseServer) { throw \"You must enter a value for 'Source SQL Server instance'.\" }\r\nif (-NOT $SQLReleaseTargetDatabaseName) { throw \"You must enter a value for 'Target database name'.\" }\r\nif (-NOT $SQLReleaseTargetDatabaseServer) { throw \"You must enter a value for 'Target SQL Server instance'.\" }\r\n\r\n$targetDB = New-DatabaseConnection -ServerInstance $SQLReleaseTargetDatabaseServer -Database $SQLReleaseTargetDatabaseName -Username $SQLReleaseTargetUsername -Password $SQLReleaseTargetPassword | Test-DatabaseConnection\r\n$sourceDB = New-DatabaseConnection -ServerInstance $SQLReleaseSourceDatabaseServer -Database $SQLReleaseSourceDatabaseName -Username $SQLReleaseSourceUsername -Password $SQLReleaseSourcePassword | Test-DatabaseConnection\r\n\r\n# Create the deployment resources, only adding the arguments that are not null or empty.\r\nif ($SQLReleaseFilterPath) {\r\n    if ($SQLReleaseCompareOptions) {\r\n        $release = New-DatabaseRelease -Target $targetDB -Source $sourceDB -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel -FilterPath $SQLReleaseFilterPath -SQLCompareOptions $SQLReleaseCompareOptions  -Verbose\r\n    } else {\r\n        $release = New-DatabaseRelease -Target $targetDB -Source $sourceDB -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel -FilterPath $SQLReleaseFilterPath -Verbose\r\n    }\r\n} else {\r\n    if ($SQLReleaseCompareOptions) {\r\n        $release = New-DatabaseRelease -Target $targetDB -Source $sourceDB -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel -SQLCompareOptions $SQLReleaseCompareOptions -Verbose\r\n    } else {\r\n        $release = New-DatabaseRelease -Target $targetDB -Source $sourceDB -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel -Verbose\r\n    }\r\n}\r\n        \r\n# Deploy the source schema to the target database. \r\n$release | Use-DatabaseRelease -DeployTo $targetDB -Verbose\r\n"
+  "Version": 25,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Check if SQL Release is installed.\r\n$sqlReleaseModule = Get-Module -ListAvailable -Name SQLRelease\r\nif ($sqlReleaseModule -eq $null) { \r\n    throw \"Cannot find SQL Release on your Octopus Tentacle. If SQL Release is installed, try restarting the Tentacle service for it to be detected.\"\r\n}\r\n$currentVersion = $sqlReleaseModule.Version\r\n$minimumRequiredVersion = [version] '1.2.1.2943'\r\nif ($currentVersion -lt $minimumRequiredVersion) { \r\n    throw \"This step requires SQL Release version $minimumRequiredVersion or later. The current version is $currentVersion. The latest version can be found at http://www.red-gate.com/dynamic/products/dlm/dlm-automation-suite/download\"\r\n}\r\n\r\n# Check the parameters.\r\nif (-NOT $SQLReleaseSourceDatabaseName) { throw \"You must enter a value for 'Source database name'.\" }\r\nif (-NOT $SQLReleaseSourceDatabaseServer) { throw \"You must enter a value for 'Source SQL Server instance'.\" }\r\nif (-NOT $SQLReleaseTargetDatabaseName) { throw \"You must enter a value for 'Target database name'.\" }\r\nif (-NOT $SQLReleaseTargetDatabaseServer) { throw \"You must enter a value for 'Target SQL Server instance'.\" }\r\n\r\n$queryBatchTimeout = 30\r\nif (![string]::IsNullOrWhiteSpace($SQLReleaseQueryBatchTimeout)) {\r\n    if (![int32]::TryParse($SQLReleaseQueryBatchTimeout , [ref]$queryBatchTimeout )) {\r\n        throw 'The query batch timeout must be a numerical value (in seconds).'\r\n    }\r\n    if ($queryBatchTimeout -lt 0) {\r\n        throw \"The query batch timeout can't be negative.\"\r\n    }\r\n}\r\n\r\n$targetDB = New-DatabaseConnection -ServerInstance $SQLReleaseTargetDatabaseServer -Database $SQLReleaseTargetDatabaseName -Username $SQLReleaseTargetUsername -Password $SQLReleaseTargetPassword | Test-DatabaseConnection\r\n$sourceDB = New-DatabaseConnection -ServerInstance $SQLReleaseSourceDatabaseServer -Database $SQLReleaseSourceDatabaseName -Username $SQLReleaseSourceUsername -Password $SQLReleaseSourcePassword | Test-DatabaseConnection\r\n\r\n# Create the deployment resources, only adding the arguments that are not null or empty.\r\nif ($SQLReleaseFilterPath) {\r\n    if ($SQLReleaseCompareOptions) {\r\n        $release = New-DatabaseRelease  -Target $targetDB `\r\n                                        -Source $sourceDB `\r\n                                        -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel `\r\n                                        -FilterPath $SQLReleaseFilterPath `\r\n                                        -SQLCompareOptions $SQLReleaseCompareOptions `\r\n                                        -Verbose\r\n    } else {\r\n        $release = New-DatabaseRelease  -Target $targetDB `\r\n                                        -Source $sourceDB `\r\n                                        -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel `\r\n                                        -FilterPath $SQLReleaseFilterPath `\r\n                                        -Verbose\r\n    }\r\n} else {\r\n    if ($SQLReleaseCompareOptions) {\r\n        $release = New-DatabaseRelease  -Target $targetDB `\r\n                                        -Source $sourceDB `\r\n                                        -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel `\r\n                                        -SQLCompareOptions $SQLReleaseCompareOptions \r\n                                        -Verbose\r\n    } else {\r\n        $release = New-DatabaseRelease  -Target $targetDB `\r\n                                        -Source $sourceDB `\r\n                                        -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel `\r\n                                        -Verbose\r\n    }\r\n}\r\n        \r\n# Deploy the source schema to the target database.\r\n$release | Use-DatabaseRelease -DeployTo $targetDB -SkipPreUpdateSchemaCheck -QueryBatchTimeout $queryBatchTimeout -Verbose\r\n"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -108,13 +108,22 @@
         "Octopus.ControlType": "Select",
         "Octopus.SelectOptions": "Serializable\nSnapshot\nRepeatableRead\nReadCommitted\nReadUncommitted"
       }
+    },
+    {
+      "Name": "SQLReleaseQueryBatchTimeout",
+      "Label": "Query batch timeout (optional)",
+      "HelpText": "The execution timeout, in seconds, for each batch of queries in the update script. The default value is 30 seconds. A value of zero indicates no execution timeout.",
+      "DefaultValue": "30",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2015-02-13T16:17:00.000+00:00",
+  "LastModifiedOn": "2015-07-02T16:28:26.287+00:00",
   "LastModifiedBy": "DLMAutomationSupport@red-gate.com",
   "$Meta": {
-    "ExportedAt": "2015-02-03T12:06:17.108+00:00",
-    "OctopusVersion": "2.5.5.318",
+    "ExportedAt": "2015-07-02T16:30:00.706Z",
+    "OctopusVersion": "2.6.5.1010",
     "Type": "ActionTemplate"
   }
 }
