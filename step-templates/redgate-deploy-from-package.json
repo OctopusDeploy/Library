@@ -1,11 +1,11 @@
 {
   "Id": "ActionTemplates-35",
   "Name": "Redgate - Deploy from Package",
-  "Description": "Uses Redgate's [SQL Release](http://www.red-gate.com/sqlreleaseproductpage) to deploy a package containing a database schema (created by Redgate's DLM tools) to a SQL Server database, without a review step.",
+  "Description": "Uses Redgate's [SQL Release](http://www.red-gate.com/sqlreleaseproductpage) to deploy a package containing a database schema (created by Redgate's DLM tools) to a SQL Server database, without a review step.\r\n\r\nRequires SQL Release version 1.2.1.3109 or later.\r\n\r\n*Version date: 16th July, 2015*",
   "ActionType": "Octopus.Script",
   "Version": 5,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "# Check if SQL Release is installed.\r\n$sqlReleaseModule = Get-Module -ListAvailable -Name SQLRelease\r\nif ($sqlReleaseModule -eq $null) { \r\n    throw \"Cannot find SQL Release on your Octopus Tentacle. If SQL Release is installed, try restarting the Tentacle service for it to be detected.\"\r\n}\r\n$currentVersion = $sqlReleaseModule.Version\r\n$minimumRequiredVersion = [version] '1.2.1.2943'\r\nif ($currentVersion -lt $minimumRequiredVersion) { \r\n    throw \"This step requires SQL Release version $minimumRequiredVersion or later. The current version is $currentVersion. The latest version can be found at http://www.red-gate.com/dynamic/products/dlm/dlm-automation-suite/download\"\r\n}\r\n\r\n# Check the parameters.\r\nif (-NOT $SQLReleaseTargetDatabaseName) { throw \"You must enter a value for 'Target database name'.\" }\r\nif (-NOT $SQLReleaseTargetDatabaseServer) { throw \"You must enter a value for 'Target SQL Server instance'.\" } \r\nif (-NOT $SQLReleaseNuGetDbPackageDownloadStepName) { throw \"You must enter a value for 'Database package step'.\" } \r\n\r\n$queryBatchTimeout = 30\r\nif (![string]::IsNullOrWhiteSpace($SQLReleaseQueryBatchTimeout)) {\r\n    if (![int32]::TryParse($SQLReleaseQueryBatchTimeout , [ref]$queryBatchTimeout )) {\r\n        throw 'The query batch timeout must be a numerical value (in seconds).'\r\n    }\r\n    if ($queryBatchTimeout -lt 0) {\r\n        throw \"The query batch timeout can't be negative.\"\r\n    }\r\n}\r\n\r\n# Get the NuGet package installation directory path.\r\n$packageExtractPath = $OctopusParameters[\"Octopus.Action[$SQLReleaseNuGetDbPackageDownloadStepName].Output.Package.InstallationDirectoryPath\"]\r\nif($packageExtractPath -eq $null) {\r\n    throw \"The 'Database package download step' is not a 'Deploy a NuGet package' step: '$SQLReleaseNuGetDbPackageDownloadStepName'\"\r\n}\r\n\r\n# Directory containing the extracted database package.\r\n$databaseStatePath = Join-Path -path $packageExtractPath -childPath \"db\\state\" \r\n\r\n$targetDB = New-DatabaseConnection -ServerInstance $SQLReleaseTargetDatabaseServer -Database $SQLReleaseTargetDatabaseName -Username $SQLReleaseTargetUsername -Password $SQLReleaseTargetPassword | Test-DatabaseConnection\r\n$ignoreStaticData = $SQLReleaseIgnoreStaticData -eq \"True\"\r\n\r\n# Create database deployment resources from the NuGet package to the database\r\nif ($SQLReleaseFilterPath) {\r\n    if ($SQLReleaseCompareOptions) {\r\n        $release = New-DatabaseRelease -Target $targetDB -Source $databaseStatePath -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel -IgnoreStaticData:$ignoreStaticData -FilterPath $SQLReleaseFilterPath -SQLCompareOptions $SQLReleaseCompareOptions -Verbose\r\n    } else {\r\n        $release = New-DatabaseRelease -Target $targetDB -Source $databaseStatePath -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel -IgnoreStaticData:$ignoreStaticData -FilterPath $SQLReleaseFilterPath -Verbose\r\n    }\r\n} else {\r\n    if ($SQLReleaseCompareOptions) {\r\n        $release = New-DatabaseRelease -Target $targetDB -Source $databaseStatePath -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel -IgnoreStaticData:$ignoreStaticData -SQLCompareOptions $SQLReleaseCompareOptions -Verbose\r\n    } else {\r\n        $release = New-DatabaseRelease -Target $targetDB -Source $databaseStatePath -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel -IgnoreStaticData:$ignoreStaticData -Verbose\r\n    }\r\n}\r\n\r\n# Deploy the source schema to the target database.\r\nWrite-Host \"Timeout = $queryBatchTimeout\"\r\n$release | Use-DatabaseRelease -DeployTo $targetDB -SkipPreUpdateSchemaCheck -QueryBatchTimeout $queryBatchTimeout -Verbose\r\n"
+    "Octopus.Action.Script.ScriptBody": "# Version date: 16th July, 2015\r\n\r\n# Check if SQL Release is installed.\r\n$sqlReleaseModule = Get-Module -ListAvailable -Name SQLRelease\r\nif ($sqlReleaseModule -eq $null) { \r\n    throw \"Cannot find SQL Release on your Octopus Tentacle. If SQL Release is installed, try restarting the Tentacle service for it to be detected.\"\r\n}\r\n$currentVersion = $sqlReleaseModule.Version\r\n$minimumRequiredVersion = [version] '1.2.1.3109'\r\nif ($currentVersion -lt $minimumRequiredVersion) { \r\n    throw \"This step requires SQL Release version $minimumRequiredVersion or later. The current version is $currentVersion. The latest version can be found at http://www.red-gate.com/dlmas/download\"\r\n}\r\n\r\n# Check the parameters.\r\nif ([string]::IsNullOrWhiteSpace($SQLReleaseTargetDatabaseName)) { throw \"You must enter a value for 'Target database name'.\" }\r\nif ([string]::IsNullOrWhiteSpace($SQLReleaseTargetDatabaseServer)) { throw \"You must enter a value for 'Target SQL Server instance'.\" } \r\nif ([string]::IsNullOrWhiteSpace($SQLReleaseNuGetDbPackageDownloadStepName)) { throw \"You must enter a value for 'Database package step'.\" } \r\nif ([string]::IsNullOrWhiteSpace($SQLReleaseFilterPath)) { $SQLReleaseFilterPath = $null } \r\nif ([string]::IsNullOrWhiteSpace($SQLReleaseCompareOptions)) { $SQLReleaseCompareOptions = $null } \r\nif ([string]::IsNullOrWhiteSpace($SQLReleaseTemporaryDatabaseServer)) { $SQLReleaseTemporaryDatabaseServer = $null } \r\n\r\n$queryBatchTimeout = 30\r\nif (![string]::IsNullOrWhiteSpace($SQLReleaseQueryBatchTimeout)) {\r\n    if (![int32]::TryParse($SQLReleaseQueryBatchTimeout , [ref]$queryBatchTimeout )) {\r\n        throw 'The query batch timeout must be a numerical value (in seconds).'\r\n    }\r\n    if ($queryBatchTimeout -lt 0) {\r\n        throw \"The query batch timeout can't be negative.\"\r\n    }\r\n}\r\n\r\n# Get the NuGet package installation directory path.\r\n$packageExtractPath = $OctopusParameters[\"Octopus.Action[$SQLReleaseNuGetDbPackageDownloadStepName].Output.Package.InstallationDirectoryPath\"]\r\nif($packageExtractPath -eq $null) {\r\n    throw \"The 'Database package download step' is not a 'Deploy a NuGet package' step: '$SQLReleaseNuGetDbPackageDownloadStepName'\"\r\n}\r\n\r\n# Directory containing the extracted database package.\r\n$databaseStatePath = Join-Path -path $packageExtractPath -childPath \"db\\state\" \r\n\r\n$targetDB = New-DatabaseConnection -ServerInstance $SQLReleaseTargetDatabaseServer -Database $SQLReleaseTargetDatabaseName -Username $SQLReleaseTargetUsername -Password $SQLReleaseTargetPassword | Test-DatabaseConnection\r\n$ignoreStaticData = $SQLReleaseIgnoreStaticData -eq \"True\"\r\n\r\n# Create database deployment resources from the NuGet package to the database\r\n\r\n$release = New-DatabaseRelease  -Target $targetDB `\r\n                                -Source $databaseStatePath `\r\n                                -TransactionIsolationLevel $SQLReleaseTransactionIsolationLevel `\r\n                                -IgnoreStaticData:$ignoreStaticData `\r\n                                -FilterPath $SQLReleaseFilterPath `\r\n                                -SQLCompareOptions $SQLReleaseCompareOptions `\r\n                                -TemporaryDatabaseServer $SQLReleaseTemporaryDatabaseServer `\r\n                                -Verbose\r\n\r\n# Deploy the source schema to the target database.\r\nWrite-Host \"Timeout = $queryBatchTimeout\"\r\n$release | Use-DatabaseRelease -DeployTo $targetDB -SkipPreUpdateSchemaCheck -QueryBatchTimeout $queryBatchTimeout -Verbose\r\n"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -73,6 +73,15 @@
       }
     },
     {
+      "Name": "SQLReleaseTemporaryDatabaseServer",
+      "Label": "Temporary database server connection string (optional)",
+      "HelpText": "This feature is only useful if you’re using Migrations V2 beta.\n\nIt specifies the connection string of the SQL Server instance for a temporary database. For example, “Data Source=TempServer01”. This allows Migrations V2 beta to work with databases that have features not supported by LocalDB, such as Full-Text Search.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
       "Name": "SQLReleaseTransactionIsolationLevel",
       "Label": "Transaction isolation level (optional)",
       "HelpText": "Select the transaction isolation level to be used in deployment scripts.",
@@ -93,7 +102,7 @@
     },
     {
       "Name": "SQLReleaseQueryBatchTimeout",
-      "Label": "Query batch timeout (optional)",
+      "Label": "Query batch timeout (in seconds)",
       "HelpText": "The execution timeout, in seconds, for each batch of queries in the update script. The default value is 30 seconds. A value of zero indicates no execution timeout.",
       "DefaultValue": "30",
       "DisplaySettings": {
@@ -101,10 +110,10 @@
       }
     }
   ],
-  "LastModifiedOn": "2015-07-03T08:22:18.389+00:00",
+  "LastModifiedOn": "2015-07-17T11:08:19.275+00:00",
   "LastModifiedBy": "DLMAutomationSupport@red-gate.com",
   "$Meta": {
-    "ExportedAt": "2015-07-03T08:24:28.790Z",
+    "ExportedAt": "2015-07-17T11:10:11.871Z",
     "OctopusVersion": "2.6.5.1010",
     "Type": "ActionTemplate"
   }
