@@ -1,0 +1,58 @@
+{
+  "Id": "ActionTemplates-6",
+  "Name": "SQL - Deploy DACPAC",
+  "Description": "Deploys a DACPAC to a target database. Expects the SSDT tools to be installed on the C: drive.",
+  "ActionType": "Octopus.Script",
+  "Version": 32,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$ssdtPathFormat = 'C:\\Program Files (x86)\\Microsoft Visual Studio {0}.0\\Common7\\IDE\\Extensions\\Microsoft\\SQLDB\\DAC\\120'\n$vsVersions = @( '14', '12', '11' )\n\nfunction Load-DacAssembly {\n    Write-Host 'Attempting to discover SSDT install folder...'\n    \n    $result = $vsVersions | foreach { $ssdtPathFormat -f $_ } | where { Test-Path $_ } | select -first 1\n    \n    if ($result) {\n        Write-Host 'Found SSDT folder, attempting to load DAC assembly...'\n        Add-Type -Path ($result + '\\Microsoft.SqlServer.Dac.dll')\n        \n        Write-Host 'Loaded DAC assembly.'\n        return\n    }\n\n    throw 'SSDT not found. Install the latest SSDT to continue.'\n}\n\n#\n# Script\n#\n\n# Load the DAC assembly\nLoad-DacAssembly\n\n# Set .NET CurrentDirectory to package installation path\n$installDirPathFormat = 'Octopus.Action[{0}].Output.Package.InstallationDirectoryPath' -f $OctopusParameters['DacpacPackageStepName']\n$installDirPath = $OctopusParameters[$installDirPathFormat]\n\nWrite-Host ('Setting CurrentDirectory to: {0}' -f $installDirPath)\n[System.Environment]::CurrentDirectory = $installDirPath\n\n# Setup DacProfile\nif ($OctopusParameters['ProfileName']) {\n    $dacProfile = [Microsoft.SqlServer.Dac.DacProfile]::Load($OctopusParameters['ProfileName'])\n} else {\n    $dacProfile = New-Object Microsoft.SqlServer.Dac.DacProfile\n}\n\n# Load DacPackage\n$dacPackage = [Microsoft.SqlServer.Dac.DacPackage]::Load($OctopusParameters['DacpacName'] + '.dacpac')\n\n# Setup DacServices\n$dacServices = New-Object Microsoft.SqlServer.Dac.DacServices -ArgumentList $OctopusParameters['TargetConnectionString']\nRegister-ObjectEvent $dacServices \"ProgressChanged\" -Action { Write-Verbose ('DacServices: {0}' -f $EventArgs.Message) } | Out-Null\n\n# Deploy package\ntry {\n    Write-Host 'Starting DACPAC deployment...'\n    $dacServices.Deploy($dacPackage, $OctopusParameters['TargetDatabaseName'], $true, $dacProfile.DeployOptions, $null)\n    Write-Host 'Deployment succeeded!'\n}\ncatch [Microsoft.SqlServer.Dac.DacServicesException] {\n    $e = $_.Exception\n    throw ('Error occurred during deployment: {0} Reason: {1}' -f $e.Message, $e.InnerException.Message)\n}"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "DacpacName",
+      "Label": "DACPAC Name",
+      "HelpText": "Name of the .dacpac file, without the .dacpac extension.",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "TargetDatabaseName",
+      "Label": "Target Database Name",
+      "HelpText": "Name of the target database the DACPAC should be deployed to.",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "TargetConnectionString",
+      "Label": "Target Connection String",
+      "HelpText": "Connection string of the target datababse server.",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    
+    {
+      "Name": "ProfileName",
+      "Label": "Profile Name",
+      "HelpText": "Name of the publish profile XML file.",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "DacpacPackageStepName",
+      "Label": "DACPAC Package Step Name",
+      "HelpText": "The step in which the DACPAC package was installed.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    }
+  ],
+  "LastModifiedBy": "mlowijs",
+  "$Meta": {
+    "ExportedAt": "2015-08-12T12:55:51.550Z",
+    "OctopusVersion": "3.0.10.2278",
+    "Type": "ActionTemplate"
+  }
+}
