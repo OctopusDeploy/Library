@@ -1,11 +1,11 @@
 {
-  "Id": "ActionTemplates-36",
+  "Id": "ActionTemplates-129",
   "Name": "Windows Scheduled Task - Create",
   "Description": "Create Windows scheduled task. If the task exists it will be torn down and re-added to ensure consistency",
   "ActionType": "Octopus.Script",
   "Version": 13,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "#use http://msdn.microsoft.com/en-us/library/windows/desktop/bb736357(v=vs.85).aspx for API reference\n\nFunction Create-ScheduledTask($TaskName,$RunAsUser,$TaskRun,$Schedule,$StartTime,$StartDate){\n    \n    $cmdStartDate = if(StringIsNullOrWhiteSpace($StartDate)){\"\"}else{\"/sd $StartDate\"}\n    $cmdStartTime = if(StringIsNullOrWhiteSpace($StartTime)){\"\"}else{\"/st $StartTime\"}\n    $cmdInterval = if(StringIsNullOrWhiteSpace($Interval)){\"\"}else{\"/ri $Interval\"}\n    $cmdDuration = if(StringIsNullOrWhiteSpace($Duration)){\"\"}else{\"/du $Duration\"}\n\n    $Command = \"schtasks.exe /create /ru $RunAsUser /tn `\"$TaskName`\" /tr `\"'$($TaskRun)'`\" /sc $Schedule $cmdStartDate $cmdStartTime /F $cmdInterval $cmdDuration\"\n    \n    echo $Command          \n    Invoke-Expression $Command            \n }\n\nFunction Delete-ScheduledTask($TaskName) {   \n    $Command = \"schtasks.exe /delete /s localhost /tn `\"$TaskName`\" /F\"            \n    Invoke-Expression $Command \n}\n\nFunction Stop-ScheduledTask($TaskName) {  \n    $Command = \"schtasks.exe /end /s localhost /tn `\"$TaskName`\"\"            \n    Invoke-Expression $Command \n}\n\nFunction Start-ScheduledTask($TaskName) {   \n    $Command = \"schtasks.exe /run /s localhost /tn `\"$TaskName`\"\"            \n    Invoke-Expression $Command \n}\n\nFunction Enable-ScheduledTask($TaskName) {  \n    $Command = \"schtasks.exe /change /s localhost /tn `\"$TaskName`\" /ENABLE\"            \n    Invoke-Expression $Command \n}\n\nFunction ScheduledTask-Exists($taskName) {\n   $schedule = new-object -com Schedule.Service \n   $schedule.connect() \n   $tasks = $schedule.getfolder(\"\\\").gettasks(0)\n\n   foreach ($task in ($tasks | select Name)) {\n      #echo \"TASK: $($task.name)\"\n      if($task.Name -eq $taskName) {\n         #write-output \"$task already exists\"\n         return $true\n      }\n   }\n\n   return $false\n} \n\nFunction StringIsNullOrWhitespace([string] $string)\n{\n    if ($string -ne $null) { $string = $string.Trim() }\n    return [string]::IsNullOrEmpty($string)\n}\n\n$taskName = $OctopusParameters['TaskName']\n$runAsUser = $OctopusParameters['RunAsUser']\n$command = $OctopusParameters['Command']\n$schedule = $OctopusParameters['Schedule']\n$startTime = $OctopusParameters['StartTime']\n$startDate = $OctopusParameters['StartDate']\n$interval = $OctopusParameters['Interval']\n$duration = $OctopusParameters['Duration']\n\nif((ScheduledTask-Exists($taskName))){\n    Write-Output \"$taskName already exists, Tearing down...\"\n    Write-Output \"Stopping $taskName...\"\n    Stop-ScheduledTask($taskName)\n    Write-Output \"Successfully Stopped $taskName\"\n    Write-Output \"Deleting $taskName...\"\n    Delete-ScheduledTask($taskName)\n    Write-Output \"Successfully Deleted $taskName\"\n}\nWrite-Output \"Creating Scheduled Task - $taskName\"\nCreate-ScheduledTask $taskName $runAsUser $command $schedule $startTime $startDate\nWrite-Output \"Successfully Created $taskName\"\nEnable-ScheduledTask($taskName)\nWrite-Output \"$taskName enabled\""
+    "Octopus.Action.Script.ScriptBody": "#use http://msdn.microsoft.com/en-us/library/windows/desktop/bb736357(v=vs.85).aspx for API reference\r\n\r\nFunction Create-ScheduledTask($TaskName,$RunAsUser,$TaskRun,$Schedule,$StartTime,$StartDate,$Arguments){\r\n    \r\n    $cmdStartDate = if([string]::IsNullOrWhiteSpace($StartDate)){\"\"}else{\"/sd $StartDate\"}\r\n    $cmdStartTime = if([string]::IsNullOrWhiteSpace($StartTime)){\"\"}else{\"/st $StartTime\"}\r\n    $cmdInterval = if([string]::IsNullOrWhiteSpace($Interval)){\"\"}else{\"/ri $Interval\"}\r\n    $cmdDuration = if([string]::IsNullOrWhiteSpace($Duration)){\"\"}else{\"/du $Duration\"}\r\n\r\n    $Command = \"schtasks.exe /create /ru $RunAsUser /tn `\"$TaskName`\" /tr `\"'$($TaskRun)' $Arguments`\" /sc $Schedule $cmdStartDate $cmdStartTime /F $cmdInterval $cmdDuration\"\r\n    \r\n    echo $Command          \r\n    Invoke-Expression $Command            \r\n }\r\n\r\nFunction Delete-ScheduledTask($TaskName) {   \r\n    $Command = \"schtasks.exe /delete /s localhost /tn `\"$TaskName`\" /F\"            \r\n    Invoke-Expression $Command \r\n}\r\n\r\nFunction Stop-ScheduledTask($TaskName) {  \r\n    $Command = \"schtasks.exe /end /s localhost /tn `\"$TaskName`\"\"            \r\n    Invoke-Expression $Command \r\n}\r\n\r\nFunction Start-ScheduledTask($TaskName) {   \r\n    $Command = \"schtasks.exe /run /s localhost /tn `\"$TaskName`\"\"            \r\n    Invoke-Expression $Command \r\n}\r\n\r\nFunction Enable-ScheduledTask($TaskName) {  \r\n    $Command = \"schtasks.exe /change /s localhost /tn `\"$TaskName`\" /ENABLE\"            \r\n    Invoke-Expression $Command \r\n}\r\n\r\nFunction ScheduledTask-Exists($taskName) {\r\n   $schedule = new-object -com Schedule.Service \r\n   $schedule.connect() \r\n   $tasks = $schedule.getfolder(\"\\\").gettasks(0)\r\n\r\n   foreach ($task in ($tasks | select Name)) {\r\n      #echo \"TASK: $($task.name)\"\r\n      if($task.Name -eq $taskName) {\r\n         #write-output \"$task already exists\"\r\n         return $true\r\n      }\r\n   }\r\n\r\n   return $false\r\n} \r\n\r\n$taskName = $OctopusParameters['TaskName']\r\n$runAsUser = $OctopusParameters['RunAsUser']\r\n$command = $OctopusParameters['Command']\r\n$schedule = $OctopusParameters['Schedule']\r\n$startTime = $OctopusParameters['StartTime']\r\n$startDate = $OctopusParameters['StartDate']\r\n$interval = $OctopusParameters['Interval']\r\n$duration = $OctopusParameters['Duration']\r\n$arguments = $OctopusParameters['Arguments']\r\n\r\nif((ScheduledTask-Exists($taskName))){\r\n    Write-Output \"$taskName already exists, Tearing down...\"\r\n    Write-Output \"Stopping $taskName...\"\r\n    Stop-ScheduledTask($taskName)\r\n    Write-Output \"Successfully Stopped $taskName\"\r\n    Write-Output \"Deleting $taskName...\"\r\n    Delete-ScheduledTask($taskName)\r\n    Write-Output \"Successfully Deleted $taskName\"\r\n}\r\nWrite-Output \"Creating Scheduled Task - $taskName\"\r\nCreate-ScheduledTask $taskName $runAsUser $command $schedule $startTime $startDate $arguments\r\nWrite-Output \"Successfully Created $taskName\"\r\nEnable-ScheduledTask($taskName)\r\nWrite-Output \"$taskName enabled\""
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -77,12 +77,20 @@
       "HelpText": "A value that specifies the duration to run the task. The time format is HH:mm (24-hour time).",
       "DefaultValue": null,
       "DisplaySettings": {}
+    },
+    {
+      "Name": "Arguments",
+      "Label": "Arguments",
+      "HelpText": "A value that specifies any arguments to be passed to run the task.",
+      "DefaultValue": null,
+      "DisplaySettings": {}
     }
   ],
-  "LastModifiedOn": "2015-01-29T14:43:53.375+00:00",
+  "LastModifiedOn": "2015-08-27T12:08:34.614+00:00",
+  "LastModifiedBy": "nealeduncan",
   "$Meta": {
-    "ExportedAt": "2015-01-29T15:08:47.224Z",
-    "OctopusVersion": "2.5.12.666",
+    "ExportedAt": "2015-08-27T13:24:17.208Z",
+    "OctopusVersion": "2.6.5.1010",
     "Type": "ActionTemplate"
   }
 }
