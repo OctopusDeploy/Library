@@ -1,83 +1,93 @@
 {
-  "Id": "ActionTemplates-97",
-  "Name": "GitHub - Tag Release",
-  "Description": "Tag a GitHub repository with a label.",
+  "Id": "ActionTemplates-129",
+  "Name": "GitHub - Create Release",
+  "Description": "Create a release for a Github Repository.",
   "ActionType": "Octopus.Script",
-  "Version": 28,
+  "Version": 3,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "# Copyright (c) Microsoft. All rights reserved.\n\n$username = $OctopusParameters['GitHub.Username']\n$email = $OctopusParameters['GitHub.Email']\n$repositoryUrl = \"https://\" + $username + \":\" + $OctopusParameters['GitHub.Password'] + \"@github.com/\" + $OctopusParameters['GitHub.Organization'] + \"/\" + $OctopusParameters['GitHub.Repository'] + \".git\"\n$label = $OctopusParameters['GitHub.Label']\n$targetEnvironment = $OctopusParameters['Octopus.Environment.Name']\n$commitMessage = \"Deployed version $label to $targetEnvironment\"\n$checkoutDirectory = \"$env:temp\" + $OctopusParameters['Octopus.Environment.Name'] + \"\\\\\" + $label\n$workingDirectory = $checkoutDirectory + \"\\\\\" + $OctopusParameters['GitHub.Repository']\n\nWrite-Host \"Creating directory $checkoutDirectory\"\nmd $checkoutDirectory\ncd $checkoutDirectory\n\nWrite-Host (\"git clone {0} --branch {1} --single-branch --quiet\" -f $repositoryUrl, $OctopusParameters['GitHub.BranchName'])\ngit clone $repositoryUrl --branch $OctopusParameters['GitHub.BranchName'] --single-branch --quiet | Out-Null\n\ncd $workingDirectory\n\ngit config user.name '$username' | Out-Null\ngit config user.email '$email' | Out-Null\n\nWrite-Host (\"git tag -a {0} -m '{1}'\" -f $label, $commitMessage)\ngit tag -a $label -m $commitMessage | Out-Null\n\nWrite-Host (\"git push origin {0} -quiet\" -f $label)\ngit push origin $label --quiet | Out-Null\n\ncd $env:SystemDrive\nRemove-Item -Recurse -Force $checkoutDirectory\nWrite-Host \"Removed directory $checkoutDirectory\""
+    "Octopus.Action.Script.ScriptBody": "$formattedVersionNumber = [string]::Format(\"v{0}\", $versionNumber)\r$isDraft = [bool]::Parse($draft)\r$isPrerelease = [bool]::Parse($preRelease)\r\r$releaseData = @{\r    tag_name = $formattedVersionNumber;\r    target_commitish = $commitId;\r    name = $formattedVersionNumber;\r    body = $releaseNotes;\r    draft = $isDraft;\r    prerelease = $isPrerelease;\r}\r\r$releaseParams = @{\r    Uri = \"https://api.github.com/repos/$gitHubUsername/$gitHubRepository/releases\";\r    Method = 'POST';\r    Headers = @{\r        Authorization = 'Basic ' + [Convert]::ToBase64String(\r            [Text.Encoding]::ASCII.GetBytes($gitHubApiKey + \":x-oauth-basic\")\r        );\r    }\r    ContentType = 'application/json';\r    Body = (ConvertTo-Json $releaseData -Compress)\r}\r\rWrite-Host \"Creating release $formattedVersionNumber for $commitId.\"\r$result = Invoke-RestMethod @releaseParams\r\rWrite-Host \"Release successfully created.\"\r$result",
+    "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
   "Parameters": [
     {
-      "Name": "GitHub.Repository",
-      "Label": "GitHub Repository Name",
-      "HelpText": "The name of the GitHub repository (e.g. OctopusDeploy.Library).",
-      "DefaultValue": null,
+      "Name": "versionNumber",
+      "Label": "Version Number",
+      "HelpText": "The version number for this release",
+      "DefaultValue": "#{Octopus.Release.Number}",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
     },
     {
-      "Name": "GitHub.BranchName",
-      "Label": "GitHub Branch Name",
-      "HelpText": "The branch to label.",
+      "Name": "commitId",
+      "Label": "Commitish",
+      "HelpText": "Specifies the commitish value that determines where the Git tag is created from. Can be any branch or commit SHA. Unused if the Git tag already exists.",
       "DefaultValue": "master",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
     },
     {
-      "Name": "GitHub.Organization",
-      "Label": "GitHub Organization",
-      "HelpText": "The GitHub organization name.",
+      "Name": "releaseNotes",
+      "Label": "Release Notes",
+      "HelpText": "The notes to accompany this GitHub release. Defaults to the release notes of the release.",
+      "DefaultValue": "#{Octopus.Release.Notes}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "gitHubUsername",
+      "Label": "Owner",
+      "HelpText": "The owner of the repository.",
       "DefaultValue": null,
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
     },
     {
-      "Name": "GitHub.Username",
-      "Label": "GitHub Username",
-      "HelpText": "The GitHub username used to tag the repository.",
+      "Name": "gitHubRepository",
+      "Label": "Repository",
+      "HelpText": "The repository to create the release for.",
       "DefaultValue": null,
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
     },
     {
-      "Name": "GitHub.Password",
-      "Label": "GitHub Password",
-      "HelpText": "The GitHub password for the user that will tag the repository.",
+      "Name": "gitHubApiKey",
+      "Label": "Api Token",
+      "HelpText": "The GitHub [API key](https://github.com/blog/1509-personal-api-tokens)",
       "DefaultValue": null,
       "DisplaySettings": {
         "Octopus.ControlType": "Sensitive"
       }
     },
     {
-      "Name": "GitHub.Email",
-      "Label": "GitHub Email Address",
-      "HelpText": "The email address of the user tagging the GitHub repository.",
-      "DefaultValue": null,
+      "Name": "draft",
+      "Label": "Draft",
+      "HelpText": "Set to true to mark this as a draft release (not visible to users)",
+      "DefaultValue": "false",
       "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
+        "Octopus.ControlType": "Checkbox"
       }
     },
     {
-      "Name": "GitHub.Label",
-      "Label": "GitHub Label",
-      "HelpText": "The label to tag the GitHub repository with.",
-      "DefaultValue": "#{Octopus.Release.Number}",
+      "Name": "preRelease",
+      "Label": "PreRelease",
+      "HelpText": "Set to true to mark this as a pre-release version",
+      "DefaultValue": "false",
       "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
+        "Octopus.ControlType": "Checkbox"
       }
     }
   ],
-  "LastModifiedOn": "2015-04-24T07:47:46.390+00:00",
-  "LastModifiedBy": "xavierdecoster",
+  "LastModifiedOn": "2015-09-07T00:12:45.419+00:00",
+  "LastModifiedBy": "alfhenrik",
   "$Meta": {
-    "ExportedAt": "2015-04-24T07:48:34.723Z",
-    "OctopusVersion": "2.6.5.1010",
+    "ExportedAt": "2015-09-07T00:21:13.590Z",
+    "OctopusVersion": "2.6.4.951",
     "Type": "ActionTemplate"
   }
 }
