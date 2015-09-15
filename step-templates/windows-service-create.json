@@ -1,0 +1,74 @@
+{
+  "Id": "ActionTemplates-61",
+  "Name": "Windows Service - Create",
+  "Description": "Creates a Windows service using the powershell commands\n\nPowershell 3.0",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrEmpty($Description))\r\n{\r\n\t$Description = $ServiceName\r\n}\r\n\r\n$TheService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue\r\n\r\nif ([string]::IsNullOrEmpty($TheService))\r\n{\r\n    Write-Host \"Windows Service \"\"$ServiceName\"\" not found, will create.\"\r\n}\r\nelse\r\n{\r\n    Write-Host \"Windows Service \"\"$ServiceName\"\" found, will recreate.\"\r\n    if ($TheService.Status -eq \"Running\")\r\n    {\r\n        Write-Host \"Stopping $ServiceName ...\"\r\n        $TheService.Stop()\r\n    }\r\n\tsc.exe delete $TheService\r\n    Write-Host \"Service \"\"$ServiceName\"\" updated.\"\r\n}\r\n\r\n\r\nif ([string]::IsNullOrEmpty($UserName))\r\n{\r\n\tNew-Service -name $ServiceName -binaryPathName \"$BinaryPath\" -StartupType \"$Start\" -Description \"$Description\"\r\n}\r\nelse\r\n{\r\n\t$SecurePassword = $Password | ConvertTo-SecureString -asPlainText -Force\r\n\t$cred = New-Object System.Management.Automation.PSCredential($UserName, $SecurePassword)\r\n\tNew-Service -name $ServiceName -binaryPathName \"$BinaryPath\" -StartupType \"$Start\" -Description \"$Description\" -Credential $cred\r\n}\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ServiceName",
+      "Label": "Name of Service",
+      "HelpText": "This is the name of the service, NOT the displayname",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "BinaryPath",
+      "Label": "Path to binary",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Start",
+      "Label": "Start Type",
+      "HelpText": "Sets the startup type of the service. \"Automatic\" is the default.",
+      "DefaultValue": "Automatic",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Automatic\nManual\nDisabled"
+      }
+    },
+    {
+      "Name": "Description",
+      "Label": "Description",
+      "HelpText": "Description to be seen within the Services msc",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "UserName",
+      "Label": "User Name",
+      "HelpText": "User Name the service should run as, if blank then will run as LocalSystem",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Password",
+      "Label": "Password",
+      "HelpText": "If user name is populated then password needs to be supplied",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2015-09-15T13:45:24.718Z",
+    "OctopusVersion": "3.0.21.0",
+    "Type": "ActionTemplate"
+  }
+}
