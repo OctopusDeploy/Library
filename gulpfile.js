@@ -213,29 +213,17 @@ gulp.task('install-snapshot', ['snapshot'], function() {
 });
 
 gulp.task('expand-step-templates' , function() {
-  console.log("in task")
   return gulp.src(['step-templates/*.json'])
     .pipe(data(function(file) {
-
       var content = String(file.contents);
       try{
         var json = JSON.parse(content);
       } catch(ex){
-        console.error("Error - Failed to parse " + file.path);
+        console.log("warning failed to parse \n" + content);
         return new Buffer(file.contents).attributes;
       }
-
-      try{
-        if(json.Properties["Octopus.Action.Script.ScriptBody"]){
-          file.contents = new Buffer(json.Properties["Octopus.Action.Script.ScriptBody"]);
-        } else {
-          console.error("Error - No script body in " + file.path);
-          return new Buffer("#Error - No script body found").attributes;
-        }
-      } catch(ex){
-        console.error("Error - Failed to set the file contents for " + file.path);
-        return new Buffer(file.contents).attributes;
-      }
+      var fileContents = json.Properties["Octopus.Action.Script.ScriptBody"] ? json.Properties["Octopus.Action.Script.ScriptBody"] : ""
+      file.contents = new Buffer(fileContents);
 
       return content.attributes;
     }))
