@@ -222,7 +222,9 @@ gulp.task('expand-step-templates' , function() {
         console.log("warning failed to parse \n" + content);
         return new Buffer(file.contents).attributes;
       }
-      file.contents = new Buffer(json.Properties["Octopus.Action.Script.ScriptBody"]);
+      var fileContents = json.Properties["Octopus.Action.Script.ScriptBody"] ? json.Properties["Octopus.Action.Script.ScriptBody"] : ""
+      file.contents = new Buffer(fileContents);
+
       return content.attributes;
     }))
     .pipe(rename({
