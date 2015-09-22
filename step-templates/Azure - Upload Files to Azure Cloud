@@ -1,0 +1,57 @@
+{
+  "Id": "ActionTemplates-41",
+  "Name": "Azure - Upload To Azure Cloud",
+  "Description": "Uploads files to specified container within the Azure Account",
+  "ActionType": "Octopus.Script",
+  "Version": 7,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "\r\n# Azure subscription-specific variables.\r\n#Gets Azure Account Name\r\n$storageAccountName = $OctopusParameters[\"AzureStorageAccountName\"]\r\n#Gets Azure Container Name\r\n$containerName = $OctupusParameters[\"AzureContainterName\"]\r\n#Gets Azure Account Key\r\n$storageAccountKey = $OctopusParameters[\"AzureStorageAccountKey\"]\r\n#Gets the location of the folder that is being uploaded\r\n$currentLocation = $OctopusParamters[\"FileLocation\"]#Get-location\r\n#$thisfolder = Split –parent $currentLocation\r\n\r\n#Checking to see if Azure is installed on the computer\r\n$name = 'Azure'\r\n\r\nif(Get-Module -ListAvailable | Where-Object {$_.name -eq $name})\r\n{\r\n\t(Get-Module -ListAvailable | Where-Object{ $_.Name -eq $name}) |\r\n\tSelect Version, Name, Author, PowerShellVersion | Format-List;\r\n\tWrite-Output \"Azure Powershell is installed\"\r\n}\r\nelse\r\n{\r\n\t#Provides the link to install Azure Powershell, if it is not installed\r\n\tWrite-Output \"Please install Azure Powershell. To install Azure Powershell go to http://bit.ly/AzurePowershellDownload\"\r\n\tExit 1\r\n}\r\n\r\n\r\n# Upload files in data subfolder to Azure.\r\n$localfolder = \"$currentLocation\\data\"\r\n$destfolder = \"data\"\r\n\r\n#Log in details \r\n$storageContext = New-AzureStorageContext -StorageAccountName $storageAccountName -StorageAccountKey $storageAccountKey\r\n\r\n\r\n$files = Get-ChildItem $localFolder\r\n#Gets each file in the data subfolder and uploads them\r\nforeach($file in $files)\r\n{\r\n  #Gets the location of the file \r\n  $fileName = \"$localFolder\\$file\"\r\n  #Gets the blob name that the file will be uploaded to\r\n  $blobName = \"$destfolder/$file\"\r\n  #Gives the user an update on the progress\r\n  Write-Output \"copying $fileName to $blobName\"\r\n  #Sets the location and uploads the file\r\n  Set-AzureStorageBlobContent -File $filename -Container $containerName -Blob $blobName -Context $storageContext -Force\r\n} \r\n\r\nWrite-Output \"All files in $localFolder uploaded to $containerName!\""
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "AzureStorageAccountName",
+      "Label": "Storage Account Name",
+      "HelpText": "User Name of the Azure Account",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AzureContainerName",
+      "Label": "Container Name",
+      "HelpText": "Container in Azure you wish you upload the files",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AzureStorageAccountKey",
+      "Label": "Storage Account Key",
+      "HelpText": "Access Key for the Azure account",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "FileLocation",
+      "Label": "Location of the Folder",
+      "HelpText": "The location of the folder that you wish to upload",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-09-22T05:29:30.731Z",
+  "LastModifiedBy": "timhunt303",
+  "$Meta": {
+    "ExportedAt": "2015-09-22T05:29:30.731Z",
+    "OctopusVersion": "3.0.21.0",
+    "Type": "ActionTemplate"
+  }
+}
