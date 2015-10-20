@@ -1,0 +1,153 @@
+{
+  "Id": "ActionTemplates-449",
+  "Name": "HockeyApp - Upload Mobile App",
+  "Description": "This script uploads a new version of an existing app package to the [HockeyApp](http://hockeyapp.net/features/) services.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Hockey App Upload script\r\n# v0.2 - Includes parameters (no dsym file yet)\r\n\r\n# Uploads your app files to Hockey App via API\r\n\r\n# Hockey App API reference\r\n#\r\n# General API reference: http://support.hockeyapp.net/kb/api\r\n# Auth reference (tokens): http://support.hockeyapp.net/kb/api/api-basics-and-authentication\r\n# Upload App Version reference: http://support.hockeyapp.net/kb/api/api-versions#upload-version\r\n\r\n###################################\r\n# Octopus Deploy common functions #\r\n###################################\r\n\r\n# A collection of functions that can be used by script steps to determine where packages installed\r\n# by previous steps are located on the filesystem.\r\n \r\nfunction Find-InstallLocations {\r\n    $result = @()\r\n    $OctopusParameters.Keys | foreach {\r\n        if ($_.EndsWith('].Output.Package.InstallationDirectoryPath')) {\r\n            $result += $OctopusParameters[$_]\r\n        }\r\n    }\r\n    return $result\r\n}\r\n \r\nfunction Find-InstallLocation($stepName) {\r\n    $result = $OctopusParameters.Keys | where {\r\n        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\r\n    } | select -first 1\r\n \r\n    if ($result) {\r\n        return $OctopusParameters[$result]\r\n    }\r\n \r\n    throw \"No install location found for step: $stepName\"\r\n}\r\n \r\nfunction Find-SingleInstallLocation {\r\n    $all = @(Find-InstallLocations)\r\n    if ($all.Length -eq 1) {\r\n        return $all[0]\r\n    }\r\n    if ($all.Length -eq 0) {\r\n        throw \"No package steps found\"\r\n    }\r\n    throw \"Multiple package steps have run; please specify a single step\"\r\n}\r\n\r\n#####################\r\n# Utility functions #\r\n#####################\r\n\r\nfunction Get-ExactlyOneMobilePackageFile($path)\r\n{\r\n    $apkFiles = Get-ChildItem -Path $path -Filter *.apk\r\n    $ipaFiles = Get-ChildItem -Path $path -Filter *.ipa\r\n\r\n    $apkCount = $apkFiles.count\r\n\r\n    $ipaCount = $ipaFiles.count\r\n\r\n    $totalCount = $apkCount + $ipaCount\r\n\r\n    if($totalCount -ne 1)\r\n    {\r\n        throw \"Did not find exactly one (1) mobile application package. Found $apkCount APK file(s) and $ipaCount IPA file(s)\"\r\n    }\r\n\r\n    if($apkFiles.count -eq 1)\r\n    {\r\n        return $apkFiles\r\n    }\r\n\r\n    if($ipaFiles.count -eq 1)\r\n    {\r\n        return $ipaFiles\r\n    }\r\n\r\n    throw \"Unable to find mobile application packages (fallback error - not expected)\"\r\n}\r\n\r\nfunction AddToHashIfExists([HashTable]$table, $value, $name)\r\n{\r\n    if(-not [String]::IsNullOrWhiteSpace($value))\r\n    {\r\n        $table.Add($name, $value)\r\n    }\r\n}\r\n\r\nfunction GetMultipartFormSectionString($key,$value)\r\n{\r\n    return @\"\r\nContent-Disposition: form-data; name=\"$key\"\r\n\r\n$value\r\n\"@\r\n}\r\n\r\n\r\n####################\r\n# Basic Parameters #\r\n####################\r\n\r\n$apiToken = $OctopusParameters['HockeyAppApiToken']\r\n$appId = $OctopusParameters['HockeyAppAppID']\r\n\r\n$fileName = $OctopusParameters['PackageFileName']\r\n\r\n$stepName = $OctopusParameters['MobileAppPackageStepName']\r\n\r\n$stepPath = \"\"\r\nif (-not [string]::IsNullOrEmpty($stepName)) {\r\n    Write-Host \"Finding path to package step: $stepName\"\r\n    $stepPath = Find-InstallLocation $stepName\r\n} else {\r\n    $stepPath = Find-SingleInstallLocation\r\n}\r\n\r\nWrite-Host \"Package was installed to: $stepPath\"\r\nWrite-Host \"##octopus[stderr-progress]\"\r\n\r\n# if we were not provided a file name, search for a single package file\r\nif([string]::IsNullOrWhiteSpace($filename))\r\n{\r\n    $packageFile = Get-ExactlyOneMobilePackageFile $stepPath\r\n    $fileName = $packageFile.Name\r\n}\r\n\r\n$appFullFilePath = Join-Path $stepPath $fileName\r\n\r\n$apiUploadUri = \"https://rink.hockeyapp.net/api/2/apps/$appId/app_versions/upload\"\r\n\r\n####################################\r\n# begin assembling request details #\r\n####################################\r\n$fileBytes = [System.IO.File]::ReadAllBytes($appFullFilePath)\r\n\r\n$headers = New-Object \"System.Collections.Generic.Dictionary[[String],[String]]\"\r\n$headers.Add(\"X-HockeyAppToken\",$apiToken)\r\n\r\n$uniqueBoundaryToken = [Guid]::NewGuid().ToString()\r\n\r\n$contentType = \"multipart/form-data; boundary=$uniqueBoundaryToken\"\r\n\r\n################################\r\n# Set up Hockey App parameters #\r\n################################\r\n\r\n$HockeyAppParameters = @{} # parameters are a hash table.\r\n\r\n# add parameters that have values - See docs at http://support.hockeyapp.net/kb/api/api-versions#upload-version\r\n\r\nAddToHashIfExists $HockeyAppParameters $OctopusParameters['HockeyAppNotes']          \"notes\"\r\nAddToHashIfExists $HockeyAppParameters $OctopusParameters['HockeyAppNotesType']      \"notes_type\"\r\nAddToHashIfExists $HockeyAppParameters $OctopusParameters['HockeyAppNotify']         \"notify\"\r\nAddToHashIfExists $HockeyAppParameters $OctopusParameters['HockeyAppStatus']         \"status\"\r\nAddToHashIfExists $HockeyAppParameters $OctopusParameters['HockeyAppTags']           \"tags\"\r\nAddToHashIfExists $HockeyAppParameters $OctopusParameters['HockeyAppTeams']          \"teams\"\r\nAddToHashIfExists $HockeyAppParameters $OctopusParameters['HockeyAppUsers']          \"users\"\r\nAddToHashIfExists $HockeyAppParameters $OctopusParameters['HockeyAppMandatory']      \"mandatory\"\r\nAddToHashIfExists $HockeyAppParameters $OctopusParameters['HockeyAppCommitSha']      \"commit_sha\"\r\nAddToHashIfExists $HockeyAppParameters $OctopusParameters['HockeyAppBuildServerUrl'] \"build_server_url\"\r\nAddToHashIfExists $HockeyAppParameters $OctopusParameters['HockeyAppRepositoryUrl']  \"repository_url\"\r\n\r\n$formSectionSeparator = @\"\r\n\r\n--$uniqueBoundaryToken\r\n\r\n\"@\r\n\r\n$parameterSectionsString = [String]::Join($formSectionSeparator,($HockeyAppParameters.GetEnumerator() | %{GetMultipartFormSectionString $_.Key $_.Value}))\r\n\r\n##############################\r\n# Construct the request body #\r\n##############################\r\n\r\n# Standard for multipart form data\r\n# http://www.w3.org/TR/html401/interact/forms.html#h-17.13.4\r\n\r\n$stringEncoding = [System.Text.Encoding]::ASCII\r\n\r\n# Note further parameters may be added here like the \"status\" per API docs\r\n\r\n$preFileBytes = $stringEncoding.GetBytes(\r\n$parameterSectionsString + \r\n$formSectionSeparator +\r\n@\"\r\nContent-Disposition: form-data; name=\"ipa\"; filename=\"$fileName\"\r\nContent-Type: application/octet-stream\r\n\r\n\r\n\"@)\r\n\r\n# $fileBytes will go in between\r\n\r\n$postFileBytes = $stringEncoding.GetBytes(@\"\r\n\r\n--$uniqueBoundaryToken--\r\n\"@)\r\n\r\n# body is a raw byte array long enough to hold all the content\r\n$body = New-Object Byte[] ($preFileBytes.Length + $fileBytes.Length + $postFileBytes.Length)\r\n\r\n# copy the three smaller arrays to specific offsets in full body byte array\r\n[Buffer]::BlockCopy($preFileBytes , 0, $body, 0,                                        $preFileBytes.Length)\r\n[Buffer]::BlockCopy($fileBytes    , 0, $body, 0+$preFileBytes.Length,                   $fileBytes.Length)\r\n[Buffer]::BlockCopy($postFileBytes, 0, $body, 0+$preFileBytes.Length+$fileBytes.Length, $postFileBytes.Length)\r\n\r\n######################\r\n# Invoke the request #\r\n######################\r\n$result = Invoke-RestMethod -Uri $apiUploadUri -Headers $headers -Method Post -ContentType $contentType -Body $body #-Verbose\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "HockeyAppApiToken",
+      "Label": "HockeyApp Api Token",
+      "HelpText": "HockeyApp requires an access token for their API as show in the [HockeyApp API Authentication Documentation]( http://support.hockeyapp.net/kb/api/api-basics-and-authentication#authentication). Logged in users can generate tokens under [API Tokens](https://rink.hockeyapp.net/manage/auth_tokens) in the account menu.\n\nYou should generate an application specific token for this purpose.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppAppID",
+      "Label": "HockeyApp App ID",
+      "HelpText": "The ID of your App in HockeyApp. This is visible on the [Manage Apps](https://rink.hockeyapp.net/manage/apps) management page for your target app.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "MobileAppPackageStepName",
+      "Label": "Package Step Name",
+      "HelpText": "Name of the previously-deployed package step that contains the App that you want to deploy.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Name": "PackageFileName",
+      "Label": "Optional Package File Name",
+      "HelpText": "The value is optional.\n\nIf no value is provided the scrip will search for exactly one *.apk or *.ipa file and use it. Zero or multiple matches will result in an error.\n\nIf a value is provided, it will be used directly instead of searching. Use this to specify a package to upload in the case of multiple packages, such as a signed and unsigned apk, or an apk and ipa in a single Nuget package.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppNotes",
+      "Label": "HockeyApp Notes",
+      "HelpText": "optional, release notes as Textile or Markdown\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppNotesType",
+      "Label": "HockeyApp Notes Type",
+      "HelpText": "optional, type of release notes:\n\n- 0 - Textile\n- 1 - Markdown\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppNotify",
+      "Label": "HockeyApp Notify",
+      "HelpText": "optional, notify testers (can only be set with full-access tokens):\n\n- 0 - Don't notify testers\n- 1 - Notify all testers that can install this app\n- 2 - Notify all testers\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": "1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppStatus",
+      "Label": "HockeyApp Status",
+      "HelpText": "optional, download status (can only be set with full-access tokens):\n\n- 1: Don't allow users to download or install the version\n- 2: Available for download or installation\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": "2",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppTags",
+      "Label": "HockeyApp Tags",
+      "HelpText": "optional, restrict download to comma-separated list of tags\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppTeams",
+      "Label": "HockeyApp Teams",
+      "HelpText": "optional, restrict download to comma-separated list of team IDs; example:\n\nteams=12,23,42 with 12, 23, and 42 being the database IDs of your teams\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "HockeyAppUsers",
+      "Label": "HockeyApp Users",
+      "HelpText": "optional, restrict download to comma-separated list of user IDs; example:\n\n    1224,5678\nwith 1224 and 5678 being the database IDs of your users\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppMandatory",
+      "Label": "HockeyApp Mandatory",
+      "HelpText": "optional, set version as mandatory:\n\n- 0 - no\n- 1 - yes\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppCommitSha",
+      "Label": "HockeyApp Commit Sha",
+      "HelpText": "optional, set to the git commit sha for this build\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppBuildServerUrl",
+      "Label": "HockeyApp Build Server Url",
+      "HelpText": "optional, set to the URL of the build job on your build server\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppRepositoryUrl",
+      "Label": "HockeyApp Repository Url",
+      "HelpText": "optional, set to your source repository\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-10-12T22:05:51.365+00:00",
+  "LastModifiedBy": "Colin.Dabritz@Viewpoint.com",
+  "$Meta": {
+    "ExportedAt": "2015-10-12T22:05:55.656Z",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  }
+}
