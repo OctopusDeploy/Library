@@ -10,10 +10,10 @@ module.directive('clickToCopy', function(){
     link: function(scope, el) {
       el.attr('data-clipboard-text', (scope.clickToCopy || '').toString());
 
-      var clip = new ZeroClipboard(el);
+      var client = new ZeroClipboard(el);
 
-      clip.on('load', function(client) {
-        client.on('complete', function() {
+      client.on('ready', function(readyEvent) {
+        client.on('aftercopy', function(event) {
           el.addClass('copied');
           if (typeof scope.onCopied === 'function') {
             scope.$apply(function(){

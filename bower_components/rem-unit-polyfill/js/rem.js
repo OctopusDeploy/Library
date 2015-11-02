@@ -24,13 +24,9 @@
     },
 
    processLinks = function () {
-        if( links.length === 0 ){
-            links = isStyleSheet(); // search for link tags and confirm it's a stylesheet
-        }
-
         //prepare to match each link
         for( var i = 0; i < links.length; i++ ){
-            xhr( links[i], storeCSS, links[i], i );
+            xhr( links[i], storeCSS );
         }
     },
 
@@ -56,7 +52,7 @@
     },
 
     matchCSS = function ( sheetCSS, link ) { // collect all of the rules from the xhr response texts and match them to a pattern
-        var clean = removeComments( removeMediaQueries(sheetCSS) ),
+        var clean = removeMediaQueries( sheetCSS ).replace(/\/\*[\s\S]*?\*\//g, ''), // remove MediaQueries and comments
             pattern = /[\w\d\s\-\/\\\[\]:,.'"*()<>+~%#^$_=|@]+\{[\w\d\s\-\/\\%#:!;,.'"*()]+\d*\.?\d+rem[\w\d\s\-\/\\%#:!;,.'"*()]*\}/g, //find selectors that use rem in one or more of their rules
             current = clean.match(pattern),
             remPattern =/\d*\.?\d+rem/g,
@@ -67,7 +63,11 @@
             importStatement;
 
         while( (importStatement = importPattern.exec(sheetCSS)) !== null ){
-            importLinks.push( sheetPath + importStatement[1] );
+            if( importStatement[1].indexOf("/") === 0 ) { // check if the value of importStatement[1] is a root relative path, in which case it shouldn't be concatenated with sheetPath
+                importLinks.push( importStatement[1] );
+            } else {
+                importLinks.push( sheetPath + importStatement[1] );
+            }
         }
 
         if( current !== null && current.length !== 0 ){
@@ -94,7 +94,7 @@
 
     parseCSS = function () { // replace each set of parentheses with evaluated content
         for( var i = 0; i < foundProps.length; i++ ){
-            css[i] = Math.round( parseInt(foundProps[i].substr(0,foundProps[i].length-3)*fontSize, 10) ) + 'px';
+            css[i] = Math.round( parseFloat(foundProps[i].substr(0,foundProps[i].length-3)*fontSize) ) + 'px';
         }
 
         loadCSS();
@@ -117,124 +117,98 @@
         }
     },
 
-    xhr = function ( url, callback, i ) { // create new XMLHttpRequest object and run it
-
+    xhr = function ( url, callback ) { // create new XMLHttpRequest object and run it
         try {
-            var xhr = getXMLHttpRequest();
-            xhr.open( 'GET', url, true );
-            xhr.send();
-            var ie = (function () { //function checking IE version
-            var undef,
-                v = 3,
-                div = document.createElement('div'),
-                all = div.getElementsByTagName('i');
-                while (
-                    div.innerHTML = '<!--[if gt IE ' + (++v) + ']><i></i><![endif]-->',
-                    all[0]
-                );
-            return v > 4 ? v : undef;
-            }());
+            //try to create a request object
+            //arranging the two conditions this way is for IE7/8's benefit
+            //so that it works with any combination of ActiveX or Native XHR settings, 
+            //as long as one or the other is enabled; but if both are enabled
+            //it prefers ActiveX, which means it still works with local files
+            //(Native XHR in IE7/8 is blocked and throws "access is denied",
+            // but ActiveX is permitted if the user allows it [default is to prompt])
+            var xhr = window.ActiveXObject ? ( new ActiveXObject('Microsoft.XMLHTTP') || new ActiveXObject('Msxml2.XMLHTTP') ) : new XMLHttpRequest();
 
-            if ( ie >= 7 ){ //If IE is greater than 6
-                // This targets modern browsers and modern versions of IE,
-                // which don't need the "new" keyword.
-                xhr.onreadystatechange = function () {
-                    if ( xhr.readyState === 4 ){
-                        callback(xhr, i);
-                    } // else { callback function on AJAX error }
-                };
-            } else {
-                // This block targets old versions of IE, which require "new".
-                xhr.onreadystatechange = new function() { //IE6 and IE7 need the "new function()" syntax to work properly
-                    if ( xhr.readyState === 4 ) {
-                        callback( xhr, i );
-                    } // else { callback function on AJAX error }
-                };
-            }
-         } catch (e){
+            xhr.open( 'GET', url, true );
+            xhr.onreadystatechange = function() {
+                if ( xhr.readyState === 4 ){
+                    callback(xhr, url);
+                } // else { callback function on AJAX error }
+            };
+
+            xhr.send( null );
+        } catch (e){
             if ( window.XDomainRequest ) {
                 var xdr = new XDomainRequest();
                 xdr.open('get', url);
                 xdr.onload = function() {
-                    callback(xdr, i);
+                    callback(xdr, url);
                 };
                 xdr.onerror = function() {
                     return false; // xdr load fail
                 };
                 xdr.send();
             }
-         }
-    },
-
-    removeComments = function ( css ) {
-        var start = css.search(/\/\*/),
-            end = css.search(/\*\//);
-        while ( (start > -1) && (end > start) ) {
-            css = css.substring(0, start) + css.substring(end + 2);
-            start = css.search(/\/\*/);
-            end = css.search(/\*\//);
         }
-        return css;
-    },
-
-    // Test for Media Query support
-    mediaQuery = function() {
-        if (window.matchMedia || window.msMatchMedia) { return true; }
-        return false;
     },
 
     // Remove queries.
     removeMediaQueries = function(css) {
-        if (!mediaQuery()) {
+        // Test for Media Query support
+        if ( !window.matchMedia && !window.msMatchMedia ) {
             // If the browser doesn't support media queries, we find all @media declarations in the CSS and remove them.
             // Note: Since @rules can't be nested in the CSS spec, we're safe to just check for the closest following "}}" to the "@media".
-            css = css.replace(/@media[\s\S]*?\}\s*\}/, "");
+            css = css.replace(/@media[\s\S]*?\}\s*\}/g, "");
         }
 
         return css;
-    },
-
-    getXMLHttpRequest = function () { // we're gonna check if our browser will let us use AJAX
-        if (window.XMLHttpRequest) {
-            return new XMLHttpRequest();
-        } else { // if XMLHttpRequest doesn't work
-            try {
-                return new ActiveXObject("MSXML2.XMLHTTP"); // then we'll instead use AJAX through ActiveX for IE6/IE7
-            } catch (e1) {
-                try {
-                    return new ActiveXObject("Microsoft.XMLHTTP"); // other microsoft
-                } catch (e2) {
-                    // No XHR at all...
-                }
-            }
-        }
     };
 
     if( !cssremunit() ){ // this checks if the rem value is supported
         var rules = '', // initialize the rules variable in this scope so it can be used later
-            links = [], // initialize the array holding the sheets urls for use later
+            links = isStyleSheet(), // initialize the array holding the sheets urls for use later
             importLinks = [], //initialize the array holding the import sheet urls for use later
             found = [], // initialize the array holding the found rules for use later
             foundProps = [], // initialize the array holding the found properties for use later
             preCSS = [], // initialize array that holds css before being parsed
             CSSLinks = [], //initialize array holding css links returned from xhr
             css = [], // initialize the array holding the parsed rules for use later
-            body = document.getElementsByTagName('body')[0],
             fontSize = '';
 
-        if ( !!body.currentStyle ) {
-            if ( body.currentStyle.fontSize.indexOf("px") >= 0 ) {
-                fontSize = body.currentStyle.fontSize.replace('px', '');
-            } else if ( body.currentStyle.fontSize.indexOf("em") >= 0 ) {
-                fontSize = body.currentStyle.fontSize.replace('em', '');
-            } else if ( body.currentStyle.fontSize.indexOf("pt") >= 0 ) {
-                fontSize = body.currentStyle.fontSize.replace('pt', '');
-            } else {
-                fontSize = (body.currentStyle.fontSize.replace('%', '') / 100) * 16; // IE8 returns the percentage while other browsers return the computed value
+        // Notice: rem is a "root em" that means that in case when html element size was changed by css
+        // or style we should not change document.documentElement.fontSize to 1em - only body size should be changed
+        // to 1em for calculation
+
+        fontSize = (function () {
+            var doc = document,
+                docElement = doc.documentElement,
+                body = doc.body || doc.createElement('body'),
+                isFakeBody = !doc.body,
+                div = doc.createElement('div'),
+                currentSize = body.style.fontSize,
+                size;
+
+            if ( isFakeBody ) {
+                docElement.appendChild( body );
             }
-        } else if (window.getComputedStyle) {
-            fontSize = document.defaultView.getComputedStyle(body, null).getPropertyValue('font-size').replace('px', ''); // find font-size in body element
-        }
+
+            div.style.cssText = 'width:1em; position:absolute; visibility:hidden; padding: 0;';
+
+            body.style.fontSize = '1em';
+
+            body.appendChild( div );
+            size = div.offsetWidth;
+
+            if ( isFakeBody ) {
+                docElement.removeChild( body );
+            }
+            else {
+                body.removeChild( div );
+                body.style.fontSize = currentSize;
+            }
+
+            return size;
+        }());
+
         processLinks();
     } // else { do nothing, you are awesome and have REM support }
 

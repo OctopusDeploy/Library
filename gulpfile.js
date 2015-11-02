@@ -1,11 +1,11 @@
 var gulp = require('gulp');
 
+var del = require('del');
 var uglify = require('gulp-uglify');
 var concat = require('gulp-concat');
 var rev = require('gulp-rev');
 var minifyCss = require('gulp-minify-css');
 var inject = require('gulp-inject');
-var clean = require('gulp-clean');
 var jshint = require('gulp-jshint');
 var rename = require('gulp-rename');
 var ngHtml2Js = require("gulp-ng-html2js");
@@ -16,6 +16,7 @@ var sourceUrl = require('gulp-source-url');
 var filter = require('gulp-filter');
 var childProcess = require('child_process');
 var data = require('gulp-data');
+var glimpse = require('glimpse');
 
 var reExt = function(ext) {
   return rename(function(path) { path.extname = ext; })
@@ -64,23 +65,23 @@ gulp.task('scripts-app', ['clean'], function() {
 });
 
 gulp.task('scripts-vendor', ['clean'], function() {
-  var notMinJS = filter('!*.min.js');
-  var minJS = filter('*.min.js');
+  var notMinJS = filter(['*', '!*.min.js'], {restore: true});
+  var minJS = filter(['*', '*.min.js']);
 
   return gulp.src([
       'bower_components/angular/angular.min.js',
       'bower_components/angular-route/angular-route.min.js',
       'bower_components/underscore/underscore.js',
-      'bower_components/showdown/src/showdown.js',
-      'bower_components/zeroclipboard/zeroclipboard.min.js',
+      'bower_components/showdown/dist/showdown.js',
+      'bower_components/zeroclipboard/dist/zeroclipboard.min.js',
       'vendor/highlight.js/highlight.js',
-      'bower_components/rem-unit-polyfill/src/rem.min.js',
+      'bower_components/REM-unit-polyfill/js/rem.min.js',
       'bower_components/moment/moment.js'
     ])
     .pipe(notMinJS)
     .pipe(uglify())
     .pipe(reExt('.min.js'))
-    .pipe(notMinJS.restore())
+    .pipe(notMinJS.restore)
     .pipe(minJS)
     .pipe(concat('1-vendor.js'))
     .pipe(gulp.dest('build/public'))
@@ -115,7 +116,7 @@ gulp.task('flash', ['clean'], function(){
   return gulp.src([
       // Ideally this wouldn't go into the root dir, but having trouble
       // configuring the library to do otherwise.
-      'bower_components/zeroclipboard/zeroclipboard.swf'
+      'bower_components/zeroclipboard/dist/zeroclipboard.swf'
     ])
     .pipe(gulp.dest('build/public'))
     .pipe(gulp.dest('dist/public'));
@@ -140,8 +141,9 @@ gulp.task('rev', ['scripts', 'styles'], function() {
 });
 
 gulp.task('html-release', ['rev', 'assets'], function() {
-  return gulp.src('dist/public/**/*.*')
-    .pipe(inject('app/app.html', {
+  var sources = gulp.src('dist/public/**/*.*', {read: false});
+  return gulp.src('app/app.html')
+    .pipe(inject(sources, {
       addRootSlash: false,
       ignorePath: '/dist/public/'
     }))
@@ -150,11 +152,13 @@ gulp.task('html-release', ['rev', 'assets'], function() {
 });
 
 gulp.task('html-debug', ['rev', 'assets'], function() {
-  var notMinJS = filter('!*.min.js');
-
-  return gulp.src('build/public/**/*.*')
-    .pipe(notMinJS)
-    .pipe(inject('app/app.html', {
+  var notMinJS = filter(['*', '!*.min.js']);
+  var sources = gulp
+    .src('build/public/**/*.*')
+    .pipe(notMinJS);
+    
+  return gulp.src('app/app.html')
+    .pipe(inject(sources, {
       addRootSlash: false,
       ignorePath: '/build/public/'
     }))
@@ -163,8 +167,7 @@ gulp.task('html-debug', ['rev', 'assets'], function() {
 });
 
 gulp.task('clean', function() {
-  return gulp.src(['build', 'dist', 'tmp'], {read: false})
-    .pipe(clean());
+  return del(['build', 'dist', 'tmp']);
 });
 
 gulp.task('server', ['clean'], function(){
@@ -185,20 +188,14 @@ var start = function() {
   return expressApp();
 };
 
-gulp.task('snapshot', ['baseline', 'prepare-snapshot'], function(cb) {
-  var server = start();
-
-  childProcess.exec('grunt', function(error, stdout, stderr){
-    console.log(stdout);
-    console.log(stderr);
-
-    if (error) {
-      console.log(error);
-    }
-
-    server.close();
-
-    cb(error);
+gulp.task('snapshot', ['baseline', 'prepare-snapshot'], function() {
+  var config = require('./tmp/html-snapshot/snapshot-sitemap.json');
+  return glimpse({
+    port: 4000,
+    folder: 'build/public',
+    urls: config.urls,
+    outputDir: config.snapshotPath,
+    verbose: true
   });
 });
 

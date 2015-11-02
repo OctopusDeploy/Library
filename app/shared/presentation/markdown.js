@@ -1,7 +1,7 @@
 var module = angular.module('octopus-library');
 
 module.directive('markdown', function () {
-  var converter = new Showdown.converter();
+  var converter = new showdown.Converter();
   return {
     restrict: 'E',
     scope: {
