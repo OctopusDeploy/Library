@@ -1,32 +1,28 @@
 {
-    "Id": "ActionTemplates-33",
-    "Name": "Variables - Substitute in Files",
-    "Description": "Transforms files using the Octopus `#{Variable}` substitution syntax.",
-    "ActionType": "Octopus.Script",
-    "Version": 14,
-    "Properties": {
-        "Octopus.Action.Script.ScriptBody": "Add-Type -Path ($OctopusParameters['Octopus.Tentacle.Agent.ProgramDirectoryPath'] + \"\\Octopus.Platform.dll\")\n\nfunction Execute-Template($templateFile, $outputFile)\n{\n    Write-Output \"Loading template file $templateFile...\"\n     \n    $contents = [System.IO.File]::ReadAllText($templateFile)\n    \n    $template = $null\n    $parseErr = $null\n    \n    if (-not [Octopus.Platform.Variables.Templates.Parser.TemplateParser]::TryParseTemplate($contents, [ref] $template, [ref] $parseErr))\n    {\n        throw \"The file contents could not be parsed as a valid Octopus template: $parseErr\"\n    }\n    \n    Write-Output \"Binding variables...\"\n    \n    $binding = [Octopus.Platform.Variables.Templates.Binder.PropertyListBinder]::CreateFrom($OctopusParameters)\n    \n    $newContents = New-Object System.Text.StringBuilder\n    $writer = New-Object System.IO.StringWriter $newContents\n    \n    Write-Output \"Evaluating template...\"\n    \n    [Octopus.Platform.Variables.Templates.Evaluator.TemplateEvaluator]::Evaluate($template, $binding, $writer)\n    \n    $writer.Dispose()\n    \n    Write-Output \"Writing result to $outputFile...\"\n    \n    [System.IO.File]::WriteAllText($outputFile, $newContents.ToString())\n}\n\n\n$SubsTemplatePathGlobs.Split(\";\") | foreach {\n    $glob = $_.Trim()\n    Write-Output \"Searching for files that match $glob...\"\n\n    $matches = $null\n    $splits = $glob.Split(@('/**/'), [System.StringSplitOptions]::RemoveEmptyEntries)\n    if ($splits.Length -eq 1) {\n        $splits = $glob.Split(@('\\**\\'), [System.StringSplitOptions]::RemoveEmptyEntries)\n    }\n    \n    if ($splits.Length -eq 1) {\n        $matches = ls $glob\n    } else {\n        if ($splits.Length -eq 2) {\n            pushd $splits[0]\n            $matches = ls $splits[1] -Recurse\n            popd\n        } else {\n            $splits\n            throw \"The segment '**' can only appear once, as a directory name, in the glob expression\"\n        }\n    }\n\n    $matches | foreach {\n        $tpl = $_.FullName\n        $dest = $tpl\n        if (-not [string]::IsNullOrWhiteSpace($SubsTrimSuffix)) {\n            $lx = $tpl.LastIndexOf($SubsTrimSuffix)\n            if ($lx -eq -1) {\n                Write-Output \"File $tpl does not end with the $SubsTrimSuffix suffix, so will be overwritten\"\n            } else {\n                $dest = $tpl.Substring(0,$lx)\n            }\n        }\n        Execute-Template -templateFile $tpl -outputFile $dest\n    }\n}\n\n\nWrite-Output \"Done.\"\n"
-    },
+  "Id": "ActionTemplates-33",
+  "Name": "Variables - Substitute in Files",
+  "Description": "Replaces variables in a file(s) with their values from OctopusParameters.",
+  "ActionType": "Octopus.Script",
+  "Version": 6,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\"\r\n\r\n\r\nfunction Resolve-VariablesInTemplate{\r\n<#\r\n.SYNOPSIS\r\n\tReplaces variables in a file with their values from a dictionary\r\n\r\n.DESCRIPTION\r\n\tLooks for files that match $TemplateFile template and in each of the files replaces ${Variable} with the value from $VariableDictionary.\r\n\tFiles are written back using UTF-8. File search is performed using Get-ChildItem -Recurse. If no $VariableDictionary is provided it tries\r\n\tto use $OctopusParameters\r\n\r\n.PARAMETER TemplateFile\r\n\tFile we want to process. Also supports wildcards (anything that works with Get-ChildItem)\r\n\r\n.PARAMETER VariableDictionary\r\n\tDictionary of variable names and their values. If left empty tries to use OctopusParameters hashtable\r\n\r\n#>\r\n\tParam(\r\n\t\t[string]$TemplateFile,\r\n\t\t$VariableDictionary\r\n\t)\r\n\tif (-not (Test-Path -Type Leaf $TemplateFile)) { Write-Error \"Template file not found:$TemplateFile\" }\r\n\t\r\n\tif (($OctopusParameters) -and ($OctopusParameters['Octopus.Tentacle.Agent.ProgramDirectoryPath'])){\r\n\t\tWrite-Verbose \"OctopusParameters['Octopus.Tentacle.Agent.ProgramDirectoryPath'] provided\"\r\n\t\t$OctostacheLib = Join-Path $OctopusParameters['Octopus.Tentacle.Agent.ProgramDirectoryPath'] \"Octostache.dll\"\r\n\t} else {\r\n\t\t$OctostacheLib = \"C:\\Program Files\\Octopus Deploy\\Tentacle\\Octostache.dll\"\r\n\t}\r\n\tWrite-Verbose \"OctostacheLib=$OctostacheLib\"\r\n\t\r\n\tif (-not (Test-Path -Type Leaf $OctostacheLib)) {\r\n\t\tWrite-Error \"Octostache.dll not found at $OctostacheLib\"\r\n\t} else {\r\n\t\tWrite-Output \"Loading Octostache library...\"\r\n\t\tAdd-Type -Path $OctostacheLib\r\n\t}\r\n\t\r\n\t# If no dictionary was provided maybe we're running in OctopusDeploy? \r\n\tif ($VariableDictionary -eq $null){\r\n\t\tWrite-Output \"VariableHashtable not provided. Looking for OctopusParameters hashtable\"\r\n\t\tif ((Get-Variable 'OctopusParameters' -EA SilentlyContinue) -ne $null){\r\n\t\t\t$VariableDictionary = (Get-Variable 'OctopusParameters').Value\r\n\t\t} else {\r\n\t\t\tWrite-Error \"Variable dictionary not provided (OctopusParameters also not found)\"\r\n\t\t}\r\n\t}\r\n\t\r\n\t$Dictionary = New-Object -TypeName Octostache.VariableDictionary\r\n\t\r\n\t# Load the hastable into the dictionary\r\n\tWrite-Output \"Loading the variables\"\r\n\tforeach ($Variable in $VariableDictionary.GetEnumerator()) {\r\n\t\tWrite-Verbose \"#{$($Variable.Key)} = $($Variable.Value)\"\r\n\t\t$Dictionary.Set($Variable.Key, $Variable.Value)\r\n\t}\r\n\t\r\n\tWrite-Output \"Getting target files...\"\r\n\t$TargetFiles = Get-ChildItem -Path $TemplateFile -Recurse\r\n\tif (-not ($TargetFiles)) { Write-Error \"No template files found\" }\r\n\tforeach($File in $TargetFiles){\r\n\t\tWrite-Output \"Processing $($File.FullName)\"\r\n\t\t# Read the contents of the template\r\n\t\tWrite-Output \"`tReading contents\"\r\n\t\t$TemplateContent = Get-Content -Raw $File.FullName\r\n\t\tWrite-Output \"`t`tRead $($TemplateContent.Length) bytes\"\r\n\t\t\r\n\t\t# Resolve variables in the template\r\n\t\tWrite-Output \"`tResolving variables\"\r\n\t\t$EvaluatedTemplate = $Dictionary.Evaluate($TemplateContent)\r\n\t\t\r\n\t\tWrite-Output \"`tWriting the resolved template to $($File.FullName)\"\r\n\t\t$EvaluatedTemplate | Out-File $File.FullName -Force\t-Encoding UTF8\r\n\t}\r\n}\r\n\r\n#Export-ModuleMember Resolve-VariablesInTemplate\r\n\r\n#---- Auto generated bootstrap by OctopusStepGenerator\r\n$FunctionParameters = @{}\r\nif($OctopusParameters['TemplateFile'] -ne $null){$FunctionParameters.Add('TemplateFile', $OctopusParameters['TemplateFile'])}\r\nif($OctopusParameters['VariableDictionary'] -ne $null){$FunctionParameters.Add('VariableDictionary', $OctopusParameters['VariableDictionary'])}\r\nResolve-VariablesInTemplate @FunctionParameters",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
   "SensitiveProperties": {},
   "Parameters": [
     {
-        "Name": "SubsTemplatePathGlobs",
-        "Label": "Template files",
-        "HelpText": "A semicolon-separated list of path expressions that match the template files to be processed.\n\nSimple globbing is supported, for example `C:\\Files\\**\\*.tmpl` will match files in `C:\\Files` and any subdirectory.",
-        "DefaultValue": null
-    },
-    {
-        "Name": "SubsTrimSuffix",
-        "Label": "Trim filename suffix",
-        "HelpText": "If specified, the results of evaluating the templates will be written to new files by trimming the specified suffix from the end of the filename. For example, specifying `.tmpl` will cause the file `Settings.ini.tmpl` to be transformed into `Settings.ini`.\n\nIf omitted, the files will be transformed in-place.",
-        "DefaultValue": null
+      "Name": "TemplateFile",
+      "Label": "TemplateFile",
+      "HelpText": "File(s) we want to process. Also supports wildcards (anything that works with Get-ChildItem)",
+      "DefaultValue": "",
+      "DisplaySettings": {}
     }
   ],
-  "LastModifiedOn": "2014-05-08T03:50:43.932+00:00",
-  "LastModifiedBy": "nblumhardt",
+  "LastModifiedOn": "2015-11-07T013:21:23.251+00:00",
+  "LastModifiedBy": "Tadas",
   "$Meta": {
-      "ExportedAt": "2014-05-08T03:59:00.803Z",
-      "OctopusVersion": "2.5.0.0",
-      "Type": "ActionTemplate"
+    "ExportedAt": "2015-11-07T12:20:50.327Z",
+    "OctopusVersion": "3.0.10.2278",
+    "Type": "ActionTemplate"
   }
 }
