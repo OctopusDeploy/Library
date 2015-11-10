@@ -1,11 +1,12 @@
 {
-  "Id": "ActionTemplates-68",
+  "Id": "ActionTemplates-40",
   "Name": "Configuration - Encrypt Section",
   "Description": "Encrypts an configuration section for the specified file in a given directory.",
   "ActionType": "Octopus.Script",
-  "Version": 5,
+  "Version": 13,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\" \r\nfunction Get-Parameter($Name, $Default, [switch]$Required) {\r\n    $result = $null\r\n\r\n    if ($OctopusParameters -ne $null) {\r\n        $result = $OctopusParameters[$Name]\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        if ($Required) {\r\n            throw \"Missing parameter value $Name\"\r\n        } else {\r\n            $result = $Default\r\n        }\r\n    }\r\n\r\n    return $result\r\n}\r\n\r\nfunction HandleError($message) {\r\n\tif (!$whatIf) {\r\n\t\tthrow $message\r\n\t} else {\r\n\t\tWrite-Host $message -Foreground Yellow\r\n\t}\r\n}\r\n\r\n$websiteDirectory = Get-Parameter \"WebsiteDirectory\" -Required\r\n$sectionToEncrypt = Get-Parameter \"SectionToEncrypt\" -Required\r\n$provider = Get-Parameter \"Provider\" \"\"\r\n$configFile = Get-Parameter \"ConfigFile\" \"web.config\"\r\n\r\nWrite-Host \"Configuration - Encrypt .config\"\r\nWrite-Host \"WebsiteDirectory: $websiteDirectory\"\r\nWrite-Host \"SectionToEncrypt: $sectionToEncrypt\"\r\nWrite-Host \"Provider: $provider\"\r\nWrite-Host \"ConfigFile: $configFile\"\r\n\r\n\r\nif (!(Test-Path $websiteDirectory)) {\r\n\tHandleError \"The directory $websiteDirectory must exist\"\r\n}\r\n\r\n$configFilePath = Join-Path $websiteDirectory $configFile\r\nWrite-Host \"configFilePath: $configFilePath\"\r\nif (!(Test-Path $configFilePath)) {\r\n\tHandleError \"Specified file $configFile or a Web.Config file must exist in the directory $websiteDirectory\"\r\n}\r\n\r\n$frameworkPath = [System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory();\r\n$regiis = \"$frameworkPath\\aspnet_regiis.exe\"\r\n\r\nif (!(Test-Path $regiis)) {\r\n\tHandleError \"The tool aspnet_regiis does not exist in the directory $frameworkPath\"\r\n}\r\n\r\n# Create a temp directory to work out of and copy our config file to web.config\r\n$tempPath = Join-Path $websiteDirectory $([guid]::NewGuid()).ToString()\r\nif (!$whatIf) {\r\n\tNew-Item $tempPath -ItemType \"directory\"\r\n} else {\r\n\tWrite-Host \"WhatIf: New-Item $tempPath -ItemType \"\"directory\"\"\" -Foreground Yellow\r\n}\r\n\r\n$tempFile = Join-Path $tempPath \"web.config\"\r\nif (!$whatIf) {\r\n\tCopy-Item $configFilePath $tempFile\r\n} else {\r\n\tWrite-Host \"WhatIf: Copy-Item $configFilePath $tempFile\" -Foreground Yellow\r\n}\r\n\r\n# Determine arguments\r\nif ($provider) {\r\n\t$args = \"-pef\", $sectionToEncrypt, $tempPath, \"-prov\", $provider\r\n} else {\r\n\t$args = \"-pef\", $sectionToEncrypt, $tempPath\r\n}\r\n\r\n# Encrypt Web.Config file in directory\r\nif (!$whatIf) {\r\n\t& $regiis $args\r\n} else {\r\n\tWrite-Host \"WhatIf: $regiis $args\" -Foreground Yellow\r\n}\r\n\r\n# Copy the web.config back to original file and delete the temp dir\r\nif (!$whatIf) {\r\n\tCopy-Item $tempFile $configFilePath -Force\r\n\tRemove-Item $tempPath -Recurse\r\n} else {\r\n\tWrite-Host \"WhatIf: Copy-Item $tempFile $configFilePath -Force\" -Foreground Yellow\r\n\tWrite-Host \"WhatIf: Remove-Item $tempPath -Recurse\" -Foreground Yellow\r\n}\r\n"
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\" \nfunction Get-Parameter($Name, $Default, [switch]$Required) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        } else {\n            $result = $Default\n        }\n    }\n\n    return $result\n}\n\nfunction HandleError($message) {\n\tif (!$whatIf) {\n\t\tthrow $message\n\t} else {\n\t\tWrite-Host $message -Foreground Yellow\n\t}\n}\n\n$websiteDirectory = Get-Parameter \"WebsiteDirectory\" -Required\n$sectionToEncrypt = Get-Parameter \"SectionToEncrypt\" -Required\n$provider = Get-Parameter \"Provider\" \"\"\n$configFile = Get-Parameter \"ConfigFile\" \"web.config\"\n$otherFiles = (Get-Parameter \"OtherFiles\" \"\") -split ',' | where {$_} | %{$_.Trim()}\n\nWrite-Host \"Configuration - Encrypt .config\"\nWrite-Host \"WebsiteDirectory: $websiteDirectory\"\nWrite-Host \"SectionToEncrypt: $sectionToEncrypt\"\nWrite-Host \"Provider: $provider\"\nWrite-Host \"ConfigFile: $configFile\"\n\n\nif (!(Test-Path $websiteDirectory)) {\n\tHandleError \"The directory $websiteDirectory must exist\"\n}\n\n$configFilePath = Join-Path $websiteDirectory $configFile\nWrite-Host \"configFilePath: $configFilePath\"\nif (!(Test-Path $configFilePath)) {\n\tHandleError \"Specified file $configFile or a Web.Config file must exist in the directory $websiteDirectory\"\n}\n\n$frameworkPath = [System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory();\n$regiis = \"$frameworkPath\\aspnet_regiis.exe\"\n\nif (!(Test-Path $regiis)) {\n\tHandleError \"The tool aspnet_regiis does not exist in the directory $frameworkPath\"\n}\n\n# Create a temp directory to work out of and copy our config file to web.config\n$tempPath = Join-Path $websiteDirectory $([guid]::NewGuid()).ToString()\nif (!$whatIf) {\n\tNew-Item $tempPath -ItemType \"directory\"\n} else {\n\tWrite-Host \"WhatIf: New-Item $tempPath -ItemType \"\"directory\"\"\" -Foreground Yellow\n}\n\n$tempFile = Join-Path $tempPath \"web.config\"\nif (!$whatIf) {\n\tCopy-Item $configFilePath $tempFile\n} else {\n\tWrite-Host \"WhatIf: Copy-Item $configFilePath $tempFile\" -Foreground Yellow\n}\n\nForeach($fileName in $otherFiles){\n  if (!$whatIf) {\n\t Copy-Item (Join-Path $websiteDirectory $fileName) (Join-Path $tempPath $fileName)\n  } else {\n\t Write-Host \"WhatIf: Copy-Item $configFilePath $tempFile\" -Foreground Yellow\n  }\n}\n\n# Determine arguments\nif ($provider) {\n\t$args = \"-pef\", $sectionToEncrypt, $tempPath, \"-prov\", $provider\n} else {\n\t$args = \"-pef\", $sectionToEncrypt, $tempPath\n}\n\n# Encrypt Web.Config file in directory\nif (!$whatIf) {\n\t& $regiis $args\n} else {\n\tWrite-Host \"WhatIf: $regiis $args\" -Foreground Yellow\n}\n\n# Copy the web.config back to original file and delete the temp dir\nif (!$whatIf) {\n\tCopy-Item $tempFile $configFilePath -Force\n\n  Foreach($fileName in $otherFiles){\n    if (!$whatIf) {\n  \t Copy-Item (Join-Path $tempPath $fileName) (Join-Path $websiteDirectory $fileName) -Force\n    } else {\n  \t Write-Host \"WhatIf: Copy-Item $configFilePath $tempFile\" -Foreground Yellow\n    }\n  }\n\n\tRemove-Item $tempPath -Recurse\n} else {\n\tWrite-Host \"WhatIf: Copy-Item $tempFile $configFilePath -Force\" -Foreground Yellow\n\tWrite-Host \"WhatIf: Remove-Item $tempPath -Recurse\" -Foreground Yellow\n}\n",
+    "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -44,13 +45,20 @@
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
+    },
+    {
+      "Name": "OtherFiles",
+      "Label": "Other Files",
+      "HelpText": "A list of other files in the `#{WebsiteDirectory}` folder that should be included when encrypting the specified `#{SectionToEncrypt}`. For example, `connectionStrings.config`. Values should be separated by a comma.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-12-08T20:03:23.131+00:00",
-  "LastModifiedBy": "JCapriotti",
   "$Meta": {
-    "ExportedAt": "2014-12-08T20:06:03.283Z",
-    "OctopusVersion": "2.5.10.567",
+    "ExportedAt": "2015-07-28T20:16:30.475Z",
+    "OctopusVersion": "3.0.5.2124",
     "Type": "ActionTemplate"
   }
 }
