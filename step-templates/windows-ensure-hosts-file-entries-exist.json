@@ -1,0 +1,37 @@
+{
+  "Id": "ActionTemplates-103",
+  "Name": "Windows - Ensure Hosts File Entries Exists",
+  "Description": "Ensures that a given IP exists with the given host names in the hosts file.",
+  "ActionType": "Octopus.Script",
+  "Version": 0,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$ip = $OctopusParameters['IP']\r\n$hostNames = $OctopusParameters['HostNames']\r\n\r\n$hostNames.Split(\";\") | ForEach {\r\n        $hostName = $_.Trim()\r\n\t\t$hostsPath = \"$env:windir\\System32\\drivers\\etc\\hosts\"\r\n        $hosts = Get-Content $hostsPath\r\n        $match = $hosts -match (\"^\\s*$ip\\s+$hostName\" -replace '\\.', '\\.')\r\n\r\n        If ($match) { continue }\r\n\r\n        $hostsEntry = \"$ip`t$hostName\"\r\n\r\n        If ([IO.File]::ReadAllText($hostsPath) -notmatch \"\\r\\n\\z\") { $hostsEntry = [environment]::newline + $hostsEntry }\r\n\r\n        Add-Content $hostsPath $hostsEntry\r\n}\r\n\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "IP",
+      "Label": "IP Address",
+      "HelpText": "The IP address which the host names should resolve to, e.g. 127.0.0.1",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HostNames",
+      "Label": "Host Names",
+      "HelpText": "The host names which should resolve to the given IP, e.g. www.mydomain.com;www.google.com.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2015-11-16T09:28:30.516Z",
+    "OctopusVersion": "3.2.3",
+    "Type": "ActionTemplate"
+  }
+}
