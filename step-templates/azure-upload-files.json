@@ -1,0 +1,73 @@
+{
+  "Id": "ActionTemplates-82",
+  "Name": "Azure - Upload Files to Azure",
+  "Description": "Uploads files and folders to an Azure container from a specified location.\n\n**IMPORTANT:** Azure PowerShell must be installed on the tentacle server for this step to work. This can be downloaded from http://bit.ly/AzurePowershellDownload",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "#--------------------------------------------------------------------\r\n# Azure subscription-specific variables.\r\n#Gets Azure Account Name\r\n$storageAccountName = $OctopusParameters[\"storageAccountName\"]\r\n\r\n#Gets Azure Account Key\r\n$storageAccountKey = $OctopusParameters[\"storageAccountKey\"]\r\n\r\n#Gets Azure Container Name\r\n$containerName = $OctupusParameters[\"containerName\"]\r\n\r\n#--------------------------------------------------------------------\r\n#Information of the folder being uploaded\r\n#Gets the location of the folder that is being uploaded\r\n$fileLocation = $OctopusParamters[\"fileLocation\"]\r\n\r\n#Get the name of the parent folder being uploaded\r\n$localFolder = $OctopusParameters[\"localFolder\"]\r\n\r\n#--------------------------------------------------------------------\r\n#Recursive optional\r\n$recursive = $OctopusParameters[\"recursive\"]\r\n\r\n#Sets the Permissions to public if the selection is true\r\nif ([boolean]::Parse($recursive)) \r\n{\r\n    \r\n\t$recurse = \"-Recurse\"\r\n\r\n}\r\n\r\n#--------------------------------------------------------------------\r\n#Checking to see if Azure is installed on the computer\r\n$name = 'Azure'\r\n\r\nWrite-Output \"Checking if Azure Powershell is installed\"\r\n\r\nif(Get-Module -ListAvailable | Where-Object {$_.name -eq $name})\r\n{\r\n\t(Get-Module -ListAvailable | Where-Object{ $_.Name -eq $name}) |\r\n\tSelect Version, Name, Author, PowerShellVersion | Format-List;\r\n\tWrite-Output \"Azure Powershell is installed\"\r\n}\r\nelse\r\n{\r\n\t#Provides the link to install Azure Powershell, if it is not installed\r\n\tWrite-Warning \"Please install Azure Powershell. To install Azure Powershell go to http://bit.ly/AzurePowershellDownload\"\r\n\tExit 1\r\n}\r\n\r\n\r\n\r\n#--------------------------------------------------------------------\r\n\r\n#Initialises the Azure Credentials based on the Storage Account Name and the Storage Account Key, \r\n#so that we can invoke the APIs further down. \r\n$storageContext = New-AzureStorageContext -StorageAccountName $storageAccountName -StorageAccountKey $storageAccountKey\r\n\r\n#--------------------------------------------------------------------\r\n\r\n$files = Get-ChildItem $localFolder\r\n#Gets each file in the data subfolder and uploads them\r\nforeach($file in $files)\r\n{\r\n  #Gets the location of the file \r\n  $fileName = \"$currentLocation\\$file\"\r\n  #Gets the blob name that the file will be uploaded to\r\n  $blobName = \"$localFolder/$file\"\r\n  #Gives the user an update on the progress\r\n  Write-Output \"copying $fileName to $blobName\"\r\n  #Sets the location and uploads the file\r\n  Set-AzureStorageBlobContent -File $filename -Container $containerName -Blob $blobName -Context $storageContext -Force $recurse\r\n} \r\n\r\nWrite-Output \"All files in $localFolder uploaded to $containerName!\"\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "storageAccountName",
+      "Label": "Azure Storage Account Name",
+      "HelpText": "Name of the account that the files and folders will be uploaded to.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "storageAccountKey",
+      "Label": "Azure Storage Account Key",
+      "HelpText": "The key that is used to log into the account.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "containerName",
+      "Label": "Azure Container Name",
+      "HelpText": "The name of the container the files and folder will be uploaded to.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "fileLocation",
+      "Label": "File Location",
+      "HelpText": "Location of the folder/files that are being uploaded",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "localFolder",
+      "Label": "Name of the Parent Folder",
+      "HelpText": "Name of the Parent Folder being uploaded",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "recursive",
+      "Label": "Recursive",
+      "HelpText": null,
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2015-11-26T22:20:48.805Z",
+    "OctopusVersion": "3.1.7",
+    "Type": "ActionTemplate"
+  }
+}
