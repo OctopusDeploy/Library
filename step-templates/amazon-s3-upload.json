@@ -1,16 +1,17 @@
 {
-  "Id": "ActionTemplates-2",
+  "Id": "ActionTemplates-23",
   "Name": "Amazon S3 Upload",
   "Description": "Upload files and folders to an S3 bucket from a specified location.\n\nEither specify a single file or a folder containing the files and folders to be uploaded.\n\n**Important!** _For this plugin to function, you must install [AWS Tools for Windows PowerShell](http://aws.amazon.com/powershell/) on your tentacle server._\n",
   "ActionType": "Octopus.Script",
-  "Version": 9,
+  "Version": 8,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$region = $OctopusParameters['Region']\r\n$folder = $OctopusParameters['Folder']\r\n$bucket = $OctopusParameters['Bucket']\r\n$accessKey = $OctopusParameters['S3AccessKey']\r\n$secretKey = $OctopusParameters['S3SecretKey']\r\n\r\nSet-AWSCredentials -AccessKey $accessKey -SecretKey $secretKey -StoreAs S3Creds\r\nSet-DefaultAWSRegion -Region $region\r\n\r\nFunction Upload($item) {\r\n    foreach ($i in Get-ChildItem $item)\r\n    {\r\n        if((Get-Item $i.FullName) -is [System.IO.DirectoryInfo]){\r\n            Write-S3Object -ProfileName S3Creds -BucketName $bucket -KeyPrefix $i -Folder $i.FullName\r\n        } else {\r\n            Write-S3Object -ProfileName S3Creds -BucketName $bucket -Key $i -File $i.FullName\r\n        }\r\n    }\r\n}\r\n\r\nUpload($folder)\r\n"
+    "Octopus.Action.Script.ScriptBody": "\r\n#Retrieve Octopus Parameters \r\n\r\n#Get AWS Region \r\n$S3Region = $OctopusParameters['S3Region']\r\n\r\n#Get Location of the Source Folder\r\n$sourceFolderLocation = $OctopusParameters['sourceFolderLocation']\r\n\r\n#Get AWS Bucket name\r\n$S3Bucket = $OctopusParameters['S3Bucket']\r\n\r\n#Get AWS Access Key\r\n$S3AccessKey = $OctopusParameters['S3AccessKey']\r\n\r\n#Get AWS Secret Access Key\r\n$S3SecretKey = $OctopusParameters['S3SecretKey']\r\n\r\n#Get Make Public\r\n$makePublic = $OctopusParameters['makePublic']\r\n\r\n#Get Recursive Option\r\n$recursive = $OctopusParameters['recursive']\r\n\r\n#-----------------------------------------------\r\n\r\n#Private Variables\r\n$recurse = \"\"\r\n\r\n$params = @{}\r\n\r\n\r\n\r\n#Converts to a Boolean\r\n#Sets the Permissions to public if the selection is true\r\nif ([boolean]::Parse($makePublic)) \r\n{\r\n    \r\n\t$params.add(\"CannedACLName\", \"public-read\")\r\n\r\n}\r\n\r\n\r\n#Sets the Permissions to public if the selection is true\r\nif ([boolean]::Parse($Recursive)) \r\n{\r\n    \r\n\t$recurse = \"-Recurse\"\r\n\r\n}\r\n\r\n\r\n\r\n#Initialises the S3 Credentials based on the Access Key and Secret Key provided, so that we can invoke the APIs further down\r\nSet-AWSCredentials -AccessKey $S3AccessKey -SecretKey $S3SecretKey -StoreAs S3Creds\r\n\r\n#Initialises the Default AWS Region based on the region provided\r\nSet-DefaultAWSRegion -Region $S3Region\r\n\r\n\r\n#Gets all relevant files and uploads them\r\nFunction Upload($item) \r\n{\r\n    \t\r\n\t#Gets all files and child folders within the given directory\r\n\tforeach ($i in Get-ChildItem $item)\r\n    \r\n\t{\r\n        #Checks if the item is a folder\r\n\t\tif($i -is [System.IO.DirectoryInfo])\r\n\t\t{\r\n            #Inserts all files within a folder to AWS \t\t\t\r\n\t\t\tWrite-S3Object -ProfileName S3Creds -BucketName $S3Bucket -KeyPrefix $i.Name -Folder $i.FullName $recurse @params\r\n        \r\n\t\t} else \r\n\t\t{\r\n            #Inserts file to AWS\r\n\t\t\tWrite-S3Object -ProfileName S3Creds -BucketName $S3Bucket -Key $i.Name -File $i.FullName @params\r\n        \r\n\t\t}\r\n    \r\n\t}\r\n\r\n}\r\n\r\n\r\n\r\nUpload($sourceFolderLocation)\r\n",
+    "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
   "Parameters": [
     {
-      "Name": "Region",
+      "Name": "S3Region",
       "Label": "Region",
       "HelpText": "A region is the location that your S3 bucket was created.\n\nAmazon has many different region names and you [can read more about Amazon Region names here](http://docs.aws.amazon.com/general/latest/gr/rande.html).\n\n**Default Region**\nIf you didn't specify a region when setting up your S3 buckets, you may be using the default. According to Amazon:\n>  For accounts created on or after March 8, 2013, the default region is us-west-2; for older accounts, the default region is us-east-1.\n\n**Examples of region names include:**\n\n- eu-west-1\n- ap-southeast-1\n- us-east-1",
       "DefaultValue": "eu-west-1",
@@ -19,7 +20,7 @@
       }
     },
     {
-      "Name": "Bucket",
+      "Name": "S3Bucket",
       "Label": "Bucket Name",
       "HelpText": "This is the name of the bucket on S3 that you'd like your files and folders uploaded to.",
       "DefaultValue": null,
@@ -28,7 +29,7 @@
       }
     },
     {
-      "Name": "Folder",
+      "Name": "sourceFolderLocation",
       "Label": "Source Folder",
       "HelpText": "This is the local folder located on your tentacle server that you'd like to upload to S3\n\nExample: _C:\\Deployment\\S3Distributables_",
       "DefaultValue": null,
@@ -53,13 +54,31 @@
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
+    },
+    {
+      "Name": "makePublic",
+      "Label": "Make Public",
+      "HelpText": null,
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "recursive",
+      "Label": "Recursive",
+      "HelpText": "Do you want to upload to loop through all of the child folders/files and retrieve everything?",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
     }
   ],
-  "LastModifiedOn": "2015-05-01T11:00:13.067+00:00",
-  "LastModifiedBy": "JamieDixon",
+  "LastModifiedOn": "2015-11-26T22:39:11.556Z",
+  "LastModifiedBy": "timhunt303",
   "$Meta": {
-    "ExportedAt": "2015-05-01T11:00:49.224Z",
-    "OctopusVersion": "2.6.5.1010",
+    "ExportedAt": "2015-11-26T22:13:49.692Z",
+    "OctopusVersion": "3.1.7",
     "Type": "ActionTemplate"
   }
 }
