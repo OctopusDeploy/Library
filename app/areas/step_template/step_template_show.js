@@ -14,6 +14,5 @@ module.controller('StepTemplateShowController', function($scope, $routeParams, $
   $scope.showModal = false;
   $scope.toggleModal = function() {
     $scope.showModal = !$scope.showModal;
-    console.log('toggled modal, value: ' + $scope.showModal);
-  };
+  };  
 });
