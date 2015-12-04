@@ -10,6 +10,10 @@ module.factory('library', function(stepTemplates) {
     return type.toLowerCase() + '-' + slug;
   };
 
+  var makeScriptClass = function(actionType) {
+    return actionType.replace(/\./g, '-').toLowerCase();
+  };
+
   var items = _.chain(stepTemplates)
     .map(function(t) {
       if (t.Properties) {
@@ -27,6 +31,7 @@ module.factory('library', function(stepTemplates) {
         ExportedAt: t.$Meta.ExportedAt,
         Type: t.$Meta.Type,
         Author: t.LastModifiedBy,
+        ScriptClass: makeScriptClass(t.ActionType),
         Body: t
       };
     })
