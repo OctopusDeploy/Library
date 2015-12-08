@@ -191,15 +191,18 @@ var start = function() {
 };
 
 gulp.task('snapshot', ['baseline', 'prepare-snapshot'], function(cb) {
+  var server = start();
   var sitemap = require('./tmp/html-snapshot/snapshot-sitemap.json');
 
   glimpse({
-    folder: 'build/public',
+    //folder: 'build/public',
+    root: 'localhost:4000',
     urls: sitemap.urls,
     outputDir: sitemap.snapshotPath,
     verbose: !gutil.env.production,
     rejectExternalSources: true
   }).then(function() {
+    server.close();
     cb();
   });
 });
