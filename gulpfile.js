@@ -1,11 +1,11 @@
 var gulp = require('gulp');
 
+var del = require('del');
 var uglify = require('gulp-uglify');
 var concat = require('gulp-concat');
 var rev = require('gulp-rev');
 var minifyCss = require('gulp-minify-css');
 var inject = require('gulp-inject');
-var clean = require('gulp-clean');
 var jshint = require('gulp-jshint');
 var rename = require('gulp-rename');
 var ngHtml2Js = require("gulp-ng-html2js");
@@ -14,8 +14,9 @@ var footer = require("gulp-footer");
 var replace = require('gulp-replace');
 var sourceUrl = require('gulp-source-url');
 var filter = require('gulp-filter');
-var childProcess = require('child_process');
 var data = require('gulp-data');
+var glimpse = require('glimpse');
+var gutil = require('gulp-util');
 
 var reExt = function(ext) {
   return rename(function(path) { path.extname = ext; })
@@ -64,8 +65,8 @@ gulp.task('scripts-app', ['clean'], function() {
 });
 
 gulp.task('scripts-vendor', ['clean'], function() {
-  var notMinJS = filter('!*.min.js');
-  var minJS = filter('*.min.js');
+  var notMinJS = filter(['*', '!*.min.js'], {restore: true});
+  var minJS = filter(['*', '*.min.js']);
 
   return gulp.src([
       'bower_components/angular/angular.min.js',
@@ -80,7 +81,7 @@ gulp.task('scripts-vendor', ['clean'], function() {
     .pipe(notMinJS)
     .pipe(uglify())
     .pipe(reExt('.min.js'))
-    .pipe(notMinJS.restore())
+    .pipe(notMinJS.restore)
     .pipe(minJS)
     .pipe(concat('1-vendor.js'))
     .pipe(gulp.dest('build/public'))
@@ -140,8 +141,11 @@ gulp.task('rev', ['scripts', 'styles'], function() {
 });
 
 gulp.task('html-release', ['rev', 'assets'], function() {
-  return gulp.src('dist/public/**/*.*')
-    .pipe(inject('app/app.html', {
+  var target = gulp.src('app/app.html');
+  var sources = gulp.src('dist/public/**/*.*');
+
+  return target
+    .pipe(inject(sources, {
       addRootSlash: false,
       ignorePath: '/dist/public/'
     }))
@@ -150,11 +154,13 @@ gulp.task('html-release', ['rev', 'assets'], function() {
 });
 
 gulp.task('html-debug', ['rev', 'assets'], function() {
-  var notMinJS = filter('!*.min.js');
+  var notMinJS = filter(['*', '!*.min.js']);
+  var target = gulp.src('app/app.html');
+  var sources = gulp.src('build/public/**/*.*')
+    .pipe(notMinJS);
 
-  return gulp.src('build/public/**/*.*')
-    .pipe(notMinJS)
-    .pipe(inject('app/app.html', {
+  return target
+    .pipe(inject(sources, {
       addRootSlash: false,
       ignorePath: '/build/public/'
     }))
@@ -163,8 +169,7 @@ gulp.task('html-debug', ['rev', 'assets'], function() {
 });
 
 gulp.task('clean', function() {
-  return gulp.src(['build', 'dist', 'tmp'], {read: false})
-    .pipe(clean());
+  return del(['build', 'dist', 'tmp']);
 });
 
 gulp.task('server', ['clean'], function(){
@@ -187,18 +192,20 @@ var start = function() {
 
 gulp.task('snapshot', ['baseline', 'prepare-snapshot'], function(cb) {
   var server = start();
+  var sitemap = require('./tmp/html-snapshot/snapshot-sitemap.json');
 
-  childProcess.exec('grunt', function(error, stdout, stderr){
-    console.log(stdout);
-    console.log(stderr);
-
-    if (error) {
-      console.log(error);
-    }
-
+  glimpse({
+    root: sitemap.sitePath,
+    urls: sitemap.urls,
+    outputDir: sitemap.snapshotPath,
+    verbose: !gutil.env.production,
+    rejectExternalSources: true
+  }).then(function() {
     server.close();
-
-    cb(error);
+    cb();
+  }, function(err) {
+    server.close();
+    cb(err);
   });
 });
 
