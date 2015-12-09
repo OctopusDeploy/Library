@@ -195,8 +195,7 @@ gulp.task('snapshot', ['baseline', 'prepare-snapshot'], function(cb) {
   var sitemap = require('./tmp/html-snapshot/snapshot-sitemap.json');
 
   glimpse({
-    //folder: 'build/public',
-    root: 'localhost:4000',
+    root: sitemap.sitePath,
     urls: sitemap.urls,
     outputDir: sitemap.snapshotPath,
     verbose: !gutil.env.production,
@@ -204,6 +203,9 @@ gulp.task('snapshot', ['baseline', 'prepare-snapshot'], function(cb) {
   }).then(function() {
     server.close();
     cb();
+  }, function(err) {
+    server.close();
+    cb(err);
   });
 });
 
