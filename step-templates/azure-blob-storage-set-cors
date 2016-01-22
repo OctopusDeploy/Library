@@ -3,7 +3,7 @@
   "Name": "Azure Blob Storage set CORS Rule",
   "Description": "Set a given CORS rule on the specified Azure storage blob container",
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 3,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptBody": "try\n{ \n    Import-Module Azure -ErrorAction Stop\n}\ncatch\n{\n    throw \"Windows Azure Powershell not found! Please make sure to install them from http://www.windowsazure.com/en-us/downloads/#cmd-line-tools\" \n}\n\nImport-AzurePublishSettingsFile $PublishSettingsFile\n\n$context = New-AzureStorageContext `\n    -StorageAccountName $StorageAccount `\n    -StorageAccountKey $StorageAccountKey\n\n$container = Get-AzureStorageContainer -Context $context | \n        Where-Object { $_.Name -like $StorageContainer }\n\nif (-not $container)\n{\n    throw \"Azure storage container ($StorageAccount) not found\"\n}\n\n$corsRules = (@{\n    AllowedHeaders=@($AllowedHeaders);\n    AllowedOrigins=@($AllowedOrigins);\n    MaxAgeInSeconds=$MaxAgeInSeconds;\n    AllowedMethods=@($AllowedMethods)})\n\nSet-AzureStorageCORSRule -Context $context -ServiceType Blob -CorsRules $corsRules\n\nWrite-Host \"Added CORS rule to container: $StorageContainer\""
@@ -29,7 +29,9 @@
       "Label": "Storage Account Key",
       "HelpText": "The primary or secondary key for the Azure Storage Account.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
     },
     {
       "Name": "StorageContainer",
@@ -68,7 +70,7 @@
     }
   ],
   "$Meta": {
-    "ExportedAt": "2016-01-21T05:35:16.004Z",
+    "ExportedAt": "2016-01-22T04:49:27.549Z",
     "OctopusVersion": "3.1.3",
     "Type": "ActionTemplate"
   }
