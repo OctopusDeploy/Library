@@ -1,11 +1,12 @@
 {
-  "Id": "ActionTemplates-65",
+  "Id": "ActionTemplates-31",
   "Name": "SQL - Execute Script",
   "Description": "Execute a SQL script",
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 3,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$connection = New-Object System.Data.SqlClient.SqlConnection\r$connection.ConnectionString = $OctopusParameters['ConnectionString']\rRegister-ObjectEvent -inputobject $connection -eventname InfoMessage -action {\r    write-host $event.SourceEventArgs\r} | Out-Null\r\rfunction Execute-SqlQuery($query) {\r    $queries = [System.Text.RegularExpressions.Regex]::Split($query, \"^\\s*GO\\s*`$\", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline)\r\r    $queries | ForEach-Object {\r        $q = $_\r        if ((-not [String]::IsNullOrWhiteSpace($q)) -and ($q.Trim().ToLowerInvariant() -ne \"go\")) {            \r            $command = $connection.CreateCommand()\r            $command.CommandText = $q\r            $command.ExecuteNonQuery() | Out-Null\r        }\r    }\r\r}\r\rWrite-Host \"Connecting\"\rtry {\r    $connection.Open()\r\r    Write-Host \"Executing script\"\r    Execute-SqlQuery -query $OctopusParameters['SqlScript']\r}\rfinally {\r    Write-Host \"Closing connection\"\r    $connection.Dispose()\r}\r"
+    "Octopus.Action.Script.ScriptBody": "$connection = New-Object System.Data.SqlClient.SqlConnection\r$connection.ConnectionString = $OctopusParameters['ConnectionString']\rRegister-ObjectEvent -inputobject $connection -eventname InfoMessage -action {\r    write-host $event.SourceEventArgs\r} | Out-Null\r\rfunction Execute-SqlQuery($query) {\r    $queries = [System.Text.RegularExpressions.Regex]::Split($query, \"^\\s*GO\\s*`$\", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline)\r\r    $queries | ForEach-Object {\r        $q = $_\r        if ((-not [String]::IsNullOrWhiteSpace($q)) -and ($q.Trim().ToLowerInvariant() -ne \"go\")) {            \r            $command = $connection.CreateCommand()\r            $command.CommandText = $q\r            $command.CommandTimeout = $OctopusParameters['CommandTimeout']\r            $command.ExecuteNonQuery() | Out-Null\r        }\r    }\r\r}\r\rWrite-Host \"Connecting\"\rtry {\r    $connection.Open()\r\r    Write-Host \"Executing script\"\r    Execute-SqlQuery -query $OctopusParameters['SqlScript']\r}\rfinally {\r    Write-Host \"Closing connection\"\r    $connection.Dispose()\r}\r",
+    "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -26,13 +27,21 @@
       "DisplaySettings": {
         "Octopus.ControlType": "MultiLineText"
       }
+    },
+    {
+      "Name": "CommandTimeout",
+      "Label": "Command Timeout",
+      "HelpText": "The SQL Command Timeout. By default is 30 seconds.",
+      "DefaultValue": "30",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-05-14T03:11:37.743+00:00",
-  "LastModifiedBy": "paulstovell",
   "$Meta": {
-    "ExportedAt": "2014-05-14T03:11:39.475Z",
-    "OctopusVersion": "2.4.4.0",
-    "Type": "ActionTemplate"
+    "ExportedAt": "2016-02-11T15:15:57.430Z",
+    "OctopusVersion": "3.2.8",
+    "Type": "ActionTemplate",
+    "LastModifiedBy":  "joaoasrosa"
   }
 }
