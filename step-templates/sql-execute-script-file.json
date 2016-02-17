@@ -3,9 +3,9 @@
   "Name": "SQL - Execute Script File",
   "Description": "Execute a SQL script file",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 8,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$connection = New-Object System.Data.SqlClient.SqlConnection\r$connection.ConnectionString = $OctopusParameters['ConnectionString']\r$continueOnError = $($ContinueOnError.ToLower() -eq 'true')\rRegister-ObjectEvent -inputobject $connection -eventname InfoMessage -action {\r    write-host $event.SourceEventArgs\r} | Out-Null\r\rfunction Execute-SqlQuery($query) {\r    $queries = [System.Text.RegularExpressions.Regex]::Split($query, \"^\\s*GO\\s*`$\", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline)\r\r    $queries | ForEach-Object {\r        $q = $_\r        if ((-not [String]::IsNullOrWhiteSpace($q)) -and ($q.Trim().ToLowerInvariant() -ne \"go\")) {            \r            $command = $connection.CreateCommand()\r            $command.CommandText = $q\r            $command.CommandTimeout = $OctopusParameters['CommandTimeout']\r            $command.ExecuteNonQuery() | Out-Null\r        }\r    }\r\r}\r\rWrite-Host \"Connecting\"\rtry {\r    $connection.Open()\r\r    Write-Host \"Executing script\"\r    Execute-SqlQuery -query $OctopusParameters['SqlScript']\r}\rcatch {\r\tif ($continueOnError) {\r\t\tWrite-Host $_.Exception.Message\r\t}\r\telse {\r\t\tthrow\r\t}\r}\rfinally {\r    Write-Host \"Closing connection\"\r    $connection.Dispose()\r}",
+    "Octopus.Action.Script.ScriptBody": "$connection = New-Object System.Data.SqlClient.SqlConnection\r$connection.ConnectionString = $OctopusParameters['ConnectionString']\rRegister-ObjectEvent -inputobject $connection -eventname InfoMessage -action {\r    write-host $event.SourceEventArgs\r} | Out-Null\r\rfunction Execute-SqlQuery($query) {\r    $command = $connection.CreateCommand()\r    $command.CommandText = $query\r    $command.CommandTimeout = $OctopusParameters['CommandTimeout']\r    $command.ExecuteNonQuery() | Out-Null\r}\r\rWrite-Host \"Connecting\"\rtry {\r    $connection.Open()\r    Write-Host \"Executing script in\" $OctopusParameters['SqlScriptFile']\r    $content = [IO.File]::ReadAllText($OctopusParameters['SqlScriptFile'])\r    Execute-SqlQuery -query $content\r}\rcatch {\r\tif ($OctopusParameters['ContinueOnError']) {\r\t\tWrite-Host $_.Exception.Message\r\t}\r\telse {\r\t\tthrow\r\t}\r}\rfinally {\r    Write-Host \"Closing connection\"\r    $connection.Dispose()\r}",
     "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
@@ -47,10 +47,10 @@
       }
     }
   ],
-  "LastModifiedOn": "2016-02-17T09:00:00.743+06:00",
   "LastModifiedBy": "joaoasrosa",
   "$Meta": {
-    "OctopusVersion": "3.2.14",
+    "ExportedAt": "2016-02-17T11:54:47.761Z",
+    "OctopusVersion": "3.2.8",
     "Type": "ActionTemplate"
   }
 }
