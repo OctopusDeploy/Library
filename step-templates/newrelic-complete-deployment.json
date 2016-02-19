@@ -3,9 +3,10 @@
   "Name": "New Relic - Complete Deployment",
   "Description": "Notifies [New Relic](https://newrelic.com) of a deployment.\nSends the revision/version number, deployer, etc from the Octopus deployment.",
   "ActionType": "Octopus.Script",
-  "Version": 11,
+  "Version": 12,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "Add-Type -AssemblyName System.Web\r\n\r\n$accountId = $OctopusParameters['AccountId']\r\n$apiKey = $OctopusParameters['ApiKey']\r\n$user = $OctopusParameters['User']\r\n$appId = $OctopusParameters['AppId']\r\n\r\n#http://docs.octopusdeploy.com/display/OD/System+variables\r\n$releaseNumber = $OctopusParameters['Octopus.Release.Number']\r\n$releaseNotes = $OctopusParameters['Octopus.Release.Notes']\r\n$machineName = $OctopusParameters['Octopus.Machine.Name']\r\n$projectName = $OctopusParameters['Octopus.Project.Name']\r\n$deploymentLink = $OctopusParameters['Octopus.Web.DeploymentLink']\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Helpers\r\n## --------------------------------------------------------------------------------------\r\n# Helper for validating input parameters\r\nfunction Validate-Parameter([string]$foo, [string[]]$validInput, $parameterName) {\r\n    Write-Host \"${parameterName}: $foo\"\r\n    if (! $foo) {\r\n        throw \"No value was set for $parameterName, and it cannot be empty\"\r\n    }\r\n    \r\n    if ($validInput) {\r\n        if (! $validInput -contains $foo) {\r\n            throw \"'$input' is not a valid input for '$parameterName'\"\r\n        }\r\n    }\r\n}\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Configuration\r\n## --------------------------------------------------------------------------------------\r\nValidate-Parameter $accountId -parameterName \"Account ID\"\r\nValidate-Parameter $apiKey -parameterName \"Api Key\"\r\nValidate-Parameter $user -parameterName \"User\"\r\n\r\nif (!$appId) {\r\n    Write-Host \"NewRelic Deploy - AppId has not been set yet. Skipping call to API.\"\r\n    exit 0\r\n}\r\n\r\nWrite-Host \"App ID: $appId\"\r\n\r\n# encode the variables for the post\r\n$user = [System.Web.HttpUtility]::UrlEncode($user)\r\n$description = [System.Web.HttpUtility]::UrlEncode(\"Octopus deployment of $projectName to $machineName. ($deploymentLink)\")\r\n$releaseNumber = [System.Web.HttpUtility]::UrlEncode($releaseNumber)\r\n$releaseNotes = [System.Web.HttpUtility]::UrlEncode($releaseNotes)\r\n\r\n$post =  \"deployment[account_id]=$accountId\" + `\r\n        \"&deployment[user]=$user\" + `\r\n        \"&deployment[app_id]=$appId\" + `\r\n        \"&deployment[description]=$description\" + `\r\n        \"&deployment[revision]=$releaseNumber\" + `\r\n        \"&deployment[changelog]=$releaseNotes\"\r\n\r\n# in production, we need to\r\n#Create a URI instance since the HttpWebRequest.Create Method will escape the URL by default.\r\n$URL = \"http://api.newrelic.com/deployments.xml\"\r\n$URI = New-Object System.Uri($URL,$true)\r\n\r\n#Create a request object using the URI\r\n$request = [System.Net.HttpWebRequest]::Create($URI)\r\n\r\n#Build up a nice User Agent\r\n$request.UserAgent = $(\r\n    \"{0} (PowerShell {1}; .NET CLR {2}; {3})\" -f $UserAgent, \r\n    $(if($Host.Version){$Host.Version}else{\"1.0\"}),\r\n    [Environment]::Version,\r\n    [Environment]::OSVersion.ToString().Replace(\"Microsoft Windows \", \"Win\")\r\n)\r\n\r\n# $creds = New-Object System.Net.NetworkCredential($Username,$Password)\r\n# $request.Credentials = $creds\r\n# $request.Proxy = New-Object System.Net.WebProxy(\"proxyserver.host.com\", \"8080\")\r\n\r\n#Since this is a POST we need to set the method type\r\n$request.Method = \"POST\"\r\n$request.Headers.Add(\"x-api-key\",\"$apiKey\");\r\n\r\n#Set the Content Type as text/xml since the content will be a block of xml.\r\n$request.ContentType = \"application/x-www-form-urlencoded\"\r\n$request.Accept = \"text/xml\"\r\n\r\ntry {\r\n    #Create a new stream writer to write the xml to the request stream.\r\n    $stream = New-Object IO.StreamWriter $request.GetRequestStream()\r\n    $stream.AutoFlush = $True\r\n    $PostStr = [System.Text.Encoding]::UTF8.GetBytes($Post)\r\n    $stream.Write($PostStr, 0,$PostStr.length)\r\n    $stream.Close()\r\n \r\n    #Make the request and get the response\r\n    $response = $request.GetResponse()    \r\n    $response.Close()\r\n\r\n    if ([int]$response.StatusCode -eq 201) {\r\n        Write-Host \"NewRelic Deploy - API called succeeded.\"\r\n    } else {\r\n        Write-Host \"NewRelic Deploy - API called failed. Status code: $($response.StatusCode)\"\r\n        exit 1\r\n    }\r\n} catch [System.Net.WebException] {\r\n    $res = $_.Exception.Response\r\n    Write-Host \"NewRelic Deploy - API called failed. Exception: $($_.Exception.Message)\" \r\n    exit 1\r\n}"
+    "Octopus.Action.Script.ScriptBody": "Add-Type -AssemblyName System.Web\n\n$apiKey = $OctopusParameters['ApiKey']\n$user = $OctopusParameters['User']\n$appId = $OctopusParameters['AppId']\n\n#http://docs.octopusdeploy.com/display/OD/System+variables\n$releaseNumber = $OctopusParameters['Octopus.Release.Number']\n$releaseNotes = $OctopusParameters['Octopus.Release.Notes']\n$machineName = $OctopusParameters['Octopus.Machine.Name']\n$projectName = $OctopusParameters['Octopus.Project.Name']\n$deploymentLink = $OctopusParameters['Octopus.Web.DeploymentLink']\n\n## --------------------------------------------------------------------------------------\n## Helpers\n## --------------------------------------------------------------------------------------\n# Helper for validating input parameters\nfunction Validate-Parameter([string]$value, [string[]]$validInput, $parameterName) {\n    Write-Host \"${parameterName}: $value\"\n    if (! $value) {\n        throw \"No value was set for $parameterName, and it cannot be empty\"\n    }\n    \n    if ($validInput) {\n        if (! $validInput -contains $value) {\n            throw \"'$input' is not a valid input for '$parameterName'\"\n        }\n    }\n}\n\n## --------------------------------------------------------------------------------------\n## Configuration\n## --------------------------------------------------------------------------------------\nValidate-Parameter $apiKey -parameterName \"Api Key\"\nValidate-Parameter $user -parameterName \"User\"\n\nif (!$appId) {\n    Write-Host \"NewRelic Deploy - AppId has not been set yet. Skipping call to API.\"\n    exit 0\n}\n\nWrite-Host \"App ID: $appId\"\n\n# encode the variables for the post\n$user = [System.Web.HttpUtility]::UrlEncode($user)\n$description = [System.Web.HttpUtility]::UrlEncode(\"Octopus deployment of $projectName to $machineName. ($deploymentLink)\")\n$releaseNumber = [System.Web.HttpUtility]::UrlEncode($releaseNumber)\n$releaseNotes = [System.Web.HttpUtility]::UrlEncode($releaseNotes)\n\n$url = \"http://api.newrelic.com/deployments.xml\"\n\n$headers = @{\"x-api-key\"=\"$apiKey\"}\n\n$body = @{\"&deployment[user]\"=$user;\n        \"&deployment[application_id]\"=$appId;\n        \"&deployment[description]\"=$description;\n        \"&deployment[revision]\"=$releaseNumber;\n        \"&deployment[changelog]\"=$releaseNotes}\n\ntry {\n    $response = invoke-RestMethod -Uri $url -Header $headers -Body $body -Method post\n    Write-Host $response\n} catch [System.Net.WebException] {\n    Write-Host \"NewRelic Deploy - API called failed. Exception: $($_.Exception.Message)\" \n    exit 1\n}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -15,15 +16,6 @@
       "HelpText": "Your New Relic API key.",
       "DefaultValue": null,
       "DisplaySettings": {}
-    },
-    {
-      "Name": "AccountId",
-      "Label": "Account ID",
-      "HelpText": "The ID of your New Relic account.",
-      "DefaultValue": null,
-      "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
-      }
     },
     {
       "Name": "User",
@@ -42,11 +34,11 @@
       }
     }
   ],
-  "LastModifiedOn": "2015-03-12T20:32:23.017+00:00",
-  "LastModifiedBy": "RobinMinto",
+  "LastModifiedOn": "2016-02-15T20:58:00.202+00:00",
+  "LastModifiedBy": "ScottLusk",
   "$Meta": {
-    "ExportedAt": "2015-03-13T10:53:04.245Z",
-    "OctopusVersion": "2.6.3.886",
+    "ExportedAt": "2016-02-15T20:53:11.202Z",
+    "OctopusVersion": "3.0.21.0",
     "Type": "ActionTemplate"
   }
 }
