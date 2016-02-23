@@ -24,6 +24,7 @@ import sourcemaps from 'gulp-sourcemaps';
 import inject from 'gulp-inject';
 import yargs from 'yargs';
 import rev from 'gulp-rev';
+import glob from 'glob';
 
 const clientDir = 'app';
 const serverDir = 'server';
@@ -31,7 +32,12 @@ const serverDir = 'server';
 const buildDir = 'build';
 const publishDir = 'dist';
 
-const $ = gulpLoadPlugins();
+const $ = gulpLoadPlugins({
+  rename: {
+    'gulp-expect-file': 'expect'
+  }
+});
+
 const reload = browserSync.reload;
 const argv = yargs.argv;
 
@@ -58,8 +64,12 @@ function lint(files, options) {
 
 gulp.task('lint:client', lint(`${clientDir}/**/*.jsx`));
 gulp.task('lint:server', lint(`./${serverDir}/server.js`));
+gulp.task('lint:step-templates', () => {
+  return gulp.src('./step-templates/*')
+    .pipe($.expect({ errorOnFailure: true }, glob.sync('step-templates/*.json')));
+});
 
-gulp.task('step-templates', () => {
+gulp.task('step-templates', ['lint:step-templates'], () => {
   return gulp.src('./step-templates/*.json')
     .pipe(concat('step-templates.json', {newLine: ','}))
     .pipe(header('{"items": ['))
