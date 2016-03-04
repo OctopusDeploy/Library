@@ -32,4 +32,60 @@ If you need help, feedback or a sanity check before investing time in a contribu
 Contributing to the website
 ---------------------------
 
-We also accept contributions to improve the [library.octopusdeploy.com](http://library.octopusdeploy.com) site. The process of contributing is similar to the process outlined for step templates above. There's some more information on working with the code on the [wiki](https://github.com/OctopusDeploy/Library/wiki/BuildingTheSite).
+We also accept contributions to improve the [library.octopusdeploy.com](http://library.octopusdeploy.com) site. The process of contributing is similar to the process outlined for step templates above.
+
+#### Get started
+
+##### Pre-requisites
+
+To build the library site you need to have `nodejs` installed on your system. If you don't already have `gulp` installed globally, run the following:
+
+```
+npm install -g gulp
+```
+
+Once you have `gulp` installed, run the below command from the root of the repository to install the build and runtime dependencies:
+
+```
+npm install
+```
+
+Congratulations, you are now ready to build and test the site locally.
+
+##### Building and testing the site
+
+From the root of the repository, run the following command: 
+
+```
+gulp
+```
+
+This will build a debuggable version of the library site and output it to `./build/`. To test the site, run the following command:
+
+```
+node build/server.js
+```
+
+This will start the `express` server and you can browse the site at the following URL `http://localhost:9000`.
+
+While developing you can run the site in development mode so that as you make changes to the code your browser will refresh to reflect the changes you just made. To run the site in development mode, run the following command:
+
+```
+gulp watch
+```
+
+This will start a `LiveServer` that is used as a proxy for the `express` server running on `http://localhost:9000` and `gulp` will watch for changes and when detected, refresh your browser window.
+
+You can also test the site in `production` mode. Run the following command to build the site in `production` mode:
+
+```
+gulp --production
+```
+
+This will minify/uglify/concat the js/css files and output it to `./dist/`. To test the site, run the following command:
+
+```
+node dist/server.js
+```
+
+Once you are happy with your changes, push them to your fork and create a pull request from the GitHub site.
