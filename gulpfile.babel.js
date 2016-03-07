@@ -148,7 +148,7 @@ gulp.task('build:server', ['lint:server'], () => {
 
 gulp.task('build', ['build:server', 'build:client', 'copy:configs']);
 
-gulp.task('serve', ['clean', 'build'], () => {
+gulp.task('watch', ['clean', 'build'], () => {
   let server = LiveServer(`${buildDir}/server.js`);
   server.start();
 
