@@ -57,14 +57,6 @@ export default class TemplateItem extends React.Component {
               <TemplateBody actionType={this.state.template.Body.ActionType}
                   templateBody={this.state.template.Body.Properties['Octopus.Action.Script.ScriptBody'] || this.state.template.Body.Properties['Octopus.Action.Email.Body']}
               />
-              <p className="faint">
-                Provided under the
-                <a className="faint"
-                    href="https://github.com/OctopusDeploy/Library/blob/master/LICENSE"
-                > Apache License version 2.0
-                </a>.
-              </p>
-              <SocialButtons />
             </div>
             <div className="column third">
               <p className="tutorial">
@@ -91,6 +83,14 @@ export default class TemplateItem extends React.Component {
             </div>
             <div className="row clearfix">
               <div className="column full">
+                <p className="faint">
+                  Provided under the
+                  <a className="faint"
+                      href="https://github.com/OctopusDeploy/Library/blob/master/LICENSE"
+                  > Apache License version 2.0
+                  </a>.
+                </p>
+                <SocialButtons />
                 <h3>Comments</h3>
                 <DisqusComments identifier={this.state.template.Id}
                     shortname="octolibrary"

@@ -158,7 +158,7 @@ gulp.task('watch', ['clean', 'build'], () => {
 
   gulp.watch(`${clientDir}/**/*.jade`, ['build:client']);
   gulp.watch(`${clientDir}/**/*.jsx`, ['scripts', 'copy:app']);
-  gulp.watch(`${clientDir}/styles/**/*.scss`, ['styles:client']);
+  gulp.watch(`${clientDir}/content/styles/**/*.scss`, ['styles:client']);
   gulp.watch('step-templates/*.json', ['step-templates']);
 
   gulp.watch(`${buildDir}/**/*.*`).on('change', reload);
