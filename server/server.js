@@ -84,6 +84,6 @@ let port = process.env.PORT || 9000;
 let server = app.listen(port, function () {
   let host = server.address().address;
   let serverPort = server.address().port;
-
+  console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
   console.log(`Server listening on http://${host}:${serverPort}`);
 });

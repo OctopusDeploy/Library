@@ -25,6 +25,7 @@ import inject from 'gulp-inject';
 import yargs from 'yargs';
 import rev from 'gulp-rev';
 import glob from 'glob';
+import envify from 'envify/custom';
 
 const clientDir = 'app';
 const serverDir = 'server';
@@ -114,6 +115,7 @@ gulp.task('scripts', ['lint:client'], () => {
     extensions: ['.jsx', '.js'],
     debug: true
   })
+  .transform($.if(argv.production, envify({ 'process.env': { 'NODE_ENV': JSON.stringify('production') }})))
   .transform(babelify)
   .transform(reactify)
   .bundle()
