@@ -40,7 +40,7 @@ export default class Listing extends React.Component {
     return (
       <div>
         <SearchBox filterText={this.state.filterText}
-            onUserInput={this._handleUserInput}
+            handleUserInput={this._handleUserInput}
             templateCount={this.state.templates.length}
         />
         <TemplateList filterText={this.state.filterText}

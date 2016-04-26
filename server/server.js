@@ -6,7 +6,7 @@ import compress from 'compression';
 
 import React from 'react';
 import ReactDOMServer from 'react-dom/server';
-import {match, RoutingContext} from 'react-router';
+import {match, RouterContext} from 'react-router';
 import 'babel-core/register';
 
 import config from './package.json';
@@ -67,7 +67,7 @@ app.get('*', (req, res) => {
         }
         
         LibraryActions.sendTemplates(data, () => {
-          var libraryAppHtml = ReactDOMServer.renderToStaticMarkup(<RoutingContext {...renderProps} />);
+          var libraryAppHtml = ReactDOMServer.renderToStaticMarkup(<RouterContext {...renderProps} />);
           res.render('index', {
             siteKeywords: config.keywords.join(),
             siteDescription: config.description,

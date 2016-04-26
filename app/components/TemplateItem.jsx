@@ -3,7 +3,9 @@
 import React from 'react';
 import moment from 'moment';
 import marked from 'marked';
-import ReactZeroClipboard from 'react-zeroclipboard';
+
+import CopyToClipboard from 'react-copy-to-clipboard';
+
 import ReactDisqusThread from 'react-disqus-thread';
 
 import TemplateParameters from './TemplateParameters';
@@ -64,7 +66,7 @@ export default class TemplateItem extends React.Component {
               <p className="tutorial">
                 To use this template in Octopus Deploy, copy the JSON below and paste it into the <em>Library > Step templates > Import</em> dialog.
               </p>
-              <ReactZeroClipboard onAfterCopy={this.handleCopied.bind(this)}
+              <CopyToClipboard onCopy={this.handleCopied.bind(this)}
                   text={this.toJson(this.state.template.Body)}
               >
                 <button className={'button success full-width' + (this.state.copied ? ' copied' : '')}
@@ -72,9 +74,9 @@ export default class TemplateItem extends React.Component {
                 >
                   Copy to clipboard
                 </button>
-              </ReactZeroClipboard>
+              </CopyToClipboard>
               <p className={'faint full-width centered' + (this.state.copied ? '' : ' hidden')}><strong>Copied!</strong></p>
-              <pre className="code">{this.toJson(this.state.template.Body)}</pre>
+              <pre className="code scroll">{this.toJson(this.state.template.Body)}</pre>
               <p className="align-right">
                 <a className="faint"
                     href={`https://github.com/OctopusDeploy/Library/commits/master/step-templates/${this.state.template.Slug}.json`}

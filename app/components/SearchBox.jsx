@@ -15,7 +15,7 @@ export default class SearchBox extends React.Component {
   }
 
   _handleChange() {
-    this.props.onUserInput(
+    this.props.handleUserInput(
       this._searchFilter.value
     );
   }
@@ -53,7 +53,7 @@ export default class SearchBox extends React.Component {
 
 SearchBox.propTypes = {
   filterText: React.PropTypes.string,
-  onUserInput: React.PropTypes.any,
+  handleUserInput: React.PropTypes.any,
   templateCount: React.PropTypes.number
 };
 
