@@ -27,12 +27,26 @@ app.use(compress());
 
 app.get('/api/step-templates', (req, res) => {
   LibraryStorageService.list((err, data) => {
+    if(err !== null) {
+      console.error(err);
+      res.send('Error: ' + err);
+      res.end();
+      return;
+    }
+    
     res.send(data);
   });
 });
 
 app.get('/api/step-template/:id', (req, res) => {
   LibraryStorageService.get(req.params.id, (err, data) => {
+    if(err !== null) {
+      console.error(err);
+      res.send('Error: ' + err);
+      res.end();
+      return;
+    }
+    
     res.send(data);
   });
 });
@@ -46,11 +60,12 @@ app.get('*', (req, res) => {
     } else if(renderProps) {
       LibraryStorageService.list((err, data) => {
         if(err !== null) {
-          console.log(err);
+          console.error(err);
           res.send('Error: ' + err);
           res.end();
           return;
         }
+        
         LibraryActions.sendTemplates(data, () => {
           var libraryAppHtml = ReactDOMServer.renderToStaticMarkup(<RoutingContext {...renderProps} />);
           res.render('index', {

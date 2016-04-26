@@ -4,13 +4,14 @@ import React from 'react';
 import moment from 'moment';
 import marked from 'marked';
 import ReactZeroClipboard from 'react-zeroclipboard';
+import ReactDisqusThread from 'react-disqus-thread';
 
 import TemplateParameters from './TemplateParameters';
 import TemplateBody from './TemplateBody';
 import SocialButtons from './SocialButtons';
-import DisqusComments from './DisqusComments';
 
 import LibraryStore from './../stores/LibraryStore';
+import Analytics from './../services/Analytics.js';
 
 const displayName = 'octopus-library-template-item';
 
@@ -24,6 +25,7 @@ export default class TemplateItem extends React.Component {
     this.setState({
       copied: true
     });
+    Analytics.sendEvent('template', 'copied', this.state.template.Id);
   }
 
   rawMarkup() {
@@ -92,7 +94,7 @@ export default class TemplateItem extends React.Component {
                 </p>
                 <SocialButtons />
                 <h3>Comments</h3>
-                <DisqusComments identifier={this.state.template.Id}
+                <ReactDisqusThread identifier={this.state.template.Id}
                     shortname="octolibrary"
                 />
               </div>
