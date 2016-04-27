@@ -20,7 +20,7 @@ const displayName = 'octopus-library-template-item';
 export default class TemplateItem extends React.Component {
   constructor(props) {
     super(props);
-    this.state = {copied: false, template: LibraryStore.get(this.props.params.templateId)};
+    this.state = {copied: false, template: LibraryStore.get(this.props.params.templateId), showJsonBlob: false};
   }
 
   handleCopied(event) {
@@ -39,8 +39,23 @@ export default class TemplateItem extends React.Component {
     let jsonString = JSON.stringify(val, null, 2);
     return jsonString;
   }
+  
+  toggleJsonBlob() {
+    this.setState({
+      showJsonBlob: !this.state.showJsonBlob
+    });
+  }
+  
+  getJsonBlobHeight() {
+    if(this.state.showJsonBlob) {
+      return '9000px';
+    } else {
+      return '0';
+    }
+  }
 
   render() {
+    var style = { maxHeight: this.getJsonBlobHeight() };
     return (
       <div className="container">
         <div className="step-template">
@@ -76,7 +91,14 @@ export default class TemplateItem extends React.Component {
                 </button>
               </CopyToClipboard>
               <p className={'faint full-width centered' + (this.state.copied ? '' : ' hidden')}><strong>Copied!</strong></p>
-              <pre className="code scroll">{this.toJson(this.state.template.Body)}</pre>
+              <a className="faint" 
+                onClick={this.toggleJsonBlob.bind(this)}
+                >
+                { this.state.showJsonBlob ? 'Hide' : 'Show' } JSON
+              </a>
+              <div className="templateContent" style={style}>
+                <pre className="code scroll">{this.toJson(this.state.template.Body)}</pre>
+              </div>
               <p className="align-right">
                 <a className="faint"
                     href={`https://github.com/OctopusDeploy/Library/commits/master/step-templates/${this.state.template.Slug}.json`}

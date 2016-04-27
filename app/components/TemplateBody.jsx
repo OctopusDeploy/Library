@@ -5,31 +5,58 @@ import React from 'react';
 const displayName = 'octopus-library-template-body';
 
 export default class TemplateBody extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { showTemplateBody: false };
+  }
+
+  toggleTemplateBody() {
+    this.setState({
+      showTemplateBody: !this.state.showTemplateBody
+    });
+  }
+
+  getTemplateBodyHeight() {
+    if (this.state.showTemplateBody) {
+      return '9000px';
+    } else {
+      return '0';
+    }
+  }
+
   render() {
-    switch(this.props.actionType) {
+    var header = '';
+    var description = '';
+
+    switch (this.props.actionType) {
       case 'Octopus.Script':
-        return (
-          <div>
-            <h3>Script body</h3>
-            <p className="tutorial">
-              Steps based on this template will execute the following <em>PowerShell</em> script.
-            </p>
-            <pre className="code scroll">{this.props.templateBody}</pre>
-          </div>
-        );
+        header = 'Script body';
+        description = 'Steps based on this template will execute the following <em>PowerShell</em> script.';
+        break;
       case 'Octopus.Email':
-        return (
-          <div>
-            <h3>Email body</h3>
-            <p className="tutorial">
-              Steps based on this template will render the email body below.
-            </p>
-            <pre className="code scroll">{this.props.templateBody}</pre>
-          </div>
-        );
+        header = 'Email body';
+        description = 'Steps based on this template will render the email body below.';
+        break;
       default:
         return <div></div>;
     }
+    var style = { maxHeight: this.getTemplateBodyHeight() };
+    return (
+      <div>
+        <h3>{header}</h3>
+        <p className="tutorial">
+          <div dangerouslySetInnerHTML={ { __html: description } }></div>
+          <a className="faint"
+            onClick={this.toggleTemplateBody.bind(this) }
+            >
+            {this.state.showTemplateBody ? 'Hide' : 'Show '} script
+          </a>
+        </p>
+        <div className="templateContent" style={style}>
+          <pre className="code scroll">{this.props.templateBody}</pre>
+        </div>
+      </div>
+    );
   }
 }
 

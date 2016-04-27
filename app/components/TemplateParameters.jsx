@@ -6,9 +6,28 @@ import marked from 'marked';
 const displayName = 'octopus-library-template-parameters';
 
 export default class TemplateParameters extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { showParameterList: false };
+  }
+  
   rawMarkup(text) {
     let markup = marked((text || ''), {sanitize: true});
     return { __html: markup };
+  }
+
+  toggleParameterList() {
+    this.setState({
+      showParameterList: !this.state.showParameterList
+    });
+  }
+  
+  getParameterListHeight() {
+    if(this.state.showParameterList) {
+      return '9000px';
+    } else {
+      return '0';
+    }
   }
 
   render() {
@@ -28,14 +47,21 @@ export default class TemplateParameters extends React.Component {
         </div>
       );
     });
-
+    var style = { maxHeight: this.getParameterListHeight() };
     return (
       <div>
         <h3>Parameters</h3>
         <p className="tutorial">
             When steps based on the template are included in a project's deployment process, the parameters below can be set.
         </p>
-        {parameterList}
+        <a className="faint"
+          onClick={this.toggleParameterList.bind(this)}
+          >
+          {this.state.showParameterList ? 'Hide' : 'Show'} parameters
+        </a>
+        <div className="templateContent" style={style}>
+          {parameterList}
+        </div>
       </div>
     );
   }
