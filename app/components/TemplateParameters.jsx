@@ -26,7 +26,7 @@ export default class TemplateParameters extends React.Component {
     if(this.state.showParameterList) {
       return '9000px';
     } else {
-      return '0';
+      return '0px';
     }
   }
 
@@ -55,11 +55,13 @@ export default class TemplateParameters extends React.Component {
             When steps based on the template are included in a project's deployment process, the parameters below can be set.
         </p>
         <a className="faint"
-          onClick={this.toggleParameterList.bind(this)}
-          >
+            onClick={this.toggleParameterList.bind(this)}
+        >
           {this.state.showParameterList ? 'Hide' : 'Show'} parameters
         </a>
-        <div className="templateContent" style={style}>
+        <div className="templateContent" 
+            style={style}
+        >
           {parameterList}
         </div>
       </div>

@@ -3,6 +3,8 @@
 import React from 'react';
 import moment from 'moment';
 import marked from 'marked';
+import SyntaxHiglighter from 'react-syntax-highlighter';
+import {solarizedLight} from 'react-syntax-highlighter/dist/styles';
 
 import CopyToClipboard from 'react-copy-to-clipboard';
 
@@ -50,7 +52,7 @@ export default class TemplateItem extends React.Component {
     if(this.state.showJsonBlob) {
       return '9000px';
     } else {
-      return '0';
+      return '0px';
     }
   }
 
@@ -92,12 +94,18 @@ export default class TemplateItem extends React.Component {
               </CopyToClipboard>
               <p className={'faint full-width centered' + (this.state.copied ? '' : ' hidden')}><strong>Copied!</strong></p>
               <a className="faint" 
-                onClick={this.toggleJsonBlob.bind(this)}
-                >
-                { this.state.showJsonBlob ? 'Hide' : 'Show' } JSON
+                  onClick={this.toggleJsonBlob.bind(this)}
+              >
+                {this.state.showJsonBlob ? 'Hide' : 'Show'} JSON
               </a>
-              <div className="templateContent" style={style}>
-                <pre className="code scroll">{this.toJson(this.state.template.Body)}</pre>
+              <div className="templateContent" 
+                  style={style}
+              >
+                <SyntaxHiglighter language="json" 
+                    style={solarizedLight}
+                >
+                    {this.toJson(this.state.template.Body)}
+                </SyntaxHiglighter>
               </div>
               <p className="align-right">
                 <a className="faint"

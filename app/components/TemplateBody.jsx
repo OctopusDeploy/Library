@@ -1,6 +1,8 @@
 'use strict';
 
 import React from 'react';
+import SyntaxHiglighter from 'react-syntax-highlighter';
+import {solarizedLight} from 'react-syntax-highlighter/dist/styles';
 
 const displayName = 'octopus-library-template-body';
 
@@ -20,7 +22,7 @@ export default class TemplateBody extends React.Component {
     if (this.state.showTemplateBody) {
       return '9000px';
     } else {
-      return '0';
+      return '0px';
     }
   }
 
@@ -44,16 +46,22 @@ export default class TemplateBody extends React.Component {
     return (
       <div>
         <h3>{header}</h3>
-        <p className="tutorial">
-          <div dangerouslySetInnerHTML={ { __html: description } }></div>
+        <div className="tutorial">
+          <div dangerouslySetInnerHTML={{ __html: description }}></div>
           <a className="faint"
-            onClick={this.toggleTemplateBody.bind(this) }
-            >
+              onClick={this.toggleTemplateBody.bind(this)}
+          >
             {this.state.showTemplateBody ? 'Hide' : 'Show '} script
           </a>
-        </p>
-        <div className="templateContent" style={style}>
-          <pre className="code scroll">{this.props.templateBody}</pre>
+        </div>
+        <div className="templateContent" 
+            style={style}
+        >
+          <SyntaxHiglighter language="powershell" 
+              style={solarizedLight}
+          >
+              {this.props.templateBody}
+          </SyntaxHiglighter>
         </div>
       </div>
     );
