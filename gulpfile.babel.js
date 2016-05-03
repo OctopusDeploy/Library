@@ -100,12 +100,12 @@ gulp.task('images', () => {
 });
 
 gulp.task('copy:app', () => {
-  gulp.src(`${clientDir}/**/*{.jsx,.js}`)
+  return gulp.src(`${clientDir}/**/*{.jsx,.js}`)
     .pipe(argv.production ? gulp.dest(`${publishDir}/app`) : gulp.dest(`${buildDir}/app`));
 });
 
 gulp.task('copy:configs', () => {
-  gulp.src(['./package.json', './web.config', './IISNode.yml'])
+  return gulp.src(['./package.json', './web.config', './IISNode.yml'])
     .pipe(argv.production ? gulp.dest(`${publishDir}`) : gulp.dest(`${buildDir}`));
 });
 
