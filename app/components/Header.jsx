@@ -9,7 +9,13 @@ export default class Header extends React.Component {
   render() {
     return (
       <header>
-        <h2 className="site-title"><Link to="/">Octopus Deploy Library</Link></h2>
+        <div className="container">
+          <div className="row clearfix">
+            <div className="column">
+              <h2 className="site-title"><Link to="/">Octopus Deploy Library</Link></h2>
+            </div>
+          </div>
+        </div>
       </header>
     );
   }

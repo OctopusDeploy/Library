@@ -54,16 +54,7 @@ export default class TemplateParameters extends React.Component {
         <p className="tutorial">
             When steps based on the template are included in a project's deployment process, the parameters below can be set.
         </p>
-        <a className="faint"
-            onClick={this.toggleParameterList.bind(this)}
-        >
-          {this.state.showParameterList ? 'Hide' : 'Show'} parameters
-        </a>
-        <div className="templateContent" 
-            style={style}
-        >
-          {parameterList}
-        </div>
+        {parameterList}
       </div>
     );
   }

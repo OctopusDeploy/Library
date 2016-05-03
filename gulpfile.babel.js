@@ -115,9 +115,9 @@ gulp.task('scripts', ['lint:client'], () => {
     extensions: ['.jsx', '.js'],
     debug: true
   })
-  .transform($.if(argv.production, envify({ 'process.env': { 'NODE_ENV': JSON.stringify('production') }})))
   .transform(babelify)
   .transform(reactify)
+  //.transform($.if(argv.production, envify({'global': true, '_': 'purge', 'process.env.NODE_ENV': 'production'}), {global: true}))
   .bundle()
   .pipe(source('app.js'))
   .pipe(buffer())
