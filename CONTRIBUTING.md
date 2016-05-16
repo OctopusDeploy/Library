@@ -29,6 +29,15 @@ Here's a **checklist** to consider:
 
 If you need help, feedback or a sanity check before investing time in a contribution, feel free to raise an issue on the tracker to discuss your idea first.
 
+Licensing
+---------
+
+The entire library is covered by [this Apache 2.0 license](LICENSE). [This site](http://choosealicense.com/licenses/apache-2.0/) provides a good explanation of what this license provides for you as a contributor. By contributing to this library:
+
+* your contribution is automatically covered by [this Apache 2.0 license](LICENSE) without requiring a header in each file
+* your contribution is attributed to you (and your organisation) via commits and pull-requests
+* state changes are tracked automatically via commits and pull-requests
+
 Contributing to the website
 ---------------------------
 
