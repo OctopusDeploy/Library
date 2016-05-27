@@ -12,7 +12,7 @@ export default class Header extends React.Component {
         <div className="container">
           <div className="row clearfix">
             <div className="column">
-              <h2 className="site-title"><Link to="/">Octopus Deploy Library</Link></h2>
+              <Link to="/"><h2 className="site-title">Octopus Deploy Library</h2></Link>
             </div>
           </div>
         </div>
