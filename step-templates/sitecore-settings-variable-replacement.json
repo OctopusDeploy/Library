@@ -7,7 +7,7 @@
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
-    "Octopus.Action.Script.ScriptBody": "$configPath = $OctopusParameters[\"Sitecore.SettingsFile\"]\r\n\r\nif ([string]::IsNullOrEmpty($configPath)) {\r\n    throw [System.ArgumentNullException] \"Sitecore.SettingsFile\"\r\n}\r\n\r\nif (-not (Test-Path $configPath)) {\r\n    throw [System.IO.FileNotFoundException] \"$configPath was not found. Please double check your Sitcore.SettingsFile parameter.\"\r\n}\r\n\r\n$configXml = [xml](Get-Content $configPath)\r\n\r\nforeach ($key in $OctopusParameters.Keys) {\r\n\r\n    $sitecoreNode = $configXml.sitecore\r\n\r\n    # Look for sitecore node for versions prior to 8.1\r\n    if ($sitecoreNode -eq $null) {\r\n        $sitecoreNode = $configXml.configuration.sitecore\r\n    }\r\n\r\n    # Ensure that we have a sitecore node to work from\r\n    if ($sitecoreNode -eq $null -or $sitecoreNode.settings -eq $null) {\r\n        throw [System.Xml.XmlException] \"The sitecore settings node was not found in $configPath\"\r\n    }\r\n\r\n    # Replace Sitecore settings\r\n    $setting = $sitecoreNode.settings.setting | where { $_.name -ceq $key }\r\n    if ($setting -ne $null) {\r\n        Write-Host $setting.name \"setting will be updated from\" $setting.value \"to\" $OctopusParameters[$key]\r\n        $setting.value = $OctopusParameters[$key]\r\n    }\r\n\r\n    # Replace Sitecore variables\r\n    $variable = $sitecoreNode.'sc.variable' | where { $_.name -ceq $key }\r\n    if ($variable -ne $null) {\r\n        Write-Host $variable.name \"Sitecore variable will be updated from\" $settingsNode.value \"to\" $OctopusParameters[$key]\r\n        $variable.value = $OctopusParameters[$key]\r\n    }\r\n\r\n}\r\n\r\n$configXml.Save($configPath)",
+    "Octopus.Action.Script.ScriptBody": "$configPath = $OctopusParameters[\"Sitecore.SettingsFile\"]\r\n\r\nif ([string]::IsNullOrEmpty($configPath)) {\r\n    throw [System.ArgumentNullException] \"Sitecore.SettingsFile\"\r\n}\r\n\r\nif (-not (Test-Path $configPath)) {\r\n    throw [System.IO.FileNotFoundException] \"$configPath was not found. Please double check your Sitcore.SettingsFile parameter.\"\r\n}\r\n\r\n$configXml = [xml](Get-Content $configPath)\r\n$sitecoreNode = $configXml.sitecore\r\n\r\n# Look for sitecore node for versions prior to 8.1\r\nif ($sitecoreNode -eq $null) {\r\n    $sitecoreNode = $configXml.configuration.sitecore\r\n}\r\n\r\n# Ensure that we have a sitecore node to work from\r\nif ($sitecoreNode -eq $null -or $sitecoreNode.settings -eq $null) {\r\n    throw [System.Xml.XmlException] \"The sitecore settings node was not found in $configPath\"\r\n}\r\n\r\nforeach ($key in $OctopusParameters.Keys) {\r\n\r\n    # Replace Sitecore settings\r\n    $setting = $sitecoreNode.settings.setting | where { $_.name -ceq $key }\r\n    if ($setting -ne $null) {\r\n        Write-Host $setting.name \"setting will be updated from\" $setting.value \"to\" $OctopusParameters[$key]\r\n        $setting.value = $OctopusParameters[$key]\r\n    }\r\n\r\n    # Replace Sitecore variables\r\n    $variable = $sitecoreNode.'sc.variable' | where { $_.name -ceq $key }\r\n    if ($variable -ne $null) {\r\n        Write-Host $variable.name \"Sitecore variable will be updated from\" $settingsNode.value \"to\" $OctopusParameters[$key]\r\n        $variable.value = $OctopusParameters[$key]\r\n    }\r\n\r\n}\r\n\r\n$configXml.Save($configPath)",
     "Octopus.Action.Script.ScriptFileName": null,
     "Octopus.Action.Package.NuGetFeedId": null,
     "Octopus.Action.Package.NuGetPackageId": null
@@ -23,10 +23,10 @@
       }
     }
   ],
-  "LastModifiedOn": "2016-06-07T08:33:13.982Z",
+  "LastModifiedOn": "2016-06-08T18:00:16.379Z",
   "LastModifiedBy": "dthunziker",
   "$Meta": {
-    "ExportedAt": "2016-06-07T08:33:13.982Z",
+    "ExportedAt": "2016-06-08T18:00:16.379Z",
     "OctopusVersion": "3.3.10",
     "Type": "ActionTemplate"
   }
