@@ -3,11 +3,11 @@
   "Name": "IIS Website - Set log format using checkboxes",
   "Description": "Sets fields included in IIS logging. Uses named checkboxes where the names are identical to the naming scheme in IIS Manager.",
   "ActionType": "Octopus.Script",
-  "Version": 10,
+  "Version": 31,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
-    "Octopus.Action.Script.ScriptBody": "$IisLogFields = \"\"\nif ($#{Date}) { $IisLogFields = $IisLogFields + \",Date\" }\nif ($#{Time}) { $IisLogFields = $IisLogFields + \",Time\" }\nif ($#{ClientIP}) { $IisLogFields = $IisLogFields + \",ClientIP\" }\nif ($#{UserName}) { $IisLogFields = $IisLogFields + \",UserName\" }\nif ($#{SiteName}) { $IisLogFields = $IisLogFields + \",SiteName\" }\nif ($#{ComputerName}) { $IisLogFields = $IisLogFields + \",ComputerName\" }\nif ($#{ServerIP}) { $IisLogFields = $IisLogFields + \",ServerIP\" }\nif ($#{Method}) { $IisLogFields = $IisLogFields + \",Method\" }\nif ($#{UriStem}) { $IisLogFields = $IisLogFields + \",UriStem\" }\nif ($#{UriQuery}) { $IisLogFields = $IisLogFields + \",UriQuery\" }\nif ($#{HttpStatus}) { $IisLogFields = $IisLogFields + \",HttpStatus\" }\nif ($#{Win32Status}) { $IisLogFields = $IisLogFields + \",Win32Status\" }\nif ($#{BytesSent}) { $IisLogFields = $IisLogFields + \",BytesSent\" }\nif ($#{TimeTaken}) { $IisLogFields = $IisLogFields + \",TimeTaken\" }\nif ($#{ServerPort}) { $IisLogFields = $IisLogFields + \",ServerPort\" }\nif ($#{UserAgent}) { $IisLogFields = $IisLogFields + \",UserAgent\" }\nif ($#{Cookie}) { $IisLogFields = $IisLogFields + \",Cookie\" }\nif ($#{Referer}) { $IisLogFields = $IisLogFields + \",Referer\" }\nif ($#{ProtocolVersion}) { $IisLogFields = $IisLogFields + \",ProtocolVersion\" }\nif ($#{Host}) { $IisLogFields = $IisLogFields + \",Host\" }\nif ($#{HttpSubStatus}) { $IisLogFields = $IisLogFields + \",HttpSubStatus\" }\n\nif ($IisLogFields[0] -eq \",\") { $IisLogFields = $IisLogFields.Substring(1) }\n\nimport-module webadministration\n$site = get-itemproperty IIS:\\sites\\#{SiteName}\n$site.logFile.logExtFileFlags = \"$IisLogFields\"\n$site |set-item",
+    "Octopus.Action.Script.ScriptBody": "import-module webadministration\n\n$IisLogFields = \"\"\nif ($#{Date}) { $IisLogFields = $IisLogFields + \",Date\" }\nif ($#{Time}) { $IisLogFields = $IisLogFields + \",Time\" }\nif ($#{ClientIP}) { $IisLogFields = $IisLogFields + \",ClientIP\" }\nif ($#{UserName}) { $IisLogFields = $IisLogFields + \",UserName\" }\nif ($#{SiteName}) { $IisLogFields = $IisLogFields + \",SiteName\" }\nif ($#{ComputerName}) { $IisLogFields = $IisLogFields + \",ComputerName\" }\nif ($#{ServerIP}) { $IisLogFields = $IisLogFields + \",ServerIP\" }\nif ($#{Method}) { $IisLogFields = $IisLogFields + \",Method\" }\nif ($#{UriStem}) { $IisLogFields = $IisLogFields + \",UriStem\" }\nif ($#{UriQuery}) { $IisLogFields = $IisLogFields + \",UriQuery\" }\nif ($#{HttpStatus}) { $IisLogFields = $IisLogFields + \",HttpStatus\" }\nif ($#{Win32Status}) { $IisLogFields = $IisLogFields + \",Win32Status\" }\nif ($#{BytesSent}) { $IisLogFields = $IisLogFields + \",BytesSent\" }\nif ($#{TimeTaken}) { $IisLogFields = $IisLogFields + \",TimeTaken\" }\nif ($#{ServerPort}) { $IisLogFields = $IisLogFields + \",ServerPort\" }\nif ($#{UserAgent}) { $IisLogFields = $IisLogFields + \",UserAgent\" }\nif ($#{Cookie}) { $IisLogFields = $IisLogFields + \",Cookie\" }\nif ($#{Referer}) { $IisLogFields = $IisLogFields + \",Referer\" }\nif ($#{ProtocolVersion}) { $IisLogFields = $IisLogFields + \",ProtocolVersion\" }\nif ($#{Host}) { $IisLogFields = $IisLogFields + \",Host\" }\nif ($#{HttpSubStatus}) { $IisLogFields = $IisLogFields + \",HttpSubStatus\" }\n\nif ($IisLogFields[0] -eq \",\") { $IisLogFields = $IisLogFields.Substring(1) }\n\n#Clear all existing custom fields...\nclear-WebConfiguration -PSPath IIS:\\ -Filter '/system.applicationHost/sites/site[@Name=\"#{SiteName}\"]/logFile/customFields'\n\nif ($#{OriginalIP} ) { \n  add-WebConfiguration -PSPath IIS:\\ -Filter '/system.applicationHost/sites/site[@Name=\"userservice.local\"]/logFile/customFields' -Value @{logFieldName='OriginalIP';sourceType='RequestHeader';sourceName='X-FORWARDED-FOR'}\n}\n\nWrite-Host $IISLogFields\nSet-WebConfigurationProperty -Filter '/system.applicationHost/sites/site[@Name=\"#{SiteName}\"]/logFile' -Value \"$IISLogFields\" -Name \"LogExtFileFlags\"\n",
     "Octopus.Action.Script.ScriptFileName": null,
     "Octopus.Action.Package.NuGetFeedId": null,
     "Octopus.Action.Package.NuGetPackageId": null
@@ -219,12 +219,22 @@
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
       }
+    },
+    {
+      "Name": "OriginalIP",
+      "Label": "Original IP",
+      "HelpText": "From X-FORWARDED-FOR in request.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
     }
   ],
-	 "LastModifiedBy": "faester",
+  "LastModifiedBy": "faester",
   "$Meta": {
-    "ExportedAt": "2016-06-15T09:15:08.088Z",
+    "ExportedAt": "2016-06-15T19:40:52.440Z",
     "OctopusVersion": "3.3.17",
     "Type": "ActionTemplate"
   }
 }
+
