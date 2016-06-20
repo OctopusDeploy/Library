@@ -1,0 +1,55 @@
+{
+  "Id": "ActionTemplates-722",
+  "Name": "IIS - Enable or Disable Authentication Methods",
+  "Description": "Step template to set the desired IIS Authentication (Anonymous, Windows, Digest) State for IIS site(s)",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "#requires -version 3\n\n\n\n\n\nfunction Update-IISSiteAuthentication {\n    param\n    (\n        [ValidateNotNullOrEmpty()]\n        [Parameter(Mandatory = $true)]\n        [boolean]$State,\n        [ValidateNotNullOrEmpty()]\n        [Parameter(Mandatory = $true)]\n        [string]$SitePath,\n        [ValidateNotNullOrEmpty()]\n        [Parameter(Mandatory = $true)]\n        [string]$AuthMethod\n    )\n    \n    # check if WebAdministration module exists on the server\n    $cmd = (Get-Command \"Get-Website\" -errorAction SilentlyContinue)\n    if ($null -eq $cmd) {\n        throw \"The Windows PowerShell snap-in 'WebAdministration' is not installed on this server. Details can be found at https://technet.microsoft.com/en-us/library/ee790599.aspx.\"\n    }\n    \n    $IISSecurityPath = \"/system.WebServer/security/authentication/$AuthMethod\"\n    $separator = \"`r\",\"`n\",\",\"\n    $IISSites = $sitepath.split($separator, [System.StringSplitOptions]::RemoveEmptyEntries).Trim(' ')\n\n    $IISValidSites = Get-Website\n    $IISValidSiteNames = $IISValidSites.Name -join ', '\n\n    foreach($Site in $IISSites) {\n        $IISSiteAvailable = $IISValidSites | Where-Object { $_.Name -eq $Site }\n\n        if ($IISSiteAvailable) {\n            Set-WebConfigurationProperty -Filter $IISSecurityPath -Name Enabled -Value $State -PSPath IIS:\\ -Location $Site\n            Write-Output \"$AuthMethod for site '$Site' set successfully to '$State'.\"\n        }\n        else {\n            Write-Output \"The IISSitePath '$Site' cannot be found. The valid sites are $IISValidSiteNames\"\n            throw \"The IISSitePath '$Site' cannot be found. The valid sites are $IISValidSiteNames\"\n        }\n    }\n}\n\nif (Test-Path Variable:OctopusParameters) {\n    Update-IISSiteAuthentication -State ($AnonymousAuth -eq \"True\") -SitePath $IISSitePaths -AuthMethod \"AnonymousAuthentication\"\n    Update-IISSiteAuthentication -State ($WindowsAuth -eq \"True\") -SitePath $IISSitePaths -AuthMethod \"WindowsAuthentication\"\n    Update-IISSiteAuthentication -State ($DigestAuth -eq \"True\") -SitePath $IISSitePaths -AuthMethod \"DigestAuthentication\"\n}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Name": "AnonymousAuth",
+      "Label": "Anonymous Authentication",
+      "HelpText": "Enable Anonymous Authentication.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "WindowsAuth",
+      "Label": "Windows Authentication",
+      "HelpText": "Enable Windows Authentication.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "DigestAuth",
+      "Label": "Digest Authentication",
+      "HelpText": "Enable Digest Authentication.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "IISSitePaths",
+      "Label": "IIS Site name(s)",
+      "HelpText": "The IIS site(s) which will have security permissions transformed. Multiple values are to be new-line separated.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2016-06-07T10:55:20.076Z",
+    "OctopusVersion": "3.3.4",
+    "Type": "ActionTemplate"
+  }
+}
