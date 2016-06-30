@@ -9,7 +9,9 @@ const displayName = 'octopus-library-template-list';
 export default class TemplateList extends React.Component {
   render() {
     let templateList = this.props.templateList.map((item, index) => {
-      if(item.Name.toLowerCase().indexOf(this.props.filterText.toLowerCase()) === -1) {
+      let lc = this.props.filterText.toLowerCase();
+      if(item.Name.toLowerCase().indexOf(lc) === -1 &&
+         ((item.Description === null) || (item.Description.toLowerCase().indexOf(lc) === -1))) {
         return;
       }
       let formattedExportedAt = moment(item.ExportedAt).calendar();

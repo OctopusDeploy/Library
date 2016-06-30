@@ -25,6 +25,8 @@ app.set('view engine', 'jade');
 
 app.use(compress());
 
+app.disable('view cache');
+
 app.get('/api/step-templates', (req, res) => {
   LibraryStorageService.list((err, data) => {
     if(err !== null) {
