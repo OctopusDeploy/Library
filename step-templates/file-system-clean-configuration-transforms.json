@@ -1,11 +1,11 @@
 {
-  "Id": "ActionTemplates-41",
+  "Id": "ActionTemplates-40",
   "Name": "File System - Clean Configuration Transforms",
   "Description": "Clean out configuration transform files from the installation directory after a deployment (e.g. Web.Release.config, YourApp.Production.config, etc.).",
   "ActionType": "Octopus.Script",
-  "Version": 3,
+  "Version": 9,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "# Running outside Octopus Deploy\nparam(\n    [string]$pathToClean,\n    [switch]$whatIf\n)\n\nfunction GetParam($Name, [switch]$Required) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue\n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    if ($Required -and [string]::IsNullOrEmpty($result)) {\n        throw \"Missing parameter value $Name\"\n    }\n\n    return $result\n}\n\n& {\n    param(\n        [string]$pathToClean\n    )\n\n    Write-Host \"Cleaning Configuration Transform files from $pathToClean\"\n\n    if (Test-Path $pathToClean) {\n        Write-Host \"Scanning directory $pathToClean\"\n\n        if ($pathToClean -eq \"\\\" -or $pathToClean -eq \"/\") {\n            throw \"Cannot clean root directory\"\n        }\n\n        $filesToDelete = Get-ChildItem $pathToClean -Filter \"*.*.config\" -Recurse | `\n                         Where-Object {!$_.PsIsContainer -and ($_.Name -NotMatch \"((?i)(^.*\\.exe\\.config$|.*\\.dll\\.config$)$)\")}\n\n        if (!$filesToDelete -or $filesToDelete.Count -eq 0) {\n            Write-Warning \"There were no files matching the criteria\"\n        } else {\n\n            Write-Host \"Deleting files\"\n            if ($whatIf) {\n                Write-Host \"What if: Performing the operation `\"Remove File`\" on targets\"\n            }\n\n            foreach ($file in $filesToDelete)\n            {\n                Write-Host \"Deleting file $($file.FullName)\"\n                \n                if (!$whatIf) {\n                    Remove-Item $file.FullName -Force\n                }\n            }\n        }\n\n    } else {\n        Write-Warning \"Could not locate path `\"$pathToClean`\"\"\n    }\n\n} `\n(GetParam 'PathToClean' -Required)\n",
+    "Octopus.Action.Script.ScriptBody": "# Running outside Octopus Deploy\nparam(\n    [string]$pathToClean,\n    [string]$environmentName,\n    [switch]$whatIf\n)\n\nfunction GetParam($Name, [switch]$Required) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue\n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    if ($Required -and [string]::IsNullOrEmpty($result)) {\n        throw \"Missing parameter value $Name\"\n    }\n\n    return $result\n}\n\n& {\n    param(\n        [string]$pathToClean,\n        [string]$environmentName\n    )\n\n    Write-Host \"Cleaning Configuration Transform files from $pathToClean and environment: $environmentName\"\n\n    if (Test-Path $pathToClean) {\n        Write-Host \"Scanning directory $pathToClean\"\n        $regexFilter = \"*.$environmentName.config\" \n        Write-Host \"Filter $regexFilter\"\n\n        if ($pathToClean -eq \"\\\" -or $pathToClean -eq \"/\") {\n            throw \"Cannot clean root directory\"\n        }\n\n        $filesToDelete = Get-ChildItem $pathToClean -Filter $regexFilter -Recurse | `\n                         Where-Object {!$_.PsIsContainer -and ($_.Name -NotMatch \"((?i)(^.*\\.exe\\.config$|.*\\.dll\\.config$)$)\")}\n\n        if (!$filesToDelete -or $filesToDelete.Count -eq 0) {\n            Write-Warning \"There were no files matching the criteria\"\n        } else {\n\n            Write-Host \"Deleting files\"\n            if ($whatIf) {\n                Write-Host \"What if: Performing the operation `\"Remove File`\" on targets\"\n            }\n\n            foreach ($file in $filesToDelete)\n            {\n                Write-Host \"Deleting file $($file.FullName)\"\n                \n                if (!$whatIf) {\n                    Remove-Item $file.FullName -Force\n                }\n            }\n        }\n\n    } else {\n        Write-Warning \"Could not locate path `\"$pathToClean`\"\"\n    }\n\n} `\n(GetParam 'PathToClean' -Required) `\n(GetParam 'EnvironmentName' -Required)\n",
     "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
@@ -18,13 +18,22 @@
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
+    },
+    {
+      "Name": "EnvironmentName",
+      "Label": "Environment Name",
+      "HelpText": "If you want to nuke all config files i.e. `*.*.config` then leave with the default value `*`.\n\nOtherwise to just nuke `*.EnvironmentName.config` then set as the environment name: `#{Octopus.Environment.Name}`",
+      "DefaultValue": "*",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2015-08-26T22:51:40.889+00:00",
-  "LastModifiedBy": "alfhenrik",
+  "LastModifiedOn": "2016-01-12T15:51:40.889+00:00",
+  "LastModifiedBy": "boro2g",
   "$Meta": {
-    "ExportedAt": "2015-08-26T22:51:40.889Z",
-    "OctopusVersion": "3.0.19.2485",
+    "ExportedAt": "2016-01-21T15:39:24.527Z",
+    "OctopusVersion": "3.1.4",
     "Type": "ActionTemplate"
   }
 }
