@@ -1,18 +1,18 @@
 ﻿{
     "Id":  "ActionTemplates-33",
     "Name":  "Redgate - Deploy from Database Release",
-    "Description":  "Uses the deployment resources from the \u0027Redgate - Create Database Release\u0027 step to deploy the database changes using Redgate\u0027s [DLM Automation](http://www.red-gate.com/sqlreleaseproductpage).\r\n\r\nRequires DLM Automation version 1.2.1.3109 or later.\r\n\r\n*Version date: 26th May, 2016*",
+    "Description":  "Uses the deployment resources from the \u0027Redgate - Create Database Release\u0027 step to deploy the database changes using Redgate\u0027s [DLM Automation](http://www.red-gate.com/dlma/productpage).\r\n\r\nRequires DLM Automation version 1.5.0.0 or later.\r\n\r\n*Version date: 16th July, 2016*",
     "ActionType":  "Octopus.Script",
     "Version":  7,
     "Properties":  {
-                       "Octopus.Action.Script.ScriptBody":  "# Version date: 16th July, 2015\r\n$ErrorActionPreference = \u0027Stop\u0027\r\n$VerbosePreference = \u0027Continue\u0027\r\n\r\n# Set process level FUR environment\r\n$env:REDGATE_FUR_ENVIRONMENT = \"Octopus Step Templates\"\r\n\r\n# Check if DLM Automation is installed.\r\n$sqlReleaseModule = Get-Module -ListAvailable -Name SQLRelease\r\nif ($sqlReleaseModule -eq $null) { \r\n    throw \"Cannot find DLM Automation on your Octopus Tentacle. If DLM Automation is installed, try restarting the Tentacle service for it to be detected.\"\r\n}\r\n$currentVersion = $sqlReleaseModule.Version\r\n$minimumRequiredVersion = [version] \u00271.2.1.3109\u0027\r\nif ($currentVersion -lt $minimumRequiredVersion) { \r\n    throw \"This step requires DLM Automation version $minimumRequiredVersion or later. The current version is $currentVersion. The latest version can be found at http://www.red-gate.com/dlmas/download\"\r\n}\r\n\r\n# Check the parameters.\r\nif ([string]::IsNullOrWhiteSpace($SQLReleaseDeploymentResourcesPath)) { throw \"You must enter a value for \u0027Export path\u0027.\" }\r\nif ([string]::IsNullOrWhiteSpace($SQLReleaseDatabaseName)) { throw \"You must enter a value for \u0027Target database name\u0027.\" }\r\nif ([string]::IsNullOrWhiteSpace($SQLReleaseDatabaseServer)) { throw \"You must enter a value for \u0027Target SQL Server instance\u0027.\" } \r\nif ([string]::IsNullOrWhiteSpace($SQLReleaseNuGetDbPackageDownloadStepName)) { throw \"You must enter a value for \u0027Database package step\u0027.\" } \r\n\r\n$queryBatchTimeout = 30\r\nif (![string]::IsNullOrWhiteSpace($SQLReleaseQueryBatchTimeout)) {\r\n    if (![int32]::TryParse($SQLReleaseQueryBatchTimeout , [ref]$queryBatchTimeout )) {\r\n        throw \u0027The query batch timeout must be a numerical value (in seconds).\u0027\r\n    }\r\n    if ($queryBatchTimeout -lt 0) {\r\n        throw \"The query batch timeout can\u0027t be negative.\"\r\n    }\r\n}\r\n\r\n# Check whether database deployment resources export path exists and is a valid directory path \r\nif((Test-Path $SQLReleaseDeploymentResourcesPath) -eq $true) {\r\n    if((Get-Item $SQLReleaseDeploymentResourcesPath) -isnot [System.IO.DirectoryInfo]) {\r\n        throw \"The export path is not a valid folder: $SQLReleaseDeploymentResourcesPath\"\r\n    }\r\n} else {\r\n    throw \"The export path folder doesn\u0027t exist, or the current Windows account can\u0027t access it: $SQLReleaseDeploymentResourcesPath\"\r\n}\r\n\r\n# Get the NuGet package ID and validate the step name.\r\n$nugetPackageId = $OctopusParameters[\"Octopus.Action[$SQLReleaseNuGetDbPackageDownloadStepName].Package.NuGetPackageId\"]\r\nif ($nugetPackageId -eq $null) { \r\n    throw \"The \u0027Database package download step\u0027 is not a \u0027Deploy a NuGet package\u0027 step: \u0027$SQLReleaseNuGetDbPackageDownloadStepName\u0027\"\r\n}\r\n\r\n# Constructing the unique export path.\r\n$projectId = $OctopusParameters[\u0027Octopus.Project.Id\u0027]\r\n$releaseNumber = $OctopusParameters[\u0027Octopus.Release.Number\u0027]\r\n$exportPath = Join-Path (Join-Path (Join-Path $SQLReleaseDeploymentResourcesPath $projectId) $releaseNumber) $nugetPackageId\r\n\r\n# Create and test connection to the database.\r\n$databaseConnection = New-DlmDatabaseConnection -ServerInstance $SQLReleaseDatabaseServer `\r\n                                                -Database $SQLReleaseDatabaseName `\r\n                                                -Username $SQLReleaseDatabaseUsername `\r\n                                                -Password $SQLReleaseDatabasePassword | Test-DlmDatabaseConnection\r\n\r\n# Import and deploy the release.\r\nImport-DlmDatabaseRelease $exportPath | Use-DlmDatabaseRelease -DeployTo $databaseConnection -QueryBatchTimeout $queryBatchTimeout\r\n"
+                       "Octopus.Action.Script.ScriptBody":  "# Version date: 16th July, 2016\r\n$ErrorActionPreference = \u0027Stop\u0027\r\n$VerbosePreference = \u0027Continue\u0027\r\n\r\n# Set process level FUR environment\r\n$env:REDGATE_FUR_ENVIRONMENT = \"Octopus Step Templates\"\r\n\r\n# Check if DLM Automation is installed.\r\n$dlmAutomationModule = Get-Module -ListAvailable -Name DLMAutomation\r\nif ($dlmAutomationModule -eq $null) { \r\n    throw \"Cannot find DLM Automation on your Octopus Tentacle. If DLM Automation is installed, try restarting the Tentacle service for it to be detected.\"\r\n}\r\n$currentVersion = $dlmAutomationModule.Version\r\n$minimumRequiredVersion = [version] \u00271.5.0.0\u0027\r\nif ($currentVersion -lt $minimumRequiredVersion) { \r\n    throw \"This step requires DLM Automation version $minimumRequiredVersion or later. The current version is $currentVersion. The latest version can be found at http://www.red-gate.com/dlmas/download\"\r\n}\r\n\r\n# Check the parameters.\r\nif ([string]::IsNullOrWhiteSpace($DLMAutomationDeploymentResourcesPath)) { throw \"You must enter a value for \u0027Export path\u0027.\" }\r\nif ([string]::IsNullOrWhiteSpace($DLMAutomationDatabaseName)) { throw \"You must enter a value for \u0027Target database name\u0027.\" }\r\nif ([string]::IsNullOrWhiteSpace($DLMAutomationDatabaseServer)) { throw \"You must enter a value for \u0027Target SQL Server instance\u0027.\" } \r\nif ([string]::IsNullOrWhiteSpace($DLMAutomationNuGetDbPackageDownloadStepName)) { throw \"You must enter a value for \u0027Database package step\u0027.\" } \r\n\r\n$queryBatchTimeout = 30\r\nif (![string]::IsNullOrWhiteSpace($DLMAutomationQueryBatchTimeout)) {\r\n    if (![int32]::TryParse($DLMAutomationQueryBatchTimeout , [ref]$queryBatchTimeout )) {\r\n        throw \u0027The query batch timeout must be a numerical value (in seconds).\u0027\r\n    }\r\n    if ($queryBatchTimeout -lt 0) {\r\n        throw \"The query batch timeout can\u0027t be negative.\"\r\n    }\r\n}\r\n\r\n# Check whether database deployment resources export path exists and is a valid directory path \r\nif((Test-Path $DLMAutomationDeploymentResourcesPath) -eq $true) {\r\n    if((Get-Item $DLMAutomationDeploymentResourcesPath) -isnot [System.IO.DirectoryInfo]) {\r\n        throw \"The export path is not a valid folder: $DLMAutomationDeploymentResourcesPath\"\r\n    }\r\n} else {\r\n    throw \"The export path folder doesn\u0027t exist, or the current Windows account can\u0027t access it: $DLMAutomationDeploymentResourcesPath\"\r\n}\r\n\r\n# Get the NuGet package ID and validate the step name.\r\n$nugetPackageId = $OctopusParameters[\"Octopus.Action[$DLMAutomationNuGetDbPackageDownloadStepName].Package.NuGetPackageId\"]\r\nif ($nugetPackageId -eq $null) { \r\n    throw \"The \u0027Database package download step\u0027 is not a \u0027Deploy a NuGet package\u0027 step: \u0027$DLMAutomationNuGetDbPackageDownloadStepName\u0027\"\r\n}\r\n\r\n# Constructing the unique export path.\r\n$projectId = $OctopusParameters[\u0027Octopus.Project.Id\u0027]\r\n$releaseNumber = $OctopusParameters[\u0027Octopus.Release.Number\u0027]\r\n$exportPath = Join-Path (Join-Path (Join-Path $DLMAutomationDeploymentResourcesPath $projectId) $releaseNumber) $nugetPackageId\r\n\r\n# Create and test connection to the database.\r\n$databaseConnection = New-DlmDatabaseConnection -ServerInstance $DLMAutomationDatabaseServer `\r\n                                                -Database $DLMAutomationDatabaseName `\r\n                                                -Username $DLMAutomationDatabaseUsername `\r\n                                                -Password $DLMAutomationDatabasePassword | Test-DlmDatabaseConnection\r\n\r\n# Import and deploy the release.\r\nImport-DlmDatabaseRelease $exportPath | Use-DlmDatabaseRelease -DeployTo $databaseConnection -QueryBatchTimeout $queryBatchTimeout\r\n"
                    },
     "SensitiveProperties":  {
 
                             },
     "Parameters":  [
                        {
-                           "Name":  "SQLReleaseDeploymentResourcesPath",
+                           "Name":  "DLMAutomationDeploymentResourcesPath",
                            "Label":  "Export path",
                            "HelpText":  "The path the database deployment resources were exported to.\n\nThis should be the same path specified in the \"Redgate - Create Database Release\" step, and must be accessible to all tentacles used in database deployment steps.",
                            "DefaultValue":  null,
@@ -21,7 +21,7 @@
                                                }
                        },
                        {
-                           "Name":  "SQLReleaseNuGetDbPackageDownloadStepName",
+                           "Name":  "DLMAutomationNuGetDbPackageDownloadStepName",
                            "Label":  "Database package step",
                            "HelpText":  "Select the step in this project which downloads the database package.",
                            "DefaultValue":  null,
@@ -30,7 +30,7 @@
                                                }
                        },
                        {
-                           "Name":  "SQLReleaseDatabaseServer",
+                           "Name":  "DLMAutomationDatabaseServer",
                            "Label":  "Target SQL Server instance",
                            "HelpText":  "The fully qualified SQL Server instance name for the target database.",
                            "DefaultValue":  null,
@@ -39,7 +39,7 @@
                                                }
                        },
                        {
-                           "Name":  "SQLReleaseDatabaseName",
+                           "Name":  "DLMAutomationDatabaseName",
                            "Label":  "Target database name",
                            "HelpText":  "The name of the database to deploy changes to. This must be an existing database.",
                            "DefaultValue":  null,
@@ -48,7 +48,7 @@
                                                }
                        },
                        {
-                           "Name":  "SQLReleaseDatabaseUsername",
+                           "Name":  "DLMAutomationDatabaseUsername",
                            "Label":  "Username (optional)",
                            "HelpText":  "The SQL Server username used to connect to the database. If you leave this field and \u0027Password\u0027 blank, Windows authentication will be used to connect instead, using the account that runs the Tentacle service.",
                            "DefaultValue":  null,
@@ -57,7 +57,7 @@
                                                }
                        },
                        {
-                           "Name":  "SQLReleaseDatabasePassword",
+                           "Name":  "DLMAutomationDatabasePassword",
                            "Label":  "Password (optional)",
                            "HelpText":  "You must enter a password if you entered a username.",
                            "DefaultValue":  null,
@@ -66,7 +66,7 @@
                                                }
                        },
                        {
-                           "Name":  "SQLReleaseQueryBatchTimeout",
+                           "Name":  "DLMAutomationQueryBatchTimeout",
                            "Label":  "Query batch timeout (in seconds)",
                            "HelpText":  "The execution timeout, in seconds, for each batch of queries in the update script. The default value is 30 seconds. A value of zero indicates no execution timeout.",
                            "DefaultValue":  "30",
