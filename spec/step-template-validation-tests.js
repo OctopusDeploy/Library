@@ -6,12 +6,10 @@ describe("step-templates", function() {
       toHaveValidLastModified: function() {
         return {
           compare: function(template){
-            if(typeof template.LastModifiedOn == 'undefined')  {
-              return { pass: false, message: 'Expected template "' + template.Name + '" to have a valid LastModifiedOn date, but it was undefined.' }
-            } else if(typeof template.LastModifiedBy == 'undefined')  {
+            if(typeof template.LastModifiedBy == 'undefined')  {
               return { pass: false, message: 'Expected template "' + template.Name + '" to have a valid LastModifiedBy field, but it was undefined.' }
             } else {
-              return { pass: true, message: 'Expected template "' + template.Name + '" to have a valid LastModified details.' }
+              return { pass: true, message: 'Expected template "' + template.Name + '" to have a valid LastModifiedBy field.' }
             }
           }
         }
