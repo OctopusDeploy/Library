@@ -41,7 +41,7 @@ describe("step-templates", function() {
           catch(e) {
             console.log('error reading file ' + dirname + filename + ': ' + e + ' - it might be UTF 8 with a BOM. Please resave without the BOM.')
           }
-          if (filenameCounter++ == stepTemplateCount) {
+          if (++filenameCounter == stepTemplateCount) {
             done();
           };
         });
