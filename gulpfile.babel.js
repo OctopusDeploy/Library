@@ -73,10 +73,13 @@ gulp.task('lint:step-templates', () => {
 
 gulp.task('jasmine-tests:step-templates', [], () => {
   return gulp.src('./spec/*-tests.js')
-        // gulp-jasmine works on filepaths so you can't have any plugins before it
-        .pipe(jasmine({
-            includeStackTrace: true
-        }))
+    // gulp-jasmine works on filepaths so you can't have any plugins before it
+    .pipe(jasmine({
+      includeStackTrace: false
+    }))
+    .on('error', function(){
+      process.exit(1);
+    });
 });
 
 gulp.task('step-templates', ['lint:step-templates', 'jasmine-tests:step-templates'], () => {
