@@ -26,6 +26,7 @@ import yargs from 'yargs';
 import rev from 'gulp-rev';
 import glob from 'glob';
 import envify from 'envify/custom';
+import jasmine from 'gulp-jasmine';
 
 const clientDir = 'app';
 const serverDir = 'server';
@@ -70,7 +71,15 @@ gulp.task('lint:step-templates', () => {
     .pipe($.expect({ errorOnFailure: true }, glob.sync('step-templates/*.json')));
 });
 
-gulp.task('step-templates', ['lint:step-templates'], () => {
+gulp.task('jasmine-tests:step-templates', [], () => {
+  return gulp.src('./spec/*-tests.js')
+        // gulp-jasmine works on filepaths so you can't have any plugins before it
+        .pipe(jasmine({
+            includeStackTrace: true
+        }))
+});
+
+gulp.task('step-templates', ['lint:step-templates', 'jasmine-tests:step-templates'], () => {
   return gulp.src('./step-templates/*.json')
     .pipe(concat('step-templates.json', {newLine: ','}))
     .pipe(header('{"items": ['))
