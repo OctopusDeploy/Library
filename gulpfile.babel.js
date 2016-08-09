@@ -69,7 +69,7 @@ gulp.task('lint:client', lint(`${clientDir}/**/*.jsx`));
 gulp.task('lint:server', lint(`./${serverDir}/server.js`));
 gulp.task('lint:step-templates', () => {
   return gulp.src('./step-templates/*')
-    .pipe($.expect({ errorOnFailure: true }, glob.sync('step-templates/*.json')));
+    .pipe($.expect({ errorOnFailure: true, silent: true }, glob.sync('step-templates/*.json')));
 });
 
 gulp.task('jasmine-tests:step-templates', [], () => {
