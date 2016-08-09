@@ -8,6 +8,8 @@ describe("step-templates", function() {
           compare: function(template){
             if(typeof template.LastModifiedBy == 'undefined')  {
               return { pass: false, message: 'Expected template "' + template.Name + '" to have a valid LastModifiedBy field, but it was undefined.' }
+            } else if(typeof template.$Meta.ExportedAt == 'undefined')  {
+              return { pass: false, message: 'Expected template "' + template.Name + '" to have a valid ExportedAt date, but it was undefined.' }
             } else {
               return { pass: true, message: 'Expected template "' + template.Name + '" to have a valid LastModifiedBy field.' }
             }
