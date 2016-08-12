@@ -28,6 +28,7 @@ import glob from 'glob';
 import envify from 'envify/custom';
 import jasmine from 'gulp-jasmine';
 import jasmineReporters from 'jasmine-reporters';
+import jasmineTerminalReporter from 'jasmine-terminal-reporter';
 
 const clientDir = 'app';
 const serverDir = 'server';
@@ -77,7 +78,7 @@ gulp.task('jasmine-tests:step-templates', [], () => {
     // gulp-jasmine works on filepaths so you can't have any plugins before it
     .pipe(jasmine({
       includeStackTrace: false,
-      reporter: new jasmineReporters.JUnitXmlReporter()
+      reporter: [ new jasmineReporters.JUnitXmlReporter(), new jasmineTerminalReporter() ]
     }))
     .on('error', function(){
       process.exit(1);
