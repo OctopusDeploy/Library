@@ -33,7 +33,7 @@ describe("step-templates", function() {
       filenames.forEach(function(filename) {
         fs.readFile(dirname + filename, 'utf-8', function(err, content) {
           if (err) {
-            console.log('error reading file ' + filename + ': ' + err);
+            fail('error reading file ' + filename + ': ' + err);
             return;
           }
           try {
@@ -41,7 +41,7 @@ describe("step-templates", function() {
             expect(template).toHaveValidLastModified();
           }
           catch(e) {
-            console.log('error reading file ' + dirname + filename + ': ' + e + ' - it might be UTF 8 with a BOM. Please resave without the BOM.')
+            fail('error reading file ' + dirname + filename + ': ' + e + ' - it might be UTF 8 with a BOM. Please resave without the BOM.')
           }
           if (++filenameCounter == stepTemplateCount) {
             done();
