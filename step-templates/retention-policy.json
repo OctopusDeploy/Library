@@ -1,0 +1,60 @@
+{
+  "Id": "ActionTemplates-221",
+  "Name": "Retention Policy",
+  "Description": "Applies retention policy for built-in package repository by specified package id. Useful when you are using variables in PackageId parameter of deploy package step and built-in retention policy for package repository is not deleting packages.",
+  "ActionType": "Octopus.Script",
+  "Version": 8,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "Write-Host \"Start RetentionPolicy\"\n\n$packagesRootDirectoryPath = $OctopusParameters[\"RetentionPackagesRootDirectory\"] #\"D:\\Octopus\\Packages\"\n$retentionCriteria = $OctopusParameters[\"RetentionCriteria\"] # \"days\" or \"number\"\n$retentionValue = [int] $OctopusParameters[\"RetentionValue\"] # Days or number of packages to keep\n$retentionPackageId = $OctopusParameters[\"RetentionPackageId\"]\n\nWrite-Host \"Retention criteria: $retentionCriteria\"\nWrite-Host \"Retention value: $retentionValue\"\n\n# Validations\n$validationsSuccessful = $true\nIf ([string]::IsNullOrEmpty($retentionCriteria)) {\n    Write-Warning \"Retention Criteria not specified: $retentionCriteria!\"\n    $validationsSuccessful = $false\n} Else {\n    If ($retentionCriteria.ToLower() -eq \"days\") {\n        If ($retentionValue -lt 3) {\n            Write-Warning \"Retention Value not specified or must be greater than 3 days!\"\n            $validationsSuccessful = $false\n        }\n    } ElseIf ($retentionCriteria.ToLower() -eq \"number\") {\n        If ($retentionValue -lt 10) {\n            Write-Warning \"Retention Value not specified or must be greater than 9 packages!\"\n            $validationsSuccessful = $false\n        }\n    } Else {\n        Write-Warning \"Retention Criteria must be 'days' or 'number'!\"\n        $validationsSuccessful = $false\n    }\n}\nIf (-Not (Test-Path $packagesRootDirectoryPath)) {\n    Write-Warning \"Packages root directory not found: $packagesRootDirectoryPath!\"\n    $validationsSuccessful = $false\n}\n\nIf ($validationsSuccessful) {\n\n    # Select package directories\n    $packageDirectories = Get-ChildItem $packagesRootDirectoryPath | ?{ $_.PSIsContainer }\n\n    # Filter out package folders by name if parameter specified\n    If ([string]::IsNullOrEmpty($retentionPackageId)){\n        Write-Host \"Retention Package Id not specified: $retentionPackageId!\"\n    } Else {\n        $packageDirectories = $packageDirectories | ?{ $_.Name -eq $retentionPackageId }\n\n        If ($packageDirectories.Length -le 0) {\n            Write-Host \"No package directories found!\"\n        } Else {\n            ForEach ($packageDirectory in $packageDirectories) {\n                $packageFiles = Get-ChildItem $packageDirectory.FullName\n                If ($packageFiles.Length -gt 0) {\n                    Write-Host (\"Package files found in directory: \" + $packageDirectory.FullName + \" \" + $packageFiles.Length)\n                    $packageFilesObsolete = @()\n\n                    If ($retentionCriteria -eq \"days\") {\n                        $packageFilesObsolete = $packageFiles | ?{ $_.LastWriteTime -le ((Get-Date).AddDays($retentionValue * -1)) }\n                    } ElseIf ($retentionCriteria -eq \"number\") {\n                        $filesToDelete = ($packageFiles.Length - $retentionValue)\n                        If ($filesToDelete -gt 0) {\n                            $packageFilesObsolete = $packageFiles | Sort-Object LastWriteTime | Select-Object -First $filesToDelete\n                        }\n                    }\n\n                    If ($packageFilesObsolete.Length -gt 0) {\n                        Write-Host (\"Applying retention policy for \" + $packageFilesObsolete.Length + \" obsolete files in directory: \" + $packageDirectory.FullName)\n                        ForEach ($packageVersionFileObsolete in $packageFilesObsolete) {\n                            Remove-Item -Path $packageVersionFileObsolete.FullName -Force -Recurse\n                        }\n                    }\n                } Else {\n                    Write-Host (\"No files found, removing empty directory: \" + $packageDirectory.FullName)\n                    Remove-Item -Path $packageDirectory.FullName -Force -Recurse\n                }\n            }\n        }\n    }\n}\n\nWrite-Host \"End RetentionPolicy\"\n",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "RetentionPackagesRootDirectory",
+      "Label": "Packages root directory",
+      "HelpText": "Packages directory path on Octopus server (e.g. D:\\Octopus\\Packages).",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "RetentionCriteria",
+      "Label": "Criteria",
+      "HelpText": "Criteria by which to apply retention policy - days or number of packages.",
+      "DefaultValue": "days",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "days|Days\nnumber|Number of packages"
+      }
+    },
+    {
+      "Name": "RetentionValue",
+      "Label": "Value",
+      "HelpText": "Value for selected criteria.\nMin value for days criteria - 3.\nMin value for number criteria - 10.",
+      "DefaultValue": "30",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "RetentionPackageId",
+      "Label": "Package Id",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "sarbis",
+  "$Meta": {
+    "ExportedAt": "2016-08-19T13:57:46.732Z",
+    "OctopusVersion": "3.3.16",
+    "Type": "ActionTemplate"
+  }
+}
