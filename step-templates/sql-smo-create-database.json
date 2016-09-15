@@ -1,13 +1,17 @@
 {
-  "Id": "ActionTemplates-40",
-  "Name": "SQL - Create Database Using SMO",
-  "Description": "This uses Sql Management Objects to create a database.  If the username and password are both empty then it will attempt a trusted connection.",
+  "Id": "ActionTemplates-162",
+  "Name": "SQL - Create Database Using SMO (only if does not exists)",
+  "Description": "This uses Sql Management Objects to create a database.  If the username and password are both empty then it will attempt a trusted connection using integrated security.",
   "ActionType": "Octopus.Script",
-  "Version": 8,
+  "Version": 10,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SMO\") | out-null\n\ntry\n{    \n    $server = new-object ('Microsoft.SqlServer.Management.Smo.Server') $SqlServer\n    if ($SqlUsername -eq \"\"-and $SqlPassword -eq \"\")\n    {\n        $server.ConnectionContext.LoginSecure = $true\n    } else {\n        $server.ConnectionContext.LoginSecure = $false\n        $server.ConnectionContext.set_Login($SqlUsername)\n        $server.ConnectionContext.set_Password($SqlPassword)      \n    }\n    \n\tif ($server.databases[$SqlDatabase] -eq $null)\n\t{\n    \t$db = New-Object Microsoft.SqlServer.Management.Smo.Database($server, $SqlDatabase)\n        $db.Create()\n\t}\n}\ncatch\n{    \n    $error[0] | format-list -force\n    Exit 1\n}\n    "
+    "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SMO\") | out-null\n\n\n$SqlUsername = $OctopusParameters['SqlUsername']\n$SqlServer = $OctopusParameters['SqlServer']\n$SqlPassword = $OctopusParameters['SqlPassword']\n$SqlDatabase = $OctopusParameters['SqlDatabase']\n\ntry\n{    \n    $server = new-object ('Microsoft.SqlServer.Management.Smo.Server') $SqlServer\n  \n    if ($SqlUsername -and $SqlPassword)\n    {\n        Write-Host \"Connecting to $SqlServer as $SqlUsername\"\n        $server.ConnectionContext.LoginSecure = $false\n        $server.ConnectionContext.set_Login($SqlUsername)\n        $server.ConnectionContext.set_Password($SqlPassword)      \n    } \n    else {\n        Write-Host \"Connecting to $SqlServer with integrated security\"\n        $server.ConnectionContext.LoginSecure = $true\n    }\n    \n\tif ($server.databases[$SqlDatabase] -eq $null)\n\t{\n\t    Write-Host \"Creating database $SqlDatabase\"\n    \t$db = New-Object Microsoft.SqlServer.Management.Smo.Database($server, $SqlDatabase)\n        $db.Create()\n\t} else {\n\t    Write-Host \"Database $SqlDatabase already exists, skipping step...\"\n\t}\n}\ncatch\n{    \n    $error[0] | format-list -force\n    Exit 1\n}\n    ",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
   },
-  "SensitiveProperties": {},
   "Parameters": [
     {
       "Name": "SqlServer",
@@ -33,16 +37,15 @@
     {
       "Name": "SqlDatabase",
       "Label": "Sql Database",
-      "HelpText": "Name of Database to be Dropped",
+      "HelpText": "Name of Database to be created if not already there",
       "DefaultValue": null,
       "DisplaySettings": {}
     }
   ],
-  "LastModifiedOn": "2015-05-20T13:15:01.332+00:00",
-  "LastModifiedBy": "software-programmer",
+  "LastModifiedBy": "alastairtree",
   "$Meta": {
-    "ExportedAt": "2015-05-20T13:15:47.536Z",
-    "OctopusVersion": "2.6.5.1010",
+    "ExportedAt": "2016-07-12T12:33:49.751Z",
+    "OctopusVersion": "3.3.10",
     "Type": "ActionTemplate"
   }
 }
