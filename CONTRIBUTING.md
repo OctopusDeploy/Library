@@ -1,7 +1,7 @@
 Contributing step templates
 ---------------------------
 
-Have a great custom step that other Octopus users will love? Here's how to get it out there!
+Have a great custom step that other Octopus users will love? Here's how to get it out there! 
 
 1. [Fork](https://github.com/OctopusDeploy/Library/fork) the Library repository
 2. Clone your fork into a directory on your own machine
