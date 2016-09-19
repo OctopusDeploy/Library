@@ -29,7 +29,7 @@ class LibraryDb {
         }
 
         return {
-          Id: makeId(t.$Meta.Type, t.Name),
+          Id: t.Id,
           Slug: makeSlug(t.Name),
           Name: t.Name,
           Description: t.Description,
