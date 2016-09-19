@@ -75,7 +75,7 @@ This will build a debuggable version of the library site and output it to `./bui
 node build/server.js
 ```
 
-This will start the `express` server and you can browse the site at the following URL `http://localhost:9000`.
+This will start the `express` server and you can browse the site at the following URL `http://localhost:9000`. 
 
 While developing you can run the site in development mode so that as you make changes to the code your browser will refresh to reflect the changes you just made. To run the site in development mode, run the following command:
 
