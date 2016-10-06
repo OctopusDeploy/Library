@@ -8,11 +8,6 @@ function makeSlug(name) {
   return name.replace(/ \- /g, '-').replace(/ /g, '-').toLowerCase();
 }
 
-function makeId(type, name) {
-  let slug = makeSlug(name);
-  return type.toLowerCase() + '-' + slug;
-}
-
 function makeScriptClass(actionType) {
   return actionType.replace(/\./g, '-').toLowerCase();
 }

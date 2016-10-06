@@ -32,6 +32,11 @@ class LibraryStore extends EventEmitter {
     this.emit(CHANGE_EVENT);
   }
 
+  //Required so we can handle old urls without stable ids
+  getByFriendlySlug(slug) {
+    return this.getItems().filter(t =>  t.Type.toLowerCase() + '-' + t.Slug === slug)[0];
+  }
+
   addChangeListener(callback) {
     this.on(CHANGE_EVENT, callback);
   }

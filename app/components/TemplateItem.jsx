@@ -22,7 +22,12 @@ const displayName = 'octopus-library-template-item';
 export default class TemplateItem extends React.Component {
   constructor(props) {
     super(props);
-    this.state = {copied: false, template: LibraryStore.get(this.props.params.templateId), showJsonBlob: false};
+    let template = this.props.params.templateId ? LibraryStore.get(this.props.params.templateId) : LibraryStore.getByFriendlySlug(this.props.params.friendlySlug);
+
+    this.state = {
+      copied: false,
+      template: template,
+      showJsonBlob: false};
   }
 
   handleCopied(event) {
@@ -41,13 +46,13 @@ export default class TemplateItem extends React.Component {
     let jsonString = JSON.stringify(val, null, 2);
     return jsonString;
   }
-  
+
   toggleJsonBlob() {
     this.setState({
       showJsonBlob: !this.state.showJsonBlob
     });
   }
-  
+
   getJsonBlobHeight() {
     if(this.state.showJsonBlob) {
       return '9000px';
@@ -93,15 +98,15 @@ export default class TemplateItem extends React.Component {
                 </button>
               </CopyToClipboard>
               <p className={'faint full-width centered' + (this.state.copied ? '' : ' hidden')}><strong>Copied!</strong></p>
-              <a className="faint" 
+              <a className="faint"
                   onClick={this.toggleJsonBlob.bind(this)}
               >
                 {this.state.showJsonBlob ? 'Hide' : 'Show'} JSON
               </a>
-              <div className="templateContent" 
+              <div className="templateContent"
                   style={style}
               >
-                <SyntaxHiglighter language="json" 
+                <SyntaxHiglighter language="json"
                     style={solarizedLight}
                 >
                     {this.toJson(this.state.template.Body)}

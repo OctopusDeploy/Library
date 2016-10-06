@@ -15,13 +15,13 @@ export default class TemplateList extends React.Component {
         return;
       }
       let formattedExportedAt = moment(item.ExportedAt).calendar();
-
+      let friendlySlug =  item.Type.toLowerCase() + '-' + item.Slug;
       return (
         <li className={'item-summary ' + item.ScriptClass}
             key={index + '.' + item.Name}
         >
           <h4 key={index + '.' + item.Name + '.0'}>
-            <Link to={`/step-template/${item.Id}`}>{item.Name}</Link>
+            <Link to={`/step-template/${item.Id}/${friendlySlug}`}>{item.Name}</Link>
           </h4>
           <p className="faint">Exported {formattedExportedAt} by <strong>{item.Author}</strong></p>
         </li>

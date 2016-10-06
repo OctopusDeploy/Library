@@ -35,7 +35,7 @@ app.get('/api/step-templates', (req, res) => {
       res.end();
       return;
     }
-    
+
     res.send(data);
   });
 });
@@ -48,7 +48,7 @@ app.get('/api/step-template/:id', (req, res) => {
       res.end();
       return;
     }
-    
+
     res.send(data);
   });
 });
@@ -67,7 +67,7 @@ app.get('*', (req, res) => {
           res.end();
           return;
         }
-        
+
         LibraryActions.sendTemplates(data, () => {
           var libraryAppHtml = ReactDOMServer.renderToStaticMarkup(<RouterContext {...renderProps} />);
           res.render('index', {
