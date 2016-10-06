@@ -22,7 +22,7 @@ const displayName = 'octopus-library-template-item';
 export default class TemplateItem extends React.Component {
   constructor(props) {
     super(props);
-    let template = this.props.params.templateId ? LibraryStore.get(this.props.params.templateId) : LibraryStore.getByFriendlySlug(this.props.params.friendlySlug);
+    let template = LibraryStore.get(this.props.params.friendlySlugOrId) || LibraryStore.getByFriendlySlug(this.props.params.friendlySlugOrId);
 
     this.state = {
       copied: false,
