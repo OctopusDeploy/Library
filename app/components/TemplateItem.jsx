@@ -114,7 +114,7 @@ export default class TemplateItem extends React.Component {
               </div>
               <p className="align-right">
                 <a className="faint"
-                    href={`https://github.com/OctopusDeploy/Library/commits/master/step-templates/${this.state.template.Slug}.json`}
+                    href={this.state.template.Body.HistoryUrl}
                 >
                   History &raquo;
                 </a>
