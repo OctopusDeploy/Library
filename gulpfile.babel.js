@@ -29,6 +29,7 @@ import envify from 'envify/custom';
 import jasmine from 'gulp-jasmine';
 import jasmineReporters from 'jasmine-reporters';
 import jasmineTerminalReporter from 'jasmine-terminal-reporter';
+import eventStream from 'event-stream';
 
 const clientDir = 'app';
 const serverDir = 'server';
@@ -85,8 +86,26 @@ gulp.task('jasmine-tests:step-templates', [], () => {
     });
 });
 
+function provideHistoryUrl() {
+  return eventStream.map(function(file, cb) {
+    var fileContent = file.contents.toString();
+    var step = JSON.parse(fileContent);
+    var pathParts = file.path.split('\\');
+    var fileName = pathParts[pathParts.length - 1];
+    step.HistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/step-templates/" + fileName;
+
+    // update the vinyl file
+    file.contents = new Buffer(JSON.stringify(step));
+
+    // send the updated file down the pipe
+    cb(null, file);
+  });
+}
+
+
 gulp.task('step-templates', ['lint:step-templates', 'jasmine-tests:step-templates'], () => {
   return gulp.src('./step-templates/*.json')
+    .pipe(provideHistoryUrl())
     .pipe(concat('step-templates.json', {newLine: ','}))
     .pipe(header('{"items": ['))
     .pipe(footer(']}'))
