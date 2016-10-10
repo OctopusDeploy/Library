@@ -86,13 +86,14 @@ gulp.task('jasmine-tests:step-templates', [], () => {
     });
 });
 
-function provideHistoryUrl() {
+function provideUrls() {
   return eventStream.map(function(file, cb) {
     var fileContent = file.contents.toString();
     var step = JSON.parse(fileContent);
     var pathParts = file.path.split('\\');
     var fileName = pathParts[pathParts.length - 1];
     step.HistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/step-templates/" + fileName;
+    step.Website = "/step-template/" + step.Id;
 
     // update the vinyl file
     file.contents = new Buffer(JSON.stringify(step));
@@ -105,7 +106,7 @@ function provideHistoryUrl() {
 
 gulp.task('step-templates', ['lint:step-templates', 'jasmine-tests:step-templates'], () => {
   return gulp.src('./step-templates/*.json')
-    .pipe(provideHistoryUrl())
+    .pipe(provideUrls())
     .pipe(concat('step-templates.json', {newLine: ','}))
     .pipe(header('{"items": ['))
     .pipe(footer(']}'))
