@@ -8,10 +8,6 @@ function makeSlug(name) {
   return name.replace(/ \- /g, '-').replace(/ /g, '-').toLowerCase();
 }
 
-function makeScriptClass(actionType) {
-  return actionType.replace(/\./g, '-').toLowerCase();
-}
-
 class LibraryDb {
   constructor() {
     this._items = _.chain(StepTemplates.items)
@@ -32,7 +28,6 @@ class LibraryDb {
           ExportedAt: t.$Meta.ExportedAt,
           Type: t.$Meta.Type,
           Author: t.LastModifiedBy,
-          ScriptClass: makeScriptClass(t.ActionType),
           Body: t
         };
       })

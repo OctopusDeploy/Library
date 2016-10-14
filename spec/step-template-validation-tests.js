@@ -29,8 +29,12 @@ describe("step-templates", function() {
         console.log('error listing files in dir: ' + err);
         return;
       }
+
+      filenames =  filenames.filter(function(file) { return file.substr(-5) === '.json'; })
       stepTemplateCount = filenames.length;
       filenames.forEach(function(filename) {
+
+
         fs.readFile(dirname + filename, 'utf-8', function(err, content) {
           if (err) {
             fail('error reading file ' + filename + ': ' + err);

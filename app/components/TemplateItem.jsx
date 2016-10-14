@@ -68,8 +68,9 @@ export default class TemplateItem extends React.Component {
         <div className="step-template">
           <div className="row clearfix">
             <div className="column two-thirds">
-              <h2>{this.state.template.Name}</h2>
-              <p className="faint no-top-margin">
+              <img className="logo" src={'data:image/gif;base64,' + this.state.template.Body.Logo} />
+              <h2 className="name">{this.state.template.Name}</h2>
+              <p className="who-when faint no-top-margin">
                 <i>{this.state.template.Body.ActionType}</i> exported {moment(this.state.template.ExportedAt).calendar()} by
                 <a className="author faint"
                     href={`https://github.com/${this.state.template.Author}`}

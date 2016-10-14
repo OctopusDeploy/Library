@@ -30,6 +30,8 @@ import jasmine from 'gulp-jasmine';
 import jasmineReporters from 'jasmine-reporters';
 import jasmineTerminalReporter from 'jasmine-terminal-reporter';
 import eventStream from 'event-stream';
+import {Converter} from 'csvtojson';
+import fs from 'fs';
 
 const clientDir = 'app';
 const serverDir = 'server';
@@ -70,7 +72,7 @@ function lint(files, options) {
 gulp.task('lint:client', lint(`${clientDir}/**/*.jsx`));
 gulp.task('lint:server', lint(`./${serverDir}/server.js`));
 gulp.task('lint:step-templates', () => {
-  return gulp.src('./step-templates/*')
+  return gulp.src('./step-templates/*.json')
     .pipe($.expect({ errorOnFailure: true, silent: true }, glob.sync('step-templates/*.json')));
 });
 
@@ -86,27 +88,61 @@ gulp.task('jasmine-tests:step-templates', [], () => {
     });
 });
 
-function provideUrls() {
+function provideMissingData() {
+
+  var mapping = null;
+
+  function toMap(array){
+    return array.reduce(function(map, obj) {
+      map[obj.StepTemplate] = obj.StepLogo;
+      return map;
+    }, {});
+  }
+
+  function loadMapping(callback){
+
+    if (mapping) {
+      callback(mapping);
+      return;
+    }
+
+    var converter = new Converter({});
+    converter.fromFile("./step-templates/logos/mapping.csv",function(err,result){
+      if (err) {
+        console.log('error reading logo mapping file: ' + err);
+        return;
+      }
+
+      mapping = toMap(result);
+      callback(mapping);
+    });
+  };
+
   return eventStream.map(function(file, cb) {
-    var fileContent = file.contents.toString();
-    var step = JSON.parse(fileContent);
-    var pathParts = file.path.split('\\');
-    var fileName = pathParts[pathParts.length - 1];
-    step.HistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/step-templates/" + fileName;
-    step.Website = "/step-template/" + step.Id;
+    loadMapping(function (mapping) {
 
-    // update the vinyl file
-    file.contents = new Buffer(JSON.stringify(step));
+      var fileContent = file.contents.toString();
+      var step = JSON.parse(fileContent);
+      var pathParts = file.path.split('\\');
+      var fileName = pathParts[pathParts.length - 1];
+      step.HistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/step-templates/" + fileName;
+      step.Website = "/step-template/" + step.Id;
 
-    // send the updated file down the pipe
-    cb(null, file);
+      var logoFile = mapping[fileName] || 'default.png';
+      var logo = fs.readFileSync("./step-templates/logos/" + logoFile);
+      step.Logo = new Buffer(logo).toString('base64');
+
+      file.contents = new Buffer(JSON.stringify(step));
+      // send the updated file down the pipe
+      cb(null, file);
+    });
   });
 }
 
 
 gulp.task('step-templates', ['lint:step-templates', 'jasmine-tests:step-templates'], () => {
   return gulp.src('./step-templates/*.json')
-    .pipe(provideUrls())
+    .pipe(provideMissingData())
     .pipe(concat('step-templates.json', {newLine: ','}))
     .pipe(header('{"items": ['))
     .pipe(footer(']}'))

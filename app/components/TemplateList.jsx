@@ -20,6 +20,7 @@ export default class TemplateList extends React.Component {
         <li className={'item-summary ' + item.ScriptClass}
             key={index + '.' + item.Name}
         >
+          <img src={'data:image/gif;base64,' + item.Body.Logo} />
           <h4 key={index + '.' + item.Name + '.0'}>
             <Link to={`/step-template/${item.Id}/${friendlySlug}`}>{item.Name}</Link>
           </h4>
