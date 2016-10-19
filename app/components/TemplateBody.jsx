@@ -32,6 +32,7 @@ export default class TemplateBody extends React.Component {
 
     switch (this.props.actionType) {
       case 'Octopus.Script':
+      case 'Octopus.AzurePowerShell':
         header = 'Script body';
         description = 'Steps based on this template will execute the following <em>PowerShell</em> script.';
         break;
