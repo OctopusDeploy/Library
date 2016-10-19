@@ -8,9 +8,10 @@ Have a great custom step that other Octopus users will love? Here's how to get i
 3. _Export_ your template from the Octopus server
 4. Save the exported JSON to a file under `/step-templates`
 5. Check that the `LastModifiedBy` username is one you're happy to use on the site (ideally your plain GitHub username)
-6. Add Id property and set it to a GUID
-7. Commit and push your changes to your fork
-8. View your fork in GitHub to create a _pull request_
+6. Add Id property and set it to a GUID using the following format `00000000-0000-0000-0000-000000000000`
+7. Optional: Add custom logo under `/step-templates/logos` folder and update the mapping.csv file accordingly. You can also use one of the existing logos. If you don't specify a logo for your template its will get the default.png logo.
+8. Commit and push your changes to your fork
+9. View your fork in GitHub to create a _pull request_
 
 Someone from the Octopus team will review your request and help to make the step consistent with the others in the library. Once it's ready we'll merge it into the main repository and publish it to [the library site](http://library.octopusdeploy.com).
 
