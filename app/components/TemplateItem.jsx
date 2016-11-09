@@ -75,7 +75,7 @@ export default class TemplateItem extends React.Component {
                 <a className="author faint"
                     href={`https://github.com/${this.state.template.Author}`}
                 > {this.state.template.Author}
-                </a>
+                </a> belongs to '{this.state.template.Body.Category}' category.
               </p>
               <span className="template-description"
                   dangerouslySetInnerHTML={this.rawMarkup()}
