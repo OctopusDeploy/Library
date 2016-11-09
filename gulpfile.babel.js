@@ -91,7 +91,7 @@ gulp.task('jasmine-tests:step-templates', [], () => {
 function provideMissingData() {
 
   return eventStream.map(function(file, cb) {
-    
+
       var fileContent = file.contents.toString();
       var step = JSON.parse(fileContent);
       var pathParts = file.path.split('\\');
