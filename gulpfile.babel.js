@@ -78,7 +78,7 @@ gulp.task('lint:step-templates', () => {
 
 gulp.task('jasmine-tests:step-templates', [], () => {
   return gulp.src('./spec/*-tests.js')
-    // gulp-jasmine works on filepaths so you can't have any plugins before it
+  // gulp-jasmine works on filepaths so you can't have any plugins before it
     .pipe(jasmine({
       includeStackTrace: false,
       reporter: [ new jasmineReporters.JUnitXmlReporter(), new jasmineTerminalReporter() ]
@@ -90,52 +90,34 @@ gulp.task('jasmine-tests:step-templates', [], () => {
 
 function provideMissingData() {
 
-  var mapping = null;
-
-  function toMap(array){
-    return array.reduce(function(map, obj) {
-      map[obj.StepTemplate] = obj.StepLogo;
-      return map;
-    }, {});
-  }
-
-  function loadMapping(callback){
-
-    if (mapping) {
-      callback(mapping);
-      return;
-    }
-
-    var converter = new Converter({});
-    converter.fromFile("./step-templates/logos/mapping.csv",function(err,result){
-      if (err) {
-        console.log('error reading logo mapping file: ' + err);
-        return;
-      }
-
-      mapping = toMap(result);
-      callback(mapping);
-    });
-  };
-
   return eventStream.map(function(file, cb) {
-    loadMapping(function (mapping) {
+
 
       var fileContent = file.contents.toString();
       var step = JSON.parse(fileContent);
       var pathParts = file.path.split('\\');
       var fileName = pathParts[pathParts.length - 1];
-      step.HistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/step-templates/" + fileName;
-      step.Website = "/step-template/" + step.Id;
 
-      var logoFile = mapping[fileName] || 'default.png';
-      var logo = fs.readFileSync("./step-templates/logos/" + logoFile);
-      step.Logo = new Buffer(logo).toString('base64');
+      if (!step.HistoryUrl) {
+        step.HistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/step-templates/" + fileName;
+      }
+
+      if (!step.Website) {
+        step.Website = "/step-template/" + step.Id;
+      }
+
+      if (!step.Category) {
+        step.Category = 'other';
+      }
+
+      if (!step.Logo) {
+        var logo = fs.readFileSync("./step-templates/logos/" + step.Category + ".png");
+        step.Logo = new Buffer(logo).toString('base64');
+      }
 
       file.contents = new Buffer(JSON.stringify(step));
       // send the updated file down the pipe
       cb(null, file);
-    });
   });
 }
 
@@ -186,31 +168,31 @@ gulp.task('scripts', ['lint:client'], () => {
     extensions: ['.jsx', '.js'],
     debug: true
   })
-  .transform(babelify)
-  .transform(reactify)
-  .transform(envify({'_': 'purge', 'NODE_ENV': argv.production ? 'production' : 'development'}), {global: true})
-  .bundle()
-  .pipe(source('app.js'))
-  .pipe(buffer())
-  .pipe($.if(argv.production, sourcemaps.init({loadMaps: true})))
-  .pipe($.if(argv.production, uglify())).on('error', gutil.log)
-  .pipe($.if(argv.production, rename({suffix: '.min'})))
-  .pipe($.if(argv.production, rev()))
-  .pipe($.if(argv.production, sourcemaps.write('.')))
-  .pipe(argv.production ? gulp.dest(`${publishDir}/public/scripts`) : gulp.dest(`${buildDir}/public/scripts`));
+    .transform(babelify)
+    .transform(reactify)
+    .transform(envify({'_': 'purge', 'NODE_ENV': argv.production ? 'production' : 'development'}), {global: true})
+    .bundle()
+    .pipe(source('app.js'))
+    .pipe(buffer())
+    .pipe($.if(argv.production, sourcemaps.init({loadMaps: true})))
+    .pipe($.if(argv.production, uglify())).on('error', gutil.log)
+    .pipe($.if(argv.production, rename({suffix: '.min'})))
+    .pipe($.if(argv.production, rev()))
+    .pipe($.if(argv.production, sourcemaps.write('.')))
+    .pipe(argv.production ? gulp.dest(`${publishDir}/public/scripts`) : gulp.dest(`${buildDir}/public/scripts`));
 });
 
 gulp.task('build:client', ['step-templates', 'copy:app', 'scripts', 'styles:client', 'styles:vendor', 'images'], () => {
   let vendorSources = gulp.src(vendorStyles, {base: 'node_modules/'});
 
-  let sources = argv.production
-    ? gulp.src([`${publishDir}/public/**/*.js`, `${publishDir}/public/**/*.css*`, `!${publishDir}/public/**/vendor{,/**}`], {read: false})
-    : gulp.src([`${buildDir}/public/**/*.js`, `${buildDir}/public/**/*.css*`, `!${buildDir}/public/**/vendor{,/**}`], {read: false});
+let sources = argv.production
+  ? gulp.src([`${publishDir}/public/**/*.js`, `${publishDir}/public/**/*.css*`, `!${publishDir}/public/**/vendor{,/**}`], {read: false})
+  : gulp.src([`${buildDir}/public/**/*.js`, `${buildDir}/public/**/*.css*`, `!${buildDir}/public/**/vendor{,/**}`], {read: false});
 
-  return gulp.src(`${serverDir}/views/index.jade`)
-    .pipe(inject(vendorSources, {relative: false, name: 'vendor', ignorePath: 'node_modules', addPrefix: 'styles/vendor'}))
-    .pipe(inject(sources, {relative: false, ignorePath: `${argv.production ? `${publishDir}` : `${buildDir}`}/public`}))
-    .pipe(argv.production ? gulp.dest(`${publishDir}/views`) : gulp.dest(`${buildDir}/views`));
+return gulp.src(`${serverDir}/views/index.jade`)
+  .pipe(inject(vendorSources, {relative: false, name: 'vendor', ignorePath: 'node_modules', addPrefix: 'styles/vendor'}))
+  .pipe(inject(sources, {relative: false, ignorePath: `${argv.production ? `${publishDir}` : `${buildDir}`}/public`}))
+  .pipe(argv.production ? gulp.dest(`${publishDir}/views`) : gulp.dest(`${buildDir}/views`));
 });
 
 gulp.task('build:server', ['lint:server'], () => {
@@ -223,18 +205,18 @@ gulp.task('build', ['build:server', 'build:client', 'copy:configs']);
 
 gulp.task('watch', ['clean', 'build'], () => {
   let server = LiveServer(`${buildDir}/server.js`);
-  server.start();
+server.start();
 
-  browserSync.init(null, {
-    proxy: 'http://localhost:9000'
-  });
+browserSync.init(null, {
+  proxy: 'http://localhost:9000'
+});
 
-  gulp.watch(`${clientDir}/**/*.jade`, ['build:client']);
-  gulp.watch(`${clientDir}/**/*.jsx`, ['scripts', 'copy:app']);
-  gulp.watch(`${clientDir}/content/styles/**/*.scss`, ['styles:client']);
-  gulp.watch('step-templates/*.json', ['step-templates']);
+gulp.watch(`${clientDir}/**/*.jade`, ['build:client']);
+gulp.watch(`${clientDir}/**/*.jsx`, ['scripts', 'copy:app']);
+gulp.watch(`${clientDir}/content/styles/**/*.scss`, ['styles:client']);
+gulp.watch('step-templates/*.json', ['step-templates']);
 
-  gulp.watch(`${buildDir}/**/*.*`).on('change', reload);
+gulp.watch(`${buildDir}/**/*.*`).on('change', reload);
 });
 
 gulp.task('default', ['clean', 'build']);
