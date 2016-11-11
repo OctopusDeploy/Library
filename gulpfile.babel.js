@@ -93,28 +93,30 @@ function provideMissingData() {
   return eventStream.map(function(file, cb) {
 
       var fileContent = file.contents.toString();
-      var step = JSON.parse(fileContent);
+      var template = JSON.parse(fileContent);
       var pathParts = file.path.split('\\');
       var fileName = pathParts[pathParts.length - 1];
 
-      if (!step.HistoryUrl) {
-        step.HistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/step-templates/" + fileName;
+      if (!template.HistoryUrl) {
+        template.HistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/step-templates/" + fileName;
       }
 
-      if (!step.Website) {
-        step.Website = "/step-templates/" + step.Id;
+      if (!template.Website) {
+        template.Website = "/step-templates/" + template.Id;
       }
 
-      if (!step.Category) {
-        step.Category = 'other';
+      if (!template.Category) {
+        template.Category = 'other';
       }
 
-      if (!step.Logo) {
-        var logo = fs.readFileSync("./step-templates/logos/" + step.Category + ".png");
-        step.Logo = new Buffer(logo).toString('base64');
+      template.Category = template.Category[0].toUpperCase() + template.Category.substr(1).toLowerCase();
+
+      if (!template.Logo) {
+        var logo = fs.readFileSync("./step-templates/logos/" + template.Category.toLowerCase() + ".png");
+        template.Logo = new Buffer(logo).toString('base64');
       }
 
-      file.contents = new Buffer(JSON.stringify(step));
+      file.contents = new Buffer(JSON.stringify(template));
 
       cb(null, file);
   });
