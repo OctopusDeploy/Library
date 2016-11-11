@@ -40,7 +40,7 @@ app.get('/api/step-templates', (req, res) => {
   });
 });
 
-app.get('/api/step-template/:id', (req, res) => {
+app.get('/api/step-templates/:id', (req, res) => {
   LibraryStorageService.get(req.params.id, (err, data) => {
     if(err !== null) {
       console.error(err);

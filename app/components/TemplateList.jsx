@@ -3,6 +3,7 @@
 import React from 'react';
 import moment from 'moment';
 import {Link} from 'react-router';
+import SlugMaker from './../services/SlugMaker';
 
 const displayName = 'octopus-library-template-list';
 
@@ -15,14 +16,14 @@ export default class TemplateList extends React.Component {
         return;
       }
       let formattedExportedAt = moment(item.ExportedAt).calendar();
-      let friendlySlug =  item.Type.toLowerCase() + '-' + item.Slug;
+      let friendlySlug =  SlugMaker.make(item.Name);
       return (
         <li className={'item-summary ' + item.ScriptClass}
             key={index + '.' + item.Name}
         >
-          <img src={'data:image/gif;base64,' + item.Body.Logo} />
+          <img src={'data:image/gif;base64,' + item.Logo} />
           <h4 key={index + '.' + item.Name + '.0'}>
-            <Link to={`/step-template/${item.Id}/${friendlySlug}`}>{item.Name}</Link>
+            <Link to={`/step-templates/${item.Id}/${friendlySlug}`}>{item.Name}</Link>
           </h4>
           <p className="faint">Exported {formattedExportedAt} by <strong>{item.Author}</strong></p>
         </li>

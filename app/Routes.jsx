@@ -15,8 +15,11 @@ let routes = (
     <Route component={Listing}
         path="listing(/:searchTerm)"
     />
+    <Redirect  component={TemplateItem}
+           path="step-template/:friendlySlugOrId(/:friendlySlug)"
+    />
     <Route component={TemplateItem}
-        path="step-template/:friendlySlugOrId(/:friendlySlug)"
+        path="step-templates/:friendlySlugOrId(/:friendlySlug)"
     />
   </Route>
 );

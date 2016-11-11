@@ -68,21 +68,21 @@ export default class TemplateItem extends React.Component {
         <div className="step-template">
           <div className="row clearfix">
             <div className="column two-thirds">
-              <img className="logo" src={'data:image/gif;base64,' + this.state.template.Body.Logo} />
+              <img className="logo" src={'data:image/gif;base64,' + this.state.template.Logo} />
               <h2 className="name">{this.state.template.Name}</h2>
               <p className="who-when faint no-top-margin">
-                <i>{this.state.template.Body.ActionType}</i> exported {moment(this.state.template.ExportedAt).calendar()} by
+                <i>{this.state.template.ActionType}</i> exported {moment(this.state.template.ExportedAt).calendar()} by
                 <a className="author faint"
                     href={`https://github.com/${this.state.template.Author}`}
                 > {this.state.template.Author}
-                </a> belongs to '{this.state.template.Body.Category}' category.
+                </a> belongs to '{this.state.template.Category}' category.
               </p>
               <span className="template-description"
                   dangerouslySetInnerHTML={this.rawMarkup()}
               />
-              <TemplateParameters parameters={this.state.template.Body.Parameters} />
-              <TemplateBody actionType={this.state.template.Body.ActionType}
-                  templateBody={this.state.template.Body.Properties['Octopus.Action.Script.ScriptBody'] || this.state.template.Body.Properties['Octopus.Action.Email.Body']}
+              <TemplateParameters parameters={this.state.template.Parameters} />
+              <TemplateBody actionType={this.state.template.ActionType}
+                  templateBody={this.state.template.Properties['Octopus.Action.Script.ScriptBody'] || this.state.template.Properties['Octopus.Action.Email.Body']}
               />
             </div>
             <div className="column third">
@@ -90,7 +90,7 @@ export default class TemplateItem extends React.Component {
                 To use this template in Octopus Deploy, copy the JSON below and paste it into the <em>Library > Step templates > Import</em> dialog.
               </p>
               <CopyToClipboard onCopy={this.handleCopied.bind(this)}
-                  text={this.toJson(this.state.template.Body)}
+                  text={this.toJson(this.state.template)}
               >
                 <button className={'button success full-width' + (this.state.copied ? ' copied' : '')}
                     type="button"
@@ -110,12 +110,12 @@ export default class TemplateItem extends React.Component {
                 <SyntaxHiglighter language="json"
                     style={solarizedLight}
                 >
-                    {this.toJson(this.state.template.Body)}
+                    {this.toJson(this.state.template)}
                 </SyntaxHiglighter>
               </div>
               <p className="align-right">
                 <a className="faint"
-                    href={this.state.template.Body.HistoryUrl}
+                    href={this.state.template.HistoryUrl}
                 >
                   History &raquo;
                 </a>

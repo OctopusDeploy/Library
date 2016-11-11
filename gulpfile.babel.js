@@ -102,7 +102,7 @@ function provideMissingData() {
       }
 
       if (!step.Website) {
-        step.Website = "/step-template/" + step.Id;
+        step.Website = "/step-templates/" + step.Id;
       }
 
       if (!step.Category) {
@@ -115,7 +115,7 @@ function provideMissingData() {
       }
 
       file.contents = new Buffer(JSON.stringify(step));
-      // send the updated file down the pipe
+
       cb(null, file);
   });
 }
