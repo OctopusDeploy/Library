@@ -134,10 +134,12 @@ function provideMissingData() {
         template.Website = "/step-templates/" + template.Id;
       }
 
-      var categoryId = template.Category.toLowerCase();
+      var categoryId = template.Category;
       if (!categoryId) {
         categoryId = 'other';
       }
+
+     categoryId = categoryId.toLowerCase();
 
       template.Category = humanize(categoryId);
 
