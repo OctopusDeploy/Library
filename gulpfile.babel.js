@@ -88,6 +88,35 @@ gulp.task('jasmine-tests:step-templates', [], () => {
     });
 });
 
+
+function humanize(categoryId){
+
+  switch(categoryId){
+    case 'aspnet': return 'ASP.NET';
+    case 'aws': return 'AWS';
+    case 'filesystem': return 'File System';
+    case 'github': return 'GitHub';
+    case 'ghostinspector': return 'Ghost Inspector';
+    case 'hipchat': return 'HipChat';
+    case 'hockeyapp': return 'HockeyApp';
+    case 'iis': return 'IIS';
+    case 'netscaler': return 'NetScaler';
+    case 'nunit': return 'NUnit';
+    case 'pagerduty': return 'PagerDuty';
+    case 'ravendb': return 'RavenDB';
+    case 'rabbitmq': return 'RabbitMQ';
+    case 'sharepoint': return 'SharePoint';
+    case 'solarwinds': return 'SolarWinds';
+    case 'sql': return 'SQL';
+    case 'ssl': return 'SSL';
+    case 'teamcity': return 'TeamCity';
+    case 'webdeploy': return 'Web Deploy';
+    case 'xml': return 'XML';
+
+    default: categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
+  }
+}
+
 function provideMissingData() {
 
   return eventStream.map(function(file, cb) {
@@ -105,14 +134,15 @@ function provideMissingData() {
         template.Website = "/step-templates/" + template.Id;
       }
 
-      if (!template.Category) {
-        template.Category = 'other';
+      var categoryId = template.Category.toLowerCase();
+      if (!categoryId) {
+        categoryId = 'other';
       }
 
-      template.Category = template.Category[0].toUpperCase() + template.Category.substr(1).toLowerCase();
+      template.Category = humanize(categoryId);
 
       if (!template.Logo) {
-        var logo = fs.readFileSync("./step-templates/logos/" + template.Category.toLowerCase() + ".png");
+        var logo = fs.readFileSync("./step-templates/logos/" + categoryId + ".png");
         template.Logo = new Buffer(logo).toString('base64');
       }
 
