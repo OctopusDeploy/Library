@@ -112,8 +112,7 @@ function humanize(categoryId){
     case 'teamcity': return 'TeamCity';
     case 'webdeploy': return 'Web Deploy';
     case 'xml': return 'XML';
-
-    default: categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
+    default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
   }
 }
 
