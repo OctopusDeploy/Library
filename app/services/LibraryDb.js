@@ -30,7 +30,9 @@ class LibraryDb {
           Category: t.Category,
           HistoryUrl: t.HistoryUrl,
           Website: t.Website,
-          Logo: t.Logo
+          Logo: t.Logo,
+          MaximumServerVersion: t.MaximumServerVersion,
+          MinimumServerVersion: t.MinimumServerVersion
         }
       })
       .sortBy(function(t) {
