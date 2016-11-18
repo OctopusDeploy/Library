@@ -58,8 +58,11 @@ describe("step-templates", function() {
 
       filenames =  filenames.filter(function(file) { return file.substr(-5) === '.json'; })
       stepTemplateCount = filenames.length;
-      filenames.forEach(function(filename) {
 
+      var names = [];
+      var ids = [];
+
+      filenames.forEach(function(filename) {
 
         fs.readFile(dirname + filename, 'utf-8', function(err, content) {
           if (err) {
@@ -68,9 +71,17 @@ describe("step-templates", function() {
           }
           try {
             var template = JSON.parse(content);
+
             expect(template).toHaveValidLastModified();
             expect(template).toHaveValidName();
             expect(template).toHaveValidId();
+
+            expect(names).not.toContain(template.Name);
+            expect(ids).not.toContain(template.Id);
+
+            names.push(template.Name);
+            ids.push(template.Id);
+
           }
           catch(e) {
             fail('error reading file ' + dirname + filename + ': ' + e + ' - it might be UTF 8 with a BOM. Please resave without the BOM.')
