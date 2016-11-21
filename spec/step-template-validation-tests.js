@@ -45,7 +45,7 @@ describe("step-templates", function() {
     });
   });
 
-  it("step templates have valid last modified details", function(done) {
+  it("step templates have valid details", function(done) {
     var filenameCounter = 0;
     var stepTemplateCount = 0;
     var dirname = './step-templates/';
@@ -82,42 +82,6 @@ describe("step-templates", function() {
             names.push(template.Name);
             ids.push(template.Id);
 
-          }
-          catch(e) {
-            fail('error reading file ' + dirname + filename + ': ' + e + ' - it might be UTF 8 with a BOM. Please resave without the BOM.')
-          }
-          if (++filenameCounter == stepTemplateCount) {
-            done();
-          };
-        });
-      });
-    });
-  });
-
-  it("step templates have valid last modified details", function(done) {
-    var filenameCounter = 0;
-    var stepTemplateCount = 0;
-    var dirname = './step-templates/';
-
-    fs.readdir(dirname, function(err, filenames) {
-      if (err) {
-        console.log('error listing files in dir: ' + err);
-        return;
-      }
-
-      filenames =  filenames.filter(function(file) { return file.substr(-5) === '.json'; })
-      stepTemplateCount = filenames.length;
-      filenames.forEach(function(filename) {
-
-
-        fs.readFile(dirname + filename, 'utf-8', function(err, content) {
-          if (err) {
-            fail('error reading file ' + filename + ': ' + err);
-            return;
-          }
-          try {
-            var template = JSON.parse(content);
-            expect(template).toHaveValidLastModified();
           }
           catch(e) {
             fail('error reading file ' + dirname + filename + ': ' + e + ' - it might be UTF 8 with a BOM. Please resave without the BOM.')

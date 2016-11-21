@@ -76,7 +76,7 @@ gulp.task('lint:step-templates', () => {
     .pipe($.expect({ errorOnFailure: true, silent: true }, glob.sync('step-templates/*.json')));
 });
 
-gulp.task('jasmine-tests:step-templates', [], () => {
+gulp.task('tests', [], () => {
   return gulp.src('./spec/*-tests.js')
   // gulp-jasmine works on filepaths so you can't have any plugins before it
     .pipe(jasmine({
@@ -154,7 +154,7 @@ function provideMissingData() {
 }
 
 
-gulp.task('step-templates', ['lint:step-templates', 'jasmine-tests:step-templates'], () => {
+gulp.task('step-templates', ['lint:step-templates', 'tests'], () => {
   return gulp.src('./step-templates/*.json')
     .pipe(provideMissingData())
     .pipe(concat('step-templates.json', {newLine: ','}))
