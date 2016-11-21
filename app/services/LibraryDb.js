@@ -32,7 +32,10 @@ class LibraryDb {
           Website: t.Website,
           Logo: t.Logo,
           MaximumServerVersion: t.MaximumServerVersion,
-          MinimumServerVersion: t.MinimumServerVersion
+          MinimumServerVersion: t.MinimumServerVersion,
+          "$Meta": {
+            Type: "ActionTemplate"
+          }
         }
       })
       .sortBy(function(t) {
