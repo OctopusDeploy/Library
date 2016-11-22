@@ -100,6 +100,7 @@ function humanize(categoryId){
     case 'hipchat': return 'HipChat';
     case 'hockeyapp': return 'HockeyApp';
     case 'iis': return 'IIS';
+    case 'exe': return 'EXE';
     case 'netscaler': return 'NetScaler';
     case 'nunit': return 'NUnit';
     case 'pagerduty': return 'PagerDuty';
