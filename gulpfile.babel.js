@@ -94,6 +94,7 @@ function humanize(categoryId){
   switch(categoryId){
     case 'aspnet': return 'ASP.NET';
     case 'aws': return 'AWS';
+    case 'edgecast': return 'EdgeCast';
     case 'filesystem': return 'File System';
     case 'github': return 'GitHub';
     case 'ghostinspector': return 'Ghost Inspector';
@@ -103,13 +104,15 @@ function humanize(categoryId){
     case 'iis': return 'IIS';
     case 'exe': return 'EXE';
     case 'netscaler': return 'NetScaler';
+    case 'newrelic': return 'New Relic';
     case 'nunit': return 'NUnit';
     case 'pagerduty': return 'PagerDuty';
     case 'ravendb': return 'RavenDB';
     case 'rabbitmq': return 'RabbitMQ';
+    case 'readyroll': return 'ReadyRoll';
     case 'sharepoint': return 'SharePoint';
     case 'solarwinds': return 'SolarWinds';
-    case 'sql': return 'SQL';
+    case 'sql': return 'SQL Server';
     case 'ssl': return 'SSL';
     case 'teamcity': return 'TeamCity';
     case 'webdeploy': return 'Web Deploy';
