@@ -95,6 +95,7 @@ function humanize(categoryId){
     case 'aspnet': return 'ASP.NET';
     case 'aws': return 'AWS';
     case 'edgecast': return 'EdgeCast';
+    case 'entityframework': return 'Entity Framework';
     case 'filesystem': return 'File System';
     case 'github': return 'GitHub';
     case 'ghostinspector': return 'Ghost Inspector';
@@ -102,7 +103,6 @@ function humanize(categoryId){
     case 'hockeyapp': return 'HockeyApp';
     case 'http': return 'HTTP';
     case 'iis': return 'IIS';
-    case 'exe': return 'EXE';
     case 'netscaler': return 'NetScaler';
     case 'newrelic': return 'New Relic';
     case 'nunit': return 'NUnit';
