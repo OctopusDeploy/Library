@@ -95,6 +95,7 @@ function humanize(categoryId){
     case 'aspnet': return 'ASP.NET';
     case 'aws': return 'AWS';
     case 'edgecast': return 'EdgeCast';
+    case 'elmah': return 'ELMAH';
     case 'entityframework': return 'Entity Framework';
     case 'filesystem': return 'File System';
     case 'github': return 'GitHub';
@@ -114,6 +115,7 @@ function humanize(categoryId){
     case 'solarwinds': return 'SolarWinds';
     case 'sql': return 'SQL Server';
     case 'ssl': return 'SSL';
+    case 'statuspage': return 'StatusPage';
     case 'teamcity': return 'TeamCity';
     case 'webdeploy': return 'Web Deploy';
     case 'xml': return 'XML';
