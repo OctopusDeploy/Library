@@ -145,7 +145,7 @@ function provideMissingData() {
         categoryId = 'other';
       }
 
-     categoryId = categoryId.toLowerCase();
+      categoryId = categoryId.toLowerCase();
 
       template.Category = humanize(categoryId);
 
