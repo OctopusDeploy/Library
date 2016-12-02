@@ -1,6 +1,6 @@
 var fs = require('fs');
 
-describe("step-templates", function() {
+describe("step-templates ", function() {
   beforeEach(function(){
     jasmine.addMatchers({
       toHaveValidLastModified: function() {
@@ -45,28 +45,29 @@ describe("step-templates", function() {
     });
   });
 
-  it("step templates have valid details", function(done) {
+  it("have required details", function(done) {
     var filenameCounter = 0;
     var stepTemplateCount = 0;
     var dirname = './step-templates/';
 
-    fs.readdir(dirname, function(err, filenames) {
+    fs.readdir(dirname, function(err, results) {
       if (err) {
         console.log('error listing files in dir: ' + err);
         return;
       }
 
-      filenames =  filenames.filter(function(file) { return file.substr(-5) === '.json'; })
-      stepTemplateCount = filenames.length;
+
+      var templateFiles =  results.filter(function(file) { return file.substr(-5) === '.json'; });
+      stepTemplateCount = templateFiles.length;
 
       var names = [];
       var ids = [];
 
-      filenames.forEach(function(filename) {
+      templateFiles.forEach(function(templateFile) {
 
-        fs.readFile(dirname + filename, 'utf-8', function(err, content) {
+        fs.readFile(dirname + templateFile, 'utf-8', function(err, content) {
           if (err) {
-            fail('error reading file ' + filename + ': ' + err);
+            fail('error reading file ' + templateFile + ': ' + err);
             return;
           }
           try {
@@ -84,13 +85,28 @@ describe("step-templates", function() {
 
           }
           catch(e) {
-            fail('error reading file ' + dirname + filename + ': ' + e + ' - it might be UTF 8 with a BOM. Please resave without the BOM.')
+            fail('error reading file ' + dirname + templateFile + ': ' + e + ' - it might be UTF 8 with a BOM. Please resave without the BOM.')
           }
           if (++filenameCounter == stepTemplateCount) {
             done();
           };
         });
       });
+    });
+  });
+
+  it("have correct file extensions", function(done) {
+    var dirname = './step-templates/';
+
+    fs.readdir(dirname, function(err, results) {
+      if (err) {
+        console.log('error listing files in dir: ' + err);
+        return;
+      }
+
+      var otherThings =  results.filter(function(file) { return file.substr(-5) !== '.json' && file !== 'logos'; });
+      expect(otherThings).toEqual([]);
+      done();
     });
   });
 });
