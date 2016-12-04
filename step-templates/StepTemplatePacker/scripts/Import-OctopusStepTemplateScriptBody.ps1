@@ -39,7 +39,7 @@ function Import-OctopusStepTemplateScriptBody
     }
     else
     {
-        $scriptBody = [System.IO.File]::ReadAllText($scriptPath);
+        $scriptBody = Get-OctopusTextFile -Path $scriptPath;
     }
 
     if( [string]::IsNullOrEmpty($scriptBody) )

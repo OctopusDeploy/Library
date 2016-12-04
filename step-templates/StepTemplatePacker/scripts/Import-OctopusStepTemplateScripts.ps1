@@ -23,6 +23,7 @@ function Import-OctopusStepTemplateScripts
     Import-OctopusStepTemplateCustomScript -StepTemplate $StepTemplate -StepJson $stepJson -ScriptName "PostDeploy";
 
     $stepText = ConvertTo-OctopusJson -InputObject $stepJson;
-    [System.IO.File]::WriteAllText($StepTemplate, $stepText);
+    Set-OctopusTextFile -Path     $StepTemplate `
+                        -Contents $stepText;
 
 }

@@ -30,16 +30,13 @@ function Import-OctopusStepTemplateCustomScript
     }
     else
     {
-        $customScript = [System.IO.File]::ReadAllText($scriptPath);
+        $customScript = Get-OctopusTextFile -Path $scriptPath;
     }
 
     if( [string]::IsNullOrEmpty($customScript) )
     {
         return;
     }
-
-    # write the custom script out to disk
-    [System.IO.File]::WriteAllText($scriptPath, $customScript);
 
     # update the step template
     Set-OctopusStepTemplateProperty -StepJson     $StepJson `

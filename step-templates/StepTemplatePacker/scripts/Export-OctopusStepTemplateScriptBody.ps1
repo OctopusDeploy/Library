@@ -41,6 +41,7 @@ function Export-OctopusStepTemplateScriptBody
     $scriptPath     = [System.IO.Path]::Combine($stepFolder, $scriptFilename);
 
     # write the script body out to disk
-    [System.IO.File]::WriteAllText($scriptPath, $scriptBody);
+    Set-OctopusTextFile -Path     $scriptPath `
+                        -Contents $scriptBody;
 
 }

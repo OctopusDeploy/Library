@@ -32,6 +32,7 @@ function Export-OctopusStepTemplateCustomScript
     $scriptPath     = [System.IO.Path]::Combine($stepFolder, $scriptFilename);
 
     # write the custom script out to disk
-    [System.IO.File]::WriteAllText($scriptPath, $customScript);
+    Set-OctopusTextFile -Path     $scriptPath `
+                        -Contents $customScript;
 
 }

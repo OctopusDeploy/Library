@@ -6,22 +6,27 @@ function Get-OctopusStepTemplateProperty
 
         [Parameter(Mandatory=$true)]
         [PsCustomObject] $StepJson,
+
         [Parameter(Mandatory=$true)]
         [string] $PropertyName,
+
         [Parameter(Mandatory=$false)]
-        [string] $DefaultValue = $null
+        [string] $DefaultValue = [string]::Empty
 
     )
 
-    $member = Get-Member -InputObject $StepJson.Properties -MemberType "NoteProperty" -Name $PropertyName;
-
+    $member = Get-Member -InputObject $StepJson -MemberType "NoteProperty" -Name "Properties";
     if( $member -eq $null )
     {
         return $DefaultValue;
     }
-    else
+
+    $member = Get-Member -InputObject $StepJson.Properties -MemberType "NoteProperty" -Name $PropertyName;
+    if( $member -eq $null )
     {
-        return $StepJson.Properties.$PropertyName;
+        return $DefaultValue;
     }
+
+    return $StepJson.Properties.$PropertyName;
 
 }

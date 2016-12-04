@@ -39,7 +39,7 @@ function ConvertTo-OctopusJson
 
         { $InputObject -is [Array] } {
             $json = new-object System.Text.StringBuilder;
-            $items = @( $property.Value );
+            $items = $InputObject;
             if( $items.Length -eq 0 )
             {
                 [void] $json.Append("[]");
