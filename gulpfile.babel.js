@@ -94,6 +94,7 @@ function humanize(categoryId){
   switch(categoryId){
     case 'aspnet': return 'ASP.NET';
     case 'aws': return 'AWS';
+    case 'clickonce': return 'ClickOnce';
     case 'edgecast': return 'EdgeCast';
     case 'elmah': return 'ELMAH';
     case 'entityframework': return 'Entity Framework';
