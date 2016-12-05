@@ -2,7 +2,7 @@
 
 import {EventEmitter} from 'events';
 import _ from 'underscore';
-
+import SlugMaker from './../services/SlugMaker';
 import AppDispatcher from './../dispatcher.js';
 
 const CHANGE_EVENT = 'change';
@@ -30,6 +30,11 @@ class LibraryStore extends EventEmitter {
 
   emitChange() {
     this.emit(CHANGE_EVENT);
+  }
+
+  //Required so we can handle old urls without stable ids
+  getByFriendlySlug(slug) {
+    return this.getItems().filter(t =>  SlugMaker.make(t.Name) === slug)[0];
   }
 
   addChangeListener(callback) {

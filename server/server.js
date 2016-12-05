@@ -35,12 +35,12 @@ app.get('/api/step-templates', (req, res) => {
       res.end();
       return;
     }
-    
+
     res.send(data);
   });
 });
 
-app.get('/api/step-template/:id', (req, res) => {
+app.get('/api/step-templates/:id', (req, res) => {
   LibraryStorageService.get(req.params.id, (err, data) => {
     if(err !== null) {
       console.error(err);
@@ -48,7 +48,7 @@ app.get('/api/step-template/:id', (req, res) => {
       res.end();
       return;
     }
-    
+
     res.send(data);
   });
 });
@@ -67,7 +67,7 @@ app.get('*', (req, res) => {
           res.end();
           return;
         }
-        
+
         LibraryActions.sendTemplates(data, () => {
           var libraryAppHtml = ReactDOMServer.renderToStaticMarkup(<RouterContext {...renderProps} />);
           res.render('index', {
