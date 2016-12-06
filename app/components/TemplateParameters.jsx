@@ -32,7 +32,7 @@ export default class TemplateParameters extends React.Component {
 
   render() {
     if(this.props.parameters.length === 0) {
-      return;
+      return (<div></div>);
     }
     let parameterList = this.props.parameters.map((item, index) => {
       return (
