@@ -4,20 +4,9 @@ import _ from 'underscore';
 
 import StepTemplates from './step-templates.json';
 
-function makeSlug(name) {
-  return name.replace(/ \- /g, '-').replace(/ /g, '-').toLowerCase();
-}
-
-function makeId(type, name) {
-  let slug = makeSlug(name);
-  return type.toLowerCase() + '-' + slug;
-}
-
-function makeScriptClass(actionType) {
-  return actionType.replace(/\./g, '-').toLowerCase();
-}
 
 class LibraryDb {
+
   constructor() {
     this._items = _.chain(StepTemplates.items)
       .map(function(t) {
@@ -29,20 +18,28 @@ class LibraryDb {
         }
 
         return {
-          Id: makeId(t.$Meta.Type, t.Name),
-          Slug: makeSlug(t.Name),
+          Id: t.Id,
           Name: t.Name,
           Description: t.Description,
-          OctopusVersion: t.$Meta.OctopusVersion,
+          Version: t.Version,
           ExportedAt: t.$Meta.ExportedAt,
-          Type: t.$Meta.Type,
+          ActionType: t.ActionType,
           Author: t.LastModifiedBy,
-          ScriptClass: makeScriptClass(t.ActionType),
-          Body: t
-        };
+          Parameters: t.Parameters,
+          Properties: t.Properties,
+          Category: t.Category,
+          HistoryUrl: t.HistoryUrl,
+          Website: t.Website,
+          Logo: t.Logo,
+          MaximumServerVersion: t.MaximumServerVersion,
+          MinimumServerVersion: t.MinimumServerVersion,
+          "$Meta": {
+            Type: "ActionTemplate"
+          }
+        }
       })
       .sortBy(function(t) {
-        return t.Body.Name.toLowerCase();
+        return t.Name.toLowerCase();
       })
       .value();
 
@@ -55,7 +52,7 @@ class LibraryDb {
 
   get(id, cb) {
     var item = this._all[id];
-    cb(null, item.Body);
+    cb(null, item);
   }
 }
 

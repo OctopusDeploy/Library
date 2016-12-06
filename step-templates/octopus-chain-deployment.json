@@ -1,53 +1,65 @@
 {
-  "Id": "ActionTemplates-53",
+  "Id": "18392835-d50e-4ce9-9065-8e15a3c30954",
   "Name": "Chain Deployment",
   "Description": "Trigger a deployment for another project in Octopus",
   "ActionType": "Octopus.Script",
-  "Version": 10,
+  "Version": 11,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
-    "Octopus.Action.Script.ScriptBody": "Write-Host \"**********\"\nWrite-Host \"Chained Deployment of '$Chain_ProjectName' version '$Chain_ReleaseNum' to '$Chain_DeployTo'.\"\nswitch ($Chain_CreateOption) {\n    \"Try\" { Write-Host \" Release will be created if it doesn't exist.\" }\n    \"Create\" { Write-Host \" Release will be created before deploying.\" }\n    \"NoCreate\" { Write-Host \" Release will not be created and should already exist.\" }\n}\nWrite-Host \"**********\"\n\n$baseUri = $OctopusParameters['Octopus.Web.BaseUrl']\n$reqheaders = @{\"X-Octopus-ApiKey\" = $Chain_ApiKey }\n\n# Find Environment\n$environments = Invoke-WebRequest \"$baseUri/api/environments/all\" -Headers $reqheaders -UseBasicParsing | ConvertFrom-Json\n$environment = $environments | Where-Object {$_.Name -eq $Chain_DeployTo }\nif ($environment -eq $null) {\n    throw \"Environment $Chain_DeployTo not found.\"\n}\n\n# Find Project\n$projects = Invoke-WebRequest \"$baseUri/api/projects/all\" -Headers $reqheaders -UseBasicParsing | ConvertFrom-Json\n$project = $projects | Where-Object {$_.Name -eq $Chain_ProjectName }\nif ($project -eq $null) {\n    throw \"Project $Chain_ProjectName not found.\"\n}\n\n# Check for existing release with given release number\n$releaseUri = \"$baseUri$($project.Links.Self)/releases/$Chain_ReleaseNum\"\ntry {\n$release = Invoke-WebRequest $releaseUri -Headers $reqheaders -UseBasicParsing | ConvertFrom-Json\n} catch {\n    if ($_.Exception.Response.StatusCode.Value__ -ne 404) {\n        $result = $_.Exception.Response.GetResponseStream()\n        $reader = New-Object System.Io.StreamReader($result);\n        $responseBody = $reader.ReadToEnd();\n        throw \"Error occurred retrieving a Release: $responseBody\"\n    }\n}\n\n# Create Release if needed\nif ($release -eq $null -and $Chain_CreateOption -eq \"NoCreate\") {\n    # release doesn't exist and we're not allowed to create it\n    throw \"Release $Chain_ReleaseNum of $Chain_ProjectName not found and the creation behaviour is set to never create.\"\n} elseif ($release -ne $null -and $Chain_CreateOption -eq \"Create\") {\n    # Release exists and we're being told to create it\n    throw \"Release $Chain_ReleaseNum of $Chain_ProjectName already exists and the creation behaviour is set to always create.\"\n} elseif ($release -eq $null) {\n    try {\n        Write-Host \"Creating Release version '$Chain_ReleaseNum' of '$Chain_ProjectName'\"\n        $releaseBody =  @{ Projectid = $Project.Id\n            version = $Chain_ReleaseNum } | ConvertTo-Json\n        $release = Invoke-WebRequest -Uri \"$baseUri/api/releases\" -Method Post -Headers $reqheaders -Body $releaseBody -UseBasicParsing | ConvertFrom-Json\n    } catch {\n        $result = $_.Exception.Response.GetResponseStream()\n        $reader = New-Object System.Io.StreamReader($result);\n        $responseBody = $reader.ReadToEnd();\n        throw \"Error occurred creating a Release: $responseBody\"\n    }\n}\n\n# We should have a release at this point\nif ($release -eq $null) {\n    throw \"Release $Chain_ReleaseNum of $Chain_ProjectName not found. Could not create deployment.\"\n}\n\n# Create deployment\n$deployment = @{\n    ReleaseId = $release.Id\n    EnvironmentId = $environment.Id\n} | ConvertTo-Json\ntry {\n    Write-Host \"Deploying '$Chain_ProjectName' version '$Chain_ReleaseNum' to '$Chain_DeployTo'\"\n    $result = Invoke-WebRequest \"$baseUri/api/deployments\" -Method Post -Headers $reqHeaders -Body $deployment -UseBasicParsing | ConvertFrom-Json\n} catch {\n    $result = $_.Exception.Response.GetResponseStream()\n    $reader = New-Object System.Io.StreamReader($result);\n    $responseBody = $reader.ReadToEnd();\n    throw \"Error occurred creating a Deployment: $responseBody\"\n}",
-    "Octopus.Action.RunOnServer": "true"
+    "Octopus.Action.Script.ScriptBody": "Write-Host \"**********\"\nWrite-Host \"Chained Deployment of '$Chain_ProjectName' version '$Chain_ReleaseNum' to '$Chain_DeployTo'.\"\nswitch ($Chain_CreateOption) {\n    \"Try\" { Write-Host \" Release will be created if it doesn't exist.\" }\n    \"Create\" { Write-Host \" Release will be created before deploying.\" }\n    \"NoCreate\" { Write-Host \" Release will not be created and should already exist.\" }\n}\nWrite-Host \"**********\"\n\n$baseUri = $OctopusParameters['Octopus.Web.BaseUrl']\n$reqheaders = @{\"X-Octopus-ApiKey\" = $Chain_ApiKey }\n\n# Find Environment\n$environments = Invoke-WebRequest \"$baseUri/api/environments/all\" -Headers $reqheaders -UseBasicParsing | ConvertFrom-Json\n$environment = $environments | Where-Object {$_.Name -eq $Chain_DeployTo }\nif ($environment -eq $null) {\n    throw \"Environment $Chain_DeployTo not found.\"\n}\n\n# Find Project\n$projects = Invoke-WebRequest \"$baseUri/api/projects/all\" -Headers $reqheaders -UseBasicParsing | ConvertFrom-Json\n$project = $projects | Where-Object {$_.Name -eq $Chain_ProjectName }\nif ($project -eq $null) {\n    throw \"Project $Chain_ProjectName not found.\"\n}\n\n# Check for existing release with given release number\n$releaseUri = \"$baseUri$($project.Links.Self)/releases/$Chain_ReleaseNum\"\ntry {\n$release = Invoke-WebRequest $releaseUri -Headers $reqheaders -UseBasicParsing | ConvertFrom-Json\n} catch {\n    if ($_.Exception.Response.StatusCode.Value__ -ne 404) {\n        $result = $_.Exception.Response.GetResponseStream()\n        $reader = New-Object System.Io.StreamReader($result);\n        $responseBody = $reader.ReadToEnd();\n        throw \"Error occurred retrieving a Release: $responseBody\"\n    }\n}\n\n# Create Release if needed\nif ($release -eq $null -and $Chain_CreateOption -eq \"NoCreate\") {\n    # release doesn't exist and we're not allowed to create it\n    throw \"Release $Chain_ReleaseNum of $Chain_ProjectName not found and the creation behaviour is set to never create.\"\n} elseif ($release -ne $null -and $Chain_CreateOption -eq \"Create\") {\n    # Release exists and we're being told to create it\n    throw \"Release $Chain_ReleaseNum of $Chain_ProjectName already exists and the creation behaviour is set to always create.\"\n} elseif ($release -eq $null) {\n    try {\n        Write-Host \"Creating Release version '$Chain_ReleaseNum' of '$Chain_ProjectName'\"\n        $releaseBody =  @{ Projectid = $Project.Id\n            version = $Chain_ReleaseNum } | ConvertTo-Json\n        $release = Invoke-WebRequest -Uri \"$baseUri/api/releases\" -Method Post -Headers $reqheaders -Body $releaseBody -UseBasicParsing | ConvertFrom-Json\n    } catch {\n        $result = $_.Exception.Response.GetResponseStream()\n        $reader = New-Object System.Io.StreamReader($result);\n        $responseBody = $reader.ReadToEnd();\n        throw \"Error occurred creating a Release: $responseBody\"\n    }\n}\n\n# We should have a release at this point\nif ($release -eq $null) {\n    throw \"Release $Chain_ReleaseNum of $Chain_ProjectName not found. Could not create deployment.\"\n}\n\n# Create deployment\n$deployment = @{\n    ReleaseId = $release.Id\n    EnvironmentId = $environment.Id\n} | ConvertTo-Json\ntry {\n    Write-Host \"Deploying '$Chain_ProjectName' version '$Chain_ReleaseNum' to '$Chain_DeployTo'\"\n    $result = Invoke-WebRequest \"$baseUri/api/deployments\" -Method Post -Headers $reqHeaders -Body $deployment -UseBasicParsing | ConvertFrom-Json\n} catch {\n    $result = $_.Exception.Response.GetResponseStream()\n    $reader = New-Object System.Io.StreamReader($result);\n    $responseBody = $reader.ReadToEnd();\n    throw \"Error occurred creating a Deployment: $responseBody\"\n}\n\nif([bool]::Parse($Chain_WaitForDeployment)) {\n    Write-Host \"Waiting for deployment to complete before continuing...\"\n    $taskId = $result.TaskId\n    $task = Invoke-WebRequest \"$baseUri/api/tasks/$taskId\" -Headers $reqHeaders -UseBasicParsing | ConvertFrom-Json\n    while($task.State -eq \"Queued\" -or $task.State -eq \"Executing\") {\n        Start-Sleep -Seconds 2\n        $task = Invoke-WebRequest \"$baseUri/api/tasks/$taskId\" -Headers $reqHeaders -UseBasicParsing | ConvertFrom-Json\n    }\n}",
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
   },
   "Parameters": [
     {
+      "Id": "61bffab9-bb89-4107-a5e0-79d69eaf8f2a",
       "Name": "Chain_ApiKey",
       "Label": "API Key",
       "HelpText": "The API Key to use for authentication",
       "DefaultValue": null,
       "DisplaySettings": {
         "Octopus.ControlType": "Sensitive"
-      }
+      },
+      "Links": {}
     },
     {
+      "Id": "a37cac4d-8fd3-4d58-bfda-45a436be8dd5",
       "Name": "Chain_ProjectName",
       "Label": "Project Name",
       "HelpText": "The name of the project to trigger a deployment for",
       "DefaultValue": null,
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
-      }
+      },
+      "Links": {}
     },
     {
+      "Id": "4fd440af-70fe-41ca-bec3-074f05155e81",
       "Name": "Chain_DeployTo",
       "Label": "Deploy to Environment",
       "HelpText": "The Environment to deploy the Release to",
       "DefaultValue": "#{Octopus.Environment.Name}",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
-      }
+      },
+      "Links": {}
     },
     {
+      "Id": "78739052-438d-4dc7-862a-d4567eafc5df",
       "Name": "Chain_ReleaseNum",
       "Label": "Release Number",
       "HelpText": "The Release number to deploy",
       "DefaultValue": "#{Octopus.Release.Number}",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
-      }
+      },
+      "Links": {}
     },
     {
+      "Id": "fd2c3474-7187-4356-aaec-96f4910bb9c5",
       "Name": "Chain_CreateOption",
       "Label": "Release Creation Behaviour",
       "HelpText": "- **Create if Release doesn't exist** - Creates a new Release only if it doesn't already exist.\n- **Create new Release** - Creates a new release. This will fail if the Release already exists.\n- **Don't create a Release** - Assume the Release already exists and will fail if creation fails.",
@@ -55,12 +67,26 @@
       "DisplaySettings": {
         "Octopus.ControlType": "Select",
         "Octopus.SelectOptions": "Try|Create if Release doesn't exist\nCreate|Create a new Release\nNoCreate|Don't create a Release"
-      }
+      },
+      "Links": {}
+    },
+    {
+      "Id": "73a80735-4ca0-4c12-9fa3-f0123db6349f",
+      "Name": "Chain_WaitForDeployment",
+      "Label": "Wait For Deployment",
+      "HelpText": "If checked, waits for the deployment to complete before continuing",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
     }
   ],
+  "LastModifiedBy": "alfhenrik",
   "$Meta": {
-    "ExportedAt": "2016-05-02T02:23:05.333Z",
-    "OctopusVersion": "3.3.0",
+    "ExportedAt": "2016-11-21T21:51:37.756Z",
+    "OctopusVersion": "3.5.2",
     "Type": "ActionTemplate"
-  }
+  },
+  "Category": "octopus"
 }

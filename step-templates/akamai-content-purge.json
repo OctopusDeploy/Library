@@ -1,0 +1,139 @@
+{
+  "Id": "0bfe41dc-50b0-44a7-abe3-e6ba2a6d317a",
+  "Name": "Akamai - Content Purge",
+  "Description": "Allows to purge content using the Content Control Utility (CCU) v2 REST API.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "$clientToken = $OctopusParameters['AkamaiClientToken']\r\n$clientAccessToken = $OctopusParameters['AkamaiClientAccessToken']\r\n$clientSecret = $OctopusParameters['AkamaiSecret']\r\n$queueName = $OctopusParameters['AkamaiQueue']\r\n$objects = $OctopusParameters['AkamaiObjects'] -split \",\"\r\n$type = $OctopusParameters['AkamaiType']\r\n$action = $OctopusParameters['AkamaiAction']\r\n$domain = $OctopusParameters['AkamaiDomain']\r\n$proxyUser = $OctopusParameters['ProxyUser']\r\n$proxyPassword = $OctopusParameters['ProxyPassword']\r\n\r\n$wait = [bool]::Parse($OctopusParameters['WaitForPurgeToComplete'])\r\n$maxChecks = [int]::Parse($OctopusParameters['CheckLimit'])\r\n\r\nif ($proxyUser) {\r\n    $securePassword = ConvertTo-SecureString $proxyPassword -AsPlainText -Force\r\n    $proxyCredential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $proxyUser,$securePassword\r\n\r\n    (New-Object System.Net.WebClient).Proxy.Credentials=$proxyCredential\r\n}\r\n\r\n# Copied from https://github.com/akamai-open/AkamaiOPEN-powershell/blob/master/Invoke-AkamaiOPEN.ps1\r\nfunction Invoke-AkamaiOpenRequest {\r\n    param(\r\n        [Parameter(Mandatory=$true)][string]$Method, \r\n        [Parameter(Mandatory=$true)][string]$ClientToken, \r\n        [Parameter(Mandatory=$true)][string]$ClientAccessToken, \r\n        [Parameter(Mandatory=$true)][string]$ClientSecret, \r\n        [Parameter(Mandatory=$true)][string]$ReqURL, \r\n        [Parameter(Mandatory=$false)][string]$Body)\r\n\r\n    #Function to generate HMAC SHA256 Base64\r\n    Function Crypto ($secret, $message)\r\n    {\r\n\t    [byte[]] $keyByte = [System.Text.Encoding]::ASCII.GetBytes($secret)\r\n\t    [byte[]] $messageBytes = [System.Text.Encoding]::ASCII.GetBytes($message)\r\n\t    $hmac = new-object System.Security.Cryptography.HMACSHA256((,$keyByte))\r\n\t    [byte[]] $hashmessage = $hmac.ComputeHash($messageBytes)\r\n\t    $Crypt = [System.Convert]::ToBase64String($hashmessage)\r\n\r\n\t    return $Crypt\r\n    }\r\n\r\n    #ReqURL Verification\r\n    If (($ReqURL -as [System.URI]).AbsoluteURI -eq $null -or $ReqURL -notmatch \"akamai.com\")\r\n    {\r\n\t    throw \"Error: Ivalid Request URI\"\r\n    }\r\n\r\n    #Sanitize Method param\r\n    $Method = $Method.ToUpper()\r\n\r\n    #Split $ReqURL for inclusion in SignatureData\r\n    $ReqArray = $ReqURL -split \"(.*\\/{2})(.*?)(\\/)(.*)\"\r\n\r\n    #Timestamp for request signing\r\n    $TimeStamp = [DateTime]::UtcNow.ToString(\"yyyyMMddTHH:mm:sszz00\")\r\n\r\n    #GUID for request signing\r\n    $Nonce = [GUID]::NewGuid()\r\n\r\n    #Build data string for signature generation\r\n    $SignatureData = $Method + \"`thttps`t\"\r\n    $SignatureData += $ReqArray[2] + \"`t\" + $ReqArray[3] + $ReqArray[4]\r\n\r\n    if (($Body -ne $null) -and ($Method -ceq \"POST\"))\r\n    {\r\n\t    $Body_SHA256 = [System.Security.Cryptography.SHA256]::Create()\r\n\t    $Post_Hash = [System.Convert]::ToBase64String($Body_SHA256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($Body.ToString())))\r\n\r\n\t    $SignatureData += \"`t`t\" + $Post_Hash + \"`t\"\r\n    }\r\n    else\r\n    {\r\n\t    $SignatureData += \"`t`t`t\"\r\n    }\r\n\r\n    $SignatureData += \"EG1-HMAC-SHA256 \"\r\n    $SignatureData += \"client_token=\" + $ClientToken + \";\"\r\n    $SignatureData += \"access_token=\" + $ClientAccessToken + \";\"\r\n    $SignatureData += \"timestamp=\" + $TimeStamp  + \";\"\r\n    $SignatureData += \"nonce=\" + $Nonce + \";\"\r\n\r\n    #Generate SigningKey\r\n    $SigningKey = Crypto -secret $ClientSecret -message $TimeStamp\r\n\r\n    #Generate Auth Signature\r\n    $Signature = Crypto -secret $SigningKey -message $SignatureData\r\n\r\n    #Create AuthHeader\r\n    $AuthorizationHeader = \"EG1-HMAC-SHA256 \"\r\n    $AuthorizationHeader += \"client_token=\" + $ClientToken + \";\"\r\n    $AuthorizationHeader += \"access_token=\" + $ClientAccessToken + \";\"\r\n    $AuthorizationHeader += \"timestamp=\" + $TimeStamp + \";\"\r\n    $AuthorizationHeader += \"nonce=\" + $Nonce + \";\"\r\n    $AuthorizationHeader += \"signature=\" + $Signature\r\n\r\n    #Create IDictionary to hold request headers\r\n    $Headers = @{}\r\n\r\n    #Add Auth header\r\n    $Headers.Add('Authorization',$AuthorizationHeader)\r\n\r\n    #Add additional headers if POSTing or PUTing\r\n    If (($Method -ceq \"POST\") -or ($Method -ceq \"PUT\"))\r\n    {\r\n\t    $Body_Size = [System.Text.Encoding]::UTF8.GetByteCount($Body)\r\n\t    $Headers.Add('max-body',$Body_Size.ToString())\r\n\r\n        # turn off the \"Expect: 100 Continue\" header\r\n        # as it's not supported on the Akamai side.\r\n        [System.Net.ServicePointManager]::Expect100Continue = $false\r\n    }\r\n\r\n    #Check for valid Methods and required switches\r\n    If (($Method -ceq \"POST\") -and ($Body -ne $null))\r\n    {\r\n        Invoke-RestMethod -Method $Method -Uri $ReqURL -Headers $Headers -Body $Body -ContentType 'application/json'\r\n    }\r\n    elseif  (($Method -ceq \"PUT\") -and ($Body -ne $null))\r\n    {\r\n\t    #Invoke API call with PUT and return\r\n\t    Invoke-RestMethod -Method $Method -Uri $ReqURL -Headers $Headers -Body $Body -ContentType 'application/json'\r\n    }\r\n    elseif (($Method -ceq \"GET\") -or ($Method -ceq \"DELETE\"))\r\n    {\r\n\t    #Invoke API call with GET or DELETE and return\r\n\t    Invoke-RestMethod -Method $Method -Uri $ReqURL -Headers $Headers\r\n    }\r\n    else\r\n    {\r\n\t    throw \"Error: Invalid -Method specified or missing required parameter\"\r\n    }\r\n}\r\n\r\nfunction Perform-AkamaiRequest {\r\n    param (\r\n        [string]$request, \r\n        [string]$method=\"Get\", \r\n        [int]$expectedStatusCode=200, \r\n        $body)\r\n\r\n    $baseUrl = \"http://private-anon-3934daf8d-akamaiopen2purgeccuv2production.apiary-mock.com\"\r\n    # $baseUrl = \"https://api.ccu.akamai.com\"\r\n    $uri = \"{0}{1}\" -f $baseUrl,$request\r\n\r\n    if ($uri -match \"mock\"){\r\n        $requestHeaders = @{'Cache-Control'='no-cache,proxy-revalidate'}\r\n        $response = Invoke-RestMethod -Uri $uri -Method $method -DisableKeepAlive -Headers $requestHeaders -Body $body\r\n    } else {\r\n        $json = ConvertTo-Json $body -Compress\r\n        $response = Invoke-AkamaiOpenRequest -Method $method -ClientToken $clientToken -ClientAccessToken $clientAccessToken -ClientSecret $clientSecret -ReqURL $uri -Body $json\r\n    }\r\n\r\n    if ($response.httpStatus -ne $expectedStatusCode){\r\n        Write-Error \"Request not processed correctly: $($response.detail)\"\r\n    } elseif ($response.detail) {\r\n        Write-Verbose $response.detail\r\n    }\r\n\r\n    Write-Verbose $response\r\n\r\n    $response\r\n}\r\n\r\nfunction Get-QueueSize {\r\n    param ([string]$queueName)\r\n\r\n    $queueSize = Perform-AkamaiRequest \"/ccu/v2/queues/$queueName\"\r\n\r\n    $queueSize \r\n}\r\n\r\nfunction Request-Purge {\r\n    param ($objects,[string]$type=\"arl\",[string]$action=\"remove\",[string]$domain=\"production\")\r\n\r\n    $body = @{\r\n        objects = $objects\r\n        action = $action\r\n        type = $type\r\n        domain = $domain\r\n    }\r\n\r\n    Perform-AkamaiRequest \"/ccu/v2/queues/$queueName\" \"Post\" 201 $body\r\n}\r\n\r\nfunction Get-PurgeStatus {\r\n    param ([string]$purgeId)\r\n\r\n    $status = Perform-AkamaiRequest \"/ccu/v2/purges/$purgeId\"\r\n\r\n    Write-Host \"Purge status: $($status.purgeStatus)\"\r\n\r\n    $status\r\n}\r\n\r\n$queueSize = Get-QueueSize $queueName\r\nWrite-Output \"$($queueName) queue size is $($queueSize.queueLength)\"\r\n\r\n$purge = Request-Purge $objects $type $action $domain\r\n\r\nWrite-Output \"Purge request created\"\r\nWrite-Output \"PurgeId: $($purge.purgeId)\"\r\nWrite-Output \"SupportId: $($purge.supportId)\" \r\n\r\nif ($wait) {\r\n    $check = 1\r\n    $purgeStatus = \"Unknown\"\r\n\r\n    do {\r\n        if ($check -gt 1) {\r\n            Write-Output \"Waiting $($purge.pingAfterSeconds) seconds before checking purge status again\"\r\n            Start-Sleep -Seconds $purge.pingAfterSeconds\r\n        }\r\n        $status = Get-PurgeStatus $purge.purgeId \r\n        $purgeStatus = $status.purgeStatus\r\n        $check = $check + 1\r\n        if ($check -gt $maxChecks) { \r\n            Write-Output \"Maximum number of checks reached\"\r\n        }\r\n    } while ($status.purgeStatus -ne \"Done\" -and $check -le $maxChecks)\r\n\r\n    if ($status.purgeStatus -ne \"Done\") {\r\n        Write-Error \"Purge status is not Done\"\r\n    }\r\n}",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "AkamaiClientToken",
+      "Label": "Client Token",
+      "HelpText": "Authentication token used in client authentication. Available in Luna Portal.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AkamaiClientAccessToken",
+      "Label": "Client Access Token",
+      "HelpText": "Authentication token used in client authentication. Available in Luna Portal.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AkamaiSecret",
+      "Label": "Secret",
+      "HelpText": "Authentication password used in client authentication. Available in Luna Portal.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "AkamaiQueue",
+      "Label": "Queue",
+      "HelpText": "Purge requests queue",
+      "DefaultValue": "default",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "default\nemergency"
+      }
+    },
+    {
+      "Name": "AkamaiObjects",
+      "Label": "Objects",
+      "HelpText": "A comma separated list of objects to purge, either URLs or CPCODEs",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AkamaiType",
+      "Label": "Type",
+      "HelpText": "The type associated with the items in the Objects parameter",
+      "DefaultValue": "arl",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "arl\ncpcode"
+      }
+    },
+    {
+      "Name": "AkamaiAction",
+      "Label": "Action",
+      "HelpText": "The action to execute on the purge operation",
+      "DefaultValue": "invalidate",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "invalidate\nremove"
+      }
+    },
+    {
+      "Name": "AkamaiDomain",
+      "Label": "Domain",
+      "HelpText": "The Akamai domain to perform the purge operation on",
+      "DefaultValue": "production",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "production\nstaging"
+      }
+    },
+    {
+      "Name": "ProxyUser",
+      "Label": "Proxy User",
+      "HelpText": "Optional, a user name for the proxy if required in the network",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ProxyPassword",
+      "Label": "Proxy Password",
+      "HelpText": "Optional, the password for the account to use if a Proxy User was specified",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "WaitForPurgeToComplete",
+      "Label": "Wait",
+      "HelpText": "Indicates if the step should wait for the purge operation to complete",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "false|No\ntrue|Yes"
+      }
+    },
+    {
+      "Name": "CheckLimit",
+      "Label": "Check Limit",
+      "HelpText": "Maximum number of times to check for the purge operation to complete if set to **Wait**",
+      "DefaultValue": "2",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText",
+        "Octopus.SelectOptions": "0\n5\n10"
+      }
+    }
+  ],
+  "LastModifiedOn": "2016-07-11T14:00:00.000+00:00",
+  "LastModifiedBy": "roberto-mardeni",
+  "$Meta": {
+    "ExportedAt": "2016-07-11T14:27:34.748+00:00",
+    "OctopusVersion": "3.3.12",
+    "Type": "ActionTemplate"
+  },
+  "Category": "akamai"
+}
