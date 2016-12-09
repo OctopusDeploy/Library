@@ -3,16 +3,15 @@
   "Name": "Windows Scheduled Task - Create",
   "Description": "Create Windows scheduled task. If the task exists it will be torn down and re-added to ensure consistency",
   "ActionType": "Octopus.Script",
-  "Version": 4,
+  "Version": 9,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "#use http://msdn.microsoft.com/en-us/library/windows/desktop/bb736357(v=vs.85).aspx for API reference\n\nFunction Create-ScheduledTask($TaskName,$RunAsUser,$RunAsPassword,$TaskRun, $Arguments, $Schedule,$StartTime,$StartDate){\n    \n    $cmdStartDate = if(StringIsNullOrWhiteSpace($StartDate)){\"\"}else{\"/sd $StartDate\"}\n    $cmdStartTime = if(StringIsNullOrWhiteSpace($StartTime)){\"\"}else{\"/st $StartTime\"}\n    $cmdInterval = if(StringIsNullOrWhiteSpace($Interval)){\"\"}else{Validate-ScheduleAndParams($Schedule)}\n    $cmdDuration = if(StringIsNullOrWhiteSpace($Duration)){\"\"}else{\"/du $Duration\"}\n    \n    $cmd = \"'$($TaskRun)'\"\n    if($Arguments) {\n        $cmd = \"'$TaskRun' '$Arguments'\"\n    }\n\n    $Command = \"schtasks.exe /create /ru $RunAsUser /rp '$RunAsPassword' /tn `\"$TaskName`\" /tr `\"$cmd`\" /sc $Schedule $cmdStartDate $cmdStartTime /F $cmdInterval $cmdDuration\"\n    \n    echo $Command          \n    Invoke-Expression $Command            \n}\n\nFunction Validate-ScheduleAndParams($Schedule) {\n  switch -Regex ($Schedule) \n    {\n      \"MINUTE|HOURLY|ONLOGON|ONIDLE\"  { \"/MO $interval\"; break }\n      \"WEEKLY|MONTHLY\"  { \"/ri $interval\"; break }\n      \"ONCE|ONSTART|ONEVENT\"    { \"\"; break } # We don't currently support providing an XPATH query string at the moment\n    }\n}\nFunction Delete-ScheduledTask($TaskName) {   \n    $Command = \"schtasks.exe /delete /s localhost /tn `\"$TaskName`\" /F\"            \n    Invoke-Expression $Command \n}\n\nFunction Stop-ScheduledTask($TaskName) {  \n    $Command = \"schtasks.exe /end /s localhost /tn `\"$TaskName`\"\"            \n    Invoke-Expression $Command \n}\n\nFunction Start-ScheduledTask($TaskName) {   \n    $Command = \"schtasks.exe /run /s localhost /tn `\"$TaskName`\"\"            \n    Invoke-Expression $Command \n}\n\nFunction Enable-ScheduledTask($TaskName) {  \n    $Command = \"schtasks.exe /change /s localhost /tn `\"$TaskName`\" /ENABLE\"            \n    Invoke-Expression $Command \n}\n\nFunction ScheduledTask-Exists($taskName) {\n   $schedule = new-object -com Schedule.Service \n   $schedule.connect() \n   $tasks = $schedule.getfolder(\"\\\").gettasks(0)\n\n   foreach ($task in ($tasks | select Name)) {\n      #echo \"TASK: $($task.name)\"\n      if($task.Name -eq $taskName) {\n         #write-output \"$task already exists\"\n         return $true\n      }\n   }\n\n   return $false\n} \n\nFunction StringIsNullOrWhitespace([string] $string)\n{\n    if ($string -ne $null) { $string = $string.Trim() }\n    return [string]::IsNullOrEmpty($string)\n}\n\n$taskName = $OctopusParameters['TaskName']\n$runAsUser = $OctopusParameters['RunAsUser']\n$runAsPassword = $OctopusParameters['RunAsPassword']\n$command = $OctopusParameters['Command']\n$arguments = $OctopusParameters['Arguments']\n$schedule = $OctopusParameters['Schedule']\n$startTime = $OctopusParameters['StartTime']\n$startDate = $OctopusParameters['StartDate']\n$interval = $OctopusParameters['Interval']\n$duration = $OctopusParameters['Duration']\n\n\nif((ScheduledTask-Exists($taskName))){\n    Write-Output \"$taskName already exists, Tearing down...\"\n    Write-Output \"Stopping $taskName...\"\n    Stop-ScheduledTask($taskName)\n    Write-Output \"Successfully Stopped $taskName\"\n    Write-Output \"Deleting $taskName...\"\n    Delete-ScheduledTask($taskName)\n    Write-Output \"Successfully Deleted $taskName\"\n}\nWrite-Output \"Creating Scheduled Task - $taskName\"\n\nCreate-ScheduledTask $taskName $runAsUser $runAsPassword $command $arguments $schedule $startTime $startDate\nWrite-Output \"Successfully Created $taskName\"\nEnable-ScheduledTask($taskName)\nWrite-Output \"$taskName enabled\"",
+    "Octopus.Action.Script.ScriptBody": "#use http://msdn.microsoft.com/en-us/library/windows/desktop/bb736357(v=vs.85).aspx for API reference\r\n\r\nFunction Create-ScheduledTask($TaskName,$RunAsUser,$RunAsPassword,$TaskRun,$Arguments,$Schedule,$StartTime,$StartDate,$RunWithElevatedPermissions,$Days){    \r\n    $cmd = \"'$TaskRun'\"\r\n    if($Arguments) {\r\n        $cmd = \"'$TaskRun' '$Arguments'\"\r\n    }\r\n\r\n    $parameters = @{\r\n        'rp' = $RunAsPassword;\r\n        'sc' = $Schedule;\r\n    }\r\n    \r\n    if(-Not (StringIsNullOrWhiteSpace($StartDate))) {\r\n        $parameters['sd'] = $StartDate\r\n    }\r\n    if(-Not (StringIsNullOrWhiteSpace($StartTime))) {\r\n        $parameters['st'] = $StartTime\r\n    }\r\n    if(-Not (StringIsNullOrWhiteSpace($Interval))) {\r\n        switch -Regex ($Schedule) \r\n        {\r\n          \"MINUTE|HOURLY|ONLOGON|ONIDLE\"  { $parameters['MO'] = $Interval; break }\r\n          \"WEEKLY|MONTHLY\"  { $parameters['ri'] = $Interval; break }\r\n          \"ONCE|ONSTART|ONEVENT\"    { \"\"; break } # We don't currently support providing an XPATH query string at the moment\r\n        }\r\n    }\r\n    if(-Not (StringIsNullOrWhiteSpace($Duration))) {\r\n        $parameters['du'] = $Duration\r\n    }\r\n    if($RunWithElevatedPermissions) {\r\n        $parameters['rl'] = \"HIGHEST\"\r\n    }\r\n    if(-Not (StringIsNullOrWhiteSpace($Days))) {\r\n        if($Schedule -ne \"WEEKDAYS\") {\r\n            $parameters['d'] = $Days\r\n        } else {\r\n            $parameters['d'] = \"MON,TUE,WED,THU,FRI\"\r\n        }\r\n    }\r\n\r\n    $str = $parameters | Out-String\r\n    Write-Output \"schtasks.exe /create /F /tr $cmd /tn $TaskName /ru $RunAsUser\" $str\r\n        \r\n    schtasks.exe /create /F /tr $cmd /tn $TaskName /ru $RunAsUser @parameters\r\n }\r\n\r\nFunction Delete-ScheduledTask($TaskName) {   \r\n    $Command = \"schtasks.exe /delete /s localhost /tn `\"$TaskName`\" /F\"            \r\n    Invoke-Expression $Command \r\n}\r\n\r\nFunction Stop-ScheduledTask($TaskName) {  \r\n    $Command = \"schtasks.exe /end /s localhost /tn `\"$TaskName`\"\"            \r\n    Invoke-Expression $Command \r\n}\r\n\r\nFunction Start-ScheduledTask($TaskName) {   \r\n    $Command = \"schtasks.exe /run /s localhost /tn `\"$TaskName`\"\"            \r\n    Invoke-Expression $Command \r\n}\r\n\r\nFunction Enable-ScheduledTask($TaskName) {  \r\n    $Command = \"schtasks.exe /change /s localhost /tn `\"$TaskName`\" /ENABLE\"            \r\n    Invoke-Expression $Command \r\n}\r\n\r\nFunction ScheduledTask-Exists($taskName) {\r\n   $schedule = new-object -com Schedule.Service \r\n   $schedule.connect() \r\n   $tasks = $schedule.getfolder(\"\\\").gettasks(0)\r\n\r\n   foreach ($task in ($tasks | select Name)) {\r\n      #echo \"TASK: $($task.name)\"\r\n      if($task.Name -eq $taskName) {\r\n         #write-output \"$task already exists\"\r\n         return $true\r\n      }\r\n   }\r\n\r\n   return $false\r\n} \r\n\r\nFunction StringIsNullOrWhitespace([string] $string)\r\n{\r\n    if ($string -ne $null) { $string = $string.Trim() }\r\n    return [string]::IsNullOrEmpty($string)\r\n}\r\n\r\n$taskName = $OctopusParameters['TaskName']\r\n$runAsUser = $OctopusParameters['RunAsUser']\r\n$runAsPassword = $OctopusParameters['RunAsPassword']\r\n$command = $OctopusParameters['Command']\r\n$arguments = $OctopusParameters['Arguments']\r\n$schedule = $OctopusParameters['Schedule']\r\n$startTime = $OctopusParameters['StartTime']\r\n$startDate = $OctopusParameters['StartDate']\r\n$interval = $OctopusParameters['Interval']\r\n$duration = $OctopusParameters['Duration']\r\n$runWithElevatedPermissions = [boolean]::Parse($OctopusParameters['RunWithElevatedPermissions'])\r\n$days = $OctopusParameters['Days']\r\n\r\nif((ScheduledTask-Exists($taskName))){\r\n    Write-Output \"$taskName already exists, Tearing down...\"\r\n    Write-Output \"Stopping $taskName...\"\r\n    Stop-ScheduledTask($taskName)\r\n    Write-Output \"Successfully Stopped $taskName\"\r\n    Write-Output \"Deleting $taskName...\"\r\n    Delete-ScheduledTask($taskName)\r\n    Write-Output \"Successfully Deleted $taskName\"\r\n}\r\nWrite-Output \"Creating Scheduled Task - $taskName\"\r\n\r\nCreate-ScheduledTask $taskName $runAsUser $runAsPassword $command $arguments $schedule $startTime $startDate $runWithElevatedPermissions $days\r\nWrite-Output \"Successfully Created $taskName\"\r\nEnable-ScheduledTask($taskName)\r\nWrite-Output \"$taskName enabled\"",
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.ScriptFileName": "",
     "Octopus.Action.Package.NuGetFeedId": "",
     "Octopus.Action.Package.NuGetPackageId": ""
   },
-  "SensitiveProperties": {},
   "Parameters": [
     {
       "Name": "TaskName",
@@ -33,6 +32,15 @@
       }
     },
     {
+      "Name": "RunAsPassword",
+      "Label": "Password",
+      "HelpText": "Specifying a password allows the task to run when the user is not logged on to the server.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
       "Name": "Command",
       "Label": "Action",
       "HelpText": "The Action that the task executes. Usually a path to the executable",
@@ -40,6 +48,13 @@
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
+    },
+    {
+      "Name": "Arguments",
+      "Label": "Arguments",
+      "HelpText": "A value that specifies any arguments to be passed to run the task.",
+      "DefaultValue": null,
+      "DisplaySettings": {}
     },
     {
       "Name": "Schedule",
@@ -84,13 +99,6 @@
       "DisplaySettings": {}
     },
     {
-      "Name": "Arguments",
-      "Label": "Arguments",
-      "HelpText": "A value that specifies any arguments to be passed to run the task.",
-      "DefaultValue": null,
-      "DisplaySettings": {}
-    },
-    {
       "Name": "RunWithElevatedPermissions",
       "Label": "RunWithElevatedPermissions",
       "HelpText": null,
@@ -108,21 +116,12 @@
         "Octopus.ControlType": "SingleLineText",
         "Octopus.SelectOptions": ""
       }
-    },
-    {
-      "Name": "RunAsPassword",
-      "Label": "Password",
-      "HelpText": "Specifying a password allows the task to run when the user is not logged on to the server.",
-      "DefaultValue": null,
-      "DisplaySettings": {
-        "Octopus.ControlType": "Sensitive"
-      }
     }
   ],
-  "LastModifiedBy": "vermeeca",
+  "LastModifiedBy": "ekrapfl",
   "$Meta": {
-    "ExportedAt": "2016-09-23T15:48:00.370+00:00",
-    "OctopusVersion": "3.3.0-beta0001",
+    "ExportedAt": "2016-12-07T16:45:47.613Z",
+    "OctopusVersion": "3.3.27",
     "Type": "ActionTemplate"
   },
   "Category": "windows"
