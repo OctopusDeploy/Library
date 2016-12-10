@@ -13,6 +13,12 @@ Have a great custom step that other Octopus users will love? Here's how to get i
 
 Someone from the Octopus team will review your request and help to make the step consistent with the others in the library. Once it's ready we'll merge it into the main repository and publish it to [the library site](http://library.octopusdeploy.com).
 
+**Note**: If you're editing an existing template we've got a tool you can use to help with packing and unpacking the scripts stored in the step template `*.json` file.
+
+* To unpack the step template scripts into separate files alongside the main step template file, run `powershell .\tools\_unpack.ps1`.
+* You can then edit the `*.ps1` files in the `.\step-templates` folder using your favourite PowerShell editor.
+* To pack the step template script files back into the main step template, run `powershell .\tools\_pack.ps1`. 
+
 Here's a **checklist** to consider:
 
 * Is the template a minor variation on an existing one? If so, please consider improving the existing template if possible.
