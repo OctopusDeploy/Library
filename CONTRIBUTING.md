@@ -10,7 +10,7 @@ Have a great custom step that other Octopus users will love? Here's how to get i
 5. Check that the `LastModifiedBy` username is one you're happy to use on the site (ideally your plain GitHub username)
 6. Add Id property and set it to a GUID, you can use [this site](https://www.guidgen.com/) to generate one automatically
 7. Optional: Assign your template to an existing category. Have a look at existing templates to find the category that matches your template. If you don't specify it your template will be assigned to 'other' category.
-  7a. If you add a new category, make sure that you add an icon in `.png` format to the `logos` folder with the same name as your category.
+  7a. If you add a new category, make sure that you add an icon in `.png` format with a size of 200x200px to the `logos` folder with the same name as your category.
 8. Commit and push your changes to your fork
 9. View your fork in GitHub to create a _pull request_
 
