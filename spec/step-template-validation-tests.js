@@ -36,6 +36,8 @@ describe("step-templates ", function() {
               return { pass: false, message: 'Expected template "' + template.Name + '" to have Id specified.' }
             } else if(!(new RegExp(".{8}-.{4}-.{4}-.{4}-.{12}").test(template.Id))) {
               return { pass: false, message: 'Expected template "' + template.Name + '" to have Id "' + template.Id + '" in a form of a GUID: 00000000-0000-0000-0000-000000000000 .' }
+            } else if (template.Id === '00000000-0000-0000-0000-000000000000' || template.Id === 'abcdef00-ab00-cd00-ef00-000000abcdef') {
+              return { pass: false, message: 'Expected template "' + template.Name + '" to have Id "' + template.Id + '" different than 00000000-0000-0000-0000-000000000000 and abcdef00-ab00-cd00-ef00-000000abcdef. You can use https://www.guidgen.com to generate a new id.' }
             } else {
               return { pass: true, message: '' }
             }
