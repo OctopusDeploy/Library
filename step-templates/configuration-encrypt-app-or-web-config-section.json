@@ -1,0 +1,75 @@
+{
+  "Id": "c79b5e6b-88ac-47d5-8678-99e8ab2a1cd9",
+  "Name": "Configuration - Encrypt App or Web Config Section",
+  "Description": "Encrypts a configuration section for the specified executable.",
+  "ActionType": "Octopus.Script",
+  "Version": 16,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\" \r\nfunction Get-Parameter($Name, $Default, [switch]$Required) {\r\n    $result = $null\r\n\r\n    if ($OctopusParameters -ne $null) {\r\n        $result = $OctopusParameters[$Name]\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        if ($Required) {\r\n            throw \"Missing parameter value $Name\"\r\n        } else {\r\n            $result = $Default\r\n        }\r\n    }\r\n\r\n    Write-Verbose \"Get-Parameter for '$($Name)' [value='$($result)' default='$($Default)']\"\r\n\r\n    return $result\r\n}\r\n\r\nfunction HandleError($message) {\r\n\tif (!$whatIf) {\r\n\t\tthrow $message\r\n\t} else {\r\n\t\tWrite-Host $message -Foreground Yellow\r\n\t}\r\n}\r\n\r\nfunction Invoke-EncryptAppConfigFile() {\r\n\r\n    if (!(Test-Path $appPath)) {\r\n        HandleError \"The directory $appPath must exist\"\r\n    }\r\n\r\n    $configurationAssembly = \"System.Configuration, Version=2.0.0.0, Culture=Neutral, PublicKeyToken=b03f5f7f11d50a3a\"\r\n    [void] [Reflection.Assembly]::Load($configurationAssembly)\r\n    $configuration = [System.Configuration.ConfigurationManager]::OpenExeConfiguration($appPath)\r\n\r\n    Invoke-ProtectSections $configuration\r\n}\r\n\r\nfunction Invoke-EncryptWebConfigFile() {\r\n    Import-module WebAdministration\r\n\r\n\t$IISPath = \"IIS:\\Sites$($appPath)\\$($webSiteName)\\\"\r\n\r\n    if (Test-Path $IISPath) { \r\n        Write-Verbose \"$webSiteName web site exists.\"\r\n\r\n        $configurationAssembly = \"System.Web, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a\"\r\n        [void] [Reflection.Assembly]::Load($configurationAssembly)\r\n        $configuration = [System.Web.Configuration.WebConfigurationManager]::OpenWebConfiguration($appPath, $webSiteName)\r\n\r\n        Invoke-ProtectSections $configuration\r\n    }\r\n    else {\r\n        HandleError \"$webSiteName web site doesn't exists. Please check if the web site is installed.\"\r\n    }    \r\n}\r\n\r\nfunction Invoke-ProtectSections($configuration) {\r\n\r\n    $saveConfigFile = $false\r\n\r\n    foreach ($sectionName in $sections) {\r\n        $sectionName = $sectionName.Trim()      # compatible with Powershell 2.0 \r\n        $section = $configuration.GetSection($sectionName)\r\n        \r\n        if ($section) {\r\n            if (-not $section.SectionInformation.IsProtected)\r\n            {\r\n                Write-Verbose \"Encrypting $($section.SectionInformation.SectionName) section.\"\r\n                $section.SectionInformation.ProtectSection($provider);\r\n                $section.SectionInformation.ForceSave = [System.Boolean]::True;\r\n                $saveConfigFile = $true\r\n            }\r\n            else {\r\n                Write-Host \"Section $($section.SectionInformation.SectionName) is already protected.\"\r\n            }\r\n        }\r\n        else {\r\n            Write-Warning \"Section $($sectionName) doesn't exists in the configuratoin file.\"\r\n        }\r\n\r\n    }       \r\n\r\n    if ($saveConfigFile) {            \r\n        $configuration.Save([System.Configuration.ConfigurationSaveMode]::Modified);\r\n        Write-Host \"Encryption completed successfully.\"\r\n    }\r\n    else {\r\n        Write-Host \"No section(s) in the configuration were encrypted.\"\r\n    }\r\n}\r\n\r\n$appType = Get-Parameter \"ApplicationType\" -Required\r\nif ($appType -eq \"Web\") {\r\n    $appPath = Get-Parameter \"ExecutablePath\" \"/\"\r\n    $webSiteName = Get-Parameter \"WebSiteName\"\r\n}\r\nelse {\r\n    $appPath = Get-Parameter \"ExecutablePath\" -Required\r\n}\r\n$sectionName = Get-Parameter \"SectionToEncrypt\" -Required\r\n$sections = $sectionName.Split(',')         # adding .Trim() doesn't work on Powershell 2.0 or below\r\n$provider = Get-Parameter \"Provider\" \"DataProtectionConfigurationProvider\"\r\n\r\nWrite-Host \"Configuration - Encrypt config file\"\r\nWrite-Host \"Application Type: $appType\"\r\nWrite-Host \"Application Path: $appPath\"\r\nif ($appType -eq \"Web\") { Write-Host \"Web Site Name: $webSiteName\" }\r\nWrite-Host \"Section to Encrypt: $sectionName\"\r\nWrite-Host \"Provider: $provider\"\r\n\r\nif ($appType -eq \"Web\") {\r\n    Invoke-EncryptWebConfigFile\r\n}\r\nelse {\r\n    Invoke-EncryptAppConfigFile \r\n}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "9ab1281d-cf2e-4248-a583-b08e9609c96d",
+      "Name": "ExecutablePath",
+      "Label": "Executable path",
+      "HelpText": "For Web:\nThe virtual path to the web site.\n\nFor Windows:\nThe path to the executable that has a corresponding `[Executable].exe.config` file.\n \nYou can get the InstallationDirectoryPath like so `#{Octopus.Action[StepName].Output.Package.InstallationDirectoryPath}`",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0cb4f8ec-5415-47e3-87f1-3e086cc1caa1",
+      "Name": "SectionToEncrypt",
+      "Label": "Section to encrypt",
+      "HelpText": "The name of the section(s) in the config to encrypt e.g. appSettings, connectionStrings etc.\n\nSeparate multiple sections with comma ','.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a30203d3-53d1-450d-bbcd-92a6eb31e906",
+      "Name": "Provider",
+      "Label": "Provider Name",
+      "HelpText": "The provider to use for encryption",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9116d4b3-b033-416f-844c-2a351d3bbc09",
+      "Name": "ApplicationType",
+      "Label": "Application Type",
+      "HelpText": "The application type would be web or windows.\nWeb will be used to encrypt web.config file.\nAnd Windows type application will encrypt file with \"exe.config\" or \"dll.config\" extension.",
+      "DefaultValue": "Web",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Web|Web Application\nWindows|Windows Service/Console App/Class Library (Dll)"
+      }
+    },
+    {
+      "Id": "90a1578e-efa2-44e4-84c0-34b037882cc5",
+      "Name": "WebSiteName",
+      "Label": "Web Site Name",
+      "HelpText": "Enter the web site name installed in IIS.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "jasmin-mistry",
+  "$Meta": {
+    "ExportedAt": "2016-12-14T23:59:07.087Z",
+    "OctopusVersion": "3.4.8",
+    "Type": "ActionTemplate"
+  }
+}
