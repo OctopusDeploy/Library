@@ -11,8 +11,9 @@ Have a great custom step that other Octopus users will love? Here's how to get i
 6. Add Id property and set it to a GUID using the following format `abcdef00-ab00-cd00-ef00-000000abcdef`, you can use [this site](https://www.guidgen.com/) to generate one automatically
 7. Optional: Assign your template to an existing category. Have a look at existing templates to find the category that matches your template. If you don't specify it your template will be assigned to 'other' category.
    - If you add a new category, make sure that you add an icon in `.png` format with a size of 200x200px to the `logos` folder with the same name as your category.
-8. Commit and push your changes to your fork
-9. View your fork in GitHub to create a _pull request_
+8. Make sure the Version property is incremented (e.g. by 1). If the Version doesn't change then the [Community Library Integration](http://docs.octopusdeploy.com/display/OD/Step+Templates#StepTemplates-TheCommunityLibrary) in Octopus won't see your changes.
+9. Commit and push your changes to your fork
+10. View your fork in GitHub to create a _pull request_
 
 Someone from the Octopus team will review your request and help to make the step consistent with the others in the library. Once it's ready we'll merge it into the main repository and publish it to [the library site](http://library.octopusdeploy.com).
 
