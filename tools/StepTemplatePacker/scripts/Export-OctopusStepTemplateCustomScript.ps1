@@ -11,7 +11,10 @@ function Export-OctopusStepTemplateCustomScript
         [PsCustomObject] $StepJson,
 
         [Parameter(Mandatory=$true)]
-        [string] $ScriptName
+        [string] $ScriptName,
+
+        [Parameter(Mandatory=$false)]
+        [switch] $Force = $false
 
     )
 
@@ -30,6 +33,12 @@ function Export-OctopusStepTemplateCustomScript
     $stepFolder     = [System.IO.Path]::GetDirectoryName($StepTemplate);
     $scriptFilename = [System.IO.Path]::GetFileNameWithoutExtension($StepTemplate) + ".$ScriptName" + $fileType;
     $scriptPath     = [System.IO.Path]::Combine($stepFolder, $scriptFilename);
+
+    # check if the file already exists and whether to overwrite
+    if( [System.IO.File]::Exists($scriptPath) -and -not $Force )
+    {
+        return;
+    }
 
     # write the custom script out to disk
     Set-OctopusTextFile -Path     $scriptPath `

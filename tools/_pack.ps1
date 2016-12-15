@@ -10,7 +10,7 @@ Set-StrictMode -Version "Latest";
 $thisScript = $MyInvocation.MyCommand.Path;
 $thisFolder = [System.IO.Path]::GetDirectoryName($thisScript);
 
-Import-Module -Name ([System.IO.Path]::Combine($thisFolder, "StepTemplatePacker"));
+Import-Module -Name ([System.IO.Path]::Combine($thisFolder, "StepTemplatePacker")) -ErrorAction "Stop";
 
 $stepTemplateFolder = $thisFolder;
 $stepTemplateFolder = [System.IO.Path]::GetDirectoryName($stepTemplateFolder);

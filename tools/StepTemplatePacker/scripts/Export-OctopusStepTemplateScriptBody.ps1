@@ -8,7 +8,10 @@ function Export-OctopusStepTemplateScriptBody
         [string] $StepTemplate,
 
         [Parameter(Mandatory=$true)]
-        [PsCustomObject] $StepJson
+        [PsCustomObject] $StepJson,
+
+        [Parameter(Mandatory=$false)]
+        [switch] $Force = $false
 
     )
 
@@ -25,6 +28,7 @@ function Export-OctopusStepTemplateScriptBody
     $syntax = Get-OctopusStepTemplateProperty -StepJson     $StepJson `
                                               -PropertyName "Octopus.Action.Script.Syntax" `
                                               -DefaultValue "PowerShell";
+
     $filetype = Get-OctopusStepTemplateFileType -Syntax $syntax;
 
     # extract the script body text
@@ -39,6 +43,12 @@ function Export-OctopusStepTemplateScriptBody
     $stepFolder     = [System.IO.Path]::GetDirectoryName($StepTemplate);
     $scriptFilename = [System.IO.Path]::GetFileNameWithoutExtension($StepTemplate) + ".ScriptBody" + $fileType;
     $scriptPath     = [System.IO.Path]::Combine($stepFolder, $scriptFilename);
+
+    # check if the file already exists and whether to overwrite
+    if( [System.IO.File]::Exists($scriptPath) -and -not $Force )
+    {
+        return;
+    }
 
     # write the script body out to disk
     Set-OctopusTextFile -Path     $scriptPath `

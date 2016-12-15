@@ -1,7 +1,12 @@
 param
 (
+
     [Parameter(Mandatory=$false)]
-    [string] $SearchPattern
+    [string] $SearchPattern,
+
+    [Parameter(Mandatory=$false)]
+    [switch] $Force = $false
+
 )
 
 $ErrorActionPreference = "Stop";
@@ -10,7 +15,7 @@ Set-StrictMode -Version "Latest";
 $thisScript  = $MyInvocation.MyCommand.Path;
 $thisFolder  = [System.IO.Path]::GetDirectoryName($thisScript);
 
-Import-Module -Name ([System.IO.Path]::Combine($thisFolder, "StepTemplatePacker"));
+Import-Module -Name ([System.IO.Path]::Combine($thisFolder, "StepTemplatePacker")) -ErrorAction "Stop";
 
 $stepTemplateFolder = $thisFolder;
 $stepTemplateFolder = [System.IO.Path]::GetDirectoryName($stepTemplateFolder);
@@ -28,5 +33,5 @@ else
 foreach( $stepTemplate in $stepTemplates )
 {
     write-host "unpacking '$([System.IO.Path]::GetFileName($stepTemplate))'";
-    Export-OctopusStepTemplateScripts -StepTemplate $stepTemplate;
+    Export-OctopusStepTemplateScripts -StepTemplate $stepTemplate -Force:$Force;
 }

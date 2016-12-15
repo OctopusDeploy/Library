@@ -14,7 +14,7 @@ $thisScript  = $MyInvocation.MyCommand.Path;
 Write-Verbose "`$thisScript $thisScript"
 $thisFolder  = Split-Path -parent $thisScript
 Write-Verbose "`$thisFolder $thisFolder"
-Import-Module -Name (Join-Path $thisFolder "StepTemplatePacker")
+Import-Module -Name (Join-Path $thisFolder "StepTemplatePacker") -ErrorAction "Stop";
 
 $parentFolder = Split-Path -parent $thisFolder
 Write-Verbose "`$parentFolder $parentFolder"

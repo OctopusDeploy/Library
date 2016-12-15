@@ -5,7 +5,10 @@ function Export-OctopusStepTemplateScripts
     (
 
         [Parameter(Mandatory=$true)]
-        [string] $StepTemplate
+        [string] $StepTemplate,
+
+        [Parameter(Mandatory=$false)]
+        [switch] $Force = $false
 
     )
 
@@ -17,9 +20,9 @@ function Export-OctopusStepTemplateScripts
     $stepJson = ConvertFrom-Json -InputObject $stepText;
 
     # export the scripts
-    Export-OctopusStepTemplateScriptBody   -StepTemplate $StepTemplate -StepJson $stepJson;
-    Export-OctopusStepTemplateCustomScript -StepTemplate $StepTemplate -StepJson $stepJson -ScriptName "PreDeploy";
-    Export-OctopusStepTemplateCustomScript -StepTemplate $StepTemplate -StepJson $stepJson -ScriptName "Deploy";
-    Export-OctopusStepTemplateCustomScript -StepTemplate $StepTemplate -StepJson $stepJson -ScriptName "PostDeploy";
+    Export-OctopusStepTemplateScriptBody   -StepTemplate $StepTemplate -StepJson $stepJson -Force:$Force;
+    Export-OctopusStepTemplateCustomScript -StepTemplate $StepTemplate -StepJson $stepJson -ScriptName "PreDeploy"  -Force:$Force;
+    Export-OctopusStepTemplateCustomScript -StepTemplate $StepTemplate -StepJson $stepJson -ScriptName "Deploy"     -Force:$Force;
+    Export-OctopusStepTemplateCustomScript -StepTemplate $StepTemplate -StepJson $stepJson -ScriptName "PostDeploy" -Force:$Force;
 
 }
