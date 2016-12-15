@@ -14,7 +14,6 @@ Import-Module -Name ([System.IO.Path]::Combine($thisFolder, "StepTemplatePacker"
 
 $stepTemplateFolder = $thisFolder;
 $stepTemplateFolder = [System.IO.Path]::GetDirectoryName($stepTemplateFolder);
-$stepTemplateFolder = [System.IO.Path]::GetDirectoryName($stepTemplateFolder);
 $stepTemplateFolder = [System.IO.Path]::Combine($stepTemplateFolder, "step-templates");
 
 if( $PSBoundParameters.ContainsKey("SearchPattern") )
