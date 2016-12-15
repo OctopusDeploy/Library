@@ -8,6 +8,7 @@ Organization
 
 * *Step templates* are checked into `/step-templates` as raw JSON exports direct from Octopus Deploy
 * The *library website* is largely under `/app`, with build artifacts at the root of the repository
+* The '/tools' folder contains utilities to help with editing step templates
 
 Contributing step templates or to the website
 ---------------------------------------------
