@@ -1,73 +1,92 @@
 #use http://msdn.microsoft.com/en-us/library/windows/desktop/bb736357(v=vs.85).aspx for API reference
 
-Function Create-ScheduledTask($TaskName,$RunAsUser,$RunAsPassword,$TaskRun,$Arguments,$Schedule,$StartTime,$StartDate,$RunWithElevatedPermissions,$Days){    
-    $cmd = "'$TaskRun'"
-    if($Arguments) {
-        $cmd = "'$TaskRun' '$Arguments'"
+Function Create-ScheduledTask($TaskName,$RunAsUser,$RunAsPassword,$TaskRun,$Arguments,$Schedule,$StartTime,$StartDate,$RunWithElevatedPermissions,$Days,$Duration,$Interval)
+{
+
+    $commandArgs = @();
+
+    $commandArgs += @( "/create" );
+
+    $commandArgs += @( "/tn", $TaskName );
+    if( $Arguments )
+    {
+        $commandArgs += @( "/tr", "`"'$TaskRun' '$Arguments'`"" );
+    }
+    else
+    {
+        $commandArgs += @( "/tr", "'$TaskRun'" );
     }
 
-    $parameters = @{
-        'rp' = $RunAsPassword;
-        'sc' = $Schedule;
-    }
-    
+    $commandArgs += @( "/ru", $RunAsUser );
+    $commandArgs += @( "/rp", $RunAsPassword );
+    $commandArgs += @( "/sc", $Schedule );
+
     if(-Not (StringIsNullOrWhiteSpace($StartDate))) {
-        $parameters['sd'] = $StartDate
+        $commandArgs += @( "/sd", $StartDate );
     }
     if(-Not (StringIsNullOrWhiteSpace($StartTime))) {
-        $parameters['st'] = $StartTime
+        $commandArgs += @( "/st", $StartTime );
     }
     if(-Not (StringIsNullOrWhiteSpace($Interval))) {
-        switch -Regex ($Schedule) 
+        switch -Regex ($Schedule)
         {
-          "MINUTE|HOURLY|ONLOGON|ONIDLE"  { $parameters['MO'] = $Interval; break }
-          "WEEKLY|MONTHLY"  { $parameters['ri'] = $Interval; break }
-          "ONCE|ONSTART|ONEVENT"    { ""; break } # We don't currently support providing an XPATH query string at the moment
+            "MINUTE|HOURLY|ONLOGON|ONIDLE" {
+                $commandArgs += @( "/mo", $Interval );
+            }
+            "WEEKLY|MONTHLY" {
+                $commandArgs += @( "/ri", $Interval );
+            }
+            "ONCE|ONSTART|ONEVENT" {
+                 # We don't currently support providing an XPATH query string at the moment
+                throw New-Object System.NotImplementedException("Unsupported schedule type '$Schedule'.");
+            }
         }
     }
     if(-Not (StringIsNullOrWhiteSpace($Duration))) {
-        $parameters['du'] = $Duration
+        $commandArgs += @( "/du", $Duration );
     }
     if($RunWithElevatedPermissions) {
-        $parameters['rl'] = "HIGHEST"
+        $commandArgs += @( "/rl", "HIGHEST" );
     }
+
     if(-Not (StringIsNullOrWhiteSpace($Days))) {
         if($Schedule -ne "WEEKDAYS") {
-            $parameters['d'] = $Days
+            $commandArgs += @( "/d", $Days );
         } else {
-            $parameters['d'] = "MON,TUE,WED,THU,FRI"
+            $commandArgs += @( "/d", "MON,TUE,WED,THU,FRI" );
         }
     }
 
-    $str = $parameters | Out-String
-    Write-Output "schtasks.exe /create /F /tr $cmd /tn $TaskName /ru $RunAsUser" $str
-        
-    schtasks.exe /create /F /tr $cmd /tn $TaskName /ru $RunAsUser @parameters
+    $commandArgs += "/f"
+
+    Invoke-CommandLine -FilePath     "$($env:SystemRoot)\System32\schtasks.exe" `
+                       -ArgumentList $commandArgs;
+
  }
 
-Function Delete-ScheduledTask($TaskName) {   
-    $Command = "schtasks.exe /delete /s localhost /tn `"$TaskName`" /F"            
-    Invoke-Expression $Command 
+Function Delete-ScheduledTask($TaskName) {
+    Invoke-CommandLine -FilePath     "$($env:SystemRoot)\System32\schtasks.exe" `
+                       -ArgumentList @( "/delete", "/s", "localhost", "/tn", "`"$TaskName`"", "/F" );
 }
 
-Function Stop-ScheduledTask($TaskName) {  
-    $Command = "schtasks.exe /end /s localhost /tn `"$TaskName`""            
-    Invoke-Expression $Command 
+Function Stop-ScheduledTask($TaskName) {
+    Invoke-CommandLine -FilePath     "$($env:SystemRoot)\System32\schtasks.exe" `
+                       -ArgumentList @( "/end", "/s", "localhost", "/tn", "`"$TaskName`"" );
 }
 
-Function Start-ScheduledTask($TaskName) {   
-    $Command = "schtasks.exe /run /s localhost /tn `"$TaskName`""            
-    Invoke-Expression $Command 
+Function Start-ScheduledTask($TaskName) {
+    Invoke-CommandLine -FilePath     "$($env:SystemRoot)\System32\schtasks.exe" `
+                       -ArgumentList @( "/run", "/s", "localhost", "/tn", "`"$TaskName`"" );
 }
 
-Function Enable-ScheduledTask($TaskName) {  
-    $Command = "schtasks.exe /change /s localhost /tn `"$TaskName`" /ENABLE"            
-    Invoke-Expression $Command 
+Function Enable-ScheduledTask($TaskName) {
+    Invoke-CommandLine -FilePath     "$($env:SystemRoot)\System32\schtasks.exe" `
+                       -ArgumentList @( "/change", "/s", "localhost", "/tn", "`"$TaskName`"", "/ENABLE" );
 }
 
 Function ScheduledTask-Exists($taskName) {
-   $schedule = new-object -com Schedule.Service 
-   $schedule.connect() 
+   $schedule = new-object -com Schedule.Service
+   $schedule.connect()
    $tasks = $schedule.getfolder("\").gettasks(0)
 
    foreach ($task in ($tasks | select Name)) {
@@ -79,7 +98,7 @@ Function ScheduledTask-Exists($taskName) {
    }
 
    return $false
-} 
+}
 
 Function StringIsNullOrWhitespace([string] $string)
 {
@@ -87,31 +106,70 @@ Function StringIsNullOrWhitespace([string] $string)
     return [string]::IsNullOrEmpty($string)
 }
 
-$taskName = $OctopusParameters['TaskName']
-$runAsUser = $OctopusParameters['RunAsUser']
-$runAsPassword = $OctopusParameters['RunAsPassword']
-$command = $OctopusParameters['Command']
-$arguments = $OctopusParameters['Arguments']
-$schedule = $OctopusParameters['Schedule']
-$startTime = $OctopusParameters['StartTime']
-$startDate = $OctopusParameters['StartDate']
-$interval = $OctopusParameters['Interval']
-$duration = $OctopusParameters['Duration']
-$runWithElevatedPermissions = [boolean]::Parse($OctopusParameters['RunWithElevatedPermissions'])
-$days = $OctopusParameters['Days']
-
-if((ScheduledTask-Exists($taskName))){
-    Write-Output "$taskName already exists, Tearing down..."
-    Write-Output "Stopping $taskName..."
-    Stop-ScheduledTask($taskName)
-    Write-Output "Successfully Stopped $taskName"
-    Write-Output "Deleting $taskName..."
-    Delete-ScheduledTask($taskName)
-    Write-Output "Successfully Deleted $taskName"
+function Invoke-CommandLine
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [string] $FilePath,
+        [Parameter(Mandatory=$false)]
+        [string[]] $ArgumentList,
+        [Parameter(Mandatory=$false)]
+        [string[]] $SuccessCodes = @( 0 )
+    )
+    write-host ($FilePath + " " + ($ArgumentList -join " "));
+    write-host ($ArgumentList | % { "'$($_)'" } | fl * | out-string );
+    if( $PSBoundParameters.ContainsKey("ArgumentList") )
+    {
+        $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -Wait -NoNewWindow -PassThru;
+    }
+    else
+    {
+        $process = Start-Process -FilePath $FilePath -Wait -NoNewWindow -PassThru;
+    }
+    if( $SuccessCodes -notcontains $process.ExitCode )
+    {
+        throw new-object System.InvalidOperationException("process terminated with exit code '$($process.ExitCode)'.");
+    }
 }
-Write-Output "Creating Scheduled Task - $taskName"
 
-Create-ScheduledTask $taskName $runAsUser $runAsPassword $command $arguments $schedule $startTime $startDate $runWithElevatedPermissions $days
-Write-Output "Successfully Created $taskName"
-Enable-ScheduledTask($taskName)
-Write-Output "$taskName enabled"
+function Invoke-OctopusStep
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [hashtable] $OctopusParameters
+    )
+    $taskName = $OctopusParameters['TaskName']
+    $runAsUser = $OctopusParameters['RunAsUser']
+    $runAsPassword = $OctopusParameters['RunAsPassword']
+    $command = $OctopusParameters['Command']
+    $arguments = $OctopusParameters['Arguments']
+    $schedule = $OctopusParameters['Schedule']
+    $startTime = $OctopusParameters['StartTime']
+    $startDate = $OctopusParameters['StartDate']
+    $interval = $OctopusParameters['Interval']
+    $duration = $OctopusParameters['Duration']
+    $runWithElevatedPermissions = [boolean]::Parse($OctopusParameters['RunWithElevatedPermissions'])
+    $days = $OctopusParameters['Days']
+    if((ScheduledTask-Exists($taskName))){
+        Write-Output "$taskName already exists, Tearing down..."
+        Write-Output "Stopping $taskName..."
+        Stop-ScheduledTask($taskName)
+        Write-Output "Successfully Stopped $taskName"
+        Write-Output "Deleting $taskName..."
+        Delete-ScheduledTask($taskName)
+        Write-Output "Successfully Deleted $taskName"
+    }
+    Write-Output "Creating Scheduled Task - $taskName"
+    Create-ScheduledTask $taskName $runAsUser $runAsPassword $command $arguments $schedule $startTime $startDate $runWithElevatedPermissions $days $interval $duration
+    Write-Output "Successfully Created $taskName"
+    Enable-ScheduledTask($taskName)
+    Write-Output "$taskName enabled"
+}
+
+# don't execute the step if we're running Pester tests
+if( Test-Path -Path "Variable:OctopusParameters" )
+{
+    Invoke-OctopusStep -OctopusParameters $OctopusParameters;
+}
