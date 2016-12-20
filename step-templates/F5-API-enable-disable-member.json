@@ -1,0 +1,114 @@
+{
+  "Id": "45d3003a-9443-42a0-aa71-38398eb4f9d6",
+  "Name": "F5 API Enable, Disable and Force Offline pool member",
+  "Description": "Enable, Disable and to Force Offline F5 pool member via API.\nThis step not require iControl snap-in installed.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "#octopus variables\n$node = \"#{node}\"\n$pool = \"#{pool}\"\n$f5pass = \"#{f5pass}\"\n$f5user = \"#{f5user}\"\n$f5ipv4 = \"#{f5ipv4}\"\n$numconn = \"#{numconn}\"\n$timeout = \"#{timeout}\"\n$action= \"#{action}\"\n$f5_ip=$f5ipv4.split(',')\n\n#whitout ssl certificate\nif (-not ([System.Management.Automation.PSTypeName]'ServerCertificateValidationCallback').Type)\n{\n$certCallback=@\"\n    using System;\n    using System.Net;\n    using System.Net.Security;\n    using System.Security.Cryptography.X509Certificates;\n    public class ServerCertificateValidationCallback\n    {\n        public static void Ignore()\n        {\n            if(ServicePointManager.ServerCertificateValidationCallback ==null)\n            {\n                ServicePointManager.ServerCertificateValidationCallback += \n                    delegate\n                    (\n                        Object obj, \n                        X509Certificate certificate, \n                        X509Chain chain, \n                        SslPolicyErrors errors\n                    )\n                    {\n                        return true;\n                    };\n            }\n        }\n    }\n\"@\n    Add-Type $certCallback\n }\n[ServerCertificateValidationCallback]::Ignore();\n\n#F5 Credentials\n$username= $f5user\n$password= $f5pass | ConvertTo-SecureString -AsPlainText -Force\n$cred= New-Object System.Management.Automation.PSCredential $username, $password\nWrite-Output \"Cred: $cred\"\n\n#retrieve Active F5 server\nfunction Get-StatusF5{\n    param(\n        $ipserver,\n        $credential\n    )\n    $result=Invoke-WebRequest -Uri \"https://$ipserver/mgmt/tm/cm/failover-status\" -Credential $credential -ErrorAction Ignore -UseBasicParsing\n    $items=$result.Content | ConvertFrom-Json\n    $status=$items.entries.'https://localhost/mgmt/tm/cm/failover-status/0'.nestedStats.entries.status\n    return $status\n}\n\nforeach($ipv4 in $f5_ip){\n    $state=Get-StatusF5 -ipserver $ipv4 -credential $cred\n    if (($state.description) -like \"ACTIVE\"){\n        $master=$ipv4\n        Write-Output \"F5 master ACTIVE: $master\"\n    }\n    else{\n        Write-Output \"$ipv4 is not master active\"\n    }\n}\nif (!$master){\n    Write-Error \"ATTENTION - F5 servers are incorrect\"\n}\n\n#retrieve informations\n$result=Invoke-WebRequest -Uri \"https://$master/mgmt/tm/ltm/pool/$pool/members\" -Credential $cred -UseBasicParsing\n$items=$result.Content | ConvertFrom-Json\n$items.items\n$name=($items.items | where{$_.name -like \"*$node*\"}).name\nWrite-Host \"Nome del nodo: $name\"\n\n#action based on $action\nif($action -like \"Enable\"){\n    $state ='{\"state\": \"user-up\", \"session\": \"user-enabled\"}' ###ENABLED\n    Write-Output \"Action: Enable $name\"\n    Invoke-WebRequest -Uri \"https://$master/mgmt/tm/ltm/pool/$pool/members/~Common~$name\"  -Credential $cred -ContentType application/json -Method PUT -Body $state  -Verbose -UseBasicParsing\n}\nelse{\n    if($action -like \"Disable\"){\n        $state ='{\"state\": \"user-up\", \"session\": \"user-disabled\"}' ###Disabled\n        Write-Output \"Action: Enable $name\"\n        Invoke-WebRequest -Uri \"https://$master/mgmt/tm/ltm/pool/$pool/members/~Common~$name\"  -Credential $cred -ContentType application/json -Method PUT -Body $state  -Verbose -UseBasicParsing\n    }\n    else{\n        if($action -like \"Offline\"){\n            $state ='{\"state\": \"user-down\", \"session\": \"user-disabled\"}' ###FORCEDOFFLINE\n            Invoke-WebRequest -Uri \"https://$master/mgmt/tm/ltm/pool/$pool/members/~Common~$name\"  -Credential $cred -ContentType application/json -Method PUT -Body $state  -Verbose -UseBasicParsing\n            $current_conn=$numconn + 00\n\n            [int]$time = 0\n            Write-Output \"Connections accepted: $numconn\"\n            while($current_conn -gt $numconn){\n                if($second -ne $timeout){\n                    $url=\"https://$master/mgmt/tm/ltm/pool/$pool/members/~Common~$name\" + '/stats?$select=serverside.curConns'\n                    Start-Sleep 1\n                    [int]$second = $time++\n                    $result= Invoke-WebRequest -Uri $url -Credential $cred -UseBasicParsing\n                    $item=$result.Content | ConvertFrom-Json\n                    $current_conn=($item.entries.'serverside.curConns').value\n                    Write-Host \"Second: $second - Connections: $current_conn\"\n                }\n                else{\n                    Write-Output \"Timeout - $current_conn connections stopped\"\n                    $current_conn= 0\n                }\n            }\n    }\n        else{\n            Write-Error \"ACTION IS NOT ACCEPTED\"\n        }\n}\n}\nStart-sleep 10\nWrite-Host \"Go to next step\"\n",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "c011969a-80e9-47d1-8bd3-d3da6a41ec34",
+      "Name": "node",
+      "Label": "Node Member Pool",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "313cf4d5-1006-4e54-9f4a-e4f719ca7988",
+      "Name": "pool",
+      "Label": "Pool Name",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "9619ce36-f913-4fa9-91be-9ac650e0d168",
+      "Name": "f5user",
+      "Label": "F5 Username",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "6374f90c-ca46-4c13-94df-bb374c9b33f9",
+      "Name": "f5pass",
+      "Label": "F5 password",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "e6402134-71af-4b31-b6a4-f2112edb7e25",
+      "Name": "f5ipv4",
+      "Label": "F5 Server",
+      "HelpText": "comma separated (without spaces).",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "1f402f2b-5907-44ec-87f0-d74bb1901dbd",
+      "Name": "numconn",
+      "Label": "Connections limit",
+      "HelpText": null,
+      "DefaultValue": "10",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "6b419071-5710-4c47-a1e5-da8434ba190a",
+      "Name": "timeout",
+      "Label": "Timeout limit",
+      "HelpText": null,
+      "DefaultValue": "60",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "e85c607e-3511-4ae9-8f90-272964fd080f",
+      "Name": "action",
+      "Label": "Action member node",
+      "HelpText": "Change the status of member pool:\n- Enabled;\n- Disabled;\n- Forced Offline.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Enable|Member Enabled in GUI\nDisable|Member Disabled in GUI\nOffline|Member Forced Offline in GUI"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "fedelemattia",
+  "$Meta": {
+    "ExportedAt": "2016-12-16T14:01:28.267Z",
+    "OctopusVersion": "3.5.1",
+    "Type": "ActionTemplate"
+  },
+  "Category": "F5"
+}
