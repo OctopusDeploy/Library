@@ -161,7 +161,7 @@ function Invoke-OctopusStep
     param
     (
         [Parameter(Mandatory=$true)]
-	[hashtable] $OctopusParameters
+        [hashtable] $OctopusParameters
     )
 
     $taskName = $OctopusParameters['TaskName']
