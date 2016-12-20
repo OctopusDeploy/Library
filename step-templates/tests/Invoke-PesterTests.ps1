@@ -11,7 +11,12 @@ $testableScripts = @(
 );
 foreach( $script in $testableScripts )
 {
-    . ([System.IO.Directory]::GetFiles($rootFolder, $script));
+    $filename = [System.IO.Path]::Combine($rootFolder, $script);
+    if( -not [System.IO.File]::Exists($filename) )
+    {
+        throw new-object System.IO.FileNotFoundException("Testable script not found.", $filename);
+    }
+    . $filename;
 }
 
 $packagesFolder = $thisFolder;
