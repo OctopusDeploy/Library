@@ -18,6 +18,7 @@ import LibraryStore from './../stores/LibraryStore';
 import Analytics from './../services/Analytics.js';
 
 const displayName = 'octopus-library-template-item';
+import slugMaker from './../services/SlugMaker';
 
 export default class TemplateItem extends React.Component {
   constructor(props) {
@@ -132,7 +133,7 @@ export default class TemplateItem extends React.Component {
                 </p>
                 <SocialButtons />
                 <h3>Comments</h3>
-                <ReactDisqusThread identifier={this.state.template.Id}
+                <ReactDisqusThread identifier={slugMaker.make(this.state.template.Name)}
                     shortname="octolibrary"
                 />
               </div>
