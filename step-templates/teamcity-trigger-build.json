@@ -3,7 +3,7 @@
   "Name": "Trigger TeamCity Build",
   "Description": "Trigger a specific Team City build from an Octopus Deploy process.",
   "ActionType": "Octopus.Script",
-  "Version": 0,
+  "Version": 1,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "$buildConfId = $OctopusParameters['BuildConfigurationId']\r\n\r\n$teamCityUrl = $OctopusParameters['TeamCityUrl']\r\n$teamCityUsername = $OctopusParameters['TeamCityUsername']\r\n$teamCityPassword = $OctopusParameters['TeamCityPassword']\r\n\r\n$url = $teamCityUrl + '/httpAuth/app/rest/buildQueue'\r\n$contentTemplate = '<build><buildType id=\"{0}\"/></build>'\r\n$content = $contentTemplate -f $buildConfId\r\n$encodedContent = [System.Text.Encoding]::UTF8.GetBytes($content)\r\n\r\nWrite-Host \"================================================================================\"\r\nWrite-Host \"Triggering build with Id $buildConfId in TeamCity. Server:\" $teamCityUrl \r\nWrite-Host \"================================================================================\"\r\n\r\n$req = [System.Net.WebRequest]::Create($url)\r\n$req.Credentials = new-object System.Net.NetworkCredential($teamCityUsername, $teamCityPassword)\r\n$req.Method =\"POST\"\r\n$req.ContentType = \"application/xml\"\r\n\r\n$req.ContentLength = $encodedContent.length\r\n$requestStream = $req.GetRequestStream()\r\n$requestStream.Write($encodedContent, 0, $encodedContent.length)\r\n$requestStream.Close()\r\n\r\n$resp = $req.GetResponse()\r\n$reader = new-object System.IO.StreamReader($resp.GetResponseStream())\r\n$reader.ReadToEnd() | Write-Host\r\n",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -22,7 +22,7 @@
     {
       "Name": "TeamCityUrl",
       "Label": null,
-      "HelpText": "The URL of the Team City server.",
+      "HelpText": "The URL of the Team City server.\nE.g. `http://teamcity.example.com`.",
       "DefaultValue": null,
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
