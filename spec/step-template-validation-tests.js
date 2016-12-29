@@ -106,7 +106,7 @@ describe("step-templates ", function() {
         return;
       }
 
-      var otherThings =  results.filter(function(file) { return file.substr(-5) !== '.json' && file !== 'logos'; });
+      var otherThings =  results.filter(function(file) { return file.substr(-5) !== '.json' && file !== 'logos' && file !== 'tests'; });
       expect(otherThings).toEqual([]);
       done();
     });
