@@ -3,9 +3,10 @@
   "Name": "File System - Grant Permissions",
   "Description": "Grant read, write and modify permissions to a folder or file",
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 3,
+  "CommunityActionTemplateId": null,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$item = $OctopusParameters['Item']\n$readPermissionsTo = $OctopusParameters['ReadPermissionsTo']\n$writePermissionsTo = $OctopusParameters['WritePermissionsTo']\n$modifyPermissionsTo = $OctopusParameters['ModifyPermissionsTo']\n\n# Check item exists\n\nif(!(Test-Path $item))\n{\n    throw \"$item does not exist\"\n}\n\n# Assign read permissions\n\nif($readPermissionsTo)\n{\n    $users = $readPermissionsTo.Split(\",\")\n    foreach($user in $users)\n    {\n        Write-Host \"Adding read permissions for $user\"\n        $acl = (Get-Item $item).GetAccessControl('Access')\n        $acl.SetAccessRuleProtection($False, $False)\n        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(\n                $user, \"Read\", \"ContainerInherit, ObjectInherit\", \"None\", \"Allow\")\n        $acl.AddAccessRule($rule)\n        Set-Acl $item $acl\n    }\n}\n\n# Assign write permissions\n\nif($writePermissionsTo)\n{\n    $users = $writePermissionsTo.Split(\",\")\n    foreach($user in $users)\n    {\n        Write-Host \"Adding write permissions for $user\"\n        $acl = (Get-Item $item).GetAccessControl('Access')\n        $acl.SetAccessRuleProtection($False, $False)\n        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(\n                $user, \"Write\", \"ContainerInherit, ObjectInherit\", \"None\", \"Allow\")\n        $acl.AddAccessRule($rule)\n        Set-Acl $item $acl\n    }\n}\n\n# Assign modify permissions\n\nif($modifyPermissionsTo)\n{\n    $users = $modifyPermissionsTo.Split(\",\")\n    foreach($user in $users)\n    {\n        Write-Host \"Adding modify permissions for $user\"\n        $acl = (Get-Item $item).GetAccessControl('Access')\n        $acl.SetAccessRuleProtection($False, $False)\n        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(\n                $user, \"Modify\", \"ContainerInherit, ObjectInherit\", \"None\", \"Allow\")\n        $acl.AddAccessRule($rule)\n        Set-Acl $item $acl\n    }\n}\n\nWrite-Host \"Complete\"\n",
+    "Octopus.Action.Script.ScriptBody": "$item = $OctopusParameters['Item']\n$readPermissionsTo = $OctopusParameters['ReadPermissionsTo']\n$writePermissionsTo = $OctopusParameters['WritePermissionsTo']\n$modifyPermissionsTo = $OctopusParameters['ModifyPermissionsTo']\n\n# Check item exists\n\nif(!(Test-Path $item))\n{\n    throw \"$item does not exist\"\n}\n\n# Assign read permissions\n\nif($readPermissionsTo)\n{\n    $users = $readPermissionsTo.Split(\",\")\n    foreach($user in $users)\n    {\n        Write-Host \"Adding read permissions for $user\"\n        $acl = (Get-Item $item).GetAccessControl('Access')\n        $acl.SetAccessRuleProtection($False, $False)\n        $rule = \n            if ($acl -is [System.Security.AccessControl.DirectorySecurity])\n                {\n                    New-Object System.Security.AccessControl.FileSystemAccessRule($user, \"Read\", \"ContainerInherit, ObjectInherit\", \"None\", \"Allow\")\n                }\n                else\n                {\n                    New-Object System.Security.AccessControl.FileSystemAccessRule($user, \"Read\", \"Allow\")\n                }\n        $acl.AddAccessRule($rule)\n        Set-Acl $item $acl\n    }\n}\n\n# Assign write permissions\n\nif($writePermissionsTo)\n{\n    $users = $writePermissionsTo.Split(\",\")\n    foreach($user in $users)\n    {\n        Write-Host \"Adding write permissions for $user\"\n        $acl = (Get-Item $item).GetAccessControl('Access')\n        $acl.SetAccessRuleProtection($False, $False)\n        $rule = \n            if ($acl -is [System.Security.AccessControl.DirectorySecurity])\n                {\n                    New-Object System.Security.AccessControl.FileSystemAccessRule($user, \"Write\", \"ContainerInherit, ObjectInherit\", \"None\", \"Allow\")\n                }\n                else\n                {\n                    New-Object System.Security.AccessControl.FileSystemAccessRule($user, \"Write\", \"Allow\")\n                }\n        $acl.AddAccessRule($rule)\n        Set-Acl $item $acl\n    }\n}\n\n# Assign modify permissions\n\nif($modifyPermissionsTo)\n{\n    $users = $modifyPermissionsTo.Split(\",\")\n    foreach($user in $users)\n    {\n        Write-Host \"Adding modify permissions for $user\"\n        $acl = (Get-Item $item).GetAccessControl('Access')\n        $acl.SetAccessRuleProtection($False, $False)\n        $rule = \n            if ($acl -is [System.Security.AccessControl.DirectorySecurity])\n                {\n                    New-Object System.Security.AccessControl.FileSystemAccessRule($user, \"Modify\", \"ContainerInherit, ObjectInherit\", \"None\", \"Allow\")\n                }\n                else\n                {\n                    New-Object System.Security.AccessControl.FileSystemAccessRule($user, \"Modify\", \"Allow\")\n                }\n        $acl.AddAccessRule($rule)\n        Set-Acl $item $acl\n    }\n}\n\nWrite-Host \"Complete\"\n",
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false",
@@ -15,50 +16,54 @@
   },
   "Parameters": [
     {
-      "Id": "b8756080-4b3f-4f1a-85b9-7bbbd35fdac4",
+      "Id": "e67e2b43-b1e4-482d-bb5d-e4b6acb2b90f",
       "Name": "Item",
       "Label": "Item",
       "HelpText": "The full path to the file or folder",
       "DefaultValue": null,
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
-      }
+      },
+      "Links": {}
     },
     {
-      "Id": "0689afb6-3cec-4248-b892-d79787c61e77",
+      "Id": "b830e92e-ceaa-472e-b1ac-e70a19d9386b",
       "Name": "ReadPermissionsTo",
       "Label": "Read Users",
       "HelpText": "A comma separated list of users to grant read permissions to",
       "DefaultValue": null,
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
-      }
+      },
+      "Links": {}
     },
     {
-      "Id": "54951fd2-41b9-4356-a225-6245c840d6b9",
+      "Id": "141f465e-6998-4715-be65-6d5df2604239",
       "Name": "WritePermissionsTo",
       "Label": "Write Users",
       "HelpText": "A comma separated list of users to grant write permissions to",
       "DefaultValue": null,
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
-      }
+      },
+      "Links": {}
     },
     {
-      "Id": "710be1a4-d2e2-4dad-be3d-b9de4147cd6a",
+      "Id": "c150331e-ea88-4170-8bca-52a8cfd30220",
       "Name": "ModifyPermissionsTo",
       "Label": "Modify Users",
       "HelpText": "A comma separated list of users to grant modify permissions to",
       "DefaultValue": null,
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
-      }
+      },
+      "Links": {}
     }
   ],
   "LastModifiedBy": "cjuroz",
   "$Meta": {
-    "ExportedAt": "2016-10-27T08:44:40.202+00:00",
-    "OctopusVersion": "3.4.13",
+    "ExportedAt": "2016-12-28T07:39:51.851Z",
+    "OctopusVersion": "3.7.6",
     "Type": "ActionTemplate"
   },
   "Category": "filesystem"
