@@ -8,39 +8,21 @@ Organization
 
 * *Step templates* are checked into `/step-templates` as raw JSON exports direct from Octopus Deploy
 * The *library website* is largely under `/app`, with build artifacts at the root of the repository
+* The '/tools' folder contains utilities to help with editing step templates
 
-Contributing step templates
----------------------------
+Contributing step templates or to the website
+---------------------------------------------
 
-Have a great custom step that other Octopus users will love? Here's how to get it out there!
+Read our [contributing guidelines](https://github.com/OctopusDeploy/Library/blob/master/CONTRIBUTING.md) for information about contributing step templates and to the website.
 
-1. [Fork](https://github.com/OctopusDeploy/Library/fork) the Library repository
-2. Clone your fork into a directory on your own machine
-3. _Export_ your template from the Octopus server
-4. Save the exported JSON to a file under `/step-templates`
-5. Check that the `LastModifiedBy` username is one you're happy to use on the site (ideally your plain GitHub username)
-6. Commit and push your changes to your fork
-7. View your fork in GitHub to create a _pull request_
+Reviewing PRs
+-------------
 
-Someone from the Octopus team will review your request and help to make the step consistent with the others in the library. Once it's ready we'll merge it into the main repository and publish it to [the library site](http://library.octopusdeploy.com).
-
-Here's a **checklist** to consider:
-
-* Is the template a minor variation on an existing one? If so, please consider improving the existing template if possible.
-* Is the name of the template consistent with the examples already in the library, in style ("Noun - Verb"), layout and casing?
-* Are all parameters in the template consistent with the examples here, including help text documented with Markdown?
-* Is the description of the template complete, correct Markdown?
-* Is the `.json` filename consistent with the name of the template?
-* Do scripts in the template validate required arguments and fail by returning a non-zero exit code when things go wrong?
-* Do scripts in the template produce worthwhile status messages as they execute?
-* Are you happy to contribute your template under the terms of the [license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE)? If you produced the template while working for your employer please obtain written permission from them before submitting it here.
-* Are the default values of parameters validly applicable in other user's environments? Don't use the default values as examples if the user will have to change them
-* For how to deal with parameters and testing take a look at the article [Making great Octopus PowerShell step templates](http://www.lavinski.me/making-great-octopus-powershell-step-templates/)
-* For another example of how to test your step template script body before submitting a PR take a look at this [gist](https://gist.github.com/JCapriotti/45639e06ba777ee974b1)
-
-If you need help, feedback or a sanity check before investing time in a contribution, feel free to raise an issue on the tracker to discuss your idea first.
-
-Contributing to the website
----------------------------
-
-We also accept contributions to improve the [library.octopusdeploy.com](http://library.octopusdeploy.com) site. The process of contributing is similar to the process outlined for step templates above. There's some more information on working with the code on the [wiki](https://github.com/OctopusDeploy/Library/wiki/BuildingTheSite).
+When reviewing a PR, keep the following things in mind:
+* `Id` should be a **GUID** that is not `00000000-0000-0000-0000-000000000000`
+* `Version` should be incremented, otherwise the integration with Octopus won't update the step template correctly
+* Parameter names should not start with `$`
+* `LastModifiedBy` field must be present, and (_optionally_) updated with the correct author
+* If a new `Category` has been created:
+   * An image with the name `{categoryname}.png` must be present under the `step-templates/logos` folder
+   * The `switch` in the `humanize` function in [`gulpfile.babel.js`](https://github.com/OctopusDeploy/Library/blob/master/gulpfile.babel.js#L92) must have a `case` statement corresponding to it
