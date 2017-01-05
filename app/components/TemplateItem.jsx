@@ -18,11 +18,17 @@ import LibraryStore from './../stores/LibraryStore';
 import Analytics from './../services/Analytics.js';
 
 const displayName = 'octopus-library-template-item';
+import slugMaker from './../services/SlugMaker';
 
 export default class TemplateItem extends React.Component {
   constructor(props) {
     super(props);
-    this.state = {copied: false, template: LibraryStore.get(this.props.params.templateId), showJsonBlob: false};
+    let template = LibraryStore.get(this.props.params.friendlySlugOrId) || LibraryStore.getByFriendlySlug(this.props.params.friendlySlugOrId);
+
+    this.state = {
+      copied: false,
+      template: template,
+      showJsonBlob: false};
   }
 
   handleCopied(event) {
@@ -41,13 +47,13 @@ export default class TemplateItem extends React.Component {
     let jsonString = JSON.stringify(val, null, 2);
     return jsonString;
   }
-  
+
   toggleJsonBlob() {
     this.setState({
       showJsonBlob: !this.state.showJsonBlob
     });
   }
-  
+
   getJsonBlobHeight() {
     if(this.state.showJsonBlob) {
       return '9000px';
@@ -63,20 +69,21 @@ export default class TemplateItem extends React.Component {
         <div className="step-template">
           <div className="row clearfix">
             <div className="column two-thirds">
-              <h2>{this.state.template.Name}</h2>
-              <p className="faint no-top-margin">
-                <i>{this.state.template.Body.ActionType}</i> exported {moment(this.state.template.ExportedAt).calendar()} by
+              <img className="logo" src={'data:image/gif;base64,' + this.state.template.Logo} />
+              <h2 className="name">{this.state.template.Name}</h2>
+              <p className="who-when faint no-top-margin">
+                <i>{this.state.template.ActionType}</i> exported {moment(this.state.template.ExportedAt).calendar()} by
                 <a className="author faint"
                     href={`https://github.com/${this.state.template.Author}`}
                 > {this.state.template.Author}
-                </a>
+                </a> belongs to '{this.state.template.Category}' category.
               </p>
               <span className="template-description"
                   dangerouslySetInnerHTML={this.rawMarkup()}
               />
-              <TemplateParameters parameters={this.state.template.Body.Parameters} />
-              <TemplateBody actionType={this.state.template.Body.ActionType}
-                  templateBody={this.state.template.Body.Properties['Octopus.Action.Script.ScriptBody'] || this.state.template.Body.Properties['Octopus.Action.Email.Body']}
+              <TemplateParameters parameters={this.state.template.Parameters} />
+              <TemplateBody actionType={this.state.template.ActionType}
+                  templateBody={this.state.template.Properties['Octopus.Action.Script.ScriptBody'] || this.state.template.Properties['Octopus.Action.Email.Body']}
               />
             </div>
             <div className="column third">
@@ -84,7 +91,7 @@ export default class TemplateItem extends React.Component {
                 To use this template in Octopus Deploy, copy the JSON below and paste it into the <em>Library > Step templates > Import</em> dialog.
               </p>
               <CopyToClipboard onCopy={this.handleCopied.bind(this)}
-                  text={this.toJson(this.state.template.Body)}
+                  text={this.toJson(this.state.template)}
               >
                 <button className={'button success full-width' + (this.state.copied ? ' copied' : '')}
                     type="button"
@@ -93,23 +100,23 @@ export default class TemplateItem extends React.Component {
                 </button>
               </CopyToClipboard>
               <p className={'faint full-width centered' + (this.state.copied ? '' : ' hidden')}><strong>Copied!</strong></p>
-              <a className="faint" 
+              <a className="faint"
                   onClick={this.toggleJsonBlob.bind(this)}
               >
                 {this.state.showJsonBlob ? 'Hide' : 'Show'} JSON
               </a>
-              <div className="templateContent" 
+              <div className="templateContent"
                   style={style}
               >
-                <SyntaxHiglighter language="json" 
+                <SyntaxHiglighter language="json"
                     style={solarizedLight}
                 >
-                    {this.toJson(this.state.template.Body)}
+                    {this.toJson(this.state.template)}
                 </SyntaxHiglighter>
               </div>
               <p className="align-right">
                 <a className="faint"
-                    href={`https://github.com/OctopusDeploy/Library/commits/master/step-templates/${this.state.template.Slug}.json`}
+                    href={this.state.template.HistoryUrl}
                 >
                   History &raquo;
                 </a>
@@ -126,7 +133,7 @@ export default class TemplateItem extends React.Component {
                 </p>
                 <SocialButtons />
                 <h3>Comments</h3>
-                <ReactDisqusThread identifier={this.state.template.Id}
+                <ReactDisqusThread identifier={slugMaker.make(this.state.template.Name)}
                     shortname="octolibrary"
                 />
               </div>

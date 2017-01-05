@@ -1,0 +1,60 @@
+{
+  "Id": "569a5f1b-bb57-491a-9c4e-a6d6e44e6b26",
+  "Name": "XML Transform using XDT",
+  "Description": "You can use this script to easily transform any XML file using XDT.\nThe script will download its dependencies automatically.",
+  "ActionType": "Octopus.Script",
+  "Version": 8,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "function Get-Parameter($Name, $Default, [switch]$Required) {\r\n    $result = $null\r\n\r\n    if ($OctopusParameters -ne $null) {\r\n        $result = $OctopusParameters[$Name]\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        if ($Required) {\r\n            throw \"Missing parameter value $Name\"\r\n        } else {\r\n            $result = $Default\r\n        }\r\n    }\r\n\r\n    return $result\r\n}\r\n\r\n$toolsDir = Get-Parameter \"toolsDir\" -Required\r\n$sourceFile = Get-Parameter \"sourceFile\" -Required\r\n$transformFile = Get-Parameter \"transformFile\" -Required\r\n$destFile = Get-Parameter \"destFile\" -Required\r\n\r\nif(!(Test-Path $toolsDir)){\r\n    New-Item -Path $toolsDir -ItemType Directory\r\n}\r\n$nugetDestPath = Join-Path -Path $toolsDir -ChildPath nuget.exe\r\nif(!(Test-Path $nugetDestPath)){\r\n    Write-Output 'Downloading nuget.exe'\r\n\t# download nuget\r\n    Invoke-WebRequest 'http://nuget.org/nuget.exe' -OutFile $nugetDestPath\r\n    # double check that it was written to disk\r\n    if(!(Test-Path $nugetDestPath)){\r\n        throw 'unable to download nuget'\r\n    }\r\n}\r\n\r\n$xdtExe = (Get-ChildItem -Path $toolsDir -Include 'SlowCheetah.Xdt.exe' -Recurse) | Select-Object -First 1\r\n\r\nif(!$xdtExe){\r\n    Write-Output 'Downloading xdt since it was not found in the tools folder'\r\n     # nuget install SlowCheetah.Xdt -Prerelease -OutputDirectory toolsDir\\\r\n    $nugetInstallCmdArgs = @('install','SlowCheetah.Xdt','-Prerelease','-OutputDirectory',(Resolve-Path $toolsDir).ToString())\r\n\r\n    Write-Output ('Calling nuget.exe to download SlowCheetah.Xdt with the following args: [{0} {1}]' -f $nugetDestPath, ($nugetInstallCmdArgs -join ' '))\r\n    &($nugetDestPath) $nugetInstallCmdArgs\r\n\r\n    $xdtExe = (Get-ChildItem -Path $toolsDir -Include 'SlowCheetah.Xdt.exe' -Recurse) | Select-Object -First 1\r\n\r\n    if(!$xdtExe){\r\n        throw ('SlowCheetah.Xdt not found')\r\n    }\r\n\r\n    # copy the xdt assemlby if the xdt directory is missing it\r\n    $xdtDllExpectedPath = (Join-Path $xdtExe.Directory.FullName 'Microsoft.Web.XmlTransform.dll')\r\n\r\n    if(!(Test-Path $xdtDllExpectedPath)){\r\n        # copy the xdt.dll next to the slowcheetah .exe\r\n        $xdtDll = (Get-ChildItem -Path $toolsDir -Include 'Microsoft.Web.XmlTransform.dll' -Recurse) | Select-Object -First 1\r\n\r\n        if(!$xdtDll){\r\n\t\t    throw 'Microsoft.Web.XmlTransform.dll not found'\r\n\t\t}\r\n\r\n        Copy-Item -Path $xdtDll.Fullname -Destination $xdtDllExpectedPath\r\n    }\r\n}\r\n\r\n$cmdArgs = @((Resolve-Path $sourceFile).ToString(),\r\n            (Resolve-Path $transformFile).ToString(),\r\n            (Resolve-Path $destFile).ToString())\r\n\r\nWrite-Output ('Calling slowcheetah.xdt.exe with the args: [{0} {1}]' -f $xdtExe, ($cmdArgs -join ' '))\r\n&($xdtExe) $cmdArgs\r\n",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "sourceFile",
+      "Label": "Source file path",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "transformFile",
+      "Label": "Transform file path",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "destFile",
+      "Label": "Destination file path",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "toolsDir",
+      "Label": "Directory to download tools programs",
+      "HelpText": null,
+      "DefaultValue": "C:\\tools",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "lijunkang",
+  "$Meta": {
+    "ExportedAt": "2016-08-24T07:11:46.726+00:00",
+    "OctopusVersion": "3.3.17",
+    "Type": "ActionTemplate"
+  },
+  "Category": "xml"
+}

@@ -1,0 +1,114 @@
+{
+  "Id": "2fdc47cd-d120-4919-b0d5-2ed22ca8ff62",
+  "Name": "Zabbix API maintenance",
+  "Description": "This step template adds single host on Zabbix maintenance.",
+  "ActionType": "Octopus.Script",
+  "Version": 10,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$Zserver=\"#{zserver}\"\r\n$Zuser=\"#{zuser}\"\r\n$Zpassword=\"#{zpass}\"\r\n$Zhost=\"#{zhost}\"\r\n[int]$gmt=#{gmt}\r\n$hours=#{hours}\r\n$action=\"#{action}\"\r\n$number=\"#{number}\"\r\n\r\nfunction Get-Auth{\r\n    param(\r\n        $server,\r\n        $user,\r\n        $pass,\r\n        $url\r\n    )\r\n    $body='{\"jsonrpc\": \"2.0\", \"method\": \"user.login\", \"params\": {\"user\": \"'+\"$user\"+'\", \"password\": \"'+\"$pass\"+'\"}, \"id\": 1, \"auth\": null}'\r\n    $key=Invoke-WebRequest -Uri \"$url\" -ContentType application/json-rpc -Body $body -Method Put -UseBasicParsing\r\n    $token=($key.Content |ConvertFrom-Json).result\r\n    return $token\r\n}\r\n\r\nfunction Remove-Maintenance{\r\n    param(\r\n        $srvr,\r\n        $usr,\r\n        $pswd,\r\n        $uri,\r\n        $mname\r\n    )\r\n    $auth=Get-Auth -server $srvr -user $usr -pass $pswd -url $uri\r\n    $remove='{\"jsonrpc\": \"2.0\", \"method\": \"maintenance.get\", \"params\": {\"output\": \"extend\", \"selectHosts\": \"extend\", \"selectTimeperiods\": \"extend\"},\"auth\": \"'+\"$auth\"+'\",\"id\": 1}'\r\n    Write-Output \"Token: $auth\"\r\n    $maintenace=Invoke-WebRequest -Uri \"$uri\" -ContentType application/json-rpc -Body $remove -Method Put -UseBasicParsing\r\n    $select= ($maintenace.Content | ConvertFrom-Json).result | where{$_.name -like \"$mname\"}\r\n    $id=$select.maintenanceid\r\n    if($id){\r\n        Write-Output \"Remove maintenance ID: $id\"\r\n        $auth=Get-Auth -server $srvr -user $usr -pass $pswd -url $uri\r\n        Write-Output \"Token: $auth\"\r\n        $rmv='{\"jsonrpc\": \"2.0\", \"method\": \"maintenance.delete\", \"params\": [\"'+\"$id\"+'\"], \"auth\": \"'+\"$auth\"+'\",\"id\": 1}'\r\n        $actionremove=Invoke-WebRequest -Uri \"$uri\" -ContentType application/json-rpc -Body $rmv -Method Put -UseBasicParsing\r\n        $check=(($actionremove.Content | ConvertFrom-Json).result).maintenanceids\r\n        if($check -like $id){\r\n            Write-Output \"Maintenance removed\"\r\n        }\r\n        else{\r\n            Write-Error \"Something wrong. Please contact your system administrator\"\r\n        }\r\n    }\r\n    else{\r\n        Write-Error \"NO Maintenance ID - contact your system administrator\"\r\n    }\r\n}\r\n\r\n###GLOBAL VARIABLES###\r\n$Zurl=\"http://$Zserver/api_jsonrpc.php\"\r\n$maintenancename=\"Octo-$number-$Zhost\"\r\n\r\n###GET AUTH FROM ZABBIX SERVER###\r\n$auth=Get-Auth -server $Zserver -user $Zuser -pass $Zpassword -url $Zurl\r\n\r\n###GET HOST ID###\r\n$content='{\"jsonrpc\": \"2.0\", \"method\": \"host.get\", \"params\": {\"output\": \"extend\", \"filter\": {\"host\": \"'+\"$Zhost\"+'\"}},\"auth\": \"'+\"$auth\"+'\",\"id\": 1}'\r\n$zabbixhost=Invoke-WebRequest -Uri \"$Zurl\" -ContentType application/json-rpc -Body $content -Method Put -UseBasicParsing\r\n$nameserver=$zabbixhost.Content | ConvertFrom-Json\r\n$hostid=$nameserver.result.hostid\r\nif($hostid){\r\n    Write-Output \"HOST: $Zhost - HOSTID: $hostid\"\r\n}\r\nelse{\r\n    Write-Error \"NO HOST ID - please contact your system administrator\"\r\n    exit\r\n}\r\n\r\n###ADD NEW MAINTENANCE###\r\nif ($action -eq \"create\"){\r\n    ###REMOVE MAINTENANCE IF ALREDY EXISTS WITH THE SAME NAME###\r\n    $auth=Get-Auth -server $Zserver -user $Zuser -pass $Zpassword -url $Zurl\r\n    $remove='{\"jsonrpc\": \"2.0\", \"method\": \"maintenance.get\", \"params\": {\"output\": \"extend\", \"selectHosts\": \"extend\", \"selectTimeperiods\": \"extend\"},\"auth\": \"'+\"$auth\"+'\",\"id\": 1}'\r\n    Write-Output \"Token: $auth\"\r\n    $maintenace=Invoke-WebRequest -Uri \"$Zurl\" -ContentType application/json-rpc -Body $remove -Method Put -UseBasicParsing\r\n    $select= ($maintenace.Content | ConvertFrom-Json).result | where{$_.name -like \"$maintenancename\"}\r\n    \r\n    if(!$select){\r\n        Write-Output \"No maintenance with the same name is alredy registered\"\r\n    }\r\n    else{\r\n        Remove-Maintenance -srvr $Zserver -usr $Zuser -pswd $Zpassword -uri $Zurl -mname $maintenancename\r\n    }\r\n    ###START TO CREATE NEW MAINTENANCE###\r\n    $since=0\r\n    $till=0\r\n    $since=[int][double]::Parse((get-date -UFormat %s))\r\n\r\n    ###ATTENTION ON GMT - THIS WORK FOR ITALIAN ZONE###\r\n    ###start check your ZABBIX configuration###\r\n    $min=(Get-Date).AddHours(-$gmt).Minute\r\n    $h=(Get-Date).AddHours(-$gmt).Hour\r\n    $minutetoseconds=$min*=60\r\n    $hourstoseconds=$h*=3600\r\n    $starttime=$minutetoseconds+=$hourstoseconds\r\n    $seconds=$hours*=(60*60*$gmt)\r\n    $sincesum=$since\r\n    $till=$sincesum+=$seconds\r\n    $since=$since-=(60*60*$gmt)\r\n    $till=$till-=(60*60*$gmt)\r\n    ###stop check your ZABBIX configuration###\r\n    $auth=Get-Auth -server $Zserver -user $Zuser -pass $Zpassword -url $Zurl\r\n    Write-Output \"Token: $auth\"\r\n    $add='{\"jsonrpc\": \"2.0\", \"method\": \"maintenance.create\", \"params\": {\"name\": \"'+\"$maintenancename\"+'\", \"active_since\": \"'+\"$since\"+'\", \"active_till\": '+\"$till\"+', \"hostids\": [\"'+$hostid+'\"], \"timeperiods\": [{\"timeperiod_type\": 0, \"start_time\": '+$starttime+', \"period\": '+$seconds+'}]}, \"auth\": \"'+$auth+'\", \"id\": 1}'\r\n    $maintenance=Invoke-WebRequest -Uri \"$Zurl\" -ContentType application/json-rpc -Body $add -Method Put -UseBasicParsing\r\n    $check=(($maintenance.Content | ConvertFrom-Json).result).maintenanceids\r\n    if($check){\r\n        Write-Output \"Maintenance $check Created\"\r\n    }\r\n    else{\r\n        Write-Error \"Something wrong. Please contact your system administrator\"\r\n    }\r\n}\r\nelse{\r\n    if($action -eq \"remove\"){\r\n        Remove-Maintenance -srvr $Zserver -usr $Zuser -pswd $Zpassword -uri $Zurl -mname $maintenancename        \r\n    }\r\n    else{\r\n        Write-Error \"Action not possible\"\r\n    }\r\n}",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "2d679eba-f403-4548-a57d-dacacfb5b299",
+      "Name": "zserver",
+      "Label": "Zabbix Server",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "898bbce8-28d3-43d1-9d19-a659ffce3865",
+      "Name": "zuser",
+      "Label": "Zabbix Username",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "86e4c608-e37f-4a0a-a432-e1c07b8f2b6b",
+      "Name": "zpass",
+      "Label": "Zabbix Password",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "1f51ac2a-852a-4f88-be40-a1304eb11cb2",
+      "Name": "zhost",
+      "Label": "Host",
+      "HelpText": "host in maintenance - single host",
+      "DefaultValue": "#{Octopus.Machine.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "50e5fbdd-949e-4ce8-8a10-94a403c3fb2d",
+      "Name": "action",
+      "Label": "",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "create|Create maintenance\nremove|Remove maintenance"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b1ef0d32-ec8e-44f3-a7f4-a34af6cd252c",
+      "Name": "gmt",
+      "Label": "GMT",
+      "HelpText": "This option depends on Zabbix server configuration.\nIf it is not necessary, set GMT=0 (UTC).\nIf UTC+2, insert 2. If UTC-4, insert -4.",
+      "DefaultValue": "0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "6fa1f56d-b9ee-4830-9e88-a434c6b82774",
+      "Name": "hours",
+      "Label": "Maintenance Period",
+      "HelpText": "in hours",
+      "DefaultValue": "4",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ca825d16-f0ff-4bcc-b0e7-abcde1f2188e",
+      "Name": "number",
+      "Label": "ID for maintenance name",
+      "HelpText": "maintenance name: Octo-[number]-[host]",
+      "DefaultValue": "#{Octopus.Release.Number}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "fedelemattia",
+  "$Meta": {
+    "ExportedAt": "2016-12-23T15:09:26.932Z",
+    "OctopusVersion": "3.5.1",
+    "Type": "ActionTemplate"
+  },
+  "Category": "zabbix"
+}
