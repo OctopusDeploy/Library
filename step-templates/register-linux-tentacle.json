@@ -3,13 +3,13 @@
   "Name": "RegisterLinuxTentacle",
   "Description": "This Step Template will Register Linux Tentacle.\nReference : http://docs.octopusdeploy.com/display/OD/SSH+Targets.",
   "ActionType": "Octopus.Script",
-  "Version": 5,
+  "Version": 9,
   "CommunityActionTemplateId": null,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptBody": "$envname = \"#{Octopus.Environment.Name}\"\r\n$serverurl = \"#{Octopus.Web.BaseUrl}\"\r\n\r\n$headers = @{\"X-Octopus-ApiKey\"=\"$apikey\"} \r\n$environments = Invoke-RestMethod \"$serverurl/api/environments/all\" -Headers $headers -Method Get\r\n$theEnvironment = $environments | ? { $_.Name -eq $envname }\r\n\r\n$accounts = Invoke-RestMethod \"$serverurl/api/accounts/all\" -Headers $headers -Method Get\r\n$theAccount = $accounts | ? { $_.Name -eq $accountname }\r\n\r\n$discovered = Invoke-RestMethod \"$serverurl/api/machines/discover?host=$hostdetails&type=Ssh\" -Headers $headers -Method Get\r\n$discovered.Roles += \"$role\"\r\n$discovered.EnvironmentIds += $theEnvironment.Id\r\n$discovered.Endpoint.AccountId = $theAccount.Id\r\n$discovered | ConvertTo-Json -Depth 10\r\n\r\n$registerStatus = Invoke-RestMethod \"$serverurl/api/machines\" -Headers $headers -Method Post -Body ($discovered | ConvertTo-Json -Depth 10)\r\n\r\nIf ($registerStatus.Status -eq \"Online\")\r\n{\r\n    Write-Output \"$registerStatus.Name is Successfully Registered\"\r\n}\r\nelse\r\n{\r\n    Write-Warning \"$hostdetails had issues, Please check Environments Page\"\r\n}",
+    "Octopus.Action.Script.ScriptBody": "$envname = \"#{Octopus.Environment.Name}\"\r\n$serverurl = \"#{Octopus.Web.BaseUrl}\"\r\n\r\n$headers = @{\"X-Octopus-ApiKey\"=\"$apikey\"} \r\n$environments = Invoke-RestMethod \"$serverurl/api/environments/all\" -Headers $headers -Method Get\r\n$theEnvironment = $environments | ? { $_.Name -eq $envname }\r\n\r\n$machines = Invoke-RestMethod \"$serverurl/api/machines/all\" -Headers $headers -Method Get\r\n$theMachine = $machines | ? { $_.Name -eq $hostdetails }\r\n\r\n$accounts = Invoke-RestMethod \"$serverurl/api/accounts/all\" -Headers $headers -Method Get\r\n$theAccount = $accounts | ? { $_.Name -eq $accountname }\r\n\r\nif (!($theMachine.Name -eq $hostdetails))\r\n{ \r\n    $discovered = Invoke-RestMethod \"$serverurl/api/machines/discover?host=$hostdetails&type=Ssh\" -Headers $headers -Method Get\r\n    $discovered.Roles += \"$role\"\r\n    $discovered.EnvironmentIds += $theEnvironment.Id\r\n    $discovered.Endpoint.AccountId = $theAccount.Id\r\n    $discovered | ConvertTo-Json -Depth 10\r\n\r\n    $registerStatus = Invoke-RestMethod \"$serverurl/api/machines\" -Headers $headers -Method Post -Body ($discovered | ConvertTo-Json -Depth 10)\r\n\r\n    If ($registerStatus.Status -eq \"Online\")\r\n    {\r\n        Write-Output \"$registerStatus.Name is Successfully Registered\"\r\n    }\r\n    else\r\n    {\r\n        Write-Warning \"$hostdetails had issues, Please check Environments Page\"\r\n    }\r\n}\r\nelse\r\n{\r\n    Write-Output \"Machine with name $hostdetails already exists with the status $($theMachine.Status)\" \r\n}\r\n",
     "Octopus.Action.Script.ScriptFileName": null,
     "Octopus.Action.Package.FeedId": null,
     "Octopus.Action.Package.PackageId": null
@@ -60,12 +60,12 @@
       "Links": {}
     }
   ],
-    "LastModifiedOn": "2017-01-08T09:12:19.041+00:00",
-    "LastModifiedBy": "mani0070",
+  "LastModifiedOn": "2017-01-08T16:46:19.041+00:00",
+   "LastModifiedBy": "mani0070",
   "$Meta": {
-    "ExportedAt": "2017-01-08T09:12:06.582Z",
+    "ExportedAt": "2017-01-08T16:46:13.554Z",
     "OctopusVersion": "3.7.6",
     "Type": "ActionTemplate"
-  },
-   "Category": "Linux"
+  }
+  "Category": "Linux"
 }
