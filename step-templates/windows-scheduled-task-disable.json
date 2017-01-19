@@ -3,9 +3,9 @@
   "Name": "Windows Scheduled Task - Disable",
   "Description": "Disables a Windows Scheduled Task for both 2008 and 2012.",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$taskName = $OctopusParameters['TaskName']\r\rWrite-Output \"Disabling $taskName...\"\r\r#Check if 2008 Server\rif ((Get-WmiObject Win32_OperatingSystem).Name.Contains(\"2008\"))\r{\r    schtasks /Change /Disable /TN $taskName\r    do { \r        Start-Sleep -Milliseconds 200;\r        Write-Host \"Disabling\" $taskName;\r    }\r    until (((schtasks /TN $taskName) | Out-String).Contains(\"Disabled\"))\r}\relse\r{\r    $task = Get-ScheduledTask $taskName;\r    Disable-ScheduledTask $task;\r    do { \r        Start-Sleep -Milliseconds 200;\r        Write-Host \"Disabling\" $task.TaskName;\r    }\r    until ((Get-ScheduledTask $task.TaskName).State -eq 'Disabled')\r}",
+    "Octopus.Action.Script.ScriptBody": "$taskName = $OctopusParameters['TaskName']\r\r#Check if the PowerShell cmdlets are available\r$cmdletSupported = [bool](Get-Command -Name Get-ScheduledTask -ErrorAction SilentlyContinue)\r\rif($cmdletSupported) {\r    $taskExists = Get-ScheduledTask | Where-Object { $_.TaskName -eq \"$taskName\" }\r}\relse {\r    $taskService = New-Object -ComObject \"Schedule.Service\"\r    $taskService.Connect()\r    $taskFolder = $taskService.GetFolder(\"\\\")\r    $taskExists = $taskFolder.GetTasks(0) | Select-Object Name, State | Where-Object { $_.Name -eq $taskName }\r}\r\rif(-not $taskExists) {\r    Write-Output \"Scheduled task '$taskName' does not exist\"\r    if(-not $cmdletSupported) {\r        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($taskService)\r    }\r\r    return\r}\r\rWrite-Output \"Disabling $taskName...\"\rif($cmdletSupported) {\r    $task = Disable-ScheduledTask \"$taskName\"\r    while($task.State -ne [Microsoft.PowerShell.Cmdletization.GeneratedTypes.ScheduledTask.StateEnum]::Disabled) \r    {\r        Start-Sleep -Milliseconds 200\r    }\r}\relse {\r    schtasks /Change /Disable /TN \"$taskName\"\r    #The State property can hold the following values:\r    # 0: Unknown\r    # 1: Disabled\r    # 2: Queued\r    # 3: Ready\r    # 4: Running\r    while($taskFolder.GetTask($taskName).State -ne 1) {\r        Start-Sleep -Milliseconds 200\r    }\r}",
     "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
@@ -17,8 +17,8 @@
       "DefaultValue": null
     }
   ],
-  "LastModifiedOn": "2014-05-14T19:43:43.601+00:00",
-  "LastModifiedBy": "maohde",
+  "LastModifiedOn": "2017-01-19T15:27:000+00:00",
+  "LastModifiedBy": "HumanPrinter",
   "$Meta": {
     "ExportedAt": "2014-05-14T19:48:28.023+00:00",
     "OctopusVersion": "2.4.5.46",
