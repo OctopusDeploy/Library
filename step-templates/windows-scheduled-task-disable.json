@@ -5,7 +5,7 @@
   "ActionType": "Octopus.Script",
   "Version": 2,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$taskName = $OctopusParameters['TaskName']\r\r#Check if the PowerShell cmdlets are available\r$cmdletSupported = [bool](Get-Command -Name Get-ScheduledTask -ErrorAction SilentlyContinue)\r\rif($cmdletSupported) {\r    $taskExists = Get-ScheduledTask | Where-Object { $_.TaskName -eq \"$taskName\" }\r}\relse {\r    $taskService = New-Object -ComObject \"Schedule.Service\"\r    $taskService.Connect()\r    $taskFolder = $taskService.GetFolder(\"\\\")\r    $taskExists = $taskFolder.GetTasks(0) | Select-Object Name, State | Where-Object { $_.Name -eq $taskName }\r}\r\rif(-not $taskExists) {\r    Write-Output \"Scheduled task '$taskName' does not exist\"\r    if(-not $cmdletSupported) {\r        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($taskService)\r    }\r\r    return\r}\r\rWrite-Output \"Disabling $taskName...\"\rif($cmdletSupported) {\r    $task = Disable-ScheduledTask \"$taskName\"\r    while($task.State -ne [Microsoft.PowerShell.Cmdletization.GeneratedTypes.ScheduledTask.StateEnum]::Disabled) \r    {\r        Start-Sleep -Milliseconds 200\r    }\r}\relse {\r    schtasks /Change /Disable /TN \"$taskName\"\r    #The State property can hold the following values:\r    # 0: Unknown\r    # 1: Disabled\r    # 2: Queued\r    # 3: Ready\r    # 4: Running\r    while($taskFolder.GetTask($taskName).State -ne 1) {\r        Start-Sleep -Milliseconds 200\r    }\r}",
+    "Octopus.Action.Script.ScriptBody": "$taskName = $OctopusParameters['TaskName']\r$maximumWaitTime = $OctopusParameters['MaximumWaitTime']\r\r#Check if the PowerShell cmdlets are available\r$cmdletSupported = [bool](Get-Command -Name Get-ScheduledTask -ErrorAction SilentlyContinue)\r\rtry {\r	if($cmdletSupported) {\r		$taskExists = Get-ScheduledTask | Where-Object { $_.TaskName -eq \"$taskName\" }\r	}\r	else {\r		$taskService = New-Object -ComObject \"Schedule.Service\"\r		$taskService.Connect()\r		$taskFolder = $taskService.GetFolder(\"\\\")\r		$taskExists = $taskFolder.GetTasks(0) | Select-Object Name, State | Where-Object { $_.Name -eq $taskName }\r	}\r\r	if(-not $taskExists) {\r		Write-Output \"Scheduled task '$taskName' does not exist\"\r		return\r	}\r\r	Write-Output \"Disabling $taskName...\"\r	$waited = 0\r	if($cmdletSupported) {\r		$task = Disable-ScheduledTask \"$taskName\"\r		Write-Output \"Waiting untill $taskName is disabled...\"\r		while(($task.State -ne [Microsoft.PowerShell.Cmdletization.GeneratedTypes.ScheduledTask.StateEnum]::Disabled) -and (($maximumWaitTime -eq 0) -or ($waited -lt $maximumWaitTime))) \r		{\r			Start-Sleep -Milliseconds 200\r			$waited += 200\r			$task = Get-ScheduledTask \"$taskName\"\r		}\r		\r		if($task.State -ne [Microsoft.PowerShell.Cmdletization.GeneratedTypes.ScheduledTask.StateEnum]::Disabled) {\r			throw \"The scheduled task '$taskName' could not be disabled within the specified wait time\"\r		}\r	}\r	else {\r		schtasks /Change /Disable /TN \"$taskName\"\r		#The State property can hold the following values:\r		# 0: Unknown\r		# 1: Disabled\r		# 2: Queued\r		# 3: Ready\r		# 4: Running\r		while(($taskFolder.GetTask($taskName).State -ne 1) -and (($maximumWaitTime -eq 0) -or ($waited -lt $maximumWaitTime))) {\r			Start-Sleep -Milliseconds 200\r			$waited += 200\r		}\r		\r		if($taskFolder.GetTask($taskName).State -ne 1) {\r		    throw \"The scheduled task '$taskName' could not be disabled within the specified wait time\"\r		}\r	}\r}\rfinally {\r    if($taskFolder -ne $NULL) {\r	    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($taskFolder)   \r	}\r	\r	if($taskService -ne $NULL) {\r	    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($taskService)   \r	}\r}",
     "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
@@ -15,9 +15,15 @@
       "Label": "Task Name",
       "HelpText": "Name of the Windows Scheduled Task.",
       "DefaultValue": null
+    },
+    {
+      "Name": "MaximumWaitTime",
+      "Label": "Maximum Wait Time",
+      "HelpText": "Maximum time the script must wait before aborting. Use '0' to wait indefinitely.",
+      "DefaultValue": 0
     }
   ],
-  "LastModifiedOn": "2017-01-19T15:27:000+00:00",
+  "LastModifiedOn": "2017-01-19T18:05:000+00:00",
   "LastModifiedBy": "HumanPrinter",
   "$Meta": {
     "ExportedAt": "2014-05-14T19:48:28.023+00:00",
