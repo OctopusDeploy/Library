@@ -1,0 +1,82 @@
+{
+  "Id": "0f119877-288c-4110-aec9-0f693c2e7922",
+  "Name": "Register Linux Tentacle",
+  "Description": "This Step Template will Register a Linux Tentacle.\nReference : http://docs.octopusdeploy.com/display/OD/SSH+Targets.",
+  "ActionType": "Octopus.Script",
+  "Version": 14,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$envname = \"#{Octopus.Environment.Name}\"\r\n$serverurl = \"#{Octopus.Web.BaseUrl}\"\r\n\r\n$headers = @{\"X-Octopus-ApiKey\"=\"$apikey\"} \r\n$environments = Invoke-RestMethod \"$serverurl/api/environments/all\" -Headers $headers -Method Get\r\n$theEnvironment = $environments | ? { $_.Name -eq $envname }\r\n\r\n$machines = Invoke-RestMethod \"$serverurl/api/machines/all\" -Headers $headers -Method Get\r\n$theMachine = $machines | ? { $_.Name -eq $machineName }\r\n\r\n$accounts = Invoke-RestMethod \"$serverurl/api/accounts/all\" -Headers $headers -Method Get\r\n$theAccount = $accounts | ? { $_.Name -eq $accountname }\r\n\r\nif (!($theMachine.Name -eq $machineName))\r\n{ \r\n    $discovered = Invoke-RestMethod \"$serverurl/api/machines/discover?host=$hostdetails&type=Ssh\" -Headers $headers -Method Get\r\n    $discovered.Roles += \"$role\"\r\n    $discovered.EnvironmentIds += $theEnvironment.Id\r\n    $discovered.Endpoint.AccountId = $theAccount.Id\r\n    $discovered.Name = $machineName\r\n\r\n    $discovered | ConvertTo-Json -Depth 10\r\n\r\n    $registerStatus = Invoke-RestMethod \"$serverurl/api/machines\" -Headers $headers -Method Post -Body ($discovered | ConvertTo-Json -Depth 10)\r\n\r\n    If ($registerStatus.Status -eq \"Online\")\r\n    {\r\n        Write-Output \"$registerStatus.Name is Successfully Registered\"\r\n    }\r\n    else\r\n    {\r\n        Write-Warning \"$hostdetails had issues, Please check Environments Page\"\r\n    }\r\n}\r\nelse\r\n{\r\n    Write-Output \"Machine with name $machineName already exists with the status $($theMachine.Status)\" \r\n}",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "c79678c9-4d64-417d-982f-904683631240",
+      "Name": "apikey",
+      "Label": "API Key",
+      "HelpText": "API Key with appropriate access",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "bca181ad-f28b-42a3-ab2c-c79274224c11",
+      "Name": "accountname",
+      "Label": "Account Name",
+      "HelpText": "The Account Name with access to the Host name to register",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "3ace411d-18d2-4349-ab8d-02823e933f6e",
+      "Name": "hostdetails",
+      "Label": "HostName/IPaddress",
+      "HelpText": "HostName or IPaddress of the Machine to register",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "517a89a1-be83-4cce-9e32-8359d0715686",
+      "Name": "role",
+      "Label": "Role Name",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "37527e4f-643a-4e06-9650-1a40d11d7b7a",
+      "Name": "machineName",
+      "Label": "Machine Name",
+      "HelpText": "Machine Name to register",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+   "LastModifiedOn": "2017-01-09T20:46:19.041+00:00",
+   "LastModifiedBy": "mani0070",
+  "$Meta": {
+    "ExportedAt": "2017-01-09T20:28:18.325Z",
+    "OctopusVersion": "3.7.6",
+    "Type": "ActionTemplate"
+  },
+ "Category": "Linux"
+}
