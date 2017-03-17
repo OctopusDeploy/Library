@@ -98,6 +98,7 @@ function humanize(categoryId){
     case 'edgecast': return 'EdgeCast';
     case 'elmah': return 'ELMAH';
     case 'entityframework': return 'Entity Framework';
+    case 'event-tracing': return 'Event Tracing for Windows';
     case 'filesystem': return 'File System';
     case 'github': return 'GitHub';
     case 'ghostinspector': return 'Ghost Inspector';
