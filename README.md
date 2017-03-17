@@ -19,7 +19,7 @@ Reviewing PRs
 -------------
 
 When reviewing a PR, keep the following things in mind:
-* The `Id` should be a **GUID** that is not `00000000-0000-0000-0000-000000000000`
+* `Id` should be a **GUID** that is not `00000000-0000-0000-0000-000000000000`
 * `Version` should be incremented, otherwise the integration with Octopus won't update the step template correctly
 * Parameter names should not start with `$`
 * `LastModifiedBy` field must be present, and (_optionally_) updated with the correct author
