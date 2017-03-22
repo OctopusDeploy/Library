@@ -1,0 +1,76 @@
+{
+  "Id": "fa570d27-1405-4030-87b2-c0abf12bb833",
+  "Name": "Consolidate Release Notes",
+  "Description": "Consolidates all Release Notes between the last successful release in the current Environment and this one by merging or concatenating them.",
+  "ActionType": "Octopus.Script",
+  "Version": 9,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Script.ScriptBody": "$baseUri = $OctopusParameters['Octopus.Web.BaseUrl']\r\n$reqheaders = @{\"X-Octopus-ApiKey\" = $Consolidate_ApiKey }\r\n$putReqHeaders = @{\"X-HTTP-Method-Override\" = \"PUT\"; \"X-Octopus-ApiKey\" = $Consolidate_ApiKey }\r\n\r\n$remWhiteSpace = [bool]::Parse($Consolidate_RemoveWhitespace)\r\n$deDupe = [bool]::Parse($Consolidate_Dedupe)\r\n$reverse = ($Consolidate_Order -eq \"Oldest\")\r\n\r\n# Get details we'll need\r\n$projectId = $OctopusParameters['Octopus.Project.Id']\r\n$thisReleaseNumber = $OctopusParameters['Octopus.Release.Number']\r\n$lastSuccessfulReleaseId = $OctopusParameters['Octopus.Release.CurrentForEnvironment.Id']\r\n$lastSuccessfulReleaseNumber = $OctopusParameters['Octopus.Release.CurrentForEnvironment.Number']\r\n\r\n# Get all previous releases to this environment\r\n$releaseUri = \"$baseUri/api/projects/$projectId/releases\"\r\ntry {\r\n    $allReleases = Invoke-WebRequest $releaseUri -Headers $reqheaders -UseBasicParsing | ConvertFrom-Json\r\n} catch {\r\n    if ($_.Exception.Response.StatusCode.Value__ -ne 404) {\r\n        $result = $_.Exception.Response.GetResponseStream()\r\n        $reader = New-Object System.Io.StreamReader($result);\r\n        $responseBody = $reader.ReadToEnd();\r\n        throw \"Error occurred: $responseBody\"\r\n    }\r\n}\r\n\r\n# Find and aggregate release notes\r\n$aggregateNotes = @()\r\n\r\nWrite-Host \"Finding all release notes between the last successful release: $lastSuccessfulReleaseNumber and this release: $thisReleaseNumber\"\r\nforeach ($rel in $allReleases.Items) {\r\n    if ($rel.Id -ne $lastSuccessfulReleaseId) {\r\n        Write-Host \"Found release notes for $($rel.Version)\"\r\n        $theseNotes = @()\r\n        #split into lines\r\n        $lines = $rel.ReleaseNotes -split \"`n\"\r\n        foreach ($line in $lines) {\r\n            if (-not $remWhitespace -or -not [string]::IsNullOrWhiteSpace($line)) {\r\n                if (-not $deDupe -or -not $aggregateNotes.Contains($line)) {\r\n                    $theseNotes = $theseNotes + $line\r\n                }\r\n            }\r\n        }\r\n        if ($reverse) {\r\n            $aggregateNotes = $theseNotes + $aggregateNotes\r\n        } else {\r\n            $aggregateNotes = $aggregateNotes + $theseNotes\r\n        }\r\n    } else {\r\n        break\r\n    }\r\n}\r\n$aggregateNotesText = $aggregateNotes -join \"`n`n\"\r\n\r\n# Get the current release\r\n$releaseUri = \"$baseUri/api/projects/$projectId/releases/$thisReleaseNumber\"\r\ntry {\r\n    $currentRelease = Invoke-WebRequest $releaseUri -Headers $reqheaders -UseBasicParsing | ConvertFrom-Json\r\n} catch {\r\n    if ($_.Exception.Response.StatusCode.Value__ -ne 404) {\r\n        $result = $_.Exception.Response.GetResponseStream()\r\n        $reader = New-Object System.Io.StreamReader($result);\r\n        $responseBody = $reader.ReadToEnd();\r\n        throw \"Error occurred: $responseBody\"\r\n    }\r\n}\r\n\r\n# Update the release notes for the current release\r\n$currentRelease.ReleaseNotes = $aggregateNotesText\r\nWrite-Host \"Updating release notes for $thisReleaseNumber`:`n`n\"\r\nWrite-Host $aggregateNotesText\r\ntry {\r\n    $releaseUri = \"$baseUri/api/releases/$($currentRelease.Id)\"\r\n    $currentReleaseBody = $currentRelease | ConvertTo-Json\r\n    $result = Invoke-WebRequest $releaseUri -Method Post -Headers $putReqHeaders -Body $currentReleaseBody -UseBasicParsing | ConvertFrom-Json\r\n} catch {\r\n    $result = $_.Exception.Response.GetResponseStream()\r\n    $reader = New-Object System.Io.StreamReader($result);\r\n    $responseBody = $reader.ReadToEnd();\r\n    Write-Host $responseBody\r\n    throw \"Error occurred: $responseBody\"\r\n}",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "fa5cfdb4-b006-4f92-90ee-affc1791fc79",
+      "Name": "Consolidate_ApiKey",
+      "Type": "String",
+      "Label": "Api Key",
+      "HelpText": "The API Key to use for authentication",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2fe221e5-1f47-4cf9-bde7-ed3b77028bf4",
+      "Name": "Consolidate_Dedupe",
+      "Type": "String",
+      "Label": "Remove Duplicates",
+      "HelpText": "Whether to remove **duplicate** lines when constructing release notes",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox",
+        "Octopus.SelectOptions": "Yes|Yes\nNo|No"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "301aa2a8-f06b-4904-9636-99189074f224",
+      "Name": "Consolidate_RemoveWhitespace",
+      "Type": "String",
+      "Label": "Remove Blank Lines",
+      "HelpText": "Whether to remove **blank** lines when constructing release notes",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox",
+        "Octopus.SelectOptions": "Yes|Yes\nNo|No"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "517d4aac-e6ae-451c-b18f-be31c6c153b8",
+      "Name": "Consolidate_Order",
+      "Type": "String",
+      "Label": "Concatenation Order",
+      "HelpText": "The order in which to append release notes",
+      "DefaultValue": "Newest",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Newest|Newest to Oldest\nOldest|Oldest to Newest"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "damovisa",
+  "$Meta": {
+    "ExportedAt": "2017-03-01T14:24:14.581Z",
+    "OctopusVersion": "3.11.2",
+    "Type": "ActionTemplate"
+  },
+  "Category": "octopus"
+}

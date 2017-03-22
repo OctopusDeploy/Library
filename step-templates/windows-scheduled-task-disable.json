@@ -3,9 +3,9 @@
   "Name": "Windows Scheduled Task - Disable",
   "Description": "Disables a Windows Scheduled Task for both 2008 and 2012.",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$taskName = $OctopusParameters['TaskName']\r\rWrite-Output \"Disabling $taskName...\"\r\r#Check if 2008 Server\rif ((Get-WmiObject Win32_OperatingSystem).Name.Contains(\"2008\"))\r{\r    schtasks /Change /Disable /TN $taskName\r    do { \r        Start-Sleep -Milliseconds 200;\r        Write-Host \"Disabling\" $taskName;\r    }\r    until (((schtasks /TN $taskName) | Out-String).Contains(\"Disabled\"))\r}\relse\r{\r    $task = Get-ScheduledTask $taskName;\r    Disable-ScheduledTask $task;\r    do { \r        Start-Sleep -Milliseconds 200;\r        Write-Host \"Disabling\" $task.TaskName;\r    }\r    until ((Get-ScheduledTask $task.TaskName).State -eq 'Disabled')\r}",
+    "Octopus.Action.Script.ScriptBody": "$taskName = $OctopusParameters['TaskName']\r\n$maximumWaitTime = $OctopusParameters['MaximumWaitTime']\r\n\r\n#Check if the PowerShell cmdlets are available\r\n$cmdletSupported = [bool](Get-Command -Name Get-ScheduledTask -ErrorAction SilentlyContinue)\r\n\r\ntry {\r\n\tif($cmdletSupported) {\r\n\t\t$taskExists = Get-ScheduledTask | Where-Object { $_.TaskName -eq $taskName }\r\n\t}\r\n\telse {\r\n\t\t$taskService = New-Object -ComObject \\\"Schedule.Service\\\"\r\n\t\t$taskService.Connect()\r\n\t\t$taskFolder = $taskService.GetFolder('\\')\r\n\t\t$taskExists = $taskFolder.GetTasks(0) | Select-Object Name, State | Where-Object { $_.Name -eq $taskName }\r\n\t}\r\n\r\n\tif(-not $taskExists) {\r\n\t\tWrite-Output \\\"Scheduled task '$taskName' does not exist\\\"\r\n\t\treturn\r\n\t}\r\n\r\n\tWrite-Output \\\"Disabling $taskName...\\\"\r\n\t$waited = 0\r\n\tif($cmdletSupported) {\r\n\t\t$task = Disable-ScheduledTask \\\"$taskName\\\"\r\n\t\tWrite-Output \\\"Waiting untill $taskName is disabled...\\\"\r\n\t\twhile(($task.State -ne [Microsoft.PowerShell.Cmdletization.GeneratedTypes.ScheduledTask.StateEnum]::Disabled) -and (($maximumWaitTime -eq 0) -or ($waited -lt $maximumWaitTime))) \r\n\t\t{\r\n\t\t\tStart-Sleep -Milliseconds 200\r\n\t\t\t$waited += 200\r\n\t\t\t$task = Get-ScheduledTask \\\"$taskName\\\"\r\n\t\t}\r\n\t\t\r\n\t\tif($task.State -ne [Microsoft.PowerShell.Cmdletization.GeneratedTypes.ScheduledTask.StateEnum]::Disabled) {\r\n\t\t\tthrow \\\"The scheduled task '$taskName' could not be disabled within the specified wait time\\\"\r\n\t\t}\r\n\t}\r\n\telse {\r\n\t\tschtasks /Change /Disable /TN \\\"$taskName\\\"\r\n\t\t#The State property can hold the following values:\r\n\t\t# 0: Unknown\r\n\t\t# 1: Disabled\r\n\t\t# 2: Queued\r\n\t\t# 3: Ready\r\n\t\t# 4: Running\r\n\t\twhile(($taskFolder.GetTask($taskName).State -ne 1) -and (($maximumWaitTime -eq 0) -or ($waited -lt $maximumWaitTime))) {\r\n\t\t\tStart-Sleep -Milliseconds 200\r\n\t\t\t$waited += 200\r\n\t\t}\r\n\t\t\r\n\t\tif($taskFolder.GetTask($taskName).State -ne 1) {\r\n\t\t    throw \\\"The scheduled task '$taskName' could not be disabled within the specified wait time\\\"\r\n\t\t}\r\n\t}\r\n}\r\nfinally {\r\n    if($taskFolder -ne $NULL) {\r\n\t    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($taskFolder)   \r\n\t}\r\n\t\r\n\tif($taskService -ne $NULL) {\r\n\t    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($taskService)   \r\n\t}\r\n}",
     "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
@@ -15,12 +15,17 @@
       "Label": "Task Name",
       "HelpText": "Name of the Windows Scheduled Task.",
       "DefaultValue": null
+    },
+    {
+      "Name": "MaximumWaitTime",
+      "Label": "Maximum Wait Time",
+      "HelpText": "Maximum time the script must wait before aborting. Use '0' to wait indefinitely.",
+      "DefaultValue": 0
     }
   ],
-  "LastModifiedOn": "2014-05-14T19:43:43.601+00:00",
-  "LastModifiedBy": "maohde",
+  "LastModifiedBy": "HumanPrinter",
   "$Meta": {
-    "ExportedAt": "2014-05-14T19:48:28.023+00:00",
+    "ExportedAt": "2017-01-19T18:05:00.000+00:00",
     "OctopusVersion": "2.4.5.46",
     "Type": "ActionTemplate"
   },

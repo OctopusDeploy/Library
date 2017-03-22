@@ -32,6 +32,7 @@ import jasmineTerminalReporter from 'jasmine-terminal-reporter';
 import eventStream from 'event-stream';
 import {Converter} from 'csvtojson';
 import fs from 'fs';
+import jsonlint from 'gulp-jsonlint';
 
 const clientDir = 'app';
 const serverDir = 'server';
@@ -73,10 +74,13 @@ gulp.task('lint:client', lint(`${clientDir}/**/*.jsx`));
 gulp.task('lint:server', lint(`./${serverDir}/server.js`));
 gulp.task('lint:step-templates', () => {
   return gulp.src('./step-templates/*.json')
-    .pipe($.expect({ errorOnFailure: true, silent: true }, glob.sync('step-templates/*.json')));
+    .pipe($.expect({ errorOnFailure: true, silent: true }, glob.sync('step-templates/*.json')))
+    .pipe(jsonlint())
+    .pipe(jsonlint.failOnError())
+    .pipe(jsonlint.reporter());
 });
 
-gulp.task('tests', [], () => {
+gulp.task('tests', ['lint:step-templates'], () => {
   return gulp.src('./spec/*-tests.js')
   // gulp-jasmine works on filepaths so you can't have any plugins before it
     .pipe(jasmine({
@@ -164,7 +168,7 @@ function provideMissingData() {
 }
 
 
-gulp.task('step-templates', ['lint:step-templates', 'tests'], () => {
+gulp.task('step-templates', ['tests'], () => {
   return gulp.src('./step-templates/*.json')
     .pipe(provideMissingData())
     .pipe(concat('step-templates.json', {newLine: ','}))
