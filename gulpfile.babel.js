@@ -85,7 +85,12 @@ gulp.task('tests', ['lint:step-templates'], () => {
   // gulp-jasmine works on filepaths so you can't have any plugins before it
     .pipe(jasmine({
       includeStackTrace: false,
-      reporter: [ new jasmineReporters.JUnitXmlReporter(), new jasmineTerminalReporter() ]
+      reporter: [ 
+        new jasmineReporters.JUnitXmlReporter(), 
+        (process.env.TEAMCITY_VERSION 
+          ? new jasmineReporters.TeamCityReporter() 
+          : new jasmineTerminalReporter())
+      ]
     }))
     .on('error', function(){
       process.exit(1);
