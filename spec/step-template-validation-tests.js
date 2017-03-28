@@ -1,17 +1,17 @@
 var fs = require('fs');
 
-describe("step-templates ", function() {
+describe('step-templates', function() {
   beforeEach(function(){
     jasmine.addMatchers({
       toHaveValidLastModified: function() {
         return {
           compare: function(template){
             if(typeof template.LastModifiedBy == 'undefined')  {
-              return { pass: false, message: 'Expected template "' + template.Name + '" to have a valid LastModifiedBy field, but it was undefined.' }
+              return { pass: false, message: 'Expected template "' + template.Name + '" to have a valid LastModifiedBy field, but it was undefined.' };
             } else if(typeof template.$Meta.ExportedAt == 'undefined')  {
-              return { pass: false, message: 'Expected template "' + template.Name + '" to have a valid ExportedAt date, but it was undefined.' }
+              return { pass: false, message: 'Expected template "' + template.Name + '" to have a valid ExportedAt date, but it was undefined.' };
             } else {
-              return { pass: true, message: 'Expected template "' + template.Name + '" to have a valid LastModifiedBy field.' }
+              return { pass: true, message: 'Expected template "' + template.Name + '" to have a valid LastModifiedBy field.' };
             }
           }
         }
@@ -20,11 +20,11 @@ describe("step-templates ", function() {
         return {
           compare: function(template){
             if(!template.Name)  {
-              return { pass: false, message: 'Expected template "' + template.Name + '" to have Name specified.' }
+              return { pass: false, message: 'Expected template "' + template.Name + '" to have Name specified.' };
             } else if(template.Name.length > 200)  {
-              return { pass: false, message: 'Expected template "' + template.Name + '" to have Name shorter than 200 characters.' }
+              return { pass: false, message: 'Expected template "' + template.Name + '" to have Name shorter than 200 characters.' };
             } else {
-              return { pass: true, message: '' }
+              return { pass: true, message: '' };
             }
           }
         }
@@ -33,13 +33,13 @@ describe("step-templates ", function() {
         return {
           compare: function(template){
             if(!template.Id)  {
-              return { pass: false, message: 'Expected template "' + template.Name + '" to have Id specified.' }
-            } else if(!(new RegExp(".{8}-.{4}-.{4}-.{4}-.{12}").test(template.Id))) {
-              return { pass: false, message: 'Expected template "' + template.Name + '" to have Id "' + template.Id + '" in a form of a GUID: 00000000-0000-0000-0000-000000000000 .' }
+              return { pass: false, message: 'Expected template "' + template.Name + '" to have Id specified.' };
+            } else if(!(new RegExp('.{8}-.{4}-.{4}-.{4}-.{12}').test(template.Id))) {
+              return { pass: false, message: 'Expected template "' + template.Name + '" to have Id "' + template.Id + '" in a form of a GUID: 00000000-0000-0000-0000-000000000000 .' };
             } else if (template.Id === '00000000-0000-0000-0000-000000000000' || template.Id === 'abcdef00-ab00-cd00-ef00-000000abcdef') {
-              return { pass: false, message: 'Expected template "' + template.Name + '" to have Id "' + template.Id + '" different than 00000000-0000-0000-0000-000000000000 and abcdef00-ab00-cd00-ef00-000000abcdef. You can use https://www.guidgen.com to generate a new id.' }
+              return { pass: false, message: 'Expected template "' + template.Name + '" to have Id "' + template.Id + '" different than 00000000-0000-0000-0000-000000000000 and abcdef00-ab00-cd00-ef00-000000abcdef. You can use https://www.guidgen.com to generate a new id.' };
             } else {
-              return { pass: true, message: '' }
+              return { pass: true, message: '' };
             }
           }
         }
@@ -47,7 +47,7 @@ describe("step-templates ", function() {
     });
   });
 
-  it("have required details", function(done) {
+  it('have required details', function(done) {
     var filenameCounter = 0;
     var stepTemplateCount = 0;
     var dirname = './step-templates/';
@@ -87,17 +87,17 @@ describe("step-templates ", function() {
 
           }
           catch(e) {
-            fail('error reading file ' + dirname + templateFile + ': ' + e + ' - it might be UTF 8 with a BOM. Please resave without the BOM.')
+            fail('error reading file ' + dirname + templateFile + ': ' + e + ' - it might be UTF 8 with a BOM. Please resave without the BOM.');
           }
           if (++filenameCounter == stepTemplateCount) {
             done();
-          };
+          }
         });
       });
     });
   });
 
-  it("have correct file extensions", function(done) {
+  it('have correct file extensions', function(done) {
     var dirname = './step-templates/';
 
     fs.readdir(dirname, function(err, results) {

@@ -1,8 +1,8 @@
 var fs = require('fs');
 
-describe("logos", function() {
+describe('logos', function() {
 
-  it("logos have valid details", function(done) {
+  it('logos have valid details', function(done) {
     var filenameCounter = 0;
     var stepTemplateCount = 0;
     var dirname = './step-templates/logos';
@@ -15,7 +15,7 @@ describe("logos", function() {
 
       filenames.forEach(function(filename) {
         var extension = filename.substring(filename.length - 4);
-        expect(extension).toBe(".png");
+        expect(extension).toBe('.png');
       });
 
       done();
