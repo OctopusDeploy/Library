@@ -14,7 +14,7 @@ describe('step-templates', function() {
               return { pass: true, message: 'Expected template "' + template.Name + '" to have a valid LastModifiedBy field.' };
             }
           }
-        }
+        };
       },
       toHaveValidName: function() {
         return {
@@ -27,7 +27,7 @@ describe('step-templates', function() {
               return { pass: true, message: '' };
             }
           }
-        }
+        };
       },
       toHaveValidId: function() {
         return {
@@ -42,7 +42,7 @@ describe('step-templates', function() {
               return { pass: true, message: '' };
             }
           }
-        }
+        };
       }
     });
   });

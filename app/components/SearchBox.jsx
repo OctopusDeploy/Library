@@ -14,7 +14,7 @@ export default class SearchBox extends React.Component {
     this._searchFilter.focus();
   }
 
-  _handleChange() {
+  handleSearchFilterChange() {
     this.props.handleUserInput(
       this._searchFilter.value
     );
@@ -30,7 +30,7 @@ export default class SearchBox extends React.Component {
               <div className="search-box">
                 <div className="search-input">
                   <input autoFocus
-                      onChange={this._handleChange}
+                      onChange={this.handleSearchFilterChange}
                       placeholder={placeholder}
                       ref={(c) => this._searchFilter = c}
                       type="text"
