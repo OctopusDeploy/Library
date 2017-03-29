@@ -7,7 +7,7 @@ const displayName = 'octopus-library-search-box';
 export default class SearchBox extends React.Component {
   constructor() {
     super();
-    this._handleChange = this._handleChange.bind(this);
+    this.handleSearchFilterChange = this.handleSearchFilterChange.bind(this);
   }
 
   componentDidMount() {
