@@ -1,0 +1,170 @@
+{
+  "Id": "d6d9d9db-e4ab-487c-967c-860bf8303052",
+  "Name": "AWS - Create Cloud Formation Stack",
+  "Description": "Creates a [Amazon Cloud Formation Stack](#http://docs.aws.amazon.com/powershell/latest/reference/items/New-CFNStack.html) with the template specified.\n\n- Requires the [AWS PowerShell cmdlets](http://aws.amazon.com/powershell/)",
+  "ActionType": "Octopus.Script",
+  "Version": 49,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "#http://docs.aws.amazon.com/powershell/latest/reference/items/New-CFNStack.html\r\n\r\n#Check for the PowerShell cmdlets\r\ntry{ \r\n    Import-Module AWSPowerShell -ErrorAction Stop\r\n}catch{\r\n    \r\n    $modulePath = \"C:\\Program Files (x86)\\AWS Tools\\PowerShell\\AWSPowerShell\\AWSPowerShell.psd1\"\r\n    Write-Output \"Unable to find the AWS module checking $modulePath\" \r\n    \r\n    try{\r\n        Import-Module $modulePath\r\n        \r\n    }\r\n    catch{\r\n        throw \"AWS PowerShell not found! Please make sure to install them from https://aws.amazon.com/powershell/\" \r\n    }\r\n}\r\n\r\nfunction Confirm-CFNStackDeleted($credential, $stackName){\r\n   do{\r\n        $stack = $null\r\n        try {\r\n            $stack = Get-CFNStack -StackName $CloudFormationStackName -Credential $credential -Region $AWSRegion       \r\n        }\r\n        catch{}\r\n        \r\n        if($stack -ne $null){\r\n\r\n\t\t\t$stack | ForEach-Object {\r\n\t\t\t\t$progress = $_.StackStatus.ToString()\r\n\t\t\t\t$name = $_.StackName.ToString()\r\n\r\n\t\t\t\tWrite-Host \"Waiting for Cloud Formation Script to deleted. Stack Name: $name Operation status: $progress\" \r\n         \r\n\t\t\t\tif($progress -ne \"DELETE_COMPLETE\" -and $progress -ne \"DELETE_IN_PROGRESS\"){                        \r\n\t\t\t\t\t$stack\r\n\t\t\t\t\tthrow \"Something went wrong deleting the Cloud Formation Template\" \r\n\t\t\t\t} \t \t\t\r\n\t\t\t} \r\n\t\t\t \r\n            Start-Sleep -s 15\r\n        }\r\n\r\n    }until ($stack -eq $null)\r\n}\r\n\r\nfunction Confirm-CFNStackCompleted($credential, $stackName, $region){\r\n\r\n    $awsValidStatusList = @()\r\n    $awsValidStatusList += \"CREATE_COMPLETE\"\r\n    $awsValidStatusList += \"CREATE_IN_PROGRESS\" \r\n    \r\n    $awsFailedStatusList = @()\r\n    $awsFailedStatusList += \"CREATE_FAILED\"\r\n    $awsFailedStatusList += \"UPDATE_FAILED\"\r\n    $awsFailedStatusList += \"DELETE_SKIPPED\"\r\n    $awsFailedStatusList += \"CREATE_FAILED\"\r\n    $awsFailedStatusList += \"CREATE_FAILED\"\r\n\r\n\t#http://docs.aws.amazon.com/powershell/latest/reference/Index.html\r\n    #CREATE_COMPLETE | CREATE_FAILED | CREATE_IN_PROGRESS | DELETE_COMPLETE | DELETE_FAILED | DELETE_IN_PROGRESS | DELETE_SKIPPED | UPDATE_COMPLETE | UPDATE_FAILED | UPDATE_IN_PROGRESS.\r\n\t \r\n    do{\r\n        $stack = Get-CFNStack -StackName $stackName -Credential $credential -Region $region  \r\n\t\t$complete = $false\r\n\r\n\t\t#Depending on the template sometimes there are multiple status per CFN template\r\n\r\n\t\t$stack | ForEach-Object {\r\n\t\t\t$progress = $_.StackStatus.ToString()\r\n\t\t\t$name = $_.StackName.ToString()\r\n\r\n\t\t\tWrite-Host \"Waiting for Cloud Formation Script to complete. Stack Name: $name Operation status: $progress\" \r\n         \r\n\t\t\tif($progress -ne \"CREATE_COMPLETE\" -and $progress -ne \"CREATE_IN_PROGRESS\"){                        \r\n\t\t\t\t$stack\r\n\t\t\t\tthrow \"Something went wrong creating the Cloud Formation Template\" \r\n\t\t\t} \t \t\t\r\n\t\t}\r\n\r\n\t\t$inProgress = $stack | Where-Object { $_.StackStatus.ToString() -eq \"CREATE_IN_PROGRESS\" }\r\n\t\t\r\n\t\tif($inProgress.Count -eq 0){\r\n\t\t\t$complete = $true\r\n\t\t}\r\n\t\t \r\n        Start-Sleep -s 15\r\n\r\n    }until ($complete -eq $true)\r\n}\r\n\r\n# Check the parameters.\r\nif (-NOT $AWSSecretAccessKey) { throw \"You must enter a value for 'AWS Access Key'.\" }\r\nif (-NOT $AWSAccessKey) { throw \"You must enter a value for 'AWS Secret Access Key'.\" }\r\nif (-NOT $AWSRegion) { throw \"You must enter a value for 'AWS Region'.\" }\r\nif (-NOT $CloudFormationStackName) { throw \"You must enter a value for 'AWS Cloud Formation Stack Name'.\" }  \r\n\r\n\r\n#Reformat the CloudFormation parameters\r\n$paramObject = ConvertFrom-Json $CloudFormationParameters\r\n$cloudFormationParams = @()\r\n\r\n$paramObject.psobject.properties | ForEach-Object { \r\n    $keyPair = New-Object -Type Amazon.CloudFormation.Model.Parameter\r\n    $keyPair.ParameterKey = $_.Name\r\n    $keyPair.ParameterValue = $_.Value\r\n\r\n    $cloudFormationParams += $keyPair\r\n} \r\n\r\nWrite-Output \"--------------------------------------------------\"\r\nWrite-Output \"AWS Region: $AWSRegion\"\r\nWrite-Output \"AWS Cloud Formation Stack Name: $CloudFormationStackName\"\r\nWrite-Output \"Use S3 for AWS Cloud Formation Script?: $UseS3ForCloudFormationTemplate\"\r\nWrite-Output \"Use S3 for AWS Cloud Formation Stack Policy?: $UseS3ForStackPolicy\"\r\nWrite-Output \"AWS Cloud Formation Script Url: $CloudFormationTemplateURL\"\r\nWrite-Output \"AWS Cloud Formation Stack Policy Url: $CloudFormationStackPolicyURL\"\r\nWrite-Output \"AWS Cloud Formation Parameters:\"\r\nWrite-Output $cloudFormationParams\r\nWrite-Output \"--------------------------------------------------\"\r\n\r\n#Set up the credentials and the dependencies\r\nSet-DefaultAWSRegion -Region $AWSRegion\r\n$credential = New-AWSCredentials -AccessKey $AWSAccessKey -SecretKey $AWSSecretAccessKey  \r\n\r\n#Check to see if the stack exists\r\ntry{\r\n    $stack = Get-CFNStack -StackName $CloudFormationStackName -Credential $credential -Region $AWSRegion    \r\n}\r\ncatch{} #Do nothing as this will throw if the stack does not exist\r\n\r\nif($stack -ne $null){\r\n    if($DeleteExistingStack -eq $false) {\r\n        Write-Output \"Stack with name $CloudFormationStackName already exists. If you wish to automatically delete existing stacks, set 'Delete Existing Stack' to True.\"\r\n        exit -1\r\n    }\r\n    Write-Output \"Stack found, removing the existing Cloud Formation Stack\"           \r\n    \r\n    Remove-CFNStack -Credential $credential -StackName $CloudFormationStackName -Region $AWSRegion -Force\r\n    Confirm-CFNStackDeleted -credential $credential -stackName $CloudFormationStackName\r\n}\r\n\r\nif($UseS3ForCloudFormationTemplate -eq $true){   \r\n\r\n    if (-NOT $CloudFormationTemplateURL) { throw \"You must enter a value for 'AWS Cloud Formation Template'.\" } \r\n\r\n    if($UseS3ForStackPolicy -eq $true){\r\n        Write-Output \"Using Cloud Formation Stack Policy from $CloudFormationStackPolicyURL\"\r\n        New-CFNStack -Credential $credential -OnFailure $CloudFormationOnFailure -TemplateUrl $CloudFormationTemplateURL -StackName $CloudFormationStackName -Region $AWSRegion -Parameter $cloudFormationParams -Capability $CloudFormationCapability -StackPolicyURL $CloudFormationStackPolicyURL\r\n    }\r\n    else {\r\n        New-CFNStack -Credential $credential -OnFailure $CloudFormationOnFailure -TemplateUrl $CloudFormationTemplateURL -StackName $CloudFormationStackName -Region $AWSRegion -Parameter $cloudFormationParams -Capability $CloudFormationCapability            \r\n    }\r\n\r\n    Confirm-CFNStackCompleted -credential $credential -stackName $CloudFormationStackName -region $AWSRegion\r\n}\r\nelse{\r\n    \r\n    Write-Output \"Using Cloud Formation script from Template\"\r\n\r\n    $validTemplate = Test-CFNTemplate -TemplateBody $CloudFormationTemplate -Region $AWSRegion  -Credential $credential\r\n    $statusCode =  $validTemplate.HttpStatusCode.ToString()\r\n\r\n    Write-Output \"Validation Response: $statusCode\"\r\n\r\n    if($validTemplate.HttpStatusCode){\r\n\r\n        if($UseS3ForStackPolicy -eq $true){\r\n            Write-Output \"Using Cloud Formation Stack Policy from $CloudFormationStackPolicyURL\"\r\n            New-CFNStack -Credential $credential -OnFailure $CloudFormationOnFailure -TemplateBody $CloudFormationTemplate -StackName $CloudFormationStackName -Region $AWSRegion -Parameter $cloudFormationParams -Capability $CloudFormationCapability -StackPolicyURL $CloudFormationStackPolicyURL\r\n        }\r\n        else {\r\n            New-CFNStack -Credential $credential -OnFailure $CloudFormationOnFailure -TemplateBody $CloudFormationTemplate -StackName $CloudFormationStackName -Region $AWSRegion -Parameter $cloudFormationParams -Capability $CloudFormationCapability\r\n        }\r\n\r\n        Confirm-CFNStackCompleted -credential $credential -stackName $CloudFormationStackName -region $AWSRegion\r\n    }\r\n    else{\r\n        throw \"AWS Cloud Formation template is not valid\"\r\n    }         \r\n}\r\n\r\n$stack = Get-CFNStack -StackName $CloudFormationStackName -Credential $credential -Region $AWSRegion   \r\n\r\nSet-OctopusVariable -name \"AWSCloudFormationStack\" -value $stack\r\n",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "13f780df-407d-48b9-b7d8-7bd92f47da38",
+      "Name": "AWSSecretAccessKey",
+      "Label": "AWS Secret Access Key",
+      "HelpText": "The [secret access key](http://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSGettingStartedGuide/AWSCredentials.html) to use when executing the script",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "520b8d18-fedd-49fc-a80c-957ea00fe532",
+      "Name": "AWSAccessKey",
+      "Label": "AWS Access Key",
+      "HelpText": "The [access key](http://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSGettingStartedGuide/AWSCredentials.html) to use when executing the script",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "dbc80958-358b-45e9-b6c0-90dfa1047661",
+      "Name": "AWSRegion",
+      "Label": "AWS Region",
+      "HelpText": "The Amazon Region see (http://docs.aws.amazon.com/powershell/latest/reference/items/Get-AWSRegion.html) for further info",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "us-east-1|US East (Virginia)\nus-west-1|US West (N. California)\nus-west-2|US West (Oregon)\neu-west-1|EU West (Ireland)\neu-central-1|EU Central (Frankfurt)\nap-northeast-1|Asia Pacific (Tokyo)\nap-southeast-1|Asia Pacific (Singapore)\nap-southeast-2|Asia Pacific (Sydney)\nsa-east-1|South America (Sao Paulo)"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "772a57e1-824b-46bf-b652-31c27b3b8473",
+      "Name": "CloudFormationStackName",
+      "Label": "AWS Cloud Formation Stack Name",
+      "HelpText": "The name of the AWS Cloud Formation Stack",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "8c6b8792-fc24-4f40-953e-4d8511b5e00d",
+      "Name": "CloudFormationCapability",
+      "Label": "AWS Cloud Formation Capability",
+      "HelpText": "The capability required for the tempate see [docs](http://docs.aws.amazon.com/powershell/latest/reference/items/New-CFNStack.html)",
+      "DefaultValue": "CAPABILITY_IAM",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "51433c58-fc29-4e73-aae0-5a40799fa16f",
+      "Name": "CloudFormationOnFailure",
+      "Label": "Action on Failure",
+      "HelpText": "Defaults to ROLLBACK.  See [docs](http://docs.aws.amazon.com/powershell/latest/reference/items/New-CFNStack.html)",
+      "DefaultValue": "ROLLBACK",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "a8919189-c361-4b05-ae4b-9aba650d9d0f",
+      "Name": "UseS3ForCloudFormationTemplate",
+      "Label": "Use AWS S3 storage for the Cloud Formation Template",
+      "HelpText": "Whether to use S3 storage to source the Cloud Formation script.  See [docs](http://docs.aws.amazon.com/powershell/latest/reference/items/New-CFNStack.html)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "7169c2f4-e1ff-45fa-99f1-7fcb49b1e313",
+      "Name": "CloudFormationTemplate",
+      "Label": "The Cloud Formation Template",
+      "HelpText": "The Cloud Formation Template in the format, see [docs](http://aws.amazon.com/cloudformation/aws-cloudformation-templates/)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "48351ea3-fedb-43ec-b594-c2bbc11efb46",
+      "Name": "CloudFormationTemplateURL",
+      "Label": "The location in S3 for the Cloud Formation Template",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "a01f0c6c-4a0c-4f32-9327-d6a22c10d10c",
+      "Name": "CloudFormationParameters",
+      "Label": "Cloud Formation Parameters",
+      "HelpText": "See [docs](http://docs.aws.amazon.com/powershell/latest/reference/items/New-CFNStack.html)\n\nShould be provided as a JSON formatted object.\n\ne.g.`{ \"Key1\": \"Value1\", \"Key2\": \"Value2\" }`",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ca922e15-fd36-4a0d-8717-660afc5e7aa9",
+      "Name": "UseS3ForStackPolicy",
+      "Label": "Use AWS S3 Storage for Cloud Formation Stack Policy",
+      "HelpText": "See [docs](http://docs.aws.amazon.com/powershell/latest/reference/items/New-CFNStack.html)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "869f2c5b-511f-4dee-bde7-30bee105b81d",
+      "Name": "CloudFormationStackPolicyURL",
+      "Label": "The URL for the Cloud Formation Policy in S3",
+      "HelpText": "See [docs](http://docs.aws.amazon.com/powershell/latest/reference/items/New-CFNStack.html)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "671b3717-d0b9-4285-915b-5a52ad52ff78",
+      "Name": "DeleteExistingStack",
+      "Label": "Delete Existing Stack",
+      "HelpText": "A boolean to state whether or not to delete the existing stack if one with the same name is found. If this is set to false and a stack with the same name is found, the step will fail.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "kirkholloway",
+  "$Meta": {
+    "ExportedAt": "2017-02-06T22:56:26.736Z",
+    "OctopusVersion": "3.7.5",
+    "Type": "ActionTemplate"
+  },
+  "Category": "aws"
+}

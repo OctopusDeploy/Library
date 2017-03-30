@@ -1,0 +1,58 @@
+{
+  "Id": "a9fd43af-257e-49c9-9434-618568e1df52",
+  "Name": "Clear Jasper Web-Cache",
+  "Description": "Clears the Jasper web cache",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Name: ClearCache.ps1\r\n# Author: Matt Smith\r\n# Created Date: 28 July 2014\r\n# Modified Date: 13 October 2014\r\n# Version: 1.3\r\n\r\n$servers = $OctopusParameters['fqdn'] -split \";\"\r\n\r\nforeach ($server in $servers)\r\n{\r\n    Write-Host 'Clearing cache in '$server\r\n    $url = 'http://' + $server + '/' + $OctopusParameters['environment'] + '_web/report/meta'\r\n\r\n    Function ClearCache($type)\r\n    { \r\n      return Invoke-WebRequest -Uri $url/$type -Method GET -Headers @{\"Authorization\" = \"Basic \"+[System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($OctopusParameters['username']+\":\"+$OctopusParameters['password'] ))}\r\n    }\r\n  \r\n    # Clear cache\r\n    $reportresult = ClearCache -type 'reportcache?CLEAR=Clear+Cache'\r\n    $templateresult =  ClearCache -type 'templatecache?CLEAR=Clear+Cache'\r\n    $imageresult =  ClearCache -type 'imagescache?CLEAR=Clear+Cache'\r\n\r\n}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "fqdn",
+      "Label": "Server Name",
+      "HelpText": "Enter the server name of your Jasper web server",
+      "DefaultValue": "server",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "environment",
+      "Label": "Environment",
+      "HelpText": "Enter the environment",
+      "DefaultValue": "dev",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "username",
+      "Label": "Username",
+      "HelpText": "Enter the username to authenticate.",
+      "DefaultValue": "username",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "password",
+      "Label": "Password",
+      "HelpText": "Enter the password",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-09-01T16:24:16.807+00:00",
+  "LastModifiedBy": "matt40k",
+  "$Meta": {
+    "ExportedAt": "2015-07-09T12:17:59.666+00:00",
+    "OctopusVersion": "2.6.5.1010",
+    "Type": "ActionTemplate"
+  },
+  "Category": "jasper"
+}

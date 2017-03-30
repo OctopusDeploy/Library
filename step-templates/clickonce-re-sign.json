@@ -1,0 +1,58 @@
+{
+  "Id": "a9e5843e-d382-44fd-84dd-d999dab54993",
+  "Name": "ClickOnceRe-Sign",
+  "Description": "This Template will help to re-sign the .application and manifest files. Finally add .deploy extenstion to the files",
+  "ActionType": "Octopus.Script",
+  "Version": 6,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$xml = [xml](Get-Content \"$baseDeployPath\\$AppName.application\")\r\n$manifestpath = $xml.assembly.dependency.dependentAssembly.codebase\r\n$ApplicationWithVersion = $manifestpath.Split('\\\\')[1]\r\n\r\n#Manifest Resign\r\n& \"C:\\Program Files (x86)\\Microsoft SDKs\\Windows\\v8.0A\\bin\\NETFX 4.0 Tools\\mage.exe\" -Update \"$baseDeployPath\\$manifestpath\" -FromDirectory \"$baseDeployPath\\Application Files\\$ApplicationWithVersion\"\r\n& \"C:\\Program Files (x86)\\Microsoft SDKs\\Windows\\v8.0A\\bin\\NETFX 4.0 Tools\\mage.exe\" -Sign \"$baseDeployPath\\$manifestpath\" -CertFile $signcertpath -Password $signCertPass\r\n\r\n#Application Resign\r\n& \"C:\\Program Files (x86)\\Microsoft SDKs\\Windows\\v7.0A\\Bin\\mage.exe\" -Update \"$baseDeployPath\\$AppName.application\" -AppManifest \"$baseDeployPath\\$manifestpath\"\r\n& \"C:\\Program Files (x86)\\Microsoft SDKs\\Windows\\v7.0A\\Bin\\mage.exe\" -Sign \"$baseDeployPath\\$AppName.application\" -CertFile $signcertpath -Password $signCertPass\r\n\r\n#Rename files back to the .deploy extension, skipping the files that shouldn't be renamed\r\nGet-ChildItem -Path \"$baseDeployPath\\Application Files\\*\"  -Recurse | Where-Object {!$_.PSIsContainer -and $_.Name -notlike \"*.manifest\" -and $_.Name -notlike \"*.vsto\"} | Rename-Item -NewName {$_.Name + \".deploy\"} "
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "signcertpath",
+      "Label": "Signing Certificate Path",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "signCertPass",
+      "Label": "Signing Certificate Password",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "baseDeployPath",
+      "Label": "Deployment Path",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AppName",
+      "Label": "Application Name",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-10-20T12:44:19.041+00:00",
+  "LastModifiedBy": "mani0070",
+  "$Meta": {
+    "ExportedAt": "2015-10-20T20:26:27.693+00:00",
+    "OctopusVersion": "3.1.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "clickOnce"
+}

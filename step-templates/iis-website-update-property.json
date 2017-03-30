@@ -1,0 +1,52 @@
+{
+  "Id": "34118a0e-f872-435a-8522-d3c7f8515cb8",
+  "Name": "IIS WebSite - Update Property",
+  "Description": "Updates property for specified WebSite",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\nparam(\n    [string]$webSiteName,\n    [string]$propertyName,\n    [object]$propertyValue,\n    [switch]$whatIf\n) \n\n$ErrorActionPreference = \"Stop\" \n\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue   \n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    if ($result -eq $null -or $result -eq \"\") {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        } else {\n            $result = $Default\n        }\n    }\n\n    return $result\n}\n\n& {\n    param(\n        [string]$webSiteName,\n        [string]$propertyName,\n        [object]$propertyValue\n    ) \n\n    Write-Host \"Setting $webSiteName property $propertyName to $propertyValue\"\n\n    try {\n         Add-PSSnapin WebAdministration -ErrorAction SilentlyContinue\n         Import-Module WebAdministration -ErrorAction SilentlyContinue\n         \n         $oldValue = Get-ItemProperty \"IIS:\\Sites\\$webSiteName\" -Name $propertyName\n         $oldValueString = \"\"\n\n         \n         if ($oldValue.GetType() -eq [Microsoft.IIs.PowerShell.Framework.ConfigurationAttribute])\n         {\n             $oldValueString = ($oldValue | Select-Object -ExpandProperty \"Value\")\n         }\n         elseif ($oldValue.GetType() -eq [System.String])\n         {\n             $oldValueString = $oldValue\n         }\n         elseif ($oldValue.GetType() -eq [System.Management.Automation.PSCustomObject])\n         {\n             $oldValueString = ($oldValue | Select-Object -ExpandProperty $propertyName)\n         }\n\n         Write-Host \"Old value $oldValueString\"\n         Set-ItemProperty \"IIS:\\Sites\\$webSiteName\" -Name $propertyName -Value $propertyValue\n         Write-Host \"New value $propertyValue\"\n         Write-Host \"Done\"\n    } catch {\n        Write-Host $_.Exception|format-list -force\n        Write-Host \"There was a problem setting property\"    \n    }\n\n } `\n (Get-Param 'webSiteName' -Required) (Get-Param 'propertyName' -Required) (Get-Param 'propertyValue' -Required)\n",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "webSiteName",
+      "Label": "Web site name",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "propertyName",
+      "Label": "Name of the property to set",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "propertyValue",
+      "Label": "Value of the property to set",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2016-05-30T11:42:50.429+00:00",
+  "LastModifiedBy": "ylashin",
+  "$Meta": {
+    "ExportedAt": "2016-05-30T11:42:50.429+00:00",
+    "OctopusVersion": "3.3.15",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}

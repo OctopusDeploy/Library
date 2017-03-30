@@ -1,44 +1,68 @@
 {
-  "Id": "ActionTemplates-1",
+  "Id": "5d771fd0-710c-41a7-9969-10bc75d00307",
   "Name": "IIS AppPool - Update Recycle Settings",
   "Description": "Update the worker process and app pool timeout/recycle times.",
   "ActionType": "Octopus.Script",
-  "Version": 12,
+  "Version": 3,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "Import-Module WebAdministration\n\n$applicationPoolName = $OctopusParameters[\"ApplicationPoolName\"]\n$idleTimeout = $OctopusParameters[\"IdleTimeoutMinutes\"]\n$periodicRestart = $OctopusParameters[\"RegularTimeIntervalMinutes\"]\n$periodicRecycleTime = $OctopusParameters[\"PeriodicRecycleTime\"]\n\nfunction Update-IISAppPool-RecyclingTimeoutSettings($name, $idleTimeout, $periodicRestart) {\n    Write-Output \"Setting worker precess idle timeout to $idleTimeout and periodic restart time to $periodicRestart for AppPool $name.\"\n    $Pool = Get-Item IIS:\\AppPools\\\"$name\"\n    $Pool.ProcessModel.IdleTimeout = [TimeSpan]::FromMinutes($idleTimeout)\n    $Pool.Recycling.PeriodicRestart.Time = [TimeSpan]::FromMinutes($periodicRestart)\n    $Pool | Set-Item\n}\n\nfunction Update-IISAppPool-RecyclingPeriodicSetting($name, $value) {\n    Write-Output \"Setting periodic recycle for AppPool $name to $value.\"\n    Clear-ItemProperty IIS:\\AppPools\\\"$name\" -Name Recycling.periodicRestart.schedule # Clear any existing schedules\n    Set-ItemProperty IIS:\\AppPools\\\"$name\" -Name Recycling.periodicRestart.schedule -Value @{value=$value}\n}\n\nUpdate-IISAppPool-RecyclingTimeoutSettings -Name $applicationPoolName -IdleTimeout $idleTimeout -PeriodicRestart $periodicRestart\nUpdate-IISAppPool-RecyclingPeriodicSetting -Name $applicationPoolName -Value $periodicRecycleTime"
+    "Octopus.Action.Script.ScriptBody": "Import-Module WebAdministration\r\n\r\n$applicationPoolName = $OctopusParameters[\"ApplicationPoolName\"]\r\n$idleTimeout = $OctopusParameters[\"IdleTimeoutMinutes\"]\r\n$periodicRestart = $OctopusParameters[\"RegularTimeIntervalMinutes\"]\r\n$periodicRecycleTime = $OctopusParameters[\"PeriodicRecycleTime\"]\r\n$recycleEventsToLog = $OctopusParameters[\"RecycleEventsToLog\"]\r\n\r\n\r\n\r\nfunction Update-IISAppPool-RecyclingTimeoutSettings($appPoolName, $idleTimeout, $periodicRestart) {\r\n    Write-Output \"Setting worker process idle timeout to $idleTimeout and periodic restart time to $periodicRestart for AppPool $appPoolName.\"\r\n    $Pool = Get-Item IIS:\\AppPools\\$appPoolName\r\n    $Pool.ProcessModel.IdleTimeout = [TimeSpan]::FromMinutes($idleTimeout)\r\n    if(![string]::IsNullOrEmpty($periodicRestart)){\r\n        $Pool.Recycling.PeriodicRestart.Time = [TimeSpan]::FromMinutes($periodicRestart)\r\n    }\r\n    $Pool | Set-Item\r\n}\r\n\r\nfunction Update-IISAppPool-Setting($appPoolName, $settingName, $value) {\r\n    Write-Output \"Setting $settingName for AppPool $appPoolName to $value.\"\r\n    Clear-ItemProperty IIS:\\AppPools\\$appPoolName -Name $settingName # Clear any existing schedules\r\n    Set-ItemProperty IIS:\\AppPools\\$appPoolName -Name $settingName -Value $value\r\n}\r\n\r\nUpdate-IISAppPool-RecyclingTimeoutSettings -AppPoolName $applicationPoolName -IdleTimeout $idleTimeout -PeriodicRestart $periodicRestart\r\n\r\nif(![string]::IsNullOrEmpty($periodicRecycleTime)){\r\n    Update-IISAppPool-Setting -AppPoolName $applicationPoolName -SettingName Recycling.periodicRestart.schedule -Value @{value=$periodicRecycleTime}    \r\n}\r\n \r\nif(![string]::IsNullOrEmpty($recycleEventsToLog)){\r\n    Update-IISAppPool-Setting -AppPoolName $applicationPoolName -SettingName Recycling.logEventOnRecycle -Value $recycleEventsToLog    \r\n}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
   },
-  "SensitiveProperties": {},
   "Parameters": [
     {
+      "Id": "0fd90579-79b4-4086-8c7c-602cf21f9f10",
       "Name": "ApplicationPoolName",
       "Label": "Application pool",
       "HelpText": "The name of the application pool to modify. The application pool must already exist.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {}
     },
     {
+      "Id": "4c1c4df5-4282-43f4-9119-e514016b4230",
       "Name": "IdleTimeoutMinutes",
       "Label": "Process idle timeout",
       "HelpText": "Amount of time (in minutes) a worker process will remain idle before it shuts down. A value of 0 means the process does not shut down after an idle timeout.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {}
     },
     {
+      "Id": "516e588b-b9e3-43cc-8342-7f50c97e138b",
       "Name": "RegularTimeIntervalMinutes",
       "Label": "Application pool recycle time interval",
       "HelpText": "Period of time (in minutes) after which the application pool will recycle. A value of 0 means the application pool does not recycle on a regular interval.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {}
     },
     {
+      "Id": "a8121270-e728-4fe5-bf1b-f75cb5075516",
       "Name": "PeriodicRecycleTime",
       "Label": "Application pool periodic recycle time",
       "HelpText": "A specific local time, in 24 hour format, when the application pool is recycled.\n\nExample: \"00:30:00\" for half an hour past midnight.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Id": "fd4fe130-1bed-41ee-a1b5-73a080cc3ca5",
+      "Name": "RecycleEventsToLog",
+      "Label": "Recycle Events To Log",
+      "HelpText": "Event Log entries can be generated when an application pool is recycled. Select the Recycling events to log. The Options are **Time**, **Requests**, **Schedule**, **Memory**, **IsapiUnhealthy**, **OnDemand**, **ConfigChange**,  **PrivateMemory**. These should be entered in a comma separated list. \n\nExample: \"OnDemand,ConfigChange\"",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-07-03T06:06:06.326+00:00",
-  "LastModifiedBy": "toby-m",
+  "LastModifiedOn": "2016-11-02T15:25:09.386+00:00",
+  "LastModifiedBy": "ashtonian",
   "$Meta": {
-    "ExportedAt": "2014-07-03T06:06:16.876Z",
-    "OctopusVersion": "2.4.9.167",
+    "ExportedAt": "2016-11-02T15:25:09.386+00:00",
+    "OctopusVersion": "3.4.13",
     "Type": "ActionTemplate"
-  }
+  },
+  "Category": "iis"
 }

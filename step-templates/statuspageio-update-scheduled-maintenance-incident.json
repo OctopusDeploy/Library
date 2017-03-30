@@ -1,0 +1,76 @@
+{
+  "Id": "7bc83a07-8927-467e-a2eb-922609212e3a",
+  "Name": "StatusPage.io - Update Scheduled Maintenance Incident",
+  "Description": "Updates an existing scheduled maintenance incident on StatusPage.io",
+  "ActionType": "Octopus.Script",
+  "Version": 0,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "## --------------------------------------------------------------------------------------\r\n## Input\r\n## --------------------------------------------------------------------------------------\r\n$pageId = $OctopusParameters['PageId']\r\n$apiKey = $OctopusParameters['ApiKey']\r\n$incidentName = $OctopusParameters['IncidentName']\r\n$incidentStatus = $OctopusParameters['IncidentStatus']\r\n$incidentMessage = $OctopusParameters['IncidentMessage']\r\n\r\nfunction Validate-Parameter($parameterValue, $parameterName) {\r\n    if(!$parameterName -contains \"Key\") {\r\n        Write-Host \"${parameterName}: ${parameterValue}\"\r\n    }\r\n\r\n    if (! $parameterValue) {\r\n        throw \"$parameterName cannot be empty, please specify a value\"\r\n    }\r\n}\r\n\r\nfunction Get-InProgressScheduledIncidentByName\r\n{\r\n    [CmdletBinding()]\r\n    Param(\r\n        [Parameter(Mandatory=$true)]\r\n        [string]$PageId,\r\n\r\n        [Parameter(Mandatory=$true)]\r\n        [string]$ApiKey,\r\n\r\n        [Parameter(Mandatory=$true)]\r\n        [string]$Name\r\n    )\r\n\r\n    $url = \"https://api.statuspage.io/v1/pages/$PageId/incidents/unresolved.json\"\r\n    $headers = @{\"Authorization\"=\"OAuth $ApiKey\"}\r\n\r\n    $response = iwr -UseBasicParsing -Uri $url -Headers $headers -Method GET\r\n    $content = ConvertFrom-Json $response\r\n    $incident = $content | where {$_.name -eq $Name}\r\n    $incident.id\r\n}\r\n\r\nfunction Update-ScheduledIncident\r\n{\r\n    [CmdletBinding()]\r\n    Param(\r\n        [Parameter(Mandatory=$true)]\r\n        [string]$PageId,\r\n\r\n        [Parameter(Mandatory=$true)]\r\n        [string]$ApiKey,\r\n\r\n        [Parameter(Mandatory=$true)]\r\n        [string]$IncidentId,\r\n\r\n        [Parameter(Mandatory=$true)]\r\n        [ValidateSet(\"scheduled\", \"in_progress\", \"verifying\", \"completed\")]\r\n        [string]$Status,\r\n        \r\n        [Parameter(Mandatory=$false)]\r\n        [string]$Message\r\n    )\r\n\r\n    $url = \"https://api.statuspage.io/v1/pages/$PageId/incidents/$IncidentId.json\"\r\n    $headers = @{\"Authorization\"=\"OAuth $ApiKey\"}\r\n    $body = \"incident[status]=$Status\"\r\n\r\n    if($Message)\r\n    {\r\n        $body += \"&incident[message]=$Message\"\r\n    }\r\n\r\n    $response = iwr -UseBasicParsing -Uri $url -Headers $headers -Method PATCH -Body $body -ContentType application/x-www-form-urlencoded\r\n}\r\n\r\nValidate-Parameter $pageId -parameterName 'PageId'\r\nValidate-Parameter $apiKey = -parameterName 'ApiKey'\r\nValidate-Parameter $incidentName = -parameterName 'IncidentName'\r\nValidate-Parameter $incidentStatus -parameterName 'IncidentStatus'\r\n\r\n$incidentId = Get-InProgressScheduledIncidentByName -PageId $pageId -ApiKey $apiKey -Name $incidentName\r\nWrite-Verbose \"Found incident id: $incidentId\"\r\nWrite-Output \"Updating scheduled maintenance incident `\"$incidentName`\" [IncidentId: $incidentId]\"\r\nUpdate-ScheduledIncident -PageId $pageId -ApiKey $apiKey -IncidentId $incidentId -Status $incidentStatus -Message $incidentMessage \r\n",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "b1044b12-8cdc-4b55-b429-a08711a66339",
+      "Name": "IncidentName",
+      "Label": "Scheduled Maintenance Name",
+      "HelpText": "The name of the scheduled maintenance incident.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6d9277b0-3cab-43ea-9946-d772c9d3aebf",
+      "Name": "IncidentStatus",
+      "Label": "Status",
+      "HelpText": "The status of the incident, one of scheduled|in_progress|verifying|completed",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "scheduled|Scheduled\nin_progress|In Progress\nverifying|Verifying\ncompleted|Completed"
+      }
+    },
+    {
+      "Id": "a2121f55-09ea-4200-ae4f-0131f7db06b1",
+      "Name": "IncidentMessage",
+      "Label": "Message",
+      "HelpText": "Optional message to add to scheduled maintenance incident.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d0504e1f-150d-46b2-8127-449a708e55c6",
+      "Name": "PageId",
+      "Label": "StatusPage.io Page Id",
+      "HelpText": "StatusPage.io Organization or \"Page ID\". Visit the [API authentication docs](http://doers.statuspage.io/api/authentication/) for details.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "48c90b4b-d9ca-419a-8c8f-98d301db2015",
+      "Name": "ApiKey",
+      "Label": "StatusPage.io API Key",
+      "HelpText": "StatusPage.io API key for the organization. Visit the [API Authentication docs](http://doers.statuspage.io/api/authentication/) for details.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "LastModifiedBy": "nshenoy",
+  "$Meta": {
+    "ExportedAt": "2016-10-26T18:51:37.967+00:00",
+    "OctopusVersion": "3.4.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "statusPage"
+}

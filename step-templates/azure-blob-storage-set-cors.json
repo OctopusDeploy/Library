@@ -1,0 +1,79 @@
+{
+  "Id": "745fa985-7022-4b19-a788-2fd77aa5b365",
+  "Name": "Azure Blob Storage set CORS Rule",
+  "Description": "Set a given CORS rule on the specified Azure storage blob container",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "try\n{ \n    Import-Module Azure -ErrorAction Stop\n}\ncatch\n{\n    throw \"Windows Azure Powershell not found! Please make sure to install them from http://www.windowsazure.com/en-us/downloads/#cmd-line-tools\" \n}\n\nImport-AzurePublishSettingsFile $PublishSettingsFile\n\n$context = New-AzureStorageContext `\n    -StorageAccountName $StorageAccount `\n    -StorageAccountKey $StorageAccountKey\n\n$container = Get-AzureStorageContainer -Context $context | \n        Where-Object { $_.Name -like $StorageContainer }\n\nif (-not $container)\n{\n    throw \"Azure storage container ($StorageAccount) not found\"\n}\n\n$corsRules = (@{\n    AllowedHeaders=@($AllowedHeaders);\n    AllowedOrigins=@($AllowedOrigins);\n    MaxAgeInSeconds=$MaxAgeInSeconds;\n    AllowedMethods=@($AllowedMethods)})\n\nSet-AzureStorageCORSRule -Context $context -ServiceType Blob -CorsRules $corsRules\n\nWrite-Host \"Added CORS rule to container: $StorageContainer\""
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "PublishSettingsFile",
+      "Label": "Publish Settings File",
+      "HelpText": "Absolute path on the tentacle to the Azure publishsettings file to use. Eg. C:\\Azure\\Azure.publishsettings",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "StorageAccount",
+      "Label": "Storage Account",
+      "HelpText": "The Azure Storage Account to use.",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "StorageAccountKey",
+      "Label": "Storage Account Key",
+      "HelpText": "The primary or secondary key for the Azure Storage Account.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "StorageContainer",
+      "Label": "Storage Container",
+      "HelpText": "The storage container to use.",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "AllowedHeaders",
+      "Label": "Allowed Headers",
+      "HelpText": "The allowed headers for the CORS rule",
+      "DefaultValue": "\"x-ms-blob-content-type\",\"x-ms-blob-content-disposition\"",
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "AllowedOrigins",
+      "Label": "Allowed Origins",
+      "HelpText": "The allowed origins for the CORS rule",
+      "DefaultValue": "*",
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "MaxAgeInSeconds",
+      "Label": "Max Age In Seconds",
+      "HelpText": "The max age in seconds that a pre-flight response can be cached on the client for.",
+      "DefaultValue": "1800",
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "AllowedMethods",
+      "Label": "Allowed Methods",
+      "HelpText": "The allowed HTTP methods for the CORS rule",
+      "DefaultValue": "Get",
+      "DisplaySettings": {}
+    }
+  ],
+  "LastModifiedBy": "jonsamwell",
+  "$Meta": {
+    "ExportedAt": "2016-01-22T04:49:27.549+00:00",
+    "OctopusVersion": "3.1.3",
+    "Type": "ActionTemplate"
+  },
+  "Category": "azure"
+}

@@ -1,0 +1,66 @@
+{
+  "Id": "309f8497-7f79-4979-89a6-5d7e15d83ae2",
+  "Name": "RabbitMQ - Notify Deploy",
+  "Description": "Notifies a deploy by sending a message into rabbitMQ. The message contains all octopus variables and these can be used to have some insight on the deploy. The step is very beta, it is advised to improve it to match real case scenarios.",
+  "ActionType": "Octopus.Script",
+  "Version": 0,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "function Add-ValueToHashtable\r\n{\r\n    param(\r\n    [Parameter(Mandatory = 1)][object]$variable,\r\n    [Parameter(Mandatory = 1)][hashtable]$hashtable\r\n    )\r\n\r\n    if ($variable.value.GetType() -eq [System.String])\r\n    {\r\n        $hashtable.Add($variable.Name, $variable.value)\r\n        return\r\n    }\r\n\r\n    if (($variable.value.GetType() -eq (New-Object 'System.Collections.Generic.Dictionary[String,String]').GetType()) -or ($variable.value.GetType() -eq [Hashtable]))\r\n    {\r\n        foreach ($element in $variable.Value.GetEnumerator())\r\n        {\r\n            $obj = New-Object PsObject -Property @{ Name = $element.Key; Value = $element.Value }\r\n            Add-ValueToHashtable -variable $obj -hashtable $hashtable\r\n        }\r\n        return\r\n    }\r\n\r\n    throw \"Add-ValueToHashtable method does not know what to do with type \" + $variable.value.GetType().Name\r\n}\r\n\r\nfunction Get-UnixDate\r\n{\r\n    $epoch = Get-Date -Year 1970 -Month 1 -Day 1 -Hour 0 -Minute 0 -Second 0\t\r\n    $now = Get-Date\r\n    return ([math]::truncate($now.ToUniversalTime().Subtract($epoch).TotalMilliSeconds))\r\n}\r\n\r\nfunction Get-IsRollback\r\n{\r\n    $currentVersion = New-Object -TypeName System.Version -ArgumentList $OctopusReleaseNumber\r\n    $prevVersion = New-Object -TypeName System.Version -ArgumentList $OctopusReleasePreviousNumber\r\n\r\n    return ($currentVersion.CompareTo($prevVersion) -lt 0)\r\n}\r\n\r\nfunction Get-OctopusVariablesJson\r\n{\r\n    $octoVariables = @{}\r\n\r\n    foreach ($var in (Get-Variable -Name OctopusParameters*))\r\n    {\r\n        Add-ValueToHashtable -variable $var -hashtable $octoVariables\r\n    }\r\n\r\n    $octoVariables.Add(\"isrollback\", (Get-IsRollback))\r\n    $octoVariables.Add(\"timestamp\", (Get-UnixDate))\r\n    $octoVariables.Add(\"safeprojectname\", $OctopusParameters[\"Octopus.Project.Name\"].Replace(\" \", \"_\"))\r\n\r\n    return ($octoVariables | ConvertTo-Json -Compress)\r\n}\r\n\r\nfunction ConvertTo-AsciiString\r\n{\r\n    param(  \r\n    [Parameter(Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]\r\n    [string]$input)\r\n    \r\n    process {\r\n        #custom desired transformation\r\n        $tmp = $input.Replace([char]0x00EC, \"i\")\r\n        #fallback\r\n        $bytes = [System.Text.Encoding]::UTF8.GetBytes($tmp)\r\n        $asciiArray = [System.Text.Encoding]::Convert([System.Text.Encoding]::UTF8, [System.Text.Encoding]::ASCII, $bytes)\r\n        $ascistring = [System.Text.Encoding]::ASCII.GetString($asciiArray)\r\n        return $ascistring\r\n    }\r\n}\r\n\r\n$json = Get-OctopusVariablesJson | ConvertTo-AsciiString\r\n$body = New-Object PsObject -Property @{ properties = @{}; routing_key = \"#\"; payload = $json; payload_encoding = \"string\" } | ConvertTo-Json -Compress\r\n\r\n$securepassword = ConvertTo-SecureString $rabbitPassword -AsPlainText -Force\r\n$cred = New-Object System.Management.Automation.PSCredential ($rabbitUsername, $securepassword)\r\n\r\nInvoke-RestMethod -Uri \"$rabbitUrl/api/exchanges/$rabbitVirtualHost/$rabbitExchange/publish\" -Method Post -Credential $cred -Body $body -ContentType \"application/json\""
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "rabbitUsername",
+      "Label": "rabbitmq username",
+      "HelpText": "username used to publish message",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "rabbitPassword",
+      "Label": "rabbitmq user password",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "rabbitExchange",
+      "Label": "rabbitMQ exchange",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "rabbitVirtualHost",
+      "Label": "rabbitmq virtual host",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "rabbitUrl",
+      "Label": "rabbitmq url endpoint",
+      "HelpText": null,
+      "DefaultValue": "http://localhost:15672",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "alfhenrik",
+  "$Meta": {
+    "ExportedAt": "2015-07-05T08:47:05.572+00:00",
+    "OctopusVersion": "3.0.0.1666",
+    "Type": "ActionTemplate"
+  },
+  "Category": "rabbitmq"
+}

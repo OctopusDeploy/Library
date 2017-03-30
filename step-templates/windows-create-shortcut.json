@@ -1,11 +1,12 @@
 {
-  "Id": "ActionTemplates-33",
+  "Id": "95ed2a99-f92a-482e-a625-bbd1fb7c24bc",
   "Name": "Windows - Create Shortcut",
   "Description": "Creates or updates a Windows shortcut to point to a target file.",
   "ActionType": "Octopus.Script",
-  "Version": 5,
+  "Version": 6,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "Write-Output \"Shortcut: $($OctopusParameters['shortcutPath'])\\$($OctopusParameters['shortcutName'])\"\nWrite-Output \"Target: $($OctopusParameters['targetFilePath'])\"\n\nif(!(Test-Path $shortcutPath)){\n    New-Item -ItemType Directory -Path $shortcutPath\n}\n\n$WshShell = New-Object -comObject WScript.Shell\n$Shortcut = $WshShell.CreateShortcut(\"$($OctopusParameters['shortcutPath'])\\$($OctopusParameters['shortcutName']).lnk\")\n$Shortcut.TargetPath = $OctopusParameters['targetFilePath']\n$Shortcut.Save()"
+    "Octopus.Action.Script.ScriptBody": "$destination = $OctopusParameters['ShortcutDestination']\n$targetFilePath = $OctopusParameters['TargetFilePath']\n$shortcutName = $OctopusParameters['Shortcutname']\n\n#Use Custom or predefined path\n$shortcutDestination = \n    if($destination -eq \"PublicDesktop\") { \"$env:PUBLIC\\Desktop\" }\n    elseif($destination -eq \"Custom\") { $OctopusParameters['ShortcutPath'] }\n    else {Write-Error \"Shortcut destination is not set\"}\n\n\n#Create shortcut filename\n$shortcut = \"$shortcutDestination\\$shortcutName.lnk\"\n\nWrite-Output \"Shortcut: $shortcut\"\nWrite-Output \"Target: $targetFilePath\"\n\nif(!(Test-Path $destination)){\n    New-Item -ItemType Directory -Path $destination\n}\n\n$WshShell = New-Object -comObject WScript.Shell\n$Shortcut = $WshShell.CreateShortcut(\"$shortcut\")\n$Shortcut.TargetPath = $targetFilePath\n$Shortcut.Save()",
+    "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -13,26 +14,42 @@
       "Name": "TargetFilePath",
       "Label": "Target file the shortcut will reference",
       "HelpText": "This should be set to the file that the shortcut will link to.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "ShortcutDestination",
+      "Label": "Choose a destination for the shortcut or a Custom path.",
+      "HelpText": "",
+      "DefaultValue": "PublicDesktop",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "PublicDesktop|Desktop (All Users)\nCustom|Custom"
+      }
     },
     {
       "Name": "ShortcutPath",
-      "Label": "The path the shortcut will be put in",
-      "HelpText": "This should include a path that the shortcut should live in.  If the path does not exist, it will be created.",
-      "DefaultValue": null
+      "Label": "The path the shortcut will be put in if Custom path is chosen",
+      "HelpText": "This path is only used if Custom is set as destination for the shortcut. This should include a path that the shortcut should live in.  If the path does not exist, it will be created.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "ShortcutName",
       "Label": "The name of the shortcut",
       "HelpText": "This should be the name of the shortcut.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {}
     }
   ],
-  "LastModifiedOn": "2014-06-05T19:06:30.919+00:00",
-  "LastModifiedBy": "bigbam505",
+  "LastModifiedOn": "2015-12-23T09:00:25.554+00:00",
+  "LastModifiedBy": "oskaremil",
   "$Meta": {
-    "ExportedAt": "2014-06-05T19:06:31.690Z",
-    "OctopusVersion": "2.4.7.85",
+    "ExportedAt": "2015-12-23T09:41:47.577+00:00",
+    "OctopusVersion": "2.6.5.1010",
     "Type": "ActionTemplate"
-  }
+  },
+  "Category": "windows"
 }

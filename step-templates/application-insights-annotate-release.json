@@ -1,0 +1,58 @@
+{
+  "Id": "c3278ce2-9cdb-46fd-96ce-e1d03ac327fe",
+  "Name": "Application Insights - Annotate Release",
+  "Description": "Marks a release point in Application Insights.",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$applicationId = $OctopusParameters[\"ApplicationId\"]\r\n$apiKey = $OctopusParameters[\"ApiKey\"]\r\n$releaseName = $OctopusParameters[\"ReleaseName\"]\r\n$properties = $OctopusParameters[\"ReleaseProperties\"]\r\n\r\n$releaseProperties = $null\r\n\r\nif ($properties -ne $null)\r\n{\r\n    $releaseProperties = $properties | ConvertFrom-Json\r\n}\r\n\r\n# background info on how fwlink works: After you submit a web request, many sites redirect through a series of intermediate pages before you finally land on the destination page.\r\n# So when calling Invoke-WebRequest, the result it returns comes from the final page in any redirect sequence. Hence, I set MaximumRedirection to 0, as this prevents the call to \r\n# be redirected. By doing this, we get a resposne with status code 302, which indicates that there is a redirection link from the response body. We grab this redirection link and \r\n# construct the url to make a release annotation.\r\n# Here's how this logic is going to works\r\n# 1. Client send http request, such as:  http://go.microsoft.com/fwlink/?LinkId=625115\r\n# 2. FWLink get the request and find out the destination URL for it, such as:  http://www.bing.com\r\n# 3. FWLink generate a new http response with status code \"302\" and with destination URL \"http://www.bing.com\". Send it back to Client.\r\n# 4. Client, such as a powershell script, knows that status code \"302\" means redirection to new a location, and the target location is \"http://www.bing.com\"\r\nfunction GetRequestUrlFromFwLink($fwLink)\r\n{\r\n    $request = Invoke-WebRequest -Uri $fwLink -MaximumRedirection 0 -UseBasicParsing -ErrorAction Ignore\r\n    if ($request.StatusCode -eq \"302\") {\r\n        return $request.Headers.Location\r\n    }\r\n    \r\n    return $null\r\n}\r\n\r\nfunction CreateAnnotation($grpEnv)\r\n{\r\n\t$retries = 1\r\n\t$success = $false\r\n\twhile (!$success -and $retries -lt 6) {\r\n\t    $location = \"$grpEnv/applications/$applicationId/Annotations?api-version=2015-11\"\r\n\t\t    \r\n\t\tWrite-Host \"Invoke a web request for $location to create a new release annotation. Attempting $retries\"\r\n\t\tset-variable -Name createResultStatus -Force -Scope Local -Value $null\r\n\t\tset-variable -Name createResultStatusDescription -Force -Scope Local -Value $null\r\n\t\tset-variable -Name result -Force -Scope Local\r\n\r\n\t\ttry {\r\n\t\t\t$result = Invoke-WebRequest -Uri $location -Method Put -Body $bodyJson -Headers $headers -ContentType \"application/json; charset=utf-8\" -UseBasicParsing\r\n\t\t} catch {\r\n\t\t    if ($_.Exception){\r\n\t\t        if($_.Exception.Response) {\r\n    \t\t\t\t$createResultStatus = $_.Exception.Response.StatusCode.value__\r\n    \t\t\t\t$createResultStatusDescription = $_.Exception.Response.StatusDescription\r\n    \t\t\t}\r\n    \t\t\telse {\r\n    \t\t\t\t$createResultStatus = \"Exception\"\r\n    \t\t\t\t$createResultStatusDescription = $_.Exception.Message\r\n    \t\t\t}\r\n\t\t    }\r\n\t\t}\r\n\r\n\t\tif ($result -eq $null) {\r\n\t\t\tif ($createResultStatus -eq $null) {\r\n\t\t\t\t$createResultStatus = \"Unknown\"\r\n\t\t\t}\r\n\t\t\tif ($createResultStatusDescription -eq $null) {\r\n\t\t\t\t$createResultStatusDescription = \"Unknown\"\r\n\t\t\t}\r\n\t\t}\r\n \t\telse {\r\n\t\t\t    $success = $true\t\t\t         \r\n        }\r\n\r\n\t\tif ($createResultStatus -eq 409 -or $createResultStatus -eq 404 -or $createResultStatus -eq 401) # no retry when conflict or unauthorized or not found\r\n\t\t{\r\n\t\t\tbreak\r\n\t\t}\r\n\r\n\t\t$retries = $retries + 1\r\n\t\tsleep 1\r\n\t}\r\n\r\n\t$createResultStatus\r\n\t$createResultStatusDescription\r\n\treturn\r\n}\r\n\r\n# Need powershell version 3 or greater for script to run\r\n$minimumPowershellMajorVersion = 3\r\nif ($PSVersionTable.PSVersion.Major -le $minimumPowershellMajorVersion) {\r\n   Write-Host \"Need powershell version $minimumPowershellMajorVersion or greater to create release annotation\"\r\n   return\r\n}\r\n\r\n$currentTime = (Get-Date).ToUniversalTime()\r\n$annotationDate = $currentTime.ToString(\"MMddyyyy_HHmmss\")\r\nset-variable -Name requestBody -Force -Scope Script\r\n$requestBody = @{}\r\n$requestBody.Id = [GUID]::NewGuid()\r\n$requestBody.AnnotationName = $releaseName\r\n$requestBody.EventTime = $currentTime.GetDateTimeFormats(\"s\")[0] # GetDateTimeFormats returns an array\r\n$requestBody.Category = \"Deployment\"\r\n\r\nif ($releaseProperties -eq $null) {\r\n    $properties = @{}\r\n} else {\r\n    $properties = $releaseProperties    \r\n}\r\n$properties.Add(\"ReleaseName\", $releaseName)\r\n\r\n$requestBody.Properties = ConvertTo-Json($properties) -Compress\r\n\r\n$bodyJson = [System.Text.Encoding]::UTF8.GetBytes(($requestBody | ConvertTo-Json))\r\n$headers = New-Object \"System.Collections.Generic.Dictionary[[String],[String]]\"\r\n$headers.Add(\"X-AIAPIKEY\", $apiKey)\r\n\r\nset-variable -Name createAnnotationResult1 -Force -Scope Local -Value $null\r\nset-variable -Name createAnnotationResultDescription -Force -Scope Local -Value \"\"\r\n\r\n# get redirect link from fwlink\r\n$requestUrl = GetRequestUrlFromFwLink(\"http://go.microsoft.com/fwlink/?prd=11901&pver=1.0&sbp=Application%20Insights&plcid=0x409&clcid=0x409&ar=Annotations&sar=Create%20Annotation\")\r\nif ($requestUrl -eq $null) {\r\n    $output = \"Failed to find the redirect link to create a release annotation\"\r\n    throw $output\r\n}\r\n\r\n$createAnnotationResult1, $createAnnotationResultDescription = CreateAnnotation($requestUrl)\r\nif ($createAnnotationResult1) \r\n{\r\n     $output = \"Failed to create an annotation with Id: {0}. Error {1}, Description: {2}.\" -f $requestBody.Id, $createAnnotationResult1, $createAnnotationResultDescription\r\n\t throw $output\r\n}\r\n\r\n$str = \"Release annotation created. Id: {0}.\" -f $requestBody.Id\r\nWrite-Host $str"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ApplicationId",
+      "Label": "Application Id",
+      "HelpText": "The Application Insights Application Id.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ApiKey",
+      "Label": "Api Key",
+      "HelpText": "The API Key to use to configure the Application Insights application.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ReleaseName",
+      "Label": "Release Name",
+      "HelpText": "The release name. Typically bound to #{Octopus.Release.Number}",
+      "DefaultValue": "#{Octopus.Release.Number}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ReleaseProperties",
+      "Label": "Release Properties",
+      "HelpText": "JSON encoded values. For example:\n\n@{\"ReleaseDescription\"=\"Release with annotation\";\"TriggerBy\"=\"John Doe\"}",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2016-03-03T21:58:26.836+00:00",
+  "LastModifiedBy": "roryprimrose",
+  "$Meta": {
+    "ExportedAt": "2016-03-03T21:58:26.836+00:00",
+    "OctopusVersion": "3.2.21",
+    "Type": "ActionTemplate"
+  },
+  "Category": "azure"
+}

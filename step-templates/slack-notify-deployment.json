@@ -1,11 +1,12 @@
 {
-  "Id": "ActionTemplates-1",
+  "Id": "21a2ae12-e721-42c1-901d-d6ed08007ca7",
   "Name": "Slack - Notify Deployment",
-  "Description": "Notifies Slack of a deployment succeeding or failing. To add the failure notification, you need to add a step that runs on failure and set DeploySuccessful to false.",
+  "Description": "Notifies Slack of deployment status. Uses the Octopus Deploy system variable to determine whether a deployment was successful.",
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 5,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "function Slack-Rich-Notification ($notification)\r\n{\r\n    $payload = @{\r\n        channel = $OctopusParameters['Channel']\r\n        username = $OctopusParameters['Username'];\r\n        icon_url = $OctopusParameters['IconUrl'];\r\n        attachments = @(\r\n            @{\r\n            fallback = $notification[\"fallback\"];\r\n            color = $notification[\"color\"];\r\n            fields = @(\r\n                @{\r\n                title = $notification[\"title\"];\r\n                value = $notification[\"value\"];\r\n                });\r\n            };\r\n        );\r\n    }\r\n\r\n    Invoke-Restmethod -Method POST -Body ($payload | ConvertTo-Json -Depth 4) -Uri $OctopusParameters['HookUrl']\r\n}\r\n\r\nif ($OctopusParameters['DeploySuccessful'] -eq \"true\"){\r\n    Slack-Rich-Notification @{\r\n        title = \"Success\";\r\n        value = \"Deploy $OctopusProjectName release $OctopusReleaseNumber to $OctopusEnvironmentName\";\r\n        fallback = \"Deployed $OctopusProjectName release $OctopusReleaseNumber to $OctopusEnvironmentName successfully\";\r\n        color = \"good\";\r\n    };\r\n} else {\r\n    Slack-Rich-Notification @{\r\n        title = \"Failed\";\r\n        value = \"Deploy $OctopusProjectName release $OctopusReleaseNumber to $OctopusEnvironmentName\";\r\n        fallback = \"Failed to deploy $OctopusProjectName release $OctopusReleaseNumber to $OctopusEnvironmentName\";\r\n        color = \"danger\";\r\n    };\r\n}"
+    "Octopus.Action.Script.ScriptBody": "function Slack-Rich-Notification ($notification)\n{\n    $payload = @{\n        channel = $OctopusParameters['Channel']\n        username = $OctopusParameters['Username'];\n        icon_url = $OctopusParameters['IconUrl'];\n        attachments = @(\n            @{\n            fallback = $notification[\"fallback\"];\n            color = $notification[\"color\"];\n            fields = @(\n                @{\n                title = $notification[\"title\"];\n                title_link = $notification[\"title_link\"];\n                value = $notification[\"value\"];\n                });\n            };\n        );\n    }\n\n    Invoke-RestMethod -Method POST -Body ($payload | ConvertTo-Json -Depth 4) -Uri $OctopusParameters['HookUrl']  -ContentType 'application/json'\n}\n\n$IncludeMachineName = [boolean]::Parse($OctopusParameters['IncludeMachineName']);\nif ($IncludeMachineName) {\n    $MachineName = $OctopusParameters['Octopus.Machine.Name'];\n    if ($MachineName) {\n      $FormattedMachineName = \"($MachineName)\";\n    }\n}\n\nif ($OctopusParameters['Octopus.Deployment.Error'] -eq $null){\n    Slack-Rich-Notification @{\n        title = \"Success\";\n        title_link = \"$OctopusWebBaseUrl$OctopusWebDeploymentLink\";\n        value = \"Deploy <$OctopusWebBaseUrl$OctopusWebProjectLink|$OctopusProjectName> release <$OctopusWebBaseUrl$OctopusWebReleaseLink|$OctopusReleaseNumber> to $OctopusEnvironmentName $OctopusActionTargetRoles $OctopusDeploymentTenantName $FormattedMachineName\";\n        fallback = \"Deployed $OctopusProjectName release $OctopusReleaseNumber to $OctopusEnvironmentName successfully\";\n        color = \"good\";\n    };\n} else {\n    Slack-Rich-Notification @{\n        title = \"Failed\";\n        title_link = \"$OctopusWebBaseUrl$OctopusWebDeploymentLink\";\n        value = \"Deploy <$OctopusWebBaseUrl$OctopusWebProjectLink|$OctopusProjectName> release <$OctopusWebBaseUrl$OctopusWebReleaseLink|$OctopusReleaseNumber> to $OctopusEnvironmentName $OctopusActionTargetRoles $OctopusDeploymentTenantName $FormattedMachineName\";\n        fallback = \"Failed to deploy $OctopusProjectName release $OctopusReleaseNumber to $OctopusEnvironmentName\";\n        color = \"danger\";\n    };\n}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -13,38 +14,46 @@
       "Name": "HookUrl",
       "Label": "Webhook URL",
       "HelpText": "The Webhook URL provided by Slack, including token.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {}
     },
     {
       "Name": "Channel",
-      "Label": "Channel",
+      "Label": "Channel handle",
       "HelpText": "Which Slack channel to post notifications to.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {}
     },
     {
       "Name": "IconUrl",
       "Label": "Icon URL",
       "HelpText": "The icon to use for this user in Slack",
-      "DefaultValue": "http://octopusdeploy.com/content/resources/favicon.png"
+      "DefaultValue": "http://octopusdeploy.com/content/resources/favicon.png",
+      "DisplaySettings": {}
     },
     {
       "Name": "Username",
       "Label": null,
       "HelpText": "The username shown in Slack against these notifications",
-      "DefaultValue": "OctopusDeploy"
+      "DefaultValue": "Octopus Deploy",
+      "DisplaySettings": {}
     },
     {
-      "Name": "DeploySuccessful",
-      "Label": "Deploy Successful",
-      "HelpText": "This flag controls whether to post a success or failure message.",
-      "DefaultValue": "true"
+      "Name": "IncludeMachineName",
+      "Label": "Include machine name",
+      "HelpText": "Should machine name be included in notification to Slack?",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
     }
   ],
-  "LastModifiedOn": "2014-05-15T15:11:56.955+00:00",
-  "LastModifiedBy": "exo",
+  "LastModifiedOn": "2017-02-18T19:11:12.785Z",
+  "LastModifiedBy": "whereisaaron",
   "$Meta": {
-    "ExportedAt": "2014-06-19T13:27:37.299Z",
-    "OctopusVersion": "2.4.7.85",
+    "ExportedAt": "2017-02-18T19:11:12.785Z",
+    "OctopusVersion": "3.3.2",
     "Type": "ActionTemplate"
-  }
+  },
+  "Category": "slack"
 }

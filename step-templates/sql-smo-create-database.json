@@ -1,0 +1,52 @@
+{
+  "Id": "1f08d4e0-025d-483d-a8d6-efa67fcdd1c1",
+  "Name": "SQL - Create Database Using SMO (only if does not exists)",
+  "Description": "This uses Sql Management Objects to create a database.  If the username and password are both empty then it will attempt a trusted connection using integrated security.",
+  "ActionType": "Octopus.Script",
+  "Version": 10,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SMO\") | out-null\n\n\n$SqlUsername = $OctopusParameters['SqlUsername']\n$SqlServer = $OctopusParameters['SqlServer']\n$SqlPassword = $OctopusParameters['SqlPassword']\n$SqlDatabase = $OctopusParameters['SqlDatabase']\n\ntry\n{    \n    $server = new-object ('Microsoft.SqlServer.Management.Smo.Server') $SqlServer\n  \n    if ($SqlUsername -and $SqlPassword)\n    {\n        Write-Host \"Connecting to $SqlServer as $SqlUsername\"\n        $server.ConnectionContext.LoginSecure = $false\n        $server.ConnectionContext.set_Login($SqlUsername)\n        $server.ConnectionContext.set_Password($SqlPassword)      \n    } \n    else {\n        Write-Host \"Connecting to $SqlServer with integrated security\"\n        $server.ConnectionContext.LoginSecure = $true\n    }\n    \n\tif ($server.databases[$SqlDatabase] -eq $null)\n\t{\n\t    Write-Host \"Creating database $SqlDatabase\"\n    \t$db = New-Object Microsoft.SqlServer.Management.Smo.Database($server, $SqlDatabase)\n        $db.Create()\n\t} else {\n\t    Write-Host \"Database $SqlDatabase already exists, skipping step...\"\n\t}\n}\ncatch\n{    \n    $error[0] | format-list -force\n    Exit 1\n}\n    ",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "SqlServer",
+      "Label": "Sql Server",
+      "HelpText": "SQL Server Instance with Port",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "SqlUsername",
+      "Label": "Sql Username (optional)",
+      "HelpText": "The SQL Account which has access to Create SQL Database",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "SqlPassword",
+      "Label": "Sql Password (optional)",
+      "HelpText": "The password for the SQL Account",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "SqlDatabase",
+      "Label": "Sql Database",
+      "HelpText": "Name of Database to be created if not already there",
+      "DefaultValue": null,
+      "DisplaySettings": {}
+    }
+  ],
+  "LastModifiedBy": "alastairtree",
+  "$Meta": {
+    "ExportedAt": "2016-07-12T12:33:49.751+00:00",
+    "OctopusVersion": "3.3.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

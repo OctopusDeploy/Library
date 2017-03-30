@@ -1,0 +1,48 @@
+{
+  "Id": "d80a7d9a-8c7b-4aa6-934e-0929bce606fe",
+  "Name": "Configuration - Encrypt App.config Section",
+  "Description": "Encrypts configuration sections for the specified executable.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\" \nfunction Get-Parameter($Name, $Default, [switch]$Required) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        } else {\n            $result = $Default\n        }\n    }\n\n    return $result\n}\n\nfunction HandleError($message) {\n\tif (!$whatIf) {\n\t\tthrow $message\n\t} else {\n\t\tWrite-Host $message -Foreground Yellow\n\t}\n}\n\n$appPath = Get-Parameter \"ExecutablePath\" -Required\n$sectionsToEncrypt = (Get-Parameter \"SectionsToEncrypt\" -Required) -split ',' | where {$_} | %{$_.Trim()}\n$provider = Get-Parameter \"Provider\" \"DataProtectionConfigurationProvider\"\n\nWrite-Host \"Configuration - Encrypt .config\"\nWrite-Host \"ExecutablePath: $appPath\"\nWrite-Host \"SectionToEncrypt: $sectionName\"\nWrite-Host \"Provider: $provider\"\n\nif (!(Test-Path $appPath)) {\n    HandleError \"The directory $appPath must exist\"\n}\n\n$configurationAssembly = \"System.Configuration, Version=2.0.0.0, Culture=Neutral, PublicKeyToken=b03f5f7f11d50a3a\"\n[void] [Reflection.Assembly]::Load($configurationAssembly)\n \n$configuration = [System.Configuration.ConfigurationManager]::OpenExeConfiguration($appPath)\n\nforeach ($sectionToEncrypt in $sectionsToEncrypt){\n\t$section = $configuration.GetSection($sectionToEncrypt)\n \n    if (-not $section.SectionInformation.IsProtected)\n    {\n        $section.SectionInformation.ProtectSection($provider);\n        $section.SectionInformation.ForceSave = [System.Boolean]::True;\n    }\n}\n\n$configuration.Save([System.Configuration.ConfigurationSaveMode]::Modified);",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ExecutablePath",
+      "Label": "Executable path",
+      "HelpText": "The path to the executable that has a corresponding `[Executable].exe.config` file. \n\nYou can get the InstallationDirectoryPath like so `#{Octopus.Action[StepName].Output.Package.InstallationDirectoryPath}`",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SectionsToEncrypt",
+      "Label": "Sections to encrypt",
+      "HelpText": "The name of the section in the App config to encrypt e.g. `appSettings`, `connectionStrings` etc. For multiple sections, separate with a comma (,)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Provider",
+      "Label": "Provider Name",
+      "HelpText": "The provider to use for encryption",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "kp-tseng",
+  "$Meta": {
+    "ExportedAt": "2016-12-13T07:19:21.741Z",
+    "OctopusVersion": "3.7.2",
+    "Type": "ActionTemplate"
+  },
+  "Category": "encrypt"
+}

@@ -1,0 +1,85 @@
+{
+  "Id": "633e7b90-7025-45d4-b16f-f92d6cf25c9e",
+  "Name": "Backup Azure Database To Azure Storage",
+  "Description": "Create a backup of SQL Azure Database and store it in Azure Blob Storage. Requires Azure PowerShell to be installed on Tentacle machine.",
+  "ActionType": "Octopus.Script",
+  "Version": 7,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Check if Windows Azure Powershell is avaiable \r\ntry{ \r\n    Import-Module Azure -ErrorAction Stop\r\n}catch{\r\n    throw \"Windows Azure Powershell not found! Please make sure to install them from http://www.windowsazure.com/en-us/downloads/#cmd-line-tools\" \r\n}\r\n\r\n\r\n$dateTime = get-date -Format u\r\n$blobName = \"Deployment-Backup/$DatabaseName/$dateTime.bacpac\"\r\nWrite-Host \"Using blobName: $blobName\"\r\n\r\n# Create Database Connection\r\n$securedPassword = ConvertTo-SecureString -String $DatabasePassword -asPlainText -Force\r\n$serverCredential = new-object System.Management.Automation.PSCredential($DatabaseUsername, $securedPassword) \r\n$databaseContext = New-AzureSqlDatabaseServerContext -ServerName $DatabaseServerName -Credential $serverCredential\r\n\r\n# Create Storage Connection\r\n$storageContext = New-AzureStorageContext -StorageAccountName $StorageName -StorageAccountKey $StorageKey\r\n\r\n# Initiate the Export\r\n$operationStatus = Start-AzureSqlDatabaseExport -StorageContext $storageContext -SqlConnectionContext $databaseContext -BlobName $blobName -DatabaseName $DatabaseName -StorageContainerName $StorageContainerName\r\n\r\n# Wait for the operation to finish\r\ndo{\r\n    $status = Get-AzureSqlDatabaseImportExportStatus -Request $operationStatus    \r\n    Start-Sleep -s 3\r\n    $progress =$status.Status.ToString()\r\n    Write-Host \"Waiting for database export completion. Operation status: $progress\" \r\n}until ($status.Status -eq \"Completed\")\r\nWrite-Host \"Database export is complete\"",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "DatabaseServerName",
+      "Label": "Database Server Name",
+      "HelpText": "Azure SQL Server name, i.e. \"d340fe8ok\". Not a full name, just the machine name",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DatabaseName",
+      "Label": "Database Name",
+      "HelpText": "Name of the database to be backed-up",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DatabasePassword",
+      "Label": "Database Password",
+      "HelpText": "SQL Server Password to access the database",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "DatabaseUsername",
+      "Label": "Database Username",
+      "HelpText": "SQL Server Username to access the database",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "StorageName",
+      "Label": "Storage Name",
+      "HelpText": "Name of the storage account where the backup should go",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "StorageKey",
+      "Label": "Storage Key",
+      "HelpText": "Access key to the storage account",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "StorageContainerName",
+      "Label": "Storage Container Name",
+      "HelpText": "Name of the container where the backup should go",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-03-25T08:41:21.754+00:00",
+  "LastModifiedBy": "trailmax",
+  "$Meta": {
+    "ExportedAt": "2015-03-25T08:48:19.055+00:00",
+    "OctopusVersion": "2.6.3.886",
+    "Type": "ActionTemplate"
+  },
+  "Category": "azure"
+}

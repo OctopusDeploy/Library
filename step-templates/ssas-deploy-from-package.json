@@ -1,0 +1,82 @@
+{
+  "Id": "1409c3dd-e87d-49f1-9b4f-382af800b75d",
+  "Name": "Deploy SSAS from Package",
+  "Description": "Deploys SSAS packages using Microsoft.AnalysisServices.Deployment.exe.",
+  "ActionType": "Octopus.Script",
+  "Version": 11,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = 'Stop'\n$regKeyFormat = 'HKLM:\\Software\\Wow6432Node\\Microsoft\\Microsoft SQL Server\\{0}0\\Tools\\ClientSetup\\'\n$vsVersions = @( '12' )\n\nfunction Validate-Argument($name, $value) {\n    if (!$value) {\n        throw ('Missing required value for parameter ''{0}''.' -f $name)\n    }\n    return $value\n}\n\n# Returns the Microsoft.AnalysisServices.Deployment.exe path\nfunction Load-SsasDeploy {\n    # display\n    Write-Output \"Beginning search of registry starting in HKLM:\\Software\\Wow6432Node\\Microsoft\\Microsoft SQL Server\\ ...\"\n    \n    # define base registry key\n    $regKeyFormat = 'HKLM:\\Software\\Wow6432Node\\Microsoft\\Microsoft SQL Server\\'\n\n    # get all of the SQL registry keys\n    $SQLRegistryKeys = Get-ChildItem -Path $regKeyFormat | Where-Object {$TestVar = 0; [int]::TryParse($_.Name.Substring($_.Name.LastIndexOf(\"\\\") + 1), [ref] $TestVar) -eq $true} | Sort-Object {[int]$_.Name.Substring($_.Name.LastIndexOf(\"\\\") + 1)} -Descending\n\n    # display number of items found\n    Write-Output \"Found $($SQLRegistryKeys.Length) item(s) ...\"\n\n    # make sure something was returned\n    if($SQLRegistryKeys -ne $null)\n    {\n        # display\n        Write-Output \"Searching keys for ClientSetup folder ...\"\n        \n        # retrieve paths to the tools\\binn path\n        $SQLToolsPath = $SQLRegistryKeys | ForEach-Object {Get-ChildItem \"HKLM:\\$_\" -Recurse | Where-Object {$_.Name -like \"*ClientSetup\" }} | Where-Object {$_.Property -eq \"Path\"} | ForEach-Object {Get-ItemProperty -Path \"HKLM:\\$_\" -Name Path} | Select Path\n\n        # make sure paths were found\n        if($SQLToolsPath -ne $null)\n        {\n            # display\n            Write-Output \"Found $($SQLToolsPath.Length) item(s), searching in descending order ...\"\n            \n            # loop through returned paths looking for Microsoft.AnalysisServices.Deployment.exe\n            ForEach($Path in $SQLToolsPath)\n            {\n                # check to see if .exe exists\n                if(($ReturnPath = Get-ChildItem -Path $Path.Path -Recurse | Where-Object {$_.Name -eq \"Microsoft.AnalysisServices.Deployment.exe\"}) -ne $null)\n                {\n                    # display\n                    Write-Output \"Found $($ReturnPath.FullName) ...\"\n\n                    # return\n                    return $ReturnPath.FullName\n                }\n            }\n\n            # display error\n            Write-Error \"Unable to find Microsoft.AnalysisServices.Deployment.exe! `r`nSearched $SQLToolsPath.\"\n        }\n        else\n        {\n            # display error\n            Write-Error \"No ClientSetup registry keys found!\"\n        }\n    }\n    else\n    {\n        # display error\n        Write-Error \"No SQL installations found!\"\n    }\n}\n\n# Update Deploy xml (.deploymenttargets)\nfunction Update-Deploy {\n\t[xml]$deployContent = Get-Content $file\n\t$deployContent.DeploymentTarget.Database = $ssasDatabase \n\t$deployContent.DeploymentTarget.Server = $ssasServer\n\t$deployContent.DeploymentTarget.ConnectionString = 'DataSource=' + $ssasServer + ';Timeout=0'\n\t$deployContent.Save($file)\n}\n# Update Config xml (.configsettings)\nfunction Update-Config {\n\t[xml]$configContent = Get-Content $file\n    $configContent.ConfigurationSettings.Database.DataSources.DataSource.ConnectionString = 'Provider=SQLNCLI11.1;Data Source=' + $dbServer + ';Integrated Security=SSPI;Initial Catalog=' + $dbDatabase\n\t$configContent.Save($file)\n}\n# Update Config xml (.deploymentoptions)\nfunction Update-Option {\n\t[xml]$optionContent = Get-Content $file\n    $optionContent.DeploymentOptions.ProcessingOption = 'DoNotProcess'\n\t$optionContent.Save($file)\n}\n\n# Get arguments\n$ssasPackageStepName = Validate-Argument 'SSAS Package Step Name' $OctopusParameters['SsasPackageStepName']\n$ssasServer = Validate-Argument 'SSAS server name' $OctopusParameters['SsasServer']\n$ssasDatabase = Validate-Argument 'SSAS database name' $OctopusParameters['SsasDatabase']\n$dbServer = Validate-Argument 'SSAS source server' $OctopusParameters['SrcServer']\n$dbDatabase = Validate-Argument 'SSAS source database' $OctopusParameters['SrcDatabase']\n\n# Set .NET CurrentDirectory to package installation path\n$installDirPathFormat = 'Octopus.Action[{0}].Output.Package.InstallationDirectoryPath' -f $ssasPackageStepName\n$installDirPath = $OctopusParameters[$installDirPathFormat]\n\n#$ssasServer     = 'server2\\md_dev'\n#$ssasDatabase   = 'BusinessIntelligence'\n#$dbServer       = 'server1\\dev'\n#$dbDatabase     = 'Warehouse'\n#$installDirPath = 'c:\\packages\\v1'\n\nWrite-Verbose ('Setting CurrentDirectory to ''{0}''' -f $installDirPath)\n[System.Environment]::CurrentDirectory = $installDirPath\n\n$exe = Load-SsasDeploy\n\n$files = Get-ChildItem –Path $installDirPath\\* -Include *.deploymenttargets\nforeach ($file in $files) {\n  $name = [IO.Path]::GetFileNameWithoutExtension($file)\n\n  Write-Host 'Updating' $file\n  Update-Deploy\n  $file = $installDirPath + '\\' + $name + '.configsettings'\n  Write-Host 'Updating' $file\n  Update-Config\n  $file = $installDirPath + '\\' + $name + '.deploymentoptions'\n  Write-Host 'Updating' $file\n  Update-Option\n\n  $arg = '\"' + $installDirPath + '\\' + $name + '.asdatabase\" /s:\"' + $installDirPath + '\\Log.txt\"'\n  Write-Host $exe $arg\n  $execute = [scriptblock]::create('& ' + $exe + ' ' + $arg)\n  Invoke-Command -ScriptBlock $execute\n}\n",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "435fbf52-470d-442f-88d3-0b708dfc3657",
+      "Name": "SsasPackageStepName",
+      "Label": "",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      },
+      "Links": { }
+    },
+    {
+      "Id": "a0713297-cdeb-47cd-ac43-4bf9603c8052",
+      "Name": "SsasServer",
+      "Label": "Server",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": { }
+    },
+    {
+      "Id": "7bf5ec64-3383-40ae-935e-e78c236cdf21",
+      "Name": "SsasDatabase",
+      "Label": "Database",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": { }
+    },
+    {
+      "Id": "d7d4fcbc-d0d4-4a3b-b477-28d23fbe1f9b",
+      "Name": "SrcServer",
+      "Label": "Data Source - Server",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": { }
+    },
+    {
+      "Id": "45b60a3f-9339-4c69-bc14-df94b47be9e7",
+      "Name": "SrcDatabase",
+      "Label": "Data Source - Database",
+      "HelpText": null,
+      "DefaultValue": "Warehouse",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": { }
+    }
+  ],
+  "LastModifiedOn": "2016-12-23T10:12:52.410+00:00",
+  "LastModifiedBy": "twerthi",
+  "$Meta": {
+    "ExportedAt": "2016-12-23T17:18:25.357Z",
+    "OctopusVersion": "3.7.4",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

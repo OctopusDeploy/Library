@@ -1,0 +1,49 @@
+{
+  "Id": "69c9eb25-9005-47c3-abb6-032e2ef909e3",
+  "Name": "SSRS Report Backup",
+  "Description": "Automatically performs a back up of all SSRS reports on an SSRS Server.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "\r\n[void][System.Reflection.Assembly]::LoadWithPartialName(\"System.Xml.XmlDocument\");\r\n[void][System.Reflection.Assembly]::LoadWithPartialName(\"System.IO\");\r\n \r\n$reportServerName = $reportServer;\r\n$ReportServiceWebServiceURL = \"http://$reportServerName/ReportServer/\"\r\n$ssrsVersion = $version;\r\n$exportFolder = $folder;\r\n\r\n\r\nif ($ssrsVersion -gt 2005) \r\n\t{\r\n\t\t# SSRS 2008/2012\r\n\t\t$reportServerUri = \"$ReportServiceWebServiceURL/ReportService2010.asmx\" -f $reportServerName\r\n\t} else {\r\n\t\t# SSRS 2005\r\n\t\t$reportServerUri = \"$ReportServiceWebServiceURL/ReportService2005.asmx\" -f $reportServerName\r\n\t}\r\n\r\n\r\n$Proxy = New-WebServiceProxy -Uri $reportServerUri -Namespace SSRS.ReportingService2005 -UseDefaultCredential ;\r\n\r\n\r\nif ($ssrsVersion -gt 2005) {\t\t \r\n\t\t$items = $Proxy.ListChildren(\"/\", $true) | `\r\n\t\t\t\t Select-Object TypeName, Path, ID, Name | `\r\n\t\t\t\t Where-Object {$_.typeName -eq \"Report\"};\r\n\t} else {\r\n\t\t$items = $Proxy.ListChildren(\"/\", $true) | `\r\n             Select-Object Type, Path, ID, Name | `\r\n             Where-Object {$_.type -eq \"Report\"};\r\n\t}\r\n\r\n\r\n$folderName = $exportFolder + \"\\\" + (Get-Date -format \"yyyy-MM-dd-hhmmtt\");\r\n\r\n \r\nforeach($item in $items)\r\n{\r\n\r\n    $subfolderName = split-path $item.Path;\r\n    $reportName = split-path $item.Path -Leaf;\r\n    $fullSubfolderName = $folderName + $fullFolderName + $subfolderName;\r\n    if(-not(Test-Path $fullSubfolderName))\r\n    {\r\n\r\n        [System.IO.Directory]::CreateDirectory($fullSubfolderName) | out-null\r\n    }\r\n \r\n    $rdlFile = New-Object System.Xml.XmlDocument;\r\n    [byte[]] $reportDefinition = $null;\r\n    \r\n    if ($ssrsVersion -gt 2005) {\r\n\t\t\t$reportDefinition = $Proxy.GetItemDefinition($item.Path);\r\n\t\t} else {\r\n\t\t\t$reportDefinition = $Proxy.GetReportDefinition($item.Path);\r\n\t\t}\r\n    \r\n    [System.IO.MemoryStream] $memStream = New-Object System.IO.MemoryStream(@(,$reportDefinition));\r\n    $rdlFile.Load($memStream);\r\n \r\n    $fullReportFileName = $fullSubfolderName + \"\\\" + $item.Name +  \".rdl\";\r\n    \r\n    Write-Output $fullReportFileName;\r\n    \r\n    $rdlFile.Save($fullReportFileName);\r\n    \r\n \r\n}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "reportServer",
+      "Label": "SSRS URL",
+      "HelpText": "The URL of the Report Server including any ports.",
+      "DefaultValue": "localhost",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "version",
+      "Label": "SSRS Version",
+      "HelpText": "The version of your SSRS instance e.g. 2005, 2008, 2012",
+      "DefaultValue": "2008",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "folder",
+      "Label": "Export Folder",
+      "HelpText": "The folder on the Deployment machine where the reports should be Saved.",
+      "DefaultValue": "c:\\temp\\",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2016-02-24T11:44:03.516+00:00",
+  "LastModifiedBy": "bleep-io",
+  "$Meta": {
+    "ExportedAt": "2016-02-24T12:10:04.807+00:00",
+    "OctopusVersion": "2.6.2.845",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

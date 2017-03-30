@@ -1,0 +1,92 @@
+{
+  "Id": "cab1e42d-6b8e-4e3e-980d-82fc8e0e2178",
+  "Name": "Notification - Spark",
+  "Description": "Send a message to Spark user or room",
+  "ActionType": "Octopus.Script",
+  "Version": 16,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "function send-sparkmessage\r\n{\r\n<#\r\n\t.SYNOPSIS\r\n\t\tSend a message to a spark user\r\n\t\r\n\t.DESCRIPTION\r\n\t\tA detailed description of the send-sparkmessagetouser function.\r\n\t\r\n\t.PARAMETER useremail\r\n\t\tuser email\r\n\t\r\n\t.PARAMETER message\r\n\t\tMessage to send to the user. Can use markdown.\r\n\t\r\n\t.PARAMETER auth_token\r\n\t\tOAuth token\r\n\t\r\n\t.PARAMETER api_uri\r\n\t\tAPI url if different from default (https://api.ciscospark.com/v1)\r\n\t\r\n\t.PARAMETER userid\r\n\t\tuser id\r\n\t\r\n\t.PARAMETER proxy\r\n\t\tproxy url\r\n\t\r\n\t.PARAMETER roomid\r\n\t\tA description of the roomid parameter.\r\n\t\r\n\t.PARAMETER room_id\r\n\t\tId for room to send message to.\r\n\t\r\n\t.NOTES\r\n\t\tAdditional information about the function.\r\n#>\r\n\t\r\n\tparam\r\n\t(\r\n\t\t[Parameter(ParameterSetName = 'toPersonEmail',\r\n\t\t\t\t   Mandatory = $true,\r\n\t\t\t\t   HelpMessage = 'User email to contact')]\r\n\t\t[string]$useremail,\r\n\t\t[Parameter(Mandatory = $true,\r\n\t\t\t\t   HelpMessage = 'Set a message to send to the user. Can use markdown.')]\r\n\t\t[string]$message,\r\n\t\t[Parameter(Mandatory = $true,\r\n\t\t\t\t   HelpMessage = 'Set OAuth token')]\r\n\t\t[string]$auth_token,\r\n\t\t[Parameter(Mandatory = $false,\r\n\t\t\t\t   HelpMessage = 'API url if different from default.')]\r\n\t\t[uri]$api_uri = \"https://api.ciscospark.com/v1\",\r\n\t\t[Parameter(ParameterSetName = 'toPersonID',\r\n\t\t\t\t   Mandatory = $true)]\r\n\t\t[string]$userid,\r\n\t\t[string]$proxy,\r\n\t\t[Parameter(ParameterSetName = 'toRoomID',\r\n\t\t\t\t   Mandatory = $true)]\r\n\t\t[string]$roomid\r\n\t)\r\n\t\r\n\t$header = @{ 'Authorization' = \" Bearer $auth_token\" }\r\n\t\r\n\tswitch ($PsCmdlet.ParameterSetName)\r\n\t{\r\n\t\t\"toPersonEmail\" {\r\n\t\t\t$body = @{\r\n\t\t\t\ttoPersonEmail = $useremail\r\n\t\t\t\tmarkdown = $message\r\n\t\t\t}\r\n\t\t}\r\n\t\t\"toPersonID\" {\r\n\t\t\t$body = @{\r\n\t\t\t\ttoPersonId = $userid\r\n\t\t\t\tmarkdown = $message\r\n\t\t\t}\r\n\t\t}\r\n\t\t\"toRoomID\"{\r\n\t\t\t$body = @{\r\n\t\t\t\troomId = $roomid\r\n\t\t\t\tmarkdown = $message\r\n\t\t\t}\r\n\t\t}\r\n\t\t\r\n\t}\r\n\t\r\n\tif ($proxy)\r\n\t{\r\n\t\tInvoke-RestMethod -Uri \"$api_uri/messages\" -Method Post -headers $header -Body (ConvertTo-Json $body) -ContentType \"application/json\" -Proxy $proxy\r\n\t}\r\n\telse\r\n\t{\r\n\t\tInvoke-RestMethod -Uri \"$api_uri/messages\" -Method Post -headers $header -Body (ConvertTo-Json $body) -ContentType \"application/json\"\r\n\t}\r\n}\r\n\r\n\r\n$useremail = $OctopusParameters['useremail']\r\n$message = $OctopusParameters['message']\r\n$auth_token = $OctopusParameters['auth_token']\r\n$proxy = $OctopusParameters['proxy']\r\n$contactmethod = $OctopusParameters['contactmethod']\r\n$contactdetails = $OctopusParameters['contactdetails']\r\n\r\nWrite-Verbose \"contact details : $contactdetails\"\r\nWrite-Verbose \"contact method : $contactmethod\"\r\nWrite-Verbose \"message : $message\"\r\nWrite-Verbose \"proxy: $proxy\"\r\nforeach ($contactdetail in $contactdetails.Replace(\" \", \"\").Split(\",\"))\r\n{\r\n\tswitch ($contactmethod)\r\n\t{\r\n\t\t\"useremail\" {\r\n\t\t\tif ($proxy)\r\n\t\t\t{\r\n\t\t\t\tWrite-Host \"Sending Spark message via $contactmethod to $contactdetail\"\r\n\t\t\t\tsend-sparkmessage -useremail $contactdetail -message $message -auth_token $auth_token -proxy $proxy\r\n\t\t\t}\r\n\t\t\telse\r\n\t\t\t{\r\n\t\t\t\tWrite-Host \"Sending Spark message via $contactmethod to $contactdetail\"\r\n\t\t\t\tsend-sparkmessage -useremail $contactdetail -message $message -auth_token $auth_token\r\n\t\t\t}\r\n\t\t}\r\n\t\t\r\n\t\t\r\n\t\t\"userid\" {\r\n\t\t\tif ($proxy)\r\n\t\t\t{\r\n\t\t\t\tWrite-Host \"Sending Spark message via $contactmethod to $contactdetail\"\r\n\t\t\t\tsend-sparkmessage -userid $contactdetail -message $message -auth_token $auth_token -proxy $proxy\r\n\t\t\t}\r\n\t\t\telse\r\n\t\t\t{\r\n\t\t\t\tWrite-Host \"Sending Spark message via $contactmethod to $contactdetail\"\r\n\t\t\t\tsend-sparkmessage -userid $contactdetail -message $message -auth_token $auth_token\r\n\t\t\t}\r\n\t\t}\r\n\t\t\r\n\t\t\"roomid\"{\r\n\t\t\tif ($proxy)\r\n\t\t\t{\r\n\t\t\t\tWrite-Host \"Sending Spark message via $contactmethod to $contactdetail\"\r\n\t\t\t\tsend-sparkmessage -roomid $contactdetail -message $message -auth_token $auth_token -proxy $proxy\r\n\t\t\t}\r\n\t\t\telse\r\n\t\t\t{\r\n\t\t\t\tWrite-Host \"Sending Spark message via $contactmethod to $contactdetail\"\r\n\t\t\t\tsend-sparkmessage -roomid $contactdetail -message $message -auth_token $auth_token\r\n\t\t\t}\r\n\t\t}\r\n\t}\r\n\t\r\n}\r\n",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "01f83e29-94e6-4fbb-aef5-065a08243d6f",
+      "Name": "message",
+      "Label": "Message to send",
+      "HelpText": "Can use markdown notation",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "d0a2f4f0-61dc-4e04-8d5e-b421f0fe64a3",
+      "Name": "auth_token",
+      "Label": "Authentication token",
+      "HelpText": "Bot token",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "4ae608b1-d659-45d0-b377-223edea6e520",
+      "Name": "api_uri",
+      "Label": "API URL",
+      "HelpText": null,
+      "DefaultValue": "https://api.ciscospark.com/v1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "1c1ca24b-cd7e-4b77-90d0-5cd2d8ad8a74",
+      "Name": "proxy",
+      "Label": "Proxy",
+      "HelpText": "Proxy address",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b5c9688f-d899-4356-ac65-aaa098dd48a7",
+      "Name": "contactmethod",
+      "Label": "Contact Method",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "useremail|User Email\nuserid|User ID\nroomid|Room ID"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b26814c8-7a05-4a04-bcc6-073691df972b",
+      "Name": "contactdetails",
+      "Label": "Contact Details",
+      "HelpText": "Enter contact details depending on Contact Method choice. Set multiple entries with ','.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "2o1o0",
+  "$Meta": {
+    "ExportedAt": "2017-02-24T10:38:27.080Z",
+    "OctopusVersion": "3.5.1",
+    "Type": "ActionTemplate"
+  },
+  "Category": "spark"
+}

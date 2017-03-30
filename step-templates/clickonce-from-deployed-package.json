@@ -1,0 +1,106 @@
+{
+  "Id": "1b7909be-4870-4f81-8957-8357b9342c0f",
+  "Name": "ClickOnce - Create from deployed package",
+  "Description": "Create binaries manifest & CO application and sign them with given code sign certificate ... using mage.exe.",
+  "ActionType": "Octopus.Script",
+  "Version": 28,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "Write-Host \"Building clickonce application ...\"\r\n\r\nfunction Validate-Parameter([REF]$f, $name, $value) {\r\n    if (!$value) {\r\n        throw ('Missing required value for parameter ''{0}''.' -f $name)\r\n    }\r\n    \r\n    $f.Value = $value\r\n    Write-Host \"Parameters [$name] has been initialized with : [$value]\"\r\n}\r\n\r\n### Parameters\r\n$deployStepName = $null\r\n$appName = $null\r\n$exeFileName = $null\r\n$destinationPath = $null\r\n$certFilePath = $null\r\n$certPassword = $null\r\n$publisher = $null\r\n$mageExe = $null\r\n$version = $null\r\n$binariesFolderPath = $null\r\n$coAppName = $null\r\n$iconFile = $null\r\n\r\nValidate-Parameter ([REF]$deployStepName) 'Deploy step name to read binaries from' $OctopusParameters['DeployStepName']\r\nValidate-Parameter ([REF]$appName) 'Project name' $OctopusParameters['Octopus.Project.Name']\r\nValidate-Parameter ([REF]$coAppName) 'Application display name' $OctopusParameters['DisplayName']\r\n\r\nValidate-Parameter ([REF]$exeFileName) 'Executable file name' $OctopusParameters['ExeFileName']\r\nValidate-Parameter ([REF]$destinationPath) 'Path to the directory where to deploy the ClickOnce package' $OctopusParameters['DestinationPath']\r\nValidate-Parameter ([REF]$certFilePath) 'Path to the certification file' $OctopusParameters['SignCertFilePath']\r\nValidate-Parameter ([REF]$certPassword) 'Password of the certification file' $OctopusParameters['SignCertPassword']\r\nValidate-Parameter ([REF]$publisher) 'Publisher name' $OctopusParameters['Publisher']\r\nValidate-Parameter ([REF]$mageExe) 'Path to the mage.exe' $OctopusParameters['MageExePath']\r\nValidate-Parameter ([REF]$iconFile) 'Icon file' $OctopusParameters['IconFile']\r\n\r\n### end of parameters\r\n\r\nValidate-Parameter ([REF]$version) 'Version number (from release)' $OctopusParameters['Octopus.Release.Number']\r\n\r\n$binariesFolderParameter = -join(\"Octopus.Action[\",$deployStepName,\"].Output.Package.InstallationDirectoryPath\")\r\nWrite-Host \"Trying to get Installation folder parameter value for : [$binariesFolderParameter]\"\r\n\r\n$binariesFolderPath = $OctopusParameters[$binariesFolderParameter]\r\nif(!$binariesFolderPath){\r\n     throw ('Unable to retrieve binaries path from previous step execution for step with name ''{0}''.' -f $deployStepName)\r\n}\r\n\r\n$appVersionAndNumber = -join($appName, \"_\", $version)\r\n$packageDestinationSubDirectory = -join (\"Application_Files/\", $appVersionAndNumber)\r\n$packageDestinationPath = -join ($destinationPath, \"/\", $packageDestinationSubDirectory) \r\n$appManifestRelativePath = -join (\"Application_Files/\",$appVersionAndNumber, \"/\", $exeFileName, \".manifest\")\r\n$appManifestFilePath = -join ($binariesFolderPath, \"/\", $exeFileName, \".manifest\")\r\n\r\n$coAppFilePath = -join($binariesFolderPath, \"\\\", $appName, \".application\")\r\n$coAppFilePathServer = -join($destinationPath, \"\\\", $appName, \".application\")\r\n\r\n### Create Application manifest\r\nWrite-Host \"Creating application manifest at \"$appManifestFilePath\r\n& $mageExe -New Application -t \"$appManifestFilePath\" -n \"$coAppName\" -v $version -p msil -fd \"$binariesFolderPath\" -tr FullTrust -a sha256RSA -if $iconFile\r\nWrite-Host \"Signing application manifest ...\"\r\n& $mageExe -Sign \"$appManifestFilePath\" -cf $certFilePath -pwd $certPassword\r\n\r\n### Create Deployment application\r\nWrite-Host \"Creating CO application [$coAppName] at \"$coAppFilePath\r\n& $mageExe -New Deployment -t \"$coAppFilePath\" -n \"$coAppName\" -v $version -p msil -appm $appManifestFilePath -ip true -i true -um true -pub $publisher -pu \"$coAppFilePathServer\" -appc $appManifestRelativePath -a sha256RSA\r\n\r\nWrite-Host \"Updating minimum version to force auto-update\"\r\n& $mageExe -Update $coAppFilePath -mv $version -pub $publisher -a sha256RSA\r\n\r\nWrite-Host \"Changing expiration max age => before application startup (hacking xml) of \"$coAppFilePath\r\n$content = Get-Content $coAppFilePath\r\n$content -replace \"<expiration maximumAge=`\"0`\" unit=`\"days`\" />\", \"<beforeApplicationStartup />\" | set-content $coAppFilePath\r\n\r\nWrite-Host \"Signing CO application [$coAppName] ...\"\r\n& $mageExe -Sign \"$coAppFilePath\" -cf $certFilePath -pwd $certPassword\r\n\r\n\r\nWrite-Host \"Copying binaries from \"$binariesFolderPath\r\nWrite-Host \"to destination \"$packageDestinationPath\r\n\r\n### Remove any existing files from the package destination folder\r\nRemove-Item $packageDestinationPath -Recurse -ErrorAction SilentlyContinue\r\n\r\n### Ensure target directory exists in order not to fail the copy\r\nNew-Item $packageDestinationPath -ItemType directory > $null\r\n\r\n### Copy binaries to destination folder\r\nCopy-Item $binariesFolderPath\"/*\" $packageDestinationPath -recurse -Force > $null\r\nCopy-Item $coAppFilePath $destinationPath -Force > $null\r\n\r\nWrite-Host \"Building clickonce application script completed.\"\r\n",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "DeployStepName",
+      "Label": "Deploy step to read binaries from",
+      "HelpText": "Name of the previous step used to deploy binaries that will be packed in CO package",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Name": "DestinationPath",
+      "Label": "Path to the directory where to deploy the ClickOnce package",
+      "HelpText": "Path to the target directory for the ClickOnce package. This will contain the created *.application file and the \"Application Files\" folder",
+      "DefaultValue": "\\\\MyServer\\MyClickOnceRepo\\#{Octopus.Project.Name}\\#{Octopus.Environment.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ExeFileName",
+      "Label": "Name of the target executable file",
+      "HelpText": "Name of the executable file of the application to pack",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Publisher",
+      "Label": "Publisher name",
+      "HelpText": "Publisher name to use when creating the CO package",
+      "DefaultValue": "MyCompany",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SignCertFilePath",
+      "Label": "Path to the certification file",
+      "HelpText": "Path to the certification pfx file",
+      "DefaultValue": "\\\\MyServer\\Auth\\cert\\my-cert.pfx",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SignCertPassword",
+      "Label": "Password of the certification file",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "MageExePath",
+      "Label": "Path to mage.exe",
+      "HelpText": "Path to mage.exe which is used to update manifest and .application files and sign them.",
+      "DefaultValue": "\\\\MyServer\\Tools\\Octopus\\Tentacles\\mage.exe",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "IconFile",
+      "Label": "Icon filename",
+      "HelpText": "Name of icon file in the package, eg. ApplicationIcon.ico",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DisplayName",
+      "Label": "Application display name",
+      "HelpText": "Name which appears in the Start Menu",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2017-02-28T06:53:27.970+00:00",
+  "LastModifiedBy": "Grendizr",
+  "$Meta": {
+    "ExportedAt": "2016-09-15T06:53:27.970+00:00",
+    "OctopusVersion": "3.4.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "clickOnce"
+}

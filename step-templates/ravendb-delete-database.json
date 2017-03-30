@@ -1,0 +1,58 @@
+{
+  "Id": "474d4dff-e91b-4580-b074-c39763741cd6",
+  "Name": "RavenDB - Delete Database",
+  "Description": "Used to delete a database from a server, with a possibility to remove all the data from hard drive.",
+  "ActionType": "Octopus.Script",
+  "Version": 8,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "#--------------------------------------------------------------------\r\n#Octopus Variables\r\n\r\n#URL where the database can be found\r\n$ravenDatabaseURL = $OctopusParameters[\"ravenDatabaseURL\"]\r\n\r\n#Name of the Database\r\n$ravenDatabaseName = $OctopusParameters[\"ravenDatabaseName\"]\r\n\r\n#hard delete (true or false)\r\n$hardDelete = $OctopusParameters[\"hardDelete\"]\r\n\r\n#Allow Database to be deleted\r\n$allowDelete = $OctopusParameters[\"allowDelete\"]\r\n\r\n\r\n\r\nWrite-Output \"`n-------------------------`n\"\r\n#--------------------------------------------------------------------\r\n#checks to see if the database can be deleted\r\n\r\nif($allowDelete -eq $FALSE)\r\n{\r\n    Write-Error \"$ravenDatabaseName cannot be deleted. Please try this on a database that can be delete.\" -ErrorId E4\r\n    Exit 1\r\n}\r\n\r\n\r\n#--------------------------------------------------------------------\r\n\r\n#checks to see if the entered database exists, return a boolean value depending on the outcome\r\nfunction doesRavenDBExist([string] $databaseChecking, [string]$URL)\r\n{\r\n    #retrieves the list of databases at the specified URL\r\n    $database_list = Invoke-RestMethod -Uri \"$URL/databases\" -Method Get\r\n    #checks if the database is at the specified URL\r\n    if ($database_list -contains $databaseChecking.ToString()) \r\n    {\r\n        return $TRUE\r\n    }\r\n    else \r\n    {\r\n        return $FALSE\r\n    }\r\n\r\n    \r\n}#ends does ravenDB exist function\r\n\r\nWrite-Output \"`n-------------------------`n\"\r\n\r\n\r\n#--------------------------------------------------------------------\r\n\r\n#check to see if database exists\r\nWrite-Output \"Checking to see if $ravenDatabaseName exists\"\r\n\r\n$database_exists = doesRavenDBExist -databaseChecking $ravenDatabaseName -URL $ravenDatabaseURL\r\n\r\nif($database_exists -eq $TRUE)\r\n{\r\n    Write-Output \"$ravenDatabaseName exists\"\r\n    $doWork = $TRUE\r\n}\r\nelse\r\n{\r\n    Write-Warning \"$ravenDatabaseName does not exist already.\" \r\n    $doWork = $FALSE\r\n}\r\n\r\n\r\nWrite-Output \"`n-------------------------`n\"\r\n\r\n\r\n#--------------------------------------------------------------------\r\n#hard delete option\r\n\r\n$hardDeleteString = $hardDelete.ToString().ToLower()\r\n\r\n\r\n\r\n#--------------------------------------------------------------------\r\n#Delete database\r\n\r\nif($doWork -eq $TRUE)\r\n{\r\n\r\n    Write-Output \"Deleting Database: $ravenDatabaseName\"\r\n\r\n    $deleteURI = \"$ravenDatabaseURL/admin/databases/$ravenDatabaseName\" + \"?hard-delete=$hardDeleteString\"\r\n\r\n    Invoke-RestMethod -Uri $deleteURI -Method Delete\r\n\r\n    #Waits 10 seconds before it continues\r\n    Start-Sleep -Seconds 10\r\n    \r\n    Write-Output \"Database has successfuly been deleted\"\r\n\r\n}"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ravenDatabaseURL",
+      "Label": "URL of the Raven Database",
+      "HelpText": "The URL of the Raven database, where the Database is located. \n\nFor example **http://localhost:8080/**",
+      "DefaultValue": "http://localhost:8080/",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ravenDatabaseName",
+      "Label": "Name of the Raven Database",
+      "HelpText": "Name of the Database in Raven.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "hardDelete",
+      "Label": "Hard Delete",
+      "HelpText": "Should all of the data be removed from the hard drive as well",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "allowDelete",
+      "Label": "Allow Deletion",
+      "HelpText": "Is the database allowed to be deleted. **TRUE OR FALSE** value must be entered\n\n**For example**: you don't want a production server to be deleted, the script will stop it from happening\n\n**HINT**: have a variable within Octopus that returns true if it is allowed to be deleted and vice versa.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-11-26T22:39:11.556+00:00",
+  "LastModifiedBy": "timhunt303",
+  "$Meta": {
+    "ExportedAt": "2015-11-26T03:54:46.614+00:00",
+    "OctopusVersion": "3.1.7",
+    "Type": "ActionTemplate"
+  },
+  "Category": "ravendb"
+}

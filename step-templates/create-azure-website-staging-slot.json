@@ -1,0 +1,31 @@
+{
+  "Id": "2f763d9e-81e1-4ce2-a897-3fe2c72ab9f0",
+  "Name": "Create Azure Website Staging Slot. Requires Azure PowerShell to be installed on Tentacle machine",
+  "Description": "Creates a staging slot for Azure Website. \n\nProvides Azure publish url as variable:\n\n     #{Octopus.Action[Create Staging Slot Step Name].Output.AzurePublishUrl}\n\nAnd Username/Password for publishing:\n\n    #{Octopus.Action[Create Staging Slot Step Name].Output.AzureUsername}\n    #{Octopus.Action[Create Staging Slot Step Name].Output.AzurePassword}",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Check if Windows Azure Powershell is avaiable \r\ntry{ \r\n    Import-Module Azure -ErrorAction Stop\r\n}catch{\r\n    throw \"Windows Azure Powershell not found! Please make sure to install them from http://www.windowsazure.com/en-us/downloads/#cmd-line-tools\" \r\n}\r\n\r\n\r\n$stagingWebsite = Get-AzureWebsite -Name $AzureWebSite -Slot staging -ErrorAction SilentlyContinue\r\n\r\n\r\nif($stagingWebsite -eq $null)\r\n{\r\n    Write-Host \"Creating staging slot\"\r\n    $stagingWebsite = New-AzureWebsite -Name $AzureWebSite -Slot staging -Location $Location\r\n}\r\n\r\n\r\nSet-OctopusVariable -name \"AzurePassword\" -value $stagingWebsite.PublishingPassword\r\nSet-OctopusVariable -name \"AzureUsername\" -value $stagingWebsite.PublishingUsername\r\n\r\n$urlString = ($stagingWebsite.SiteProperties.Properties | ?{ $_.Name -eq \"RepositoryURI\" }).Value.ToString()\r\n$url = [System.Uri]$urlString\r\n\r\n\r\nSet-OctopusVariable -Name \"AzurePublishUrl\" -value $url.Host",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "AzureWebSite",
+      "Label": "Azure Web Site Name",
+      "HelpText": "Name of the web-site in Azure",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-03-25T08:42:32.838+00:00",
+  "LastModifiedBy": "trailmax",
+  "$Meta": {
+    "ExportedAt": "2015-03-25T08:51:15.660+00:00",
+    "OctopusVersion": "2.6.3.886",
+    "Type": "ActionTemplate"
+  },
+  "Category": "azure"
+}

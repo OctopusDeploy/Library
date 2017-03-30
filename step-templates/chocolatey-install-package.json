@@ -1,11 +1,12 @@
 {
-  "Id": "ActionTemplates-67",
+  "Id": "b2385b12-e5b5-440f-bed8-6598c29b2528",
   "Name": "Chocolatey - Install Package",
   "Description": "Installs a package using the Chocolatey package manager.",
   "ActionType": "Octopus.Script",
-  "Version": 4,
+  "Version": 1,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"Machine\") + \"\\bin\\cinst.exe\";\n\nif (-not $ChocolateyPackageId) {\n    throw \"Please specify the ID of an application package to install.\"\n}\n\nif (-not (Test-Path $chocolateyBin)) {\n    throw \"Chocolatey was not found at $chocolateyBin.\"\n}\n\nif (-not $ChocolateyPackageVersion) {\n    Write-Output \"Installing package $ChocolateyPackageId from the Chocolatey package repository...\"\n    & $chocolateyBin $ChocolateyPackageId\n} else {\n    Write-Output \"Installing package $ChocolateyPackageId version $ChocolateyPackageVersion from the Chocolatey package repository...\"\n    & $chocolateyBin $ChocolateyPackageId -Version $ChocolateyPackageVersion\n}\n"
+    "Octopus.Action.Script.ScriptBody": "$chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"Machine\") + \"\\bin\"\rif(-not (Test-Path $chocolateyBin)) {\r    Write-Output \"Environment variable 'ChocolateyInstall' was not found in the system variables. Attempting to find it in the user variables...\"\r    $chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"User\") + \"\\bin\"\r}\r\r$cinst = \"$chocolateyBin\\cinst.exe\"\r$choco = \"$chocolateyBin\\choco.exe\"\r\rif (-not (Test-Path $cinst) -or -not (Test-Path $choco)) {\r    throw \"Chocolatey was not found at $chocolateyBin.\"\r}\r\rif (-not $ChocolateyPackageId) {\r    throw \"Please specify the ID of an application package to install.\"\r}\r\r$chocoVersion = & $choco --version\rWrite-Output \"Running Chocolatey version $chocoVersion\"\r\r$chocoArgs = @()\rif([System.Version]::Parse($chocoVersion) -ge [System.Version]::Parse(\"0.9.8.33\")) {\r    Write-Output \"Adding --confirm to arguments passed to Chocolatey\"\r    $chocoArgs += @(\"-y\", \"\")\r}\r\rif (-not $ChocolateyPackageVersion) {\r    Write-Output \"Installing package $ChocolateyPackageId from the Chocolatey package repository...\"\r    & $cinst $ChocolateyPackageId $($chocoArgs)\r} else {\r    Write-Output \"Installing package $ChocolateyPackageId version $ChocolateyPackageVersion from the Chocolatey package repository...\"\r    & $cinst $ChocolateyPackageId -Version $ChocolateyPackageVersion $($chocoArgs)\r}\r",
+    "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -13,20 +14,23 @@
       "Name": "ChocolateyPackageId",
       "Label": "Chocolatey package",
       "HelpText": "The ID of an application package in the https://chocolatey.org repository. Required. Example: _Git_.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {}
     },
     {
       "Name": "ChocolateyPackageVersion",
       "Label": "Version",
       "HelpText": "If a specific version of the Chocolatey package is required enter it here. Otherwise, leave this field blank to use the latest version. Example: _2.3.4_.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {}
     }
   ],
-  "LastModifiedOn": "2014-07-08T17:17:15.423+00:00",
-  "LastModifiedBy": "joewaid",
+  "LastModifiedOn": "2015-09-02T04:54:26.260+00:00",
+  "LastModifiedBy": "alfhenrik",
   "$Meta": {
-    "ExportedAt": "2014-07-08T17:46:22.251Z",
-    "OctopusVersion": "2.4.7.85",
+    "ExportedAt": "2015-09-02T04:54:26.260+00:00",
+    "OctopusVersion": "3.0.19.2485",
     "Type": "ActionTemplate"
-  }
+  },
+  "Category": "chocolatey"
 }

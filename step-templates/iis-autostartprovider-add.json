@@ -1,0 +1,40 @@
+{
+  "Id": "20b8c2fd-9194-47e3-948e-badc6c2a30d5",
+  "Name": "IIS AutoStartProvider - Add",
+  "Description": "Add autostartprovider entry so type can be used to warm up applicaiton. Final changes in applicationHost.config look like that:\n\n<serviceAutoStartProviders>\n    <add name=\"ApplicationPreload\" type=\"WebApplication1.ApplicationPreload, WebApplication1\" />\n</serviceAutoStartProviders>\n\nwhere name and type are taken from parameters.",
+  "ActionType": "Octopus.Script",
+  "Version": 0,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\r\nparam(\r\n        [string]$serviceName,\r\n        [string]$serviceType,\r\n        [switch]$whatIf\r\n     ) \r\n\r\n$ErrorActionPreference = \"Stop\" \r\n\r\nfunction Get-Param($Name, [switch]$Required, $Default) {\r\n    $result = $null\r\n\r\n        if ($OctopusParameters -ne $null) {\r\n            $result = $OctopusParameters[$Name]\r\n        }\r\n\r\n    if ($result -eq $null) {\r\n        $variable = Get-Variable $Name -EA SilentlyContinue   \r\n            if ($variable -ne $null) {\r\n                $result = $variable.Value\r\n            }\r\n    }\r\n\r\n    if ($result -eq $null -or $result -eq \"\") {\r\n        if ($Required) {\r\n            throw \"Missing parameter value $Name\"\r\n        } else {\r\n            $result = $Default\r\n        }\r\n    }\r\n\r\n    return $result\r\n}\r\n\r\n& {\r\n    param(\r\n            [string]$serviceName,\r\n            [string]$serviceType\r\n         ) \r\n\r\n        Write-Host \"Setting $serviceName, $serviceType service autostart provider\"\r\n\r\n        try {\r\n            Add-PSSnapin WebAdministration -ErrorAction SilentlyContinue\r\n            Import-Module WebAdministration -ErrorAction SilentlyContinue\r\n\r\n            $oldValue = Get-WebConfiguration -filter /system.applicationHost/serviceAutoStartProviders/add | \r\n                        Where-Object { $_.Name -eq $serviceName }\r\n\r\n            if ($oldValue -eq $null) {\r\n                Write-Host \"Adding new service type provider $serviceName, $serviceType\"\r\n                Add-WebConfiguration -filter /system.applicationHost/serviceAutoStartProviders -Value @{name=$serviceName; type=$serviceType}\r\n            } \r\n            elseif ($oldValue.Type -eq $serviceType) { \r\n                Write-Host \"Service provider with the same name and type exists\"\r\n            } else {\r\n                $oldValueType = $oldValue.Type\r\n                Write-Host \"Replacing service type from $oldValueType to $serviceType\"\r\n                Set-WebConfiguration -filter \"/system.applicationHost/serviceAutoStartProviders/add[@name='$serviceName']\" -Value @{\"type\" = \"$serviceType\"}\r\n            }\r\n\r\n            Write-Host \"Done\"\r\n        } catch {\r\n            Write-Host $_.Exception|format-list -force\r\n            Write-Host \"There was a problem setting property\"    \r\n        }\r\n} `\r\n(Get-Param 'serviceName' -Required) (Get-Param 'serviceType' -Required) \r\n",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "serviceName",
+      "Label": "Name of autostart service",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "serviceType",
+      "Label": "Type which implements IProcessHostPreloadClient",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-10-23T01:06:20.789+00:00",
+  "LastModifiedBy": "jmalczak",
+  "$Meta": {
+    "ExportedAt": "2015-10-23T02:23:21.661+00:00",
+    "OctopusVersion": "2.6.5.1010",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}

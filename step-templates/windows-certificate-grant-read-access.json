@@ -1,0 +1,40 @@
+{
+  "Id": "cf6f35bf-b3e0-4285-98be-dcb509ab2ef9",
+  "Name": "Windows  - Certificate Grant Read Access",
+  "Description": "Grant read access to certificate for a specific user",
+  "ActionType": "Octopus.Script",
+  "Version": 12,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# $certCN is the identifiying CN for the certificate you wish to work with\r\n# The selection also sorts on Expiration date, just in case there are old expired certs still in the certificate store.\r\n# Make sure we work with the most recent cert\r\n    \r\n    Try\r\n    {\r\n        $WorkingCert = Get-ChildItem CERT:\\LocalMachine\\My |where {$_.Subject -match $certCN} | sort $_.NotAfter -Descending | select -first 1 -erroraction STOP\r\n        $TPrint = $WorkingCert.Thumbprint\r\n        $rsaFile = $WorkingCert.PrivateKey.CspKeyContainerInfo.UniqueKeyContainerName\r\n        if($TPrint){\r\n            Write-Host \"Found certificate named $certCN with thumbprint $TPrint\"\r\n        }\r\n        else{\r\n            throw \"Error: unable to locate certificate for $($CertCN)\"\r\n        }\r\n    }\r\n    Catch\r\n    {\r\n      throw \"Error: unable to locate certificate for $($CertCN)\"\r\n    }\r\n    $keyPath = \"$env:SystemDrive\\ProgramData\\Microsoft\\Crypto\\RSA\\MachineKeys\\\"\r\n    $fullPath=$keyPath+$rsaFile\r\n    $acl=Get-Acl -Path $fullPath\r\n    $permission=$userName,\"Read\",\"Allow\"\r\n    $accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission\r\n    $acl.AddAccessRule($accessRule)\r\n    Try \r\n    {\r\n        Write-Host \"Granting read access for user $userName on $certCN\"\r\n     Set-Acl $fullPath $acl\r\n      Write-Host \"Success: ACL set on certificate\"\r\n    }\r\n    Catch\r\n    {\r\n      throw \"Error: unable to set ACL on certificate\"\r\n    }",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "certCN",
+      "Label": "Certificate Name",
+      "HelpText": "The CN of the Certificate",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "userName",
+      "Label": "User name",
+      "HelpText": "The Windows user",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-01-30T14:37:16.927+00:00",
+  "LastModifiedBy": "ARBNIK@skandianet.org",
+  "$Meta": {
+    "ExportedAt": "2015-01-30T14:39:14.212+00:00",
+    "OctopusVersion": "2.6.0.778",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}

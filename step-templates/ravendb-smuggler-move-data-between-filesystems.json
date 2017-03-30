@@ -1,0 +1,94 @@
+{
+  "Id": "4ec55f5e-ab8b-409d-b404-dc0bf705d057",
+  "Name": "RavenDB - Smuggler - Moving Data between File Systems",
+  "Description": "To move data directly between two instances (or different file systems in the same instance) using the between option introduced in Smuggler version 3.",
+  "ActionType": "Octopus.Script",
+  "Version": 0,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "\r\n# Variables\r\n\r\n#Location of the Raven Smuggler exe\r\n$ravenSmugglerPath = $OctopusParameters[\"ravenSmugglerPath\"]\r\n\r\n\r\n#--------------------------------------------------------------------\r\n# Source File System Variables\r\n\r\n#URL of RavenFS that is being backed up \r\n$sourceFileSystemURL = $OctopusParameters[\"sourceFileSystemURL\"]\r\n\r\n#name of the RavenFS that is being backed up\r\n$sourceFileSystemName = $OctopusParameters[\"sourceFileSystemName\"]\r\n\r\n#API Key for the Source File System\r\n$sourceFileSystemApiKey = $OctopusParameters[\"sourceFileSystemApiKey\"]\r\n\r\n\r\n\r\n\r\n#--------------------------------------------------------------------\r\n#Destination File System Variables\r\n\r\n#URL of destination RavenFS \r\n$destinationFileSystemURL = $OctopusParameters[\"destinationFileSystemURL\"]\r\n\r\n#Name of the destination RavenFS\r\n$destinationFileSystemName = $OctopusParameters[\"destinationFileSystemName\"]\r\n\r\n#API Key for the Destination File System\r\n$destinationFileSystemAPIKey = $OctopusParameters[\"destinationFileSystemAPIKey\"]\r\n\r\n\r\n#--------------------------------------------------------------------\r\n# Other Variables retrieved from Octopus\r\n\r\n#Get timeout variable\r\n$timeout = $OctopusParameters[\"timeout\"]\r\n\r\n\r\n\r\n#--------------------------------------------------------------------\r\n\r\n#checks to see if the entered file system exists, return a Boolean value depending on the outcome\r\nfunction doesRavenFSExist([string] $FSChecking, [string]$URL)\r\n{\r\n    #retrieves the list of File Systems at the specified URL\r\n    $fs_list = Invoke-RestMethod -Uri \"$URL/fs\" -Method Get\r\n    #checks if the File System is at the specified URL\r\n    if ($fs_list -contains $FSChecking.ToString()) \r\n    {\r\n        return $TRUE\r\n    }\r\n    else \r\n    {\r\n        return $FALSE\r\n    }\r\n\r\n    \r\n}#ends does File System exist function\r\n\r\n\r\nWrite-Output \"`n-------------------------`n\"\r\n\r\n#--------------------------------------------------------------------\r\n\r\n#Check path to smuggler\r\nWrite-Output \"Checking if Smuggler path is correct`n\"\r\n\r\n$smuggler_Exists = Test-Path -Path $ravenSmugglerPath\r\n\r\n\r\n\r\n#if the path is correct, the script continues, throws an error if the path is wrong\r\nIf($smuggler_Exists -eq $TRUE)\r\n{\r\n    Write-Output \"Smuggler exists\"\r\n\r\n}#ends if smuggler exists \r\nelse\r\n{\r\n    Write-Error \"Smuggler cannot be found `nCheck the directory: $ravenSmugglerPath\" -ErrorId E4\r\n    Exit 1\r\n}#ends else, smuggler can't be found\r\n\r\nWrite-Output \"`n-------------------------`n\"\r\n\r\n#--------------------------------------------------------------------\r\n#Checking the version of smuggler\r\n\r\n$SmugglerVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($ravenSmugglerPath).FileVersion\r\n\r\nif($SmugglerVersion -cgt \"3\")\r\n{\r\n    Write-Host \"Smuggler Version: $SmugglerVersion\"\r\n}\r\nelse\r\n{\r\n    Write-Error \"The version of Smuggler that is installed can NOT complete this step. `nPlease update Smuggler before continuing\" -ErrorId E4\r\n    Exit 1\r\n}\r\nWrite-Output \"`n-------------------------`n\"\r\n\r\n#--------------------------------------------------------------------\r\n\r\n#Check if Source File System and destination File System exists\r\nWrite-Output \"Checking if both $sourceFileSystemName and $destinationFileSystemName exist`n\"\r\n\r\n$sourceFS_exists = doesRavenFSExist -FSChecking $sourceFileSystemName -URL $sourceFileSystemURL \r\n\r\n$DestinationFS_Exist = doesRavenFSExist -FSChecking $destinationFileSystemName -URL $destinationFileSystemURL\r\n\r\n\r\n#if both File System exist a backup occurs\r\nif(($sourceFS_exists -eq $TRUE) -and ($DestinationFS_Exist -eq $TRUE))\r\n{\r\n\r\n    Write-Output \"Both $sourceFileSystemName and $destinationFileSystemName exist`n\"\r\n\r\n}#ends if \r\n#if the source File System doesn’t exist an error is throw\r\nelseIf(($sourceFS_exists -eq $FALSE) -and ($DestinationFS_Exist -eq $TRUE))\r\n{\r\n\r\n    Write-Error \"$sourceFileSystemName does not exist. `nMake sure the File System exists before continuing\" -ErrorId E4\r\n    Exit 1\r\n\r\n}\r\n#if the destination File System doesn’t exist an error is throw\r\nelseIf(($DestinationFS_Exist -eq $FALSE) -and ($sourceFS_exists -eq $TRUE))\r\n{\r\n\r\n    Write-Error \"$destinationFileSystemName does not exist. `nMake sure the File System exists before continuing\" -ErrorId E4\r\n    Exit 1\r\n\r\n}#ends destination FS not exists\r\nelse\r\n{\r\n \r\n    Write-Error \"Neither $sourceFileSystemName or $destinationFileSystemName exists. `nMake sure both File Systems exists\" -ErrorId E4\r\n    Exit 1\r\n\r\n}#ends else\r\n\r\nWrite-Output \"`n-------------------------`n\"\r\n\r\n#--------------------------------------------------------------------\r\n#start Backup\r\n\r\ntry\r\n{\r\n    Write-Output \"Attempting Backup up now\"\r\n    Write-Output \"`n-------------------------`n\"\r\n    & $ravenSmugglerPath between $sourceFileSystemURL $destinationFileSystemURL --filesystem=$sourceFileSystemName --filesystem2=$destinationFileSystemName --api-key=$sourceFileSystemApiKey --api-key2=$destinationFileSystemAPIKey --timeout=$timeout\r\n    Write-Output \"`n-------------------------`n\"\r\n    Write-Output \"Backup successful\"\r\n\r\n\r\n}#ends try\r\ncatch\r\n{\r\n    Write-Error \"An error occurred during backup, please try again\" -ErrorId E4\r\n    Exit 1\r\n}#ends catch\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ravenSmugglerPath",
+      "Label": "Raven Smuggler Path",
+      "HelpText": "Full path to the Smuggler EXE.\n\nFor example: **C:\\RavenDB\\Smuggler\\Raven.Smuggler.exe**",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "sourceFileSystemURL",
+      "Label": "Source File System URL",
+      "HelpText": "The URL of the Raven File System, where the **Source File System** is located.\n\nFor example: **http://localhost:8080/**",
+      "DefaultValue": "http://localhost:8080/",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "sourceFileSystemName",
+      "Label": "Name of the Source File System",
+      "HelpText": "Name of the **Source File System** in Raven.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "sourceFileSystemApiKey",
+      "Label": "Api Key for the Source File System",
+      "HelpText": "API Key needed to access the **Source File System**.\n\nIf key is not provided, anonymous authentication will be used. \n\nFor more information: http://ravendb.net/docs/article-page/3.0/csharp/studio/accessing-studio",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "destinationFileSystemURL",
+      "Label": "Destination File System URL",
+      "HelpText": "The URL for the Raven File System where the **Destination File System** is located.\n\nFor example: **http://localhost:8080/**",
+      "DefaultValue": "http://localhost:8080/",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "destinationFileSystemName",
+      "Label": "Name of the Destination File System",
+      "HelpText": "Name of the **Destination File System** in Raven.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "destinationFileSystemAPIKey",
+      "Label": "API Key for the Destination File System",
+      "HelpText": "API Key needed to access the **Destination File System**.\n\nIf key is not provided, anonymous authentication will be used.\n\nFor more information: http://ravendb.net/docs/article-page/3.0/csharp/studio/accessing-studio",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "timeout",
+      "Label": "Timeout",
+      "HelpText": "The timeout (in milliseconds) to use for requests.",
+      "DefaultValue": "300000",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-11-12T22:39:11.556+00:00",
+  "LastModifiedBy": "timhunt303",
+  "$Meta": {
+    "ExportedAt": "2015-11-15T22:06:33.737+00:00",
+    "OctopusVersion": "3.1.7",
+    "Type": "ActionTemplate"
+  },
+  "Category": "ravendb"
+}

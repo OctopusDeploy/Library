@@ -1,0 +1,39 @@
+{
+  "Id": "a55a825b-8e8b-4995-8143-0f9dd7b6bcfa",
+  "Name": "Seq - Log Deployment",
+  "Description": "Post details of the deployment to a [Seq](https://getseq.net) log server. Add this as the last step in a process, and ensure it is set to run always (on success and failure).",
+  "ActionType": "Octopus.Script",
+  "Version": 20,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "function Open-Seq ([string] $url, [string] $apiKey, $properties = @{})\r\n{\r\n  return @{ Url = $url; ApiKey = $apiKey; Properties = $properties.Clone() }\r\n}\r\n  \r\nfunction Send-SeqEvent (\r\n    $seq,\r\n    [string] $text,\r\n    [string] $level,\r\n    $properties = @{},\r\n    [string] $exception = $null,\r\n    [switch] $template)\r\n{\r\n  if (-not $level) {\r\n    $level = 'Information'\r\n  }\r\n   \r\n  if (@('Verbose', 'Debug', 'Information', 'Warning', 'Error', 'Fatal') -notcontains $level) {\r\n    $level = 'Information'\r\n  }\r\n  \r\n  $allProperties = $seq[\"Properties\"].Clone()\r\n  $allProperties += $properties\r\n  \r\n  $messageTemplate = \"{Text}\"\r\n  \r\n  if ($template) {\r\n    $messageTemplate = $text;\r\n  } else {\r\n    $allProperties += @{ Text = $text; }\r\n  }\r\n  \r\n  $exceptionProperty = \"\"\r\n  if ($exception) {\r\n      $exceptionProperty = \"\"\"Exception\"\": $($exception | ConvertTo-Json),\"\r\n  }\r\n  \r\n  $body = \"{\"\"Events\"\": [ {\r\n    \"\"Timestamp\"\": \"\"$([System.DateTimeOffset]::Now.ToString('o'))\"\",\r\n    \"\"Level\"\": \"\"$level\"\",\r\n    $exceptionProperty\r\n    \"\"MessageTemplate\"\": $($messageTemplate | ConvertTo-Json),\r\n    \"\"Properties\"\": $($allProperties | ConvertTo-Json) }]}\"\r\n  \r\n  $target = \"$($seq[\"Url\"])/api/events/raw?apiKey=$($seq[\"ApiKey\"])\"\r\n  \r\n  Invoke-RestMethod -Uri $target -Body $body -ContentType \"application/json\" -Method POST\r\n}\r\n\r\nWrite-Output \"Logging the deployment result to Seq at $SeqServerUrl...\"\r\n\r\n$seq = Open-Seq $SeqServerUrl -apiKey $SeqApiKey\r\n\r\n$properties = @{\r\n    ProjectName = $OctopusParameters['Octopus.Project.Name'];\r\n    ReleaseNumber = $OctopusParameters['Octopus.Release.Number'];\r\n    Result = \"succeeded\";\r\n    EnvironmentName = $OctopusParameters['Octopus.Environment.Name'];\r\n    DeploymentName = $OctopusParameters['Octopus.Deployment.Name'];\r\n    Channel = $OctopusParameters['Octopus.Release.Channel.Name'];\r\n    DeploymentLink = $OctopusParameters['Octopus.Web.BaseUrl'] + $OctopusParameters['Octopus.Web.DeploymentLink']\r\n}\r\n\r\n$level = \"Information\"\r\n$exception = $null\r\nif ($OctopusParameters['Octopus.Deployment.Error']) {\r\n    $level = \"Error\"\r\n    $properties[\"Result\"] = \"failed\"\r\n    $properties[\"Error\"] = $OctopusParameters['Octopus.Deployment.Error']\r\n    $exception = $OctopusParameters['Octopus.Deployment.ErrorDetail']\r\n}\r\n\r\ntry {\r\n    Send-SeqEvent $seq \"A deployment of {ProjectName} release {ReleaseNumber} {Result} in {EnvironmentName}\" -level $level -template -properties $properties -exception $exception\r\n} catch [Exception] {\r\n    [System.Console]::Error.WriteLine(\"Unable to write deployment details to Seq\")\r\n    $_.Exception | format-list -force\r\n}\r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "SeqServerUrl",
+      "Label": "Seq server URL",
+      "HelpText": "The URL of the Seq server.",
+      "DefaultValue": "http://localhost:5341",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SeqApiKey",
+      "Label": "Seq API key",
+      "HelpText": "If an [API key](http://docs.getseq.net/docs/api-keys) is required for writing events, specify it here.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "LastModifiedBy": "nblumhardt",
+  "$Meta": {
+    "ExportedAt": "2016-01-07T11:03:49.570+00:00",
+    "OctopusVersion": "3.2.15",
+    "Type": "ActionTemplate"
+  },
+  "Category": "seq"
+}

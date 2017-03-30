@@ -1,0 +1,94 @@
+{
+  "Id": "7a6704f9-c675-4dd2-bb2d-5fba374fd439",
+  "Name": "GitHub - Create Release",
+  "Description": "Create a release for a Github Repository.",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$formattedVersionNumber = [string]::Format(\"v{0}\", $versionNumber)\r$isDraft = [bool]::Parse($draft)\r$isPrerelease = [bool]::Parse($preRelease)\r\r$releaseData = @{\r    tag_name = $formattedVersionNumber;\r    target_commitish = $commitId;\r    name = $formattedVersionNumber;\r    body = $releaseNotes;\r    draft = $isDraft;\r    prerelease = $isPrerelease;\r}\r\r$releaseParams = @{\r    Uri = \"https://api.github.com/repos/$gitHubUsername/$gitHubRepository/releases\";\r    Method = 'POST';\r    Headers = @{\r        Authorization = 'Basic ' + [Convert]::ToBase64String(\r            [Text.Encoding]::ASCII.GetBytes($gitHubApiKey + \":x-oauth-basic\")\r        );\r    }\r    ContentType = 'application/json';\r    Body = (ConvertTo-Json $releaseData -Compress)\r}\r\rWrite-Host \"Creating release $formattedVersionNumber for $commitId.\"\r$result = Invoke-RestMethod @releaseParams\r\rWrite-Host \"Release successfully created.\"\r$result",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "versionNumber",
+      "Label": "Version Number",
+      "HelpText": "The version number for this release",
+      "DefaultValue": "#{Octopus.Release.Number}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "commitId",
+      "Label": "Commitish",
+      "HelpText": "Specifies the commitish value that determines where the Git tag is created from. Can be any branch or commit SHA. Unused if the Git tag already exists.",
+      "DefaultValue": "master",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "releaseNotes",
+      "Label": "Release Notes",
+      "HelpText": "The notes to accompany this GitHub release. Defaults to the release notes of the release.",
+      "DefaultValue": "#{Octopus.Release.Notes}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "gitHubUsername",
+      "Label": "Owner",
+      "HelpText": "The owner of the repository.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "gitHubRepository",
+      "Label": "Repository",
+      "HelpText": "The repository to create the release for.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "gitHubApiKey",
+      "Label": "Api Token",
+      "HelpText": "The GitHub [API key](https://github.com/blog/1509-personal-api-tokens)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "draft",
+      "Label": "Draft",
+      "HelpText": "Set to true to mark this as a draft release (not visible to users)",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "preRelease",
+      "Label": "PreRelease",
+      "HelpText": "Set to true to mark this as a pre-release version",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-09-07T00:12:45.419+00:00",
+  "LastModifiedBy": "alfhenrik",
+  "$Meta": {
+    "ExportedAt": "2015-09-07T00:21:13.590+00:00",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  },
+  "Category": "github"
+}

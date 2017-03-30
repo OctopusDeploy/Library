@@ -1,0 +1,81 @@
+{
+  "Id": "193628c4-2251-41e9-a782-225e632ef871",
+  "Name": "Configuration - Encrypt Section",
+  "Description": "Encrypts several configuration sections for the specified file in a given directory.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\" \nfunction Get-Parameter($Name, $Default, [switch]$Required) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        } else {\n            $result = $Default\n        }\n    }\n\n    return $result\n}\n\nfunction HandleError($message) {\n\tif (!$whatIf) {\n\t\tthrow $message\n\t} else {\n\t\tWrite-Host $message -Foreground Yellow\n\t}\n}\n\n$websiteDirectory = Get-Parameter \"WebsiteDirectory\" -Required\n$sectionsToEncrypt = (Get-Parameter \"SectionsToEncrypt\" -Required) -split ',' | where {$_} | %{$_.Trim()}\n$provider = Get-Parameter \"Provider\" \"\"\n$configFile = Get-Parameter \"ConfigFile\" \"web.config\"\n$otherFiles = (Get-Parameter \"OtherFiles\" \"\") -split ',' | where {$_} | %{$_.Trim()}\n\nWrite-Host \"Configuration - Encrypt .config\"\nWrite-Host \"WebsiteDirectory: $websiteDirectory\"\nWrite-Host \"SectionsToEncrypt: $sectionsToEncrypt\"\nWrite-Host \"Provider: $provider\"\nWrite-Host \"ConfigFile: $configFile\"\n\n\nif (!(Test-Path $websiteDirectory)) {\n\tHandleError \"The directory $websiteDirectory must exist\"\n}\n\n$configFilePath = Join-Path $websiteDirectory $configFile\nWrite-Host \"configFilePath: $configFilePath\"\nif (!(Test-Path $configFilePath)) {\n\tHandleError \"Specified file $configFile or a Web.Config file must exist in the directory $websiteDirectory\"\n}\n\n$frameworkPath = [System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory();\n$regiis = \"$frameworkPath\\aspnet_regiis.exe\"\n\nif (!(Test-Path $regiis)) {\n\tHandleError \"The tool aspnet_regiis does not exist in the directory $frameworkPath\"\n}\n\n# Create a temp directory to work out of and copy our config file to web.config\n$tempPath = Join-Path $websiteDirectory $([guid]::NewGuid()).ToString()\nif (!$whatIf) {\n\tNew-Item $tempPath -ItemType \"directory\"\n} else {\n\tWrite-Host \"WhatIf: New-Item $tempPath -ItemType \"\"directory\"\"\" -Foreground Yellow\n}\n\n$tempFile = Join-Path $tempPath \"web.config\"\nif (!$whatIf) {\n    New-Item -ItemType File -Path $tempFile -Force\n\tCopy-Item $configFilePath $tempFile -Force\n} else {\n\tWrite-Host \"WhatIf: Copy-Item $configFilePath $tempFile\" -Foreground Yellow\n}\n\nForeach($fileName in $otherFiles){\n  if (!$whatIf) {\n     New-Item -ItemType File -Path (Join-Path $tempPath $fileName) -Force\n\t Copy-Item (Join-Path $websiteDirectory $fileName) (Join-Path $tempPath $fileName) -Force\n  } else {\n\t Write-Host \"WhatIf: Copy-Item $configFilePath $tempFile\" -Foreground Yellow\n  }\n}\n\nForeach($sectionToEncrypt in $sectionsToEncrypt){\n\t# Determine arguments\n\tif ($provider) {\n\t\t$args = \"-pef\", $sectionToEncrypt, $tempPath, \"-prov\", $provider\n\t} else {\n\t\t$args = \"-pef\", $sectionToEncrypt, $tempPath\n\t}\n\n\t# Encrypt Web.Config file in directory\n\tif (!$whatIf) {\n\t\t& $regiis $args\n\t\tif ($LASTEXITCODE) {\n\t\t    HandleError \"There was an error trying to encrypt section: $sectionToEncrypt\"\n\t\t}\n\t} else {\n\t\tWrite-Host \"WhatIf: $regiis $args\" -Foreground Yellow\n\t}\n}\n\n# Copy the web.config back to original file and delete the temp dir\nif (!$whatIf) {\n\tCopy-Item $tempFile $configFilePath -Force\n\n  Foreach($fileName in $otherFiles){\n    if (!$whatIf) {\n  \t Copy-Item (Join-Path $tempPath $fileName) (Join-Path $websiteDirectory $fileName) -Force\n    } else {\n  \t Write-Host \"WhatIf: Copy-Item $configFilePath $tempFile\" -Foreground Yellow\n    }\n  }\n\n  Remove-Item $tempPath -Recurse\n} else {\n\tWrite-Host \"WhatIf: Copy-Item $tempFile $configFilePath -Force\" -Foreground Yellow\n\tWrite-Host \"WhatIf: Remove-Item $tempPath -Recurse\" -Foreground Yellow\n}\n",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "0cae0018-f915-47c5-a8d6-cdef437346df",
+      "Name": "WebsiteDirectory",
+      "Label": "Website directory",
+      "HelpText": "The path to the website physical directory that contains a `Web.Config` file. \n\nYou can get the InstallationDirectoryPath like so `#{Octopus.Action[StepName].Output.Package.InstallationDirectoryPath}`",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "3d7e5485-106e-415e-83b7-cf12c59e776b",
+      "Name": "SectionsToEncrypt",
+      "Label": "Section to encrypt",
+      "HelpText": "The name of the section in the web config to encrypt e.g. `appSettings`, `connectionStrings` etc.\nFor multiple sections, separate with a comma (,)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "12a46b72-3835-4086-b8d6-bd5ad3f99f10",
+      "Name": "Provider",
+      "Label": "Provider Name",
+      "HelpText": "The provider to use for encryption",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "998aa949-74b6-4da6-a838-5637e7a5a322",
+      "Name": "ConfigFile",
+      "Label": "Configuration File",
+      "HelpText": "The configuration file to encrypt.",
+      "DefaultValue": "web.config",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "67415967-4722-449c-8d81-28eff7bf9876",
+      "Name": "OtherFiles",
+      "Label": "Other Files",
+      "HelpText": "A list of other files in the `#{WebsiteDirectory}` folder that should be included when encrypting the specified `#{SectionToEncrypt}`. For example, `connectionStrings.config`. Values should be separated by a comma.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "cjuroz",
+  "$Meta": {
+    "ExportedAt": "2016-12-27T03:36:42.383Z",
+    "OctopusVersion": "3.7.6",
+    "Type": "ActionTemplate"
+  },
+  "Category": "encrypt"
+}

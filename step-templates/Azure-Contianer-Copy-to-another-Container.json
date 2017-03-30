@@ -1,0 +1,96 @@
+{
+  "Id": "bf955a12-57ee-41b0-af58-672ca48ea07d",
+  "Name": "Azure - Copy Storage Account Containers",
+  "Description": "Copy blobs between specified containers across two different storage accounts",
+  "ActionType": "Octopus.Script",
+  "Version": 0,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "# Define the source storage account and context\n$SourceStorageAccountName = $OctopusParameters['SourceStorageAccountName'];\n$SourceStorageAccountKey = $OctopusParameters['SourceStorageAccountKey'];\n$SourceContainerName = $OctopusParameters['SourceContainerName'];\n$SourceContext = New-AzureStorageContext -StorageAccountName $SourceStorageAccountName -StorageAccountKey $SourceStorageAccountKey\n$SourceBlobPrefix = $OctopusParameters['SourceBlobPrefix'];\n\n# Define the destination storage account and context\n$DestinationStorageAccountName = $OctopusParameters['DestinationStorageAccountName'];\n$DestinationStorageAccountKey = $OctopusParameters['DestinationStorageAccountKey'];\n$DestinationContainerName = $OctopusParameters['DestinationContainerName'];\n$DestinationContext = New-AzureStorageContext -StorageAccountName $DestinationStorageAccountName -StorageAccountKey $DestinationStorageAccountKey\n$DestinationBlobPrefix = $OctopusParameters['DestinationBlobPrefix'];\n\n# Check if container exists, otherwise create it\n$isContainerExist = Get-AzureStorageContainer -Context $DestinationContext | Where-Object { $_.Name -eq $DestinationContainerName }\nif($isContainerExist -eq $null)\n{\n    New-AzureStorageContainer -Name $DestinationContainerName -Context $DestinationContext\n}\n\n# Get a reference to blobs in the source container\n$blobs = $null\nif ($SourceBlobPrefix -eq $null) {\n    $blobs = Get-AzureStorageBlob -Container $SourceContainerName -Context $SourceContext\n}\nelse {\n    $blobs = Get-AzureStorageBlob -Container $SourceContainerName -Context $SourceContext -Prefix $SourceBlobPrefix\n}\n\n# Copy blobs from one container to another\nif ($DestinationBlobPrefix -eq $null) {\n\t$blobs | Start-AzureStorageBlobCopy -DestContainer $DestinationContainerName -DestContext $DestinationContext\n}\nelse {\n\t$uri = $SourceContext.BlobEndPoint + $SourceContainerName +\"/\" \n\t$blobs | ForEach-Object `\n    \t{ Start-AzureStorageBlobCopy `\n\t        -SrcUri \"$uri$($_.Name)\" `\n            -Context $SourceContext `\n\t        -DestContext $DestinationContext `\n\t        -DestContainer $DestinationContainerName `\n\t        -DestBlob \"$DestinationBlobPrefix/$($_.Name)\" `\n\t    } \n}\n    ",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "SourceStorageAccountName",
+      "Label": "Source Storage Account Name",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SourceStorageAccountKey",
+      "Label": "Source Storage Account Key",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SourceContainerName",
+      "Label": "Source Container Name",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SourceBlobPrefix",
+      "Label": "Source Blob Prefix (Optional)",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DestinationStorageAccountName",
+      "Label": "Destination Storage Account Name",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DestinationStorageAccountKey",
+      "Label": "Destination Storage Account Key",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DestinationContainerName",
+      "Label": "Destination Container Name",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DestinationBlobPrefix",
+      "Label": "Destination Blob Prefix (Optional)",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "ahmedig",
+  "$Meta": {
+    "ExportedAt": "2016-05-12T03:09:48.287+00:00",
+    "OctopusVersion": "3.3.9",
+    "Type": "ActionTemplate"
+  },
+  "Category": "azure"
+}

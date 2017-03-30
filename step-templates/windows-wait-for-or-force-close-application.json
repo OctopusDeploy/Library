@@ -1,0 +1,48 @@
+{
+  "Id": "2d59d5b6-1dc3-424e-9279-676393933efd",
+  "Name": "Process - Wait for or Force close",
+  "Description": "Waits a set amount of time for a process to close and optionally force closes the process after the timeout expires.",
+  "ActionType": "Octopus.Script",
+  "Version": 0,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$seconds = $OctopusParameters['Seconds']\r\n$forceCloseOnTimeout = $OctopusParameters['Force']\r\n$processName = $OctopusParameters['ProcessName']\r\n$timeout = new-timespan -Seconds $seconds\r\n$stopwatch = [diagnostics.stopwatch]::StartNew()\r\n\r\n# Check if the process is even running\r\nif (Get-Process $processName -ErrorAction silentlycontinue)\r\n{\r\n    Write-Host \"Waiting $seconds seconds for process '$processName' to terminate\"\r\n} \r\nelse \r\n{\r\n    Write-Host \"Process '$processName' is not running\"\r\n    return\r\n}\r\n\r\n# Count down waiting for the process to stop gracefully\r\nwhile ($stopwatch.elapsed -lt $timeout)\r\n{\r\n    # Check process is running\r\n    if (Get-Process $processName -ErrorAction silentlycontinue) \r\n    {\r\n        Write-Host \"Waiting...\"\r\n    }\r\n    else \r\n    {\r\n        Write-Host \"Process '$processName' is no longer running\"\r\n        return\r\n    }\r\n\r\n    # Wait for a while\r\n    Start-Sleep -seconds 1\r\n}\r\n\r\n# Force close the process if set\r\nif($forceCloseOnTimeout –eq $TRUE)\r\n{\r\n    Write-Host \"Force closing process $processName\"\r\n    Stop-Process -processname $processName -Force\r\n    Write-Host \"Process '$processName' is no longer running\"\r\n    return\r\n}\r\n\r\nWrite-Host \"Process $processName didn't close within the allocated time\"\r\nWrite-Host \"Continuing anyway\""
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Seconds",
+      "Label": "Seconds",
+      "HelpText": "The number of seconds to wait before forcefully killing the application",
+      "DefaultValue": "10",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Force",
+      "Label": "Force Kill",
+      "HelpText": "Whether or not the application should be forcefully killed after the timeout has expired.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "ProcessName",
+      "Label": "Process Name",
+      "HelpText": "The name of the process to wait for",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "svenkle",
+  "$Meta": {
+    "ExportedAt": "2015-11-21T01:21:41.951+00:00",
+    "OctopusVersion": "3.2.3",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}

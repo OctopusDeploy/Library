@@ -1,0 +1,31 @@
+{
+  "Id": "7f9c1f6d-8305-4a37-a4c6-9b47ea4699d9",
+  "Name": "Registry - Update Configuration Variables In Export File",
+  "Description": "Replace values in a .reg file (Registry Export) automatically with octopus variables.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\r\nparam(\r\n    [string]$regExports\r\n) \r\n\r\n$ErrorActionPreference = \"Stop\" \r\n\r\nfunction Get-Param($Name, [switch]$Required, $Default) {\r\n    $result = $null\r\n\r\n    if ($OctopusParameters -ne $null) {\r\n        $result = $OctopusParameters[$Name]\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        $variable = Get-Variable $Name -EA SilentlyContinue   \r\n        if ($variable -ne $null) {\r\n            $result = $variable.Value\r\n        }\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        if ($Required) {\r\n            throw \"Missing parameter value $Name\"\r\n        } else {\r\n            $result = $Default\r\n        }\r\n    }\r\n\r\n    return $result\r\n}\r\n\r\n# More custom functions would go here\r\n\r\n& {\r\n    param(\r\n        [string]$regExports\r\n    ) \r\n\r\n    Write-Host \"Registry Export Configuration Variables\"\r\n    Write-Host \"regExports: $regExports\"\r\n\r\n    ForEach ($regExp in $regExports.Split(';'))  {\r\n        \r\n        $regFile = $regExp.Trim()\r\n        \r\n        if( $regFile.Length -lt 1 ){ break }\r\n\r\n        $output = \"\"\r\n\r\n        $fi=Get-Item $regFile\r\n        $file=$fi.OpenText()\r\n\r\n        While(!($file.EndOfStream)){\r\n            $line=$file.ReadLine()\r\n            $outputLine = $line\r\n\r\n            if($line -match \"`\"=`\"\"){\r\n                $keyValue = $line -split \"`\"=`\"\"\r\n                $key = $keyValue[0] -replace \"^`\"\" , \"\"\r\n                $oldVal = $keyValue[1] -replace \"`\"$\" , \"\"\r\n                $newVal = $OctopusParameters[$key]\r\n                \r\n                Write-Host \"Looking for key $key in OctopusParameters hash\"\r\n\r\n                if($newVal){\r\n                    Write-Host \"Updating $key from $oldVal to $newVal\"\r\n                    $outputLine = \"`\"$key`\"=`\"$newVal`\"\"\r\n                }\r\n            }\r\n            \r\n            $output += $outputLine + \"`r`n\"\r\n        }\r\n\r\n        $output | Out-File \"c:\\temp\\output.reg\"\r\n    }\r\n\r\n } `\r\n(Get-Param 'regExports' -Required)",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "regExports",
+      "Label": "Registry Exports",
+      "HelpText": "A list of .reg files (Registry exports) separated by a ;",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-07-02T14:58:41.311+00:00",
+  "LastModifiedBy": "jbennett",
+  "$Meta": {
+    "ExportedAt": "2015-07-02T14:59:00.322+00:00",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}

@@ -1,0 +1,85 @@
+{
+  "Id": "bc18b460-06a7-412f-850f-44098f1b497a",
+  "Name": "Azure - Upload Files to Azure",
+  "Description": "Uploads files and folders to an Azure container from a specified location.\n\n**IMPORTANT:** Azure PowerShell must be installed on the tentacle server for this step to work. This can be downloaded from http://bit.ly/AzurePowershellDownload",
+  "ActionType": "Octopus.Script",
+  "Version": 8,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "#Sets the Permissions to public if the selection is true\nif ([boolean]::Parse($doRecurse)) \n{\n    \n\t$recurse = \"-Recurse\"\n\n}\n\nif ([boolean]::Parse($doForce)) \n{\n    \n\t$force = \"-Force\"\n\n}\n\n#--------------------------------------------------------------------\n#Checking to see if Azure is installed on the computer\n$name = 'Azure'\n\nWrite-Output \"Checking if Azure Powershell is installed\"\n\nif(Get-Module -ListAvailable | Where-Object {$_.name -eq $name})\n{\n\t(Get-Module -ListAvailable | Where-Object{ $_.Name -eq $name}) |\n\tSelect Version, Name, Author, PowerShellVersion | Format-List;\n\tWrite-Output \"Azure Powershell is installed\"\n}\nelse\n{\n\t#Provides the link to install Azure Powershell, if it is not installed\n\tWrite-Warning \"Please install Azure Powershell. To install Azure Powershell go to http://bit.ly/AzurePowershellDownload\"\n\tExit 1\n}\n\n\n\n#--------------------------------------------------------------------\n\n#Initialises the Azure Credentials based on the Storage Account Name and the Storage Account Key, \n#so that we can invoke the APIs further down. \n$storageContext = New-AzureStorageContext -StorageAccountName $storageAccountName -StorageAccountKey $storageAccountKey\n\n#--------------------------------------------------------------------\n\nGet-ChildItem -Path $localFolder -File $recurse | Set-AzureStorageBlobContent -Container $containerName -Blob $blobName -Context $storageContext $force\n\nWrite-Output \"All files in $localFolder uploaded to $containerName!\"\n",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "4cb76611-ff29-4256-9475-3769fd890e0f",
+      "Name": "storageAccountName",
+      "Label": "Azure Storage Account Name",
+      "HelpText": "Name of the account that the files and folders will be uploaded to.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "cc0eb63d-4545-4d9d-aca3-7844e1e0a54e",
+      "Name": "storageAccountKey",
+      "Label": "Azure Storage Account Key",
+      "HelpText": "The key that is used to log into the account.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "8245c4b0-014d-467c-a95d-ab6aac230075",
+      "Name": "containerName",
+      "Label": "Azure Container Name",
+      "HelpText": "The name of the container the files and folder will be uploaded to.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "45f6df33-d04d-44bd-8a26-1ab45c634afc",
+      "Name": "localFolder",
+      "Label": "Name of the Parent Folder",
+      "HelpText": "Name of the Parent Folder being uploaded",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8c559f0f-2d6e-4202-8614-65cabb29e643",
+      "Name": "doRecurse",
+      "Label": "Recursive",
+      "HelpText": null,
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "8a06615b-69a2-4d32-be29-981b6c5725fc",
+      "Name": "doForce",
+      "Label": "Force",
+      "HelpText": "Override is enabled or not",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedBy": "kemyke",
+  "$Meta": {
+    "ExportedAt": "2016-10-25T19:17:25.877+00:00",
+    "OctopusVersion": "3.4.5",
+    "Type": "ActionTemplate"
+  },
+  "Category": "azure"
+}

@@ -1,0 +1,85 @@
+{
+  "Id": "35d1aae8-950a-466e-99f7-afd8fa9d5dff",
+  "Name": "Pin TeamCity Build Version and Dependencies",
+  "Description": "Try to pin the TeamCity build version and dependencies\n(Requires Octopus version to match TeamCity version)",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$buildNumber = $OctopusParameters['buildNumber']\n$buildTypeId = $OctopusParameters['buildTypeId']\n\n$tcUrl = $OctopusParameters['TeamCityUrl']\n$tcUser = $OctopusParameters['TeamCityUser']\n$tcPass = $OctopusParameters['TeamCityPassword']\n$tcComments = $OctopusParameters['TeamCityPinComment']\n$tcTags = $OctopusParameters['TeamCityTags']\n\n$credentials = [System.Text.Encoding]::UTF8.GetBytes(\"$($tcUser):$($tcPass)\")\n$headers = @{ \"Authorization\" = \"Basic $([System.Convert]::ToBase64String($credentials))\" }\n\n[string]$restUri = $tcUrl + (\"/httpAuth/app/rest/builds/?locator=buildType:{1},branch:default:any,number:{0}\" -f $buildNumber,$buildTypeId)\n\n$response = Invoke-RestMethod -Headers $headers -DisableKeepAlive -Method GET -Uri $restUri\n\nif ($response -ne $null -and $response.builds.count -eq 1) {\n    $id = $response.builds.build.id\n    \n    [string]$pinUri = $tcUrl + (\"/ajax.html?pinComment={1}&pin=true&buildId={0}&buildTagsInfo={2}&applyToChainBuilds=true\" -f $id,$tcComments,$tcTags)\n\n    Write-Output \"Pinning Build with ID $($id)\"\n\n    try {\n        Invoke-RestMethod -Headers $headers -DisableKeepAlive -Method POST -Uri $pinUri\n        Write-Output \"Build ID $($id) pinned successfully\"\n    } catch {\n        Write-Output \"Build ID $($id) not pinned: $($_.Exception.Message)\"\n    }\n} else {\n    Write-Warning \"Build not found, unable to pin\"\n}\n",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "buildNumber",
+      "Label": "Build Number",
+      "HelpText": null,
+      "DefaultValue": "#{Octopus.Release.Number}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "buildTypeId",
+      "Label": "Build Configuration ID",
+      "HelpText": "The build configuration id to look for the build to pin.\n\nGeneral Settings of the Build Configuration",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "TeamCityUrl",
+      "Label": "Url of TeamCity Server",
+      "HelpText": "The url to the TeamCity server.",
+      "DefaultValue": "http://localhost:8082",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "TeamCityUser",
+      "Label": "TeamCity User",
+      "HelpText": "The TeamCity user used for pinning the build",
+      "DefaultValue": "teamcity",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "TeamCityPassword",
+      "Label": "TeamCity User Password",
+      "HelpText": "The password for the TeamCity user.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "TeamCityPinComment",
+      "Label": "TeamCity Pin Comment",
+      "HelpText": "Comments for the TeamCity Pin",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "TeamCityTags",
+      "Label": "TeamCity Tags",
+      "HelpText": "Tags to add to the TeamCity Build, space separated list of values.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2016-05-17T09:18:00.000+00:00",
+  "LastModifiedBy": "roberto-mardeni",
+  "$Meta": {
+    "ExportedAt": "2016-05-06T17:36:39.661+00:00",
+    "OctopusVersion": "3.2.19",
+    "Type": "ActionTemplate"
+  },
+  "Category": "teamcity"
+}

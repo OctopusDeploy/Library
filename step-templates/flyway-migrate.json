@@ -1,0 +1,120 @@
+{
+  "Id": "3868c17c-8471-4805-89be-e99513afd59a",
+  "Name": "Flyway Migrate",
+  "Description": "Deploy a database using Flyway",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$VerboseActionPreference=\"Continue\"\r\n\r\n# Declaring the path to the NuGet package\r\n$packagePath = $OctopusParameters[\"Octopus.Action[$flywayPackageStep].Output.Package.InstallationDirectoryPath\"]\r\n\r\n# Delcaring path to FlyWay\r\n$flywayPath = $packagePath\r\nif ($relativePath -ne $null){\r\n    $flywayPath = Join-Path -Path $packagePath -ChildPath $relativePath\r\n}\r\n\r\n$flywayCmd = Join-Path -Path $flywayPath -ChildPath 'flyway.cmd'\r\n\r\nif ($locations -ne $null){\r\n    $locationsPath = Join-Path -Path $packagePath -ChildPath $locations\r\n}\r\nelse{\r\n    $locationsPath = Join-Path -Path $flywayPath -ChildPath \"sql\"\r\n}\r\n\r\n\r\n# Logging for troubleshooting\r\nWrite-Host \"*******************************************\"\r\nWrite-Host \"Logging variables:\"\r\nWrite-Host \" - - - - - - - - - - - - - - - - - - - - -\"\r\nWrite-Host \"FlywayPackageStep: $FlyWayPackageStep\"\r\nWrite-Host \"FlywayPath: $flywayPath\"\r\nWrite-Host \"LocationsPath: $locationsPath\"\r\nWrite-Host \"Target DB -url: $targetUrl\"\r\nWrite-Host \"Target DB -user: $targetUser\"\r\nWrite-Host \"Run drift-check?: $runDriftCheck\"\r\nWrite-Host \"Compare tool path: $comparePath\"\r\nWrite-Host \"Shadow DB -url: $shadowUrl\"\r\nWrite-Host \"Shadow DB -user: $shadowUser\"\r\n\r\nif ($runDriftCheck){\r\n    # Can't do drift check without a shadow DB\r\n    if($shadowUrl -eq $null){\r\n        Write-Output \"Cannot run drift check because Shadow DB not provided.\"\r\n        $runDriftCheck = $FALSE\r\n    }\r\n    # Can't do drift check without a comparison tool\r\n    if($comparePath -eq $null){\r\n        Write-Output \"Cannot run drift check as path to comparison tool not provided.\"\r\n        $runDriftCheck = $FALSE\r\n    }\r\n}\r\n\r\n\r\n# Drift check preperation\r\n$dbPlatform = \"Unknown\"\r\n$targetDbVersion = 0\r\n$targetDbPath = \"Unknown\"\r\n\r\nif($runDriftCheck)\r\n{\r\n    # Determining name and version of target database\r\n    Write-Host \"*******************************************\"\r\n    Write-Host \"Determining name and version of target database:\"\r\n    Write-Host \" - - - - - - - - - - - - - - - - - - - - -\"\r\n    \r\n    # Saving target DB info\r\n    $arguments = @(\r\n        \"info\", \r\n        \"-locations=filesystem:$locationsPath\",\r\n        \"-url=$targetUrl\",\r\n        \"-user=$targetUser\",\r\n        \"-password=$targetPassword\"\r\n    )\r\n    Write-Host \"Determining version of target database:\"\r\n    Write-Host \"Executing the following: & $flywayCmd $arguments\"\r\n    $targetDbInfo = & $flywayCmd $arguments\r\n    Write-Host \"Target DB info:\"\r\n    Write-Host $targetDbInfo\r\n\r\n    # Finding intended version number of target database\r\n    $targetDbVersion = ($targetDbInfo | ? {$_.StartsWith(\"|\") } | ? { $_ -notcontains \"No migrations found\" } | % { $parts = $_.Split('|'); New-Object PSObject -Property @{Version = $parts[1].Trim(); State = $parts[4].Trim()}} | ? { $_.State -eq \"Success\" } | Select-Object -Last 1).Version\r\n    Write-Host \"Target database is at version $targetDbVersion\"\r\n\r\n    # Finding connection string for target DB\r\n    Write-Host \"Target database connection string $targetUrl\"\r\n    \r\n    if ($targetUrl -like '*sqlserver*'){\r\n        $dbPlatform = \"SQLServer\"       \r\n    }\r\n    \r\n    if ($targetUrl -like '*mysql*'){\r\n        $dbPlatform = \"MySQL\"       \r\n    }\r\n    \r\n    if ($targetUrl -like '*oracle*'){\r\n        $dbPlatform = \"Oracle\"       \r\n    }    \r\n    \r\n    Write-Output \"Database platform $dbPlatform detected.\"\r\n}\r\n\r\nif ($dbPlatform -eq \"Unknown\" -And $runDriftCheck){\r\n    Write-Host \"Cannot run drift check!\"\r\n    Write-Host \"Drift check only supported for SQL Server, Oracle or MySQL.\"\r\n    Write-Host \"Cannot determine from FlyWay info if your database platform is supported.\"\r\n    $runDriftCheck = $FALSE      \r\n}\r\n\r\nif ($runDriftCheck -eq $true)\r\n{\r\n    # Building a shadow DB for drift check\r\n    Write-Host \"*******************************************\"\r\n    Write-Host \"Building a shadow DB for drift check:\"\r\n    Write-Host \" - - - - - - - - - - - - - - - - - - - - -\"\r\n    #   In a future version it would be cool to build the shadow DB ourselves\r\n    #   and to clean up afterwards. For now, however, asking the user to provide \r\n    #   a shadow DB for us removes the requirement to work out how to build a fresh\r\n    #   DB on 3 different DB platforms. It also means we don't need to worry about\r\n    #   credentials etc\r\n    #   $shadowDbPath = $targetDbPath + \"_SHADOW\"\r\n    \r\n    Write-Host \"Cleaning shadow database\"\r\n    $arguments = @(\r\n        \"clean\", \r\n        \"-url=$shadowUrl\",\r\n        \"-user=$shadowUser\",\r\n        \"-password=$shadowPassword\"\r\n    )\r\n    Write-Host \"Executing the following: &$flywayCmd $arguments\"\r\n    &$flywayCmd $arguments\r\n    \r\n    Write-Host \"Migrating shadow database up to current target version\"\r\n    $arguments = @(\r\n        \"migrate\"\r\n        \"-locations=filesystem:$locationsPath\",\r\n        \"-url=$shadowUrl\",\r\n        \"-user=$shadowUser\",\r\n        \"-password=$shadowPassword\",\r\n        \"-target=$targetDbVersion\"\r\n    )\r\n    Write-Host \"Executing the following: &$flywayCmd $arguments\"\r\n    &$flywayCmd $arguments\r\n\r\n    # Using comparison tool to check for drift\r\n    Write-Host \"*******************************************\"\r\n    Write-Host \"Using comparison tool to check for drift:\"\r\n    Write-Host \" - - - - - - - - - - - - - - - - - - - - -\"\r\n    \r\n    function getServer ($connectionsString){\r\n        return ($connectionsString -split \"/\")[2]\r\n    }\r\n\r\n    function getDbName ($connectionsString){\r\n        # Note: For MySQL this may return key values as well. e.g:\r\n        # <database>?<key1>=<value1>&<key2>=<value2>...\r\n        # Should fix this!!!!\r\n        Write-Host \"Warning: Function getDbName() does not handle MySQL connection strings fully!\"\r\n        return ($connectionsString -split \"/\")[3]\r\n    }\r\n\r\n    # SQL Server\r\n    if ($dbPlatform -eq \"SQLServer\"){\r\n        \r\n        # Details for target DB\r\n        $targetServer = getServer($targetUrl)\r\n        $targetDb = getDbName($targetUrl)\r\n        \r\n        # Details for shadow DB\r\n        $shadowServer = getServer($shadowUrl)\r\n        $shadowDb = getDbName($shadowUrl) \r\n        \r\n        # Drift report name and location\r\n        $date = Get-Date -format yyyyMMddHHmmss\r\n        $reportName = \"FlySQLDriftReport_$targetDb_$date.\"\r\n        $reportPath = Join-Path -Path $flywayPath -ChildPath \"driftReport\"\r\n        \r\n        New-Item $reportPath -type directory\r\n        \r\n        $arguments = @(\r\n            \"/s1=$targetServer\",  \r\n            \"/db1=$targetDb\", \r\n            \"/u1=$targetUser\",  \r\n            \"/p1=$targetPassword\", \r\n            \"/s2=$shadowServer\",  \r\n            \"/db2=$shadowDb\", \r\n            \"/u2=$shadowUser\",  \r\n            \"/p2=$shadowPassword\",\r\n            \"/assertidentical\",\r\n            \"/r=$reportPath\\reportName.html\",\r\n            \"/rt=Simple\"\r\n        )\r\n\r\n        Write-Host \"Executing the following command: & $comparePath $arguments\"\r\n        & $comparePath $arguments \r\n        if ($LASTEXITCODE -ne 0){\r\n            Throw \"Drift check failed. For details see report here: $reportPath\"\r\n        }\r\n        else{\r\n            Write-Host \"Drift check passed.\"\r\n        }\r\n    }\r\n    \r\n    # Oracle\r\n    if ($dbPlatform -eq \"Oracle\"){\r\n        \r\n        # \"Target\" and \"Source\" names are very confusing.\r\n        # Consistently in this PS script I have used target\r\n        # to refer to the database we intend to deploy to.\r\n        # At this point we need to use that database as\r\n        # the source in order to create a roll-back\r\n        # script should the drift-check fail.\r\n        # Hence the terms source and target are used\r\n        # for opposite purposes when using Schema Compare\r\n        # for Oracle command line tool.\r\n        \r\n        # Details for target DB\r\n        $targetTns = getServer($targetUrl)\r\n        $targetSchema = getDbName($targetUrl)\r\n        $source = \"$targetUser/$targetPassword@$targetTns{$targetSchema}\"\r\n        \r\n        # Details for shadow DB\r\n        $shadowServer = getServer($shadowUrl)\r\n        $shadowDb = getDbName($shadowUrl) \r\n        $target = \"$sourceUser/$sourcePassword@$sourceTns{$sourceSchema}\"\r\n        \r\n        # Drift report name and location\r\n        $date = Get-Date -format yyyyMMddHHmmss\r\n        $reportName = \"FlySQLDriftReport_$targetSchema_$date.\"\r\n        $reportPath = Join-Path -Path $flywayPath -ChildPath \"driftReport\"\r\n        \r\n        New-Item $reportPath -type directory\r\n        \r\n        $arguments = @(\r\n            \"/source=$source\",  \r\n            \"/target=$target\",\r\n            \"/r=$reportPath\\reportName.html\",\r\n            \"/rt=Simple\"\r\n        )\r\n\r\n        Write-Host \"Executing the following command: & $comparePath $arguments\"\r\n        & $comparePath $arguments \r\n        if ($LASTEXITCODE -ne 0){\r\n            Throw \"Drift check failed. For details see report here: $reportPath\"\r\n        }\r\n        else{\r\n            Write-Host \"Drift check passed.\"\r\n        }\r\n        \r\n    }\r\n    # MySQL\r\n    if ($dbPlatform -eq \"MySQL\"){\r\n\r\n        # Details for target DB\r\n        $targetServerPort = getServer($targetUrl)\r\n        $targetServer = ($targetServerPort -Split \":\")[0]\r\n        $targetPort = ($targetServerPort -Split \":\")[1]\r\n        $targetDb = getDbName($targetUrl)\r\n\r\n        # Details for shadow DB        \r\n        $shadowServerPort = getServer($targetUrl)\r\n        $shadowServer = ($targetServerPort -Split \":\")[0]\r\n        $shadowPort = ($targetServerPort -Split \":\")[1]\r\n        $shadowDb = getDbName($shadowUrl) \r\n\r\n        # Drift report name and location        \r\n        $date = Get-Date -format yyyyMMddHHmmss\r\n        $reportName = \"FlySQLDriftReport_$targetDb_$date\"\r\n        $reportPath = Join-Path -Path $flywayPath -ChildPath \"driftReport\"\r\n        \r\n        New-Item $reportPath -type directory\r\n        \r\n        $arguments = @(\r\n            \"-verbose\", \r\n            \"-server1=$shadowServer\",  \r\n            \"-port1=$shadowPort\",\r\n            \"-database1=$shadowDb\", \r\n            \"-username1=$shadowUser\",  \r\n            \"-password1=$shadowPassword\",\r\n\r\n            \"-server2=$targetServer\",  \r\n            \"-database2=$targetDb\", \r\n            \"-port2=$targetPort\",\r\n            \"-username2=$targetUser\",\r\n            \"-password2=$targetPassword\", \r\n\r\n            \"-assertIdentical\",\r\n            \"-report=$reportPath\\$reportName.html\",\r\n            \"-reportType=Simple\",\r\n            \"-scriptfile=$reportPath\\undoDrift.sql\"\r\n        )\r\n\r\n        Write-Host \"Executing the following command: & $comparePath $arguments\"\r\n        & $comparePath $arguments \r\n        if ($LASTEXITCODE -ne 0){\r\n            Throw \"Drift check failed. For details see report here: $reportPath\"\r\n        }\r\n        else {\r\n            Write-Host \"Drift check passed.\"\r\n        }\r\n    }\r\n}\r\n\r\n# Executing deployment\r\nWrite-Host \"*******************************************\"\r\nWrite-Host \"Executing deployment:\"\r\nWrite-Host \" - - - - - - - - - - - - - - - - - - - - -\"\r\n    $arguments = @(\r\n        \"migrate\"\r\n        \"-locations=filesystem:$locationsPath\",\r\n        \"-url=$targetUrl\",\r\n        \"-user=$targetUser\",\r\n        \"-password=$targetPassword\"\r\n    )\r\nWrite-Host \"Executing the following command: & $flywayCmd $arguments\"\r\n\r\n& $flywayCmd $arguments",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "FlyWayPackageStep",
+      "Label": "Flyway package step (required)",
+      "HelpText": "A previous deployment step which deploys a NuGet package containing your FlyWay project.\n\n\n_Requirements:_\n\n1. The NuGet package must contain your FlyWay project.\n\n2. The flyway.conf file needs to contain the correct information for your target database. This can be achieved using the Octopus Deploy \"Substitute variables in files\" feature in your \"Deploy a NuGet package\" step:\nhttp://docs.octopusdeploy.com/display/OD/Substitute+Variables+in+Files\n\n3. You should be able to execute your deployment simply by running \"flyway migrate\" from the flyway.cmd directory.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Name": "RelativePath",
+      "Label": "Relative path to flyway.cmd (optional)",
+      "HelpText": "If your FlyWay project is not in the root of your NuGet package specify the relative path here.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "locations",
+      "Label": "-locations (relative path, optional)",
+      "HelpText": "Comma-separated list of locations to scan recursively for migrations. The location type is determined by its prefix.\nUnprefixed locations or locations starting with classpath: point to a package on the classpath and may contain both sql and java-based migrations.\nLocations starting with filesystem: point to a directory on the filesystem and may only contain sql migrations.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "targetUrl",
+      "Label": "Target -url (required)",
+      "HelpText": "The url of the target database in the format specified in the default flyway.conf file.\n\nE.g.\nSQL Server: jdbc:jtds:sqlserver://host:port/database\nOracle: jdbc:oracle:thin:@//host:port/service\nMySQL: jdbc:mysql://host:port/database",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "targetUser",
+      "Label": "Target -user (required)",
+      "HelpText": "The username to connect to the target database.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "targetPassword",
+      "Label": "Target -password (required)",
+      "HelpText": "The password to connect to the target database.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "runDriftCheck",
+      "Label": "Run pre-deploy drift check",
+      "HelpText": "Check for drift with Redgate comparison tool.\n\n_Requirements_\n\nRequires that a Redgate command line comparison tool is installed on the target machine.\n\nFor SQL Server: SQL Compare\n\nhttp://www.red-gate.com/products/sql-development/sql-compare/\n\nFor Oracle: Schema Compare for Oracle\n\nhttp://www.red-gate.com/products/oracle-development/schema-compare-for-oracle/\n\nFor MySQL: MySQL Compare\n\nhttps://www.red-gate.com/products/mysql/mysql-compare/\n\nAll tools include a free trial licence for a limited period of time.\n\n_Limitations_\n\nSQL Server, Oracle and MySQL only",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "comparePath",
+      "Label": "Path to Redgate comparison tool (required for drift-check)",
+      "HelpText": "Checking for drift requires a database comparison tool. This template uses the Redgate tooling.\n\nPlease provide the path to a Redgate command line tool. The default paths are\n\nSQL Compare (SQL Server):\n\nC:\\Program Files (x86)\\Red Gate\\SQL Automation Pack 1\\SC\\SQLCompare.exe\n\nSchema Compare for Oracle:\n\nC:\\Program Files\\Red Gate\\Schema Compare for Oracle 3\\SCO.exe\n\nMySQL Compare:\n\nC:\\Program Files (x86)\\Red Gate\\MySQL Compare 1\\MC.exe",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "shadowUrl",
+      "Label": "Shadow -url (required for drift-check)",
+      "HelpText": "The url of the target database in the format specified in the default flyway.conf file.\n\nE.g.\nSQL Server: jdbc:jtds:sqlserver://host:port/database\nOracle: jdbc:oracle:thin:@//host:port/service\nMySQL: jdbc:mysql://host:port/database",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "shadowUser",
+      "Label": "Shadow -user (required for drift-check)",
+      "HelpText": "The username to connect to the shadow database.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "shadowPassword",
+      "Label": "Shadow -password (required for drift-check)",
+      "HelpText": "The password to connect to the shadow database.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "LastModifiedBy": "Alex-Yates",
+  "$Meta": {
+    "ExportedAt": "2015-11-13T10:25:35.129+00:00",
+    "OctopusVersion": "3.0.7.2204",
+    "Type": "ActionTemplate"
+  },
+  "Category": "flyway"
+}

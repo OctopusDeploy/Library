@@ -1,50 +1,111 @@
 {
-  "Id": "ActionTemplates-129",
+  "Id": "4c22f201-c634-4a22-aa55-ae24dc83d588",
   "Name": "MSMQ - Create Transactional Queue",
   "Description": "Create one or more MSMQ transactional queues and configure permissions.",
   "ActionType": "Octopus.Script",
-  "Version": 5,
+  "Version": 8,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "#Split the Queues into an array\r\n$arrQueues = $MSMQQueues.split(\";\")\r\nforeach ($Queue in $arrQueues) \r\n{\r\n    #Does Queue Exists Already?\r\n    $thisQueue = Get-MSMQQueue $Queue\r\n    if (!$thisQueue)\r\n    {\r\n        #not found, create\r\n        Write-Output \"Creating Queue: \" $Queue\r\n        New-MsmqQueue -Name \"$Queue\" -Transactional | Out-Null\r\n        $thisQueue = Get-MSMQQueue $Queue    \r\n    }\r\n    else\r\n    {\r\n        #keep rolling\r\n        Write-Output \"Queue Exists: \" $thisQueue.QueueName\r\n    }\r\n\r\n    #set acl for users\r\n    $arrUsers = $MSMQUsers.split(\";\")\r\n    foreach ($User in $arrUsers)     \r\n    {    \r\n        if ($User)\r\n        {    \r\n            Write-Output \"Adding ACL for User: \" $User        \r\n            \r\n            #fullcontrol\r\n            if ($User.Contains('Domain Admins'))\r\n            {\r\n                $arrPermissions = $MSMQPermFull.split(\";\")\r\n                foreach ($Permission in $arrPermissions)    \r\n                {\r\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Allow $Permission | Out-Null            \r\n                    Write-Output \"ACL Allow set: $Permission\"\r\n                }\r\n            }\r\n            else            \r\n            {\r\n                #allows\r\n                $arrPermissions = $MSMQPermAllow.split(\";\")\r\n                $ACLS = \"\"\r\n                foreach ($Permission in $arrPermissions)     \r\n                {\r\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Allow $Permission | Out-Null                \r\n                    $ACLS = \"$Permission,$ACLS\"                \r\n                }    \r\n                Write-Output \"ACL Allow set: $ACLS\"\r\n                \r\n                #denies\r\n                $arrPermissions = $MSMQPermDeny.split(\";\")\r\n                foreach ($Permission in $arrPermissions)     \r\n                {\r\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Deny $Permission | Out-Null\r\n                    Write-Output \"ACL Deny  set: $Permission\"\r\n                }\r\n            }\r\n        }\r\n    }    \r\n}"
+    "Octopus.Action.Script.ScriptBody": "#Split the Queues into an array\n$arrQueues = $MSMQQueues.split(\";\")\nforeach ($Queue in $arrQueues) \n{\n    #Does Queue Exists Already?\n    $thisQueue = Get-MSMQQueue $Queue\n    if (!$thisQueue)\n    {\n        #not found, create\n        Write-Output \"Creating Queue: \" $Queue\n        New-MsmqQueue -Name \"$Queue\" -Label \"private$\\$Queue\" -Transactional | Out-Null\n        $thisQueue = Get-MSMQQueue $Queue    \n    }\n    else\n    {\n        Write-Output \"Queue Exists: \" $thisQueue.QueueName\n        \n        if($ResetPermissions -eq \"True\")\n        {\n            foreach($domain in $ResetDomains.split(\";\"))\n            {\n                # reset permissions\n                $QueuePermissions = $thisQueue | Get-MsmqQueueACL\n                foreach ($AccessItem in $QueuePermissions)\n                {\n                    $userName = [Environment]::UserName\n                    if($AccessItem.AccountName -NotLike \"*$userName\") # not current user\n                    {\n                        $domain = \"$($domain)*\" #append * to end of domain\n                        if ($AccessItem.AccountName -Like \"$($domain)*\")\n                        {\n                            Write-Output \"Removing Permissions $($AccessItem.Right) for $($AccessItem.AccountName)\"\n                            Try\n                            {\n                                $thisQueue | Set-MsmqQueueACL -UserName $AccessItem.AccountName -Remove $AccessItem.Right | Out-Null\n                            }\n                            Catch\n                            {\n                                Write-Output \"Could not set permissions item $_.Exception.Message\"\n                                Break\n                            }\n                        }\n                    }\n                }\n            }\n        }\n    }\n\n    #set acl for users\n    $arrUsers = $MSMQUsers.split(\";\")\n    foreach ($User in $arrUsers)     \n    {    \n        if ($User)\n        {    \n            Write-Output \"Adding ACL for User: \" $User        \n            \n            #allows\n            if ($MSMQPermAllow)\n            {\n                $arrPermissions = $MSMQPermAllow.split(\";\")\n                foreach ($Permission in $arrPermissions)     \n                {\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Allow $Permission | Out-Null                \n                    Write-Output \"ACL Allow set: $Permission\"\n                }\n            }\n                \n            #denies\n            if ($MSMQPermDeny)\n            {\n                $arrPermissions = $MSMQPermDeny.split(\";\")\n                foreach ($Permission in $arrPermissions)     \n                {\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Deny $Permission | Out-Null\n                    Write-Output \"ACL Deny set: $Permission\"\n                }\n            }\n        }\n    }   \n    \n    \n    $arrAdminUsers = $MSMQAdminUsers.split(\";\") \n    foreach ($User in $arrAdminUsers)     \n    {    \n        if ($User)\n        { \n            Write-Output \"Adding ACL for Admin User: \" $User        \n            \n            #allows\n            if ($MSMQPermAdminAllow)\n            {\n                $arrPermissions = $MSMQPermAdminAllow.split(\";\")\n                foreach ($Permission in $arrPermissions)     \n                {\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Allow $Permission | Out-Null                \n                    Write-Output \"ACL Allow admin set: $Permission\"\n                }\n            }\n                \n            #denies\n            if ($MSMQPermAdminDeny)\n            {\n                $arrPermissions = $MSMQPermAdminDeny.split(\";\")\n                foreach ($Permission in $arrPermissions)     \n                {\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Deny $Permission | Out-Null\n                    Write-Output \"ACL Deny admin set: $Permission\"\n                }\n            }\n        }\n    }\n}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
   },
-  "SensitiveProperties": {},
   "Parameters": [
     {
+      "Id": "35154cac-d005-4a7b-85c9-8eab276e726b",
       "Name": "$MSMQQueues",
       "Label": "Queue names",
       "HelpText": "Queue names, separated by semicolons. Example: _Queue1;Queue2;Queue3_",
-      "DefaultValue": ""
+      "DefaultValue": "",
+      "DisplaySettings": {},
+      "Links": {}
     },
     {
+      "Id": "6f3a90b7-df04-4884-9cd1-f04ad7a1f97b",
       "Name": "$MSMQUsers",
       "Label": "Queue users",
       "HelpText": "Users with access to the queue separated by semicolons. Example: _DOMAIN\\User1;DOMAIN\\User2_",
-      "DefaultValue": ""
+      "DefaultValue": "",
+      "DisplaySettings": {},
+      "Links": {}
     },
     {
-      "Name": "$MSMQPermAllow",
+      "Id": "3e2e1512-6f75-4e36-80cc-d350a3563a09",
+      "Name": "MSMQPermAllow",
       "Label": "Allowed permissions",
       "HelpText": "Permissions granted to the queue users, separated by semicolons. Example: _DeleteMessage;PeekMessage;ReceiveMessage_",
-      "DefaultValue": "DeleteMessage;PeekMessage;ReceiveMessage;WriteMessage"
+      "DefaultValue": "DeleteMessage;PeekMessage;ReceiveMessage;WriteMessage",
+      "DisplaySettings": {},
+      "Links": {}
     },
     {
-      "Name": "$MSMQPermDeny",
+      "Id": "2063989e-587f-4787-b3ce-6865501316b2",
+      "Name": "MSMQPermDeny",
       "Label": "Denied permissions",
       "HelpText": "Denied permissions, separated by semicolons: _TakeQueueOwnership_",
-      "DefaultValue": "TakeQueueOwnership"
+      "DefaultValue": "TakeQueueOwnership",
+      "DisplaySettings": {},
+      "Links": {}
     },
     {
-      "Name": "$MSMQPermFull",
-      "Label": "Domain admin permissions",
-      "HelpText": "Alternative permissions to grant domain admin users, separated by semicolons. Example: _FullControl_",
-      "DefaultValue": "FullControl"
+      "Id": "42ec591d-9631-4ff4-ac56-94a1ac7c5994",
+      "Name": "MSMQAdminUsers",
+      "Label": "Admin queue users",
+      "HelpText": "Users with access to the queue separated by semicolons. Example: _DOMAIN\\User1;DOMAIN\\User2_",
+      "DefaultValue": null,
+      "DisplaySettings": {},
+      "Links": {}
+    },
+    {
+      "Id": "47dee55f-9d5a-4798-a61c-b4c7350774a5",
+      "Name": "MSMQPermAdminAllow",
+      "Label": "Allowed admin permissions",
+      "HelpText": "Permissions granted to the queue admin users, separated by semicolons. Example: _DeleteMessage;PeekMessage;ReceiveMessage_",
+      "DefaultValue": "FullControl",
+      "DisplaySettings": {},
+      "Links": {}
+    },
+    {
+      "Id": "949b3efb-5fb7-4350-8336-1dfff67172aa",
+      "Name": "MSMQPermAdminDeny",
+      "Label": "Denied admin permissions",
+      "HelpText": "Denied permissions, separated by semicolons: _TakeQueueOwnership_",
+      "DefaultValue": null,
+      "DisplaySettings": {},
+      "Links": {}
+    },
+    {
+      "Id": "2be54d36-3b81-4a39-8685-adfe8d98ebbb",
+      "Name": "ResetPermissions",
+      "Label": "Reset Permissions",
+      "HelpText": "Remove all existing permissions from the Queue if it already exists",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "54143721-075f-4270-89c1-154719ee0b3c",
+      "Name": "ResetDomains",
+      "Label": "Reset Permissions Domains",
+      "HelpText": "This is used if Reset Permissions is set.\nExample: YOURDOMAIN1;YOURDOMAIN2",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
     }
   ],
-  "LastModifiedOn": "2014-05-15T19:56:51.549+00:00",
-  "LastModifiedBy": "Severswoed",
+  "LastModifiedOn": "2016-12-15T09:41:00.000Z",
+  "LastModifiedBy": "fireydude",
   "$Meta": {
-    "ExportedAt": "2014-05-15T20:13:42.096Z",
-    "OctopusVersion": "2.4.5.46",
+    "ExportedAt": "2016-12-15T09:39:26.862Z",
+    "OctopusVersion": "3.5.7",
     "Type": "ActionTemplate"
-  }
+  },
+  "Category": "windows"
 }

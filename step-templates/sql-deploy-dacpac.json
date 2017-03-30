@@ -1,0 +1,152 @@
+{
+  "Id": "58399364-4367-41d5-ad35-c2c6a8258536",
+  "Name": "SQL - Deploy DACPAC",
+  "Description": "Calls the DacFX library to perform SSDT commands such as:\n * Deploy\n * Script\n * DeployReport\n\nIf selected the deploy script and deploy report will be loaded back into Octopus Deploy as an artefact. This allows you to put in place  manual intervention step if required. It is also useful for auditing purposes.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "<#\n .SYNOPSIS\n Converts boolean values to boolean types\n\n .DESCRIPTION\n Converts boolean values to boolean types\n\n .PARAMETER Value\n The value to convert\n\n .EXAMPLE\n Format-OctopusArgument \"true\"\n#>\nFunction Format-OctopusArgument {\n\n\tParam(\n\t\t[string]$Value\n\t)\n\n\t$Value = $Value.Trim()\n\n\t# There must be a better way to do this\n\tSwitch -Wildcard ($Value){\n\n\t\t\"True\" { Return $True }\n\t\t\"False\" { Return $False }\n\t\t\"#{*}\" { Return $null }\n\t\tDefault { Return $Value }\n\t}\n}\n\n<#\n .SYNOPSIS\n Finds the DAC File that you specify\n\n .DESCRIPTION\n Looks through the supplied PathList array and searches for the file you specify.  It will return the first one that it finds.\n\n .PARAMETER FileName\n Name of the file you are looking for\n\n .PARAMETER PathList\n Array of Paths to search through.\n\n .EXAMPLE\n Find-DacFile -FileName \"Microsoft.SqlServer.TransactSql.ScriptDom.dll\" -PathList @(\"${env:ProgramFiles}\\Microsoft SQL Server\", \"${env:ProgramFiles(x86)}\\Microsoft SQL Server\")\n#>\nFunction Find-DacFile {\n\tParam(\n\t\t[Parameter(Mandatory=$true)]\n\t\t[string]$FileName,\n\t\t[Parameter(Mandatory=$true)]\n\t\t[string[]]$PathList\n\t)\n\n\t$File = $null\n\n\tForEach($Path in $PathList)\n\t{\n\t\tWrite-Debug (\"Searching: {0}\" -f $Path)\n\n\t\tIf (!($File))\n\t\t{\n\t\t\t$File = (\n\t\t\t\tGet-ChildItem $Path -ErrorAction SilentlyContinue -Filter $FileName -Recurse |\n\t\t\t\tSort-Object FullName -Descending |\n\t\t\t\tSelect -First 1\n\t\t\t\t)\n\n\t\t\tIf ($File)\n\t\t\t{\n\t\t\t\tWrite-Debug (\"Found: {0}\" -f $File.FullName)\n\t\t\t}\n\t\t}\n\t}\n\n\tReturn $File\n}\n\n<#\n .SYNOPSIS\n Adds the required types so that they can be used\n\n .DESCRIPTION\n Adds the DacFX types that are required to do database deploys, scripts and deployment reports from SSDT\n\n .EXAMPLE\n Add-DACAssemblies\n#>\nFunction Add-DACAssemblies {\n\n\tWrite-Verbose \"Loading the DacFX Assemblies\"\n\n\t$SearchPathList = @(\"${env:ProgramFiles}\\Microsoft SQL Server\", \"${env:ProgramFiles(x86)}\\Microsoft SQL Server\")\n\n\tWrite-Debug \"Searching for: Microsoft.SqlServer.TransactSql.ScriptDom.dll\"\n\t$ScriptDomDLL = (Find-DacFile -FileName \"Microsoft.SqlServer.TransactSql.ScriptDom.dll\" -PathList $SearchPathList)\n\n\tWrite-Debug \"Searching for: Microsoft.SqlServer.Dac.dll\"\n\t$DacDLL = (Find-DacFile -FileName \"Microsoft.SqlServer.Dac.dll\" -PathList $SearchPathList)\n\n\tIf (!($ScriptDomDLL))\n\t{\n\t\tThrow \"Could not find the file: Microsoft.SqlServer.TransactSql.ScriptDom.dll\"\n\t}\n\tIf (!($DacDLL))\n\t{\n\t\tThrow \"Could not find the file: Microsoft.SqlServer.Dac.dll\"\n\t}\n\n\tWrite-Debug (\"Adding the type: {0}\" -f $ScriptDomDLL.FullName)\n\tAdd-Type -Path $ScriptDomDLL.FullName\n\n\tWrite-Debug (\"Adding the type: {0}\" -f $DacDLL.FullName)\n\tAdd-Type -Path $DacDLL.FullName\n\n\tWrite-Host \"Loaded the DAC assemblies\"\n}\n\n\n<#\n .SYNOPSIS\n Generates a connection string\n\n .DESCRIPTION\n Derive a connection string from the supplied variables\n\n .PARAMETER ServerName\n Name of the server to connect to\n\n .PARAMETER UseIntegratedSecurity\n Boolean value to indicate if Integrated Security should be used or not\n\n .PARAMETER UserName\n User name to use if we are not using integrated security\n\n .PASSWORD Password\n Password to use if we are not using integrated security\n\n .EXAMPLE\n Get-ConnectionString -ServerName localhost -UseIntegratedSecurity -Database OctopusDeploy\n\n .EXAMPLE\n Get-ConnectionString -ServerName localhost -UserName sa -Password ProbablyNotSecure -Database OctopusDeploy\n#>\nFunction Get-ConnectionString {\n\tParam(\n\t\t[Parameter(Mandatory=$True)]\n\t\t[string]$ServerName,\n\t\t[bool]$UseIntegratedSecurity,\n\t\t[string]$UserName,\n\t\t[string]$Password,\n\t\t[string]$Database\n\t)\n\n\t$ApplicationName = \"OctopusDeploy\"\n\t$connectionString = (\"Application Name={0};Server={1};MultisubnetFailover=True\" -f $ApplicationName, $ServerName)\n\n\tIf ($UseIntegratedSecurity)\n\t{\n\t\tWrite-Verbose \"Using integrated security\"\n\t\t$connectionString += \";Trusted_Connection=True\"\n\t}\n\tElse{\n\t\tWrite-Verbose \"Using standard security\"\n\t\t$connectionString += (\";Uid={0};Pwd={1}\" -f $UserName, $Password)\n\t}\n\n\tIf ($Database)\n\t{\n\t\t$connectionString += (\";Initial Catalog={0}\" -f $Database)\n\t}\n\n\tReturn $connectionString\n}\n\n\n<#\n .SYNOPSIS\n Invokes the DacPac utility\n\n .DESCRIPTION\n Used to invoke the actions against the DacFx library.  This utility can generate deployment reports, deployment scripts and execute a deploy\n\n .PARAMETER Report\n Boolean flag as to whether a deploy report should be generated\n\n .PARAMETER Script\n Boolean flag as to whether a deployment script should be generated\n\n .PARAMETER Deploy\n Boolean flag as to whether a deployment should occur\n\n .PARAMETER DacPacFilename\n Full path as to where we can find the DacPac to use\n\n .PARAMETER TargetServer\n Name of the server to run the DacPac against\n\n .PARAMETER TargetDatabase\n Name of the database to run the DacPac against\n\n .PARAMETER UseIntegratedSecurity\n Flag as to whether we should use integrate security or not\n\n .PARAMETER UserName\n If we are not using integrated security, we should use this user name to connect to the server\n\n .PARAMETER Password\n If we are not using integrated security, we should use this password to connect to the server\n\n .PARAMETER PublishProfile\n Full path to the publish profile we should use\n\n .EXAMPLE\n Invoke-DacPacUtility\n\n#>\nFunction Invoke-DacPacUtility {\n\n\tParam(\n\t\t[bool]$Report,\n\t\t[bool]$Script,\n\t\t[bool]$Deploy,\n\t\t[bool]$ExtractTargetDatabaseDacpac,\n\t\t[string]$DacPacFilename,\n\t\t[string]$TargetServer,\n\t\t[string]$TargetDatabase,\n\t\t[bool]$UseIntegratedSecurity,\n\t\t[string]$UserName,\n\t\t[string]$Password,\n\t\t[string]$PublishProfile,\n\t\t[string]$AdditionalDeploymentContributors,\n\t\t[string]$AdditionalDeploymentContributorArguments\n\t)\n\n\t# We output the parameters (excluding password) so that we can see what was supplied for debuging if required.  Useful for variable scoping problems\n\tWrite-Debug (\"Invoke-DacPacUtility called.  Parameter values supplied:\")\n\tWrite-Debug (\"    Dacpac Filename:                  {0}\" -f $DacPacFilename)\n\tWrite-Debug (\"    Dacpac Profile:                   {0}\" -f $PublishProfile)\n\tWrite-Debug (\"    Target server:                    {0}\" -f $TargetServer)\n\tWrite-Debug (\"    Target database:                  {0}\" -f $TargetDatabase)\n\tWrite-Debug (\"    Using integrated security:        {0}\" -f $UseIntegratedSecurity)\n\tWrite-Debug (\"    Username:                         {0}\" -f $UserName)\n\tWrite-Debug (\"    Report:                           {0}\" -f $Report)\n\tWrite-Debug (\"    Script:                           {0}\" -f $Script)\n\tWrite-Debug (\"    Deploy:                           {0}\" -f $Deploy)\n\tWrite-Debug (\"    Extract target database dacpac    {0}\" -f $ExtractTargetDatabaseDacpac)\n\tWrite-Debug (\"    Deployment contributors:          {0}\" -f $AdditionalDeploymentContributors)\n\tWrite-Debug (\"    Deployment contributor arguments: {0}\" -f $AdditionalDeploymentContributorArguments)\n\n\t$DateTime = ((Get-Date).ToUniversalTime().ToString(\"yyyyMMddHHmmss\"))\n\n\tAdd-DACAssemblies\n\n\tTry {\n\t\t$dacPac = [Microsoft.SqlServer.Dac.DacPackage]::Load($DacPacFilename)\n\t\t$connectionString = (Get-ConnectionString -ServerName $TargetServer -Database $TargetDatabase -UseIntegratedSecurity $UseIntegratedSecurity -UserName $UserName -Password $Password)\n\n\t\t# Load the publish profile if supplied\n\t\tIf ($PublishProfile)\n\t\t{\n\t\t\tWrite-Verbose (\"Attempting to load the publish profile: {0}\" -f $PublishProfile)\n\n\t\t\t#Load the publish profile\n\t\t\t$dacProfile = [Microsoft.SqlServer.Dac.DacProfile]::Load($PublishProfile)\n\t\t\tWrite-Verbose (\"Loaded publish profile: {0}\" -f $PublishProfile)\n\n\t\t\t#Load the artifact back into Octopus Deploy\n\t\t\t$profileArtifact = (\"{0}.{1}.{2}.{3}\" -f $TargetServer, $TargetDatabase, $DateTime, ($PublishProfile.Remove(0, $PublishProfile.LastIndexOf(\"\\\") + 1)))\n\t\t\tNew-OctopusArtifact -Path $PublishProfile -Name $profileArtifact\n\t\t\tWrite-Verbose (\"Loaded publish profile as an Octopus Deploy artifact\")\n\t\t}\n\t\tElse {\n\t\t\t$dacProfile = New-Object Microsoft.SqlServer.Dac.DacProfile\n\t\t\tWrite-Verbose (\"Created blank publish profile\")\n\t\t}\n\n\t\t# Specify additional deployment contributors:\n\t\t$dacProfile.DeployOptions.AdditionalDeploymentContributors = $AdditionalDeploymentContributors\n\t\t$dacProfile.DeployOptions.AdditionalDeploymentContributorArguments = $AdditionalDeploymentContributorArguments\n\n\t\t$dacServices = New-Object Microsoft.SqlServer.Dac.DacServices -ArgumentList $connectionString\n\n\t\t# Register the object events and output them to the verbose stream\n\t\tRegister-ObjectEvent -InputObject $dacServices -EventName \"ProgressChanged\" -SourceIdentifier \"ProgressChanged\" -Action { Write-Verbose (\"DacServices: {0}\" -f $EventArgs.Message) } | Out-Null\n\t\tRegister-ObjectEvent -InputObject $dacServices -EventName \"Message\" -SourceIdentifier \"Message\" -Action { Write-Host ($EventArgs.Message.Message) } | Out-Null\n\n\t\n\t\tIf ($Report -or $Script -or $ExtractTargetDatabaseDacpac)\n\t\t{\n\t\t\t# Extract a DACPAC so we can do reports and scripting faster (if both are done)\n\t\t\t# dbDacPac\n\t\t\t$dbDacPacFilename = (\"{0}.{1}.{2}.dacpac\" -f $TargetServer, $TargetDatabase, $DateTime)\n\t\t\t$dacVersion = New-Object System.Version(1, 0, 0, 0)\n\t\t\tWrite-Debug \"Extracting target server dacpac\"\n\t\t\t$dacServices.Extract($dbDacPacFilename, $TargetDatabase, $TargetDatabase, $dacVersion)\n\n\t\t\tWrite-Debug (\"Loading the target server dacpac for report and scripting. Filename: {0}\" -f $dbDacPacFilename)\n\t\t\t$dbDacPac = [Microsoft.SqlServer.Dac.DacPackage]::Load($dbDacPacFilename)\n\n\t\t\tIf ($ExtractTargetDatabaseDacpac)\n\t\t\t{\n\t\t\t\tNew-OctopusArtifact -Path $dbDacPacFilename -Name $dbDacPacFilename\n\t\t\t}\n\n\t\t\t# Generate a Deploy Report if one is asked for\n\t\t\tIf ($Report)\n\t\t\t{\n\t\t\t\tWrite-Host (\"Generating deploy report against server: {0}, database: {1}\" -f $TargetServer, $TargetDatabase)\n\t\t\t\t$deployReport = [Microsoft.SqlServer.Dac.DacServices]::GenerateDeployReport($dacPac, $dbDacPac, $TargetDatabase, $dacProfile.DeployOptions)\n\t\t\t\t$reportArtifact = (\"{0}.{1}.{2}.{3}\" -f $TargetServer, $TargetDatabase, $DateTime, \"DeployReport.xml\")\n\t\t\n\t\t\t\tSet-Content $reportArtifact $deployReport\n\n\t\t\t\tWrite-Host (\"Loading the deploy report to OctopusDeploy: {0}\" -f $reportArtifact)\n\t\t\t\tNew-OctopusArtifact -Path $reportArtifact -Name $reportArtifact\n\t\t\t}\n\n\t\t\t# Generate a Deploy Script if one is asked for\n\t\t\tIf ($Script)\n\t\t\t{\n\t\t\t\tWrite-Host (\"Generating deploy script against server: {0}, database: {1}\" -f $TargetServer, $TargetDatabase)\n\t\t\t\t$deployScript = [Microsoft.SqlServer.Dac.DacServices]::GenerateDeployScript($dacPac, $dbDacPac, $TargetDatabase, $dacProfile.DeployOptions)\n\t\t\t\t$scriptArtifact = (\"{0}.{1}.{2}.{3}\" -f $TargetServer, $TargetDatabase, $DateTime, \"DeployScript.sql\")\n\t\t\n\t\t\t\tSet-Content $scriptArtifact $deployScript\n\t\t\n\t\t\t\tWrite-Host (\"Loading the deploy script to OctopusDeploy: {0}\" -f $scriptArtifact)\n\t\t\t\tNew-OctopusArtifact -Path $scriptArtifact -Name $scriptArtifact\n\t\t\t}\n\t\t}\n\n\t\t\n\t\t# Deploy the dacpac if asked for\n\t\tIf ($Deploy)\n\t\t{\n\t\t\tWrite-Host (\"Starting deployment of dacpac against server: {0}, database: {1}\" -f $TargetServer, $TargetDatabase)\n\t\t\t$dacServices.Deploy($dacPac, $TargetDatabase, $true, $dacProfile.DeployOptions, $null)\n\t\t\n\t\t\tWrite-Host (\"Dacpac deployment complete\")\n\t\t}\n\t\t\n\t\tUnregister-Event -SourceIdentifier \"ProgressChanged\"\n\t\tUnregister-Event -SourceIdentifier \"Message\"\n\t}\n\tCatch {\n\t\tThrow (\"Deployment failed: {0} `r`nReason: {1}\" -f $_.Exception.Message, $_.Exception.InnerException.Message)\n\t}\n}\n\n\n# Get the supplied parameters\n$DACPACPackageStep = $OctopusParameters[\"DACPACPackageStep\"]\n$DACPACPackageName = $OctopusParameters[\"DACPACPackageName\"]\n$PublishProfile = $OctopusParameters[\"DACPACPublishProfile\"]\n$Report = Format-OctopusArgument -Value $OctopusParameters[\"Report\"]\n$Script = Format-OctopusArgument -Value $OctopusParameters[\"Script\"]\n$Deploy = Format-OctopusArgument -Value $OctopusParameters[\"Deploy\"]\n$ExtractTargetDatabaseDacpac = Format-OctopusArgument -Value $OctopusParameters[\"ExtractTargetDatabaseDacPac\"]\n$TargetServer = $OctopusParameters[\"TargetServer\"]\n$TargetDatabase = $OctopusParameters[\"TargetDatabase\"]\n$UseIntegratedSecurity = Format-OctopusArgument -Value $OctopusParameters[\"UseIntegratedSecurity\"]\n$Username = $OctopusParameters[\"SQLUsername\"]\n$Password = $OctopusParameters[\"SQLPassword\"]\n$AdditionalDeploymentContributors = $OctopusParameters[\"AdditionalContributors\"]\n$AdditionalDeploymentContributorArguments = $OctopusParameters[\"AdditionalContributorArguments\"]\n\n$InstallPathKey = (\"Octopus.Action[{0}].Output.Package.InstallationDirectoryPath\" -f $DACPACPackageStep)\n$InstallPath = $OctopusParameters[$InstallPathKey]\n\n# Expand the publish dacpac filename\n$DACPACPackageName = ($InstallPath + \"\\\" + $DACPACPackageName)\n\n# Expand the publish profile filename if a value has been supplied\nIf ($PublishProfile)\n{\n    $PublishProfile = ($InstallPath + \"\\\" + $PublishProfile)\n}\n\n# Invoke the DacPac utility\nInvoke-DacPacUtility -Report $Report -Script $Script -Deploy $Deploy -ExtractTargetDatabaseDacpac $ExtractTargetDatabaseDacpac -DacPacFilename $DACPACPackageName -TargetServer $TargetServer -TargetDatabase $TargetDatabase -UseIntegratedSecurity $UseIntegratedSecurity -Username $Username -Password $Password -PublishProfile $PublishProfile -AdditionalDeploymentContributors $AdditionalDeploymentContributors -AdditionalDeploymentContributorArguments $AdditionalDeploymentContributorArguments",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": "",
+    "Octopus.Action.Package.FeedId": "",
+    "Octopus.Action.Package.PackageId": ""
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "DACPACPackageStep",
+      "Label": "DACPAC Package Step Name",
+      "HelpText": "The step that downloaded the DACPAC to the tentacle",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Name": "DACPACPackageName",
+      "Label": "DACPAC Package Name",
+      "HelpText": "The name of the .dacpac file that contains the SSDT model.  Include the .dacpac extensions.",
+      "DefaultValue": "#{PackageName}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DACPACPublishProfile",
+      "Label": "Publish profile name",
+      "HelpText": "Name of the publish profile to use",
+      "DefaultValue": "#{PublishProfile}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Report",
+      "Label": "Report",
+      "HelpText": "Whether a deploy script should be generated and loaded into OctopusDeploy as an artifact",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "Script",
+      "Label": "Script",
+      "HelpText": "Whether a deploy script should be generated and loaded into OctopusDeploy as an artifact",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "Deploy",
+      "Label": "Deploy",
+      "HelpText": "Whether a deployment of the dacpac should occur",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "ExtractTargetDatabaseDacPac",
+      "Label": "Extract target database to dacpac",
+      "HelpText": "Extracts the target database to a dacpac and loads it back into Octopus Deploy",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "TargetServer",
+      "Label": "Target Servername",
+      "HelpText": "Name of the server to target this deployment against",
+      "DefaultValue": "#{ServerName}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "TargetDatabase",
+      "Label": "Target Database",
+      "HelpText": "Name of the database to target this deployment against",
+      "DefaultValue": "#{DatabaseName}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "UseIntegratedSecurity",
+      "Label": "Use Integrated Security",
+      "HelpText": "Whether or not to use Integrated Security",
+      "DefaultValue": "#{IntegratedSecurity}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "SQLUsername",
+      "Label": "Username",
+      "HelpText": "User name to use to connect to the server if we are not using Integrated Security",
+      "DefaultValue": "#{Username}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SQLPassword",
+      "Label": "Password",
+      "HelpText": "Password to use to connect to the server if we are not using Integrated Security",
+      "DefaultValue": "#{Password}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "AdditionalContributors",
+      "Label": "Additional deployment contributors",
+      "HelpText": "Specify any additional deployment contributors here.  Use the same format as you would for SqlPackage.exe /p:AdditionalDeploymentContributors=[what you would put here]",
+      "DefaultValue": "#{AdditionalDeploymentContributors}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AdditionalContributorArguments",
+      "Label": "Additional deployment contributor arguments",
+      "HelpText": "Specify any additional deployment contributors here.  Use the same format as you would for SqlPackage.exe /p:AdditionalDeploymentContributorArguments=[what you would put here]",
+      "DefaultValue": "#{AdditionalDeploymentContributorArguments}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "LankyPaddy",
+  "$Meta": {
+    "ExportedAt": "2016-10-14T11:38:52.966+00:00",
+    "OctopusVersion": "3.2.23",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

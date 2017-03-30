@@ -1,0 +1,40 @@
+{
+  "Id": "47e1a39c-65f3-43aa-ad5e-ea1946bbf368",
+  "Name": "IIS - Add an Allow ISAPI And CGI Restriction Exception",
+  "Description": "Adds an IIS Server Allow exception to the ISAPI/CGI Restrictions in IIS 7 and above.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "Param\r\n(\r\n    [Parameter(Position = 0)]\r\n    [ValidateNotNullOrEmpty()]\r\n    [string] $cgiIsapiExtensionPath,\r\n    [Parameter(Position = 1)]\r\n    [string] $description = [string]::Empty\r\n)\r\n\r\n$ErrorActionPrefrence = \"Stop\"\r\n\r\n\r\nfunction Get-Param($Name, [switch]$Required, $Default) \r\n{\r\n    $result = $null\r\n\r\n    if ($OctopusParameters -ne $null) \r\n    {\r\n        $result = $OctopusParameters[$Name]\r\n    }\r\n\r\n    if ($result -eq $null) \r\n    {\r\n        $variable = Get-Variable $Name -EA SilentlyContinue    \r\n        if ($variable -ne $null) \r\n        {\r\n            $result = $variable.Value\r\n        }\r\n    }\r\n\r\n    if ($result -eq $null) \r\n    {\r\n        if ($Required) \r\n        {\r\n            throw \"Missing parameter value $Name\"\r\n        } \r\n        else \r\n        {\r\n            $result = $Default\r\n        }\r\n    }\r\n\r\n    return $result\r\n}\r\n\r\n& {\r\n    Param\r\n    (\r\n        [Parameter(Mandatory=$True, Position = 0)]\r\n        [ValidateNotNullOrEmpty()]\r\n        [string] $cgiIsapiExtensionPath,\r\n        [Parameter(Position = 1)]\r\n        [string] $description = [string]::Empty\r\n    )\r\n\r\n    Import-Module \"WebAdministration\"\r\n\r\n    $cgiIsapiConfiguration = Get-WebConfiguration -Filter \"/system.webServer/security/isapiCgiRestriction/add\" -PSPath \"IIS:\\\"\r\n\r\n    $cgiIsapiExtensionFullPath = [System.Environment]::ExpandEnvironmentVariables($cgiIsapiExtensionPath)\r\n    $cgiIsapiExtensionFullPath = Resolve-Path -Path $cgiIsapiExtensionFullPath\r\n\r\n    $restrictionFound = $false\r\n    $cgiIsapiConfiguration | ForEach-Object {\r\n        $itemFullPath = [System.Environment]::ExpandEnvironmentVariables($_.path)\r\n        $itemFullPath = Resolve-Path -Path $itemFullPath\r\n\r\n        if ($itemFullPath.Path -eq $cgiIsapiExtensionFullPath.Path)\r\n        {\r\n           $restrictionFound = $true\r\n        }\r\n    }\r\n\r\n    if ($restrictionFound -eq $false)\r\n    {\r\n        Add-WebConfiguration -PSPath 'MACHINE/WEBROOT/APPHOST' -Filter \"system.webServer/security/isapiCgiRestriction\" -value @{description=\"$description\";path=\"$cgiIsapiExtensionPath\";allowed='True'}\r\n    }\r\n    else\r\n    {\r\n        Write-Host \"Allowed CGI/ISAPI Restriction for '$cgiIsapiExtensionPath' already exists.\"\r\n    }\r\n} `\r\n(Get-Param 'cgiIsapiExtensionPath' -Required) `\r\n(Get-Param 'description')",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "cgiIsapiExtensionPath",
+      "Label": "CGI/ISAPI Extension Path",
+      "HelpText": "The full path to the ISAPI/CGI extension to allow.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "description",
+      "Label": "Description",
+      "HelpText": "A description for the ISAPI/CGI Restriction allowance exception.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2016-01-13T21:28:56.040+00:00",
+  "LastModifiedBy": "ekrapfl",
+  "$Meta": {
+    "ExportedAt": "2016-01-13T21:28:56.040+00:00",
+    "OctopusVersion": "3.2.14",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}

@@ -1,0 +1,58 @@
+{
+  "Id": "365ae5c6-8f97-4e99-82c8-9973b9b0d8ff",
+  "Name": "RavenDB - Delete File System",
+  "Description": "Used to delete a file system from a server, with a possibility to remove its all data from the hard drive.",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "#--------------------------------------------------------------------\r\n#Octopus Variables\r\n\r\n#URL of RavenFS that is being deleted \r\n$ravenFileSystemURL = $OctopusParameters[\"ravenFileSystemURL\"]\r\n\r\n#name of the RavenFS that is being deleted\r\n$ravenFileSystemName = $OctopusParameters[\"ravenFileSystemName\"]\r\n\r\n#hard delete (true or false)\r\n$hardDelete = $OctopusParameters[\"hardDelete\"]\r\n\r\n#Allow File System to be deleted\r\n$allowDelete = $OctopusParameters[\"allowDelete\"]\r\n\r\n\r\n\r\nWrite-Output \"`n-------------------------`n\"\r\n#--------------------------------------------------------------------\r\n#checks to see if the File System can be deleted\r\n\r\nif($allowDelete -eq $FALSE)\r\n{\r\n    Write-Error \"$ravenFileSystemName cannot be deleted. Please try this on a database that can be delete.\" -ErrorId E4\r\n    Exit 1\r\n}\r\n\r\n\r\n#--------------------------------------------------------------------\r\n\r\n#checks to see if the entered file system exists, return a Boolean value depending on the outcome\r\nfunction doesRavenFSExist([string] $FSChecking, [string]$URL)\r\n{\r\n    #retrieves the list of File Systems at the specified URL\r\n    $fs_list = Invoke-RestMethod -Uri \"$URL/fs\" -Method Get\r\n    #checks if the File System is at the specified URL\r\n    if ($fs_list -contains $FSChecking.ToString()) \r\n    {\r\n        return $TRUE\r\n    }\r\n    else \r\n    {\r\n        return $FALSE\r\n    }\r\n\r\n    \r\n}#ends does File System exist function\r\n\r\n\r\nWrite-Output \"`n-------------------------`n\"\r\n\r\n#--------------------------------------------------------------------\r\n#check to see if File System exists\r\n\r\nWrite-Output \"Checking if $ravenFileSystemName exists\"\r\n\r\n$fs_exists = doesRavenFSExist -FSChecking $ravenFileSystemName -URL $ravenFileSystemURL\r\n\r\nif($fs_exists -eq $TRUE)\r\n{\r\n    Write-Output \"$ravenFileSystemName exists\"\r\n    $doWork = $TRUE\r\n}\r\nelse\r\n{\r\n    Write-Warning \"$ravenFileSystemName doesn't exist already.\"\r\n    $doWork = $FALSE\r\n}\r\n\r\n#--------------------------------------------------------------------\r\n#converts hard delete option to a string\r\n\r\n$hardDeleteString = $hardDelete.ToString().ToLower()\r\n\r\n#--------------------------------------------------------------------\r\n#Delete File System\r\n\r\nif($doWork -eq $TRUE)\r\n{\r\n\r\n    Write-Output \"Deleting File System: $ravenFileSystemName\"\r\n\r\n    $deleteURI = \"$ravenFileSystemURL/admin/fs/$ravenFileSystemName\" + \"?hard-delete=$hardDeleteString\"\r\n\r\n    Invoke-RestMethod -Uri $deleteURI -Method Delete\r\n\r\n\r\n    #Waits 10 seconds before it continues\r\n    Start-Sleep -Seconds 10\r\n    \r\n    Write-Output \"File System has successfuly been deleted\"\r\n\r\n}"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ravenFileSystemURL",
+      "Label": "URL of the Raven Database",
+      "HelpText": "The URL of the Raven File System, where the File System is located.\n\nFor example: **http://localhost:8080/**",
+      "DefaultValue": "http://localhost:8080/",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ravenFileSystemName",
+      "Label": "Name of the File System",
+      "HelpText": "Name of the File System in Raven",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "hardDelete",
+      "Label": "Hard Delete",
+      "HelpText": "Should all of the data be removed from the hard drive as well",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "allowDelete",
+      "Label": "Allow Deletion",
+      "HelpText": "Is the File System allowed to be deleted. **TRUE OR FALSE** value must be entered\n\n**For example**: you don't want a production server to be deleted, the script will stop it from happening\n\n**HINT**: have a variable within Octopus that returns true if it is allowed to be deleted and vice versa.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-11-26T22:39:11.556+00:00",
+  "LastModifiedBy": "timhunt303",
+  "$Meta": {
+    "ExportedAt": "2015-11-26T03:55:48.036+00:00",
+    "OctopusVersion": "3.1.7",
+    "Type": "ActionTemplate"
+  },
+  "Category": "ravendb"
+}

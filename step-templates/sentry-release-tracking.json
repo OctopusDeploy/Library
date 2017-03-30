@@ -1,0 +1,56 @@
+{
+  "Id": "ee62b8ac-2731-4147-8cb4-ceda0abe5a80",
+  "Name": "Sentry Release Tracking",
+  "Description": "Posts a new release to Sentry, It can optionaly resolve all previous issues.\n\nIf the release already exists, it only applies the resolving.",
+  "ActionType": "Octopus.Script",
+  "Version": 46,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$token  = [System.Text.Encoding]::UTF8.GetBytes($sentryApiKey+\":\")\n$base64Token = [System.Convert]::ToBase64String($token)\n\nWrite-Host $base64Token\n\nForEach ($project in $projects.Split(';'))  \n{\n    $url = \"https://app.getsentry.com/api/0/projects/$organization/$project/releases/\"\n    Write-Host $url\n    \n    $headers = New-Object \"System.Collections.Generic.Dictionary[[String],[String]]\"\n    $headers.Add(\"Authorization\", \"Basic $base64Token\")\n    \n    $body = @{ \"version\" = $OctopusParameters['Octopus.Release.Number'] }\n    \n    $body = ConvertTo-Json $body\n    \n    Write-Host $body\n    Try\n    {\n        $response = Invoke-RestMethod -Method Post -Uri \"$url\" -Body $body -Headers $headers -ContentType \"application/json\"\n        Write-Host $response\n    }\n    Catch [System.Net.WebException] \n    {\n        Write-Host $_\n        if($_.Exception.Response.StatusCode.Value__ -ne 400)\n        {\n            Throw\n        }\n    }\n    if ($resolveIssues)\n    {\n        $resolveBody = '{\"status\":\"resolved\"}'\n        Write-Host $resolveBody\n        $url = \"https://app.getsentry.com/api/0/projects/$organization/$project/groups/\"\n        Write-Host $url\n        $response = Invoke-RestMethod -Method Put -Uri \"$url\" -Body $resolveBody -Headers $headers -ContentType \"application/json\"\n        Write-Host $response\n    }\n}"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "organization",
+      "Label": "Organisation Slug",
+      "HelpText": "The organisation-name part of the url",
+      "DefaultValue": "",
+      "DisplaySettings": {}
+    },
+    {
+      "Name": "projects",
+      "Label": "Project Slug",
+      "HelpText": "`;`-separated list of all your sentry api slugs for the apps, (web/api/admin) on this spesific Environment.\n\n    myapp-web-dev;myapp-api-dev\n\nprotip: Add them all to a environment-scoped variable.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "resolveIssues",
+      "Label": "Resolve all open issues",
+      "HelpText": "",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "sentryApiKey",
+      "Label": "Sentry api key",
+      "HelpText": "Your sentry api key",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-11-27T12:26:31.568ZZ",
+  "LastModifiedBy": "ehvattum",
+  "$Meta": {
+    "ExportedAt": "2015-11-27T12:26:31.568+00:00",
+    "OctopusVersion": "3.2.4",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sentry"
+}

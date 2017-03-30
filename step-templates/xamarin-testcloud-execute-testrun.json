@@ -1,0 +1,112 @@
+{
+  "Id": "fd79c2f6-8983-4f91-a36d-aa622f44f16f",
+  "Name": "Xamarin TestCloud execute test run",
+  "Description": "Executes a Xamarin TestCloud test run for an app contained in a nuget file.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "#####################################\r\n# Xamarin TestCloud Start Test Run script\r\n# \r\n# Kicks off a new test run for an app.\r\n# This script uses the test-cloud.exe helper utility included with the Xamarin UITest nuget package. \r\n# https://www.nuget.org/packages/Xamarin.UITest\r\n# \r\n# For use with Xamarin UITests\r\n# https://developer.xamarin.com/guides/testcloud/uitest/\r\n# being run in Xamarin TestCloud on physical devices\r\n# https://developer.xamarin.com/guides/testcloud/introduction-to-test-cloud/\r\n#\r\n# v0.1 - kicks off configured test run, tested against iOS app only\r\n#\r\n# The nuget package must contain the *.iap or *.apk file, compiled with calabash included\r\n# The nuget package must contain the DLLs from the UITest project\r\n# The nuget package may optionally contain a symbols file, *.app.dSYM.zip\r\n# The nuget package must contain the test-cloud.exe support utility\r\n#\r\n# The following *.nuspec example will package:\r\n# * a release ipa\r\n# * UITest DLLs\r\n# * associated *.app.dSYM.zip file\r\n# * The test-cloud.exe support utility\r\n#\r\n# all search paths default to the root of the nuget package,\r\n# and may be further qualified relative to the root of the nuget package\r\n# The upload script uses default or optionally qualified search paths for the following:\r\n# * The .ipa or .apk location\r\n# * The UITest project DLLs\r\n# * The *.app.dSYM.zip symbols file\r\n# * The test-cloud.exe utility\r\n#\r\n# It also requires the API Key from the application, and the code for the devices desired,\r\n# and a valid user accout to run as.\r\n#\r\n# 1. Visit the testcloud interface: https://testcloud.xamarin.com/\r\n# 2. Choose \"New Test Run\" and configure as desired.\r\n# 3. In the last step, copy the large hash (app specific API Key), devices parameter code, and username\r\n#\r\n# The nugetFile below is an example that retrieves the appropriate files from a typical iOS build\r\n#\r\n# https://docs.nuget.org/create/nuspec-reference#file-element-examples\r\n#\r\n# In some cases the ID, Version, and Description may need manually specified.\r\n#\r\n\r\n<#\r\n\r\n    <?xml version=\"1.0\"?>\r\n    <package>\r\n      <metadata>\r\n        <id>$id$</id>\r\n        <title>$id$</title>\r\n        <version>$version$</version>\r\n        <description>Mobile project packaged for Octopus deploy. $description$</description>\r\n      </metadata>\r\n      <files>\r\n        <!-- Matches mobile package files. Note this will only include the platform being built,\r\n\t         and should match only a single file. -->\r\n        \r\n        <!-- iOS -->\r\n        <file src=\"**/Release/**/*.ipa\" target=\"\" />\r\n\r\n        <!-- Include release dSYM symbols file -->\r\n        <file src=\"**/Release/*.app.dSYM.zip\" target=\"\" />\r\n\r\n        <!-- UITest DLLs -->\r\n        <file src=\"..\\*Test*\\bin\\Release\\*.dll\" target=\"bin/UITest/Release\" />\r\n\r\n        <!-- Utility EXE for TestCloud submission scripts -->\r\n        <!-- Note: The first slash after the parent directory .. MUST be backslash or the package step fails -->\r\n        <file src=\"..\\packages/Xamarin.UITest.*/tools/test-cloud.exe\" target=\"tools\" />\r\n\r\n      </files>\r\n    </package>\r\n\r\n#>\r\n\r\n#############################\r\n# Debug Parameter Overrides #\r\n#############################\r\n\r\n# These values are set explicitly durring debugging so that the script can\r\n#   be run in the editor.\r\n# For local debugging, uncomment these values and fill in appropriately.\r\n\r\n<#\r\n\r\n$OctopusParameters = @{\r\n\"appPathOverride\" = \"\" # \"bin\\iPhone\"\r\n\"dllPathOverride\" = \"\" # \"bin\\UITest\\Release\"\r\n\"testCloudUserName\" = \"your.user@name.com\"\r\n\"symbolPathOverride\" = \"\"; # \"bin\\iPhone\"\r\n\"apiKey\" = \"YOUR-KEY-HERE\";\r\n\"devicesCode\" = \"ae978982\"; # devices code here (example ae978982 is 2 devices)\r\n\"series\" = \"master\"; # default is master\r\n\"locale\" = \"en_US\"; # default locale is en_US\r\n\"testCloudExePathOverride\" = \"\" # \"tools\"\r\n}\r\n\r\n# debug folder with app files\r\n$stepPath = \"C:\\Temp\\powershellscript\\\"\r\n\r\n# #>\r\n\r\n###################################\r\n# Octopus Deploy common functions #\r\n###################################\r\n\r\n# A collection of functions that can be used by script steps to determine where packages installed\r\n# by previous steps are located on the filesystem.\r\n \r\nfunction Find-InstallLocations {\r\n    $result = @()\r\n    $OctopusParameters.Keys | foreach {\r\n        if ($_.EndsWith('].Output.Package.InstallationDirectoryPath')) {\r\n            $result += $OctopusParameters[$_]\r\n        }\r\n    }\r\n    return $result\r\n}\r\n \r\nfunction Find-InstallLocation($stepName) {\r\n    $result = $OctopusParameters.Keys | where {\r\n        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\r\n    } | select -first 1\r\n \r\n    if ($result) {\r\n        return $OctopusParameters[$result]\r\n    }\r\n \r\n    throw \"No install location found for step: $stepName\"\r\n}\r\n\r\nfunction Find-SingleInstallLocation {\r\n    $all = @(Find-InstallLocations)\r\n    if ($all.Length -eq 1) {\r\n        return $all[0]\r\n    }\r\n    if ($all.Length -eq 0) {\r\n        throw \"No package steps found\"\r\n    }\r\n    throw \"Multiple package steps have run; please specify a single step\"\r\n}\r\n\r\n#####################\r\n# Utility functions #\r\n#####################\r\n\r\nfunction Get-ExactlyOneMobilePackageFileInfo($searchPath)\r\n{\r\n    $apkFiles = Get-ChildItem -Path $searchPath -Recurse -Filter *.apk #Android\r\n    $ipaFiles = Get-ChildItem -Path $searchPath -Recurse -Filter *.ipa #iOS\r\n    $appxFiles = Get-ChildItem -Path $searchPath -Recurse -Filter *.appx # windows\r\n\r\n    $apkCount = $apkFiles.count\r\n\r\n    $ipaCount = $ipaFiles.count\r\n\r\n    $appxCount = $appxFiles.count\r\n\r\n    $totalCount = $apkCount + $ipaCount + $appxCount\r\n\r\n    if($totalCount -ne 1)\r\n    {\r\n        throw \"Did not find exactly one (1) mobile application package. Found $apkCount APK file(s), $ipaCount IPA file(s), and $appxCount Appx file(s). Searched under path: $searchPath\"\r\n    }\r\n\r\n    if($apkCount -eq 1)\r\n    {\r\n        return $apkFiles\r\n    }\r\n\r\n    if($ipaCount -eq 1)\r\n    {\r\n        return $ipaFiles\r\n    }\r\n\r\n    if($appxCount -eq 1)\r\n    {\r\n        return $appxFiles\r\n    }\r\n\r\n    throw \"Unable to find mobile application packages (fallback error - not expected)\"\r\n}\r\n\r\nfunction Get-OneDsymFileInfoOrNull($searchPath)\r\n{\r\n    $symbolFiles = Get-ChildItem -Path $searchPath -Recurse -Filter *.app.dSYM.zip\r\n    \r\n    $fileCount = $symbolFiles.count\r\n\r\n    if($fileCount -eq 0)\r\n    { \r\n        return $null\r\n    }   \r\n\r\n    if($fileCount -gt 1)\r\n    {\r\n        throw \"Found more than one symbols file. Found $fileCount dSYM file(s). Searched under path: $searchPath\"\r\n    }\r\n\r\n    return $symbolFiles\r\n}\r\n\r\nfunction Get-ExactlyOneUploadExeFileInfo($searchPath)\r\n{\r\n    $testcloudexefiles = Get-ChildItem -Path $searchPath -Recurse -Filter test-cloud.exe\r\n    \r\n    $fileCount = $testcloudexefiles.count\r\n\r\n    if($fileCount -ne 1)\r\n    {\r\n        throw \"Did not find exactly one (1) test-cloud.exe. Found $fileCount exe file(s). Searched under path: $searchPath\"\r\n    }\r\n\r\n    return $testcloudexefiles\r\n}\r\n\r\nfunction Get-ExactlyOneUITestDllPath($searchPath)\r\n{\r\n    $XamarinUITestdlls = Get-ChildItem -Path $searchPath -Recurse -Filter Xamarin.UITest.dll\r\n    \r\n    $fileCount = $XamarinUITestdlls.count\r\n\r\n    if($fileCount -ne 1)\r\n    {\r\n        throw \"Did not find exactly one (1) Test DLL location. Found $fileCount DLL location(s), based on finding 'Xamarin.UITest.dll' files. Searched under path: $searchPath\"\r\n    }\r\n    \r\n    $singleXamarinUITestDllFullPath = $XamarinUITestdlls.FullName\r\n    $UITestDllPath = Split-Path -parent $singleXamarinUITestDllFullPath\r\n    return $UITestDllPath\r\n}\r\n\r\n####################\r\n# Basic Parameters #\r\n####################\r\n\r\n# required\r\n$apiKey = $OctopusParameters['apiKey']\r\n$devicesCode = $OctopusParameters['devicesCode']\r\n$testCloudUserName = $OctopusParameters['testCloudUserName']\r\n\r\n# optional\r\n$series = $OctopusParameters['series'] # default \"master\"\r\n$locale = $OctopusParameters['locale'] # default \"en_US\"\r\n\r\n# optional additional path overrides\r\n$appPathOverride = $OctopusParameters['appPathOverride']\r\n$dllPathOverride = $OctopusParameters['dllPathOverride']\r\n$symbolPathOverride = $OctopusParameters['symbolPathOverride']\r\n$testCloudExePathOverride = $OctopusParameters['testCloudExePathOverride']\r\n\r\n# test cloud user names must be lower case to work around API/Utility issue (until issue is fixed)\r\n$testCloudUserName = $testCloudUserName.ToLower()\r\n\r\n$stepName = $OctopusParameters['MobileAppPackageStepName']\r\n\r\n# set step path, if not already set\r\nIf([string]::IsNullOrEmpty($stepPath))\r\n{\r\n    if (![string]::IsNullOrEmpty($stepName)) {\r\n        Write-Host \"Finding path to package step: $stepName\"\r\n        $stepPath = Find-InstallLocation $stepName\r\n    } else {\r\n        $stepPath = Find-SingleInstallLocation\r\n    }\r\n}\r\n\r\nWrite-Host \"Nuget Package base path    : $stepPath\"\r\n# Write-Host \"##octopus[stderr-progress]\"\r\n\r\n# find app\r\n\r\n# complete search paths, overrides may be blank\r\n$appSearchPath = Join-Path $stepPath $appPathOverride\r\n$symbolSearchPath = Join-Path $stepPath $symbolPathOverride\r\n$dllSearchPath = Join-Path $stepPath $dllPathOverride\r\n$testCouldExeSearchPath = Join-Path $stepPath $testCloudExePathOverride\r\n\r\n$appFileFullPath = (Get-ExactlyOneMobilePackageFileInfo $appSearchPath).FullName\r\n$symbolFileFullPath = (Get-OneDsymFileInfoOrNull $symbolSearchPath).FullName\r\n$dllDirectoryFullPath = Get-ExactlyOneUITestDllPath $dllSearchPath\r\n\r\n$testCloudExeFullPath = (Get-ExactlyOneUploadExeFileInfo $testCouldExeSearchPath).FullName\r\n\r\n# It turns out that the utility exe expects a dsym folder, convert to folder\r\n\r\n# DIRTY HACKS - the API should accept a *.dSYM.zip like insights does, see\r\n# https://testcloud.ideas.aha.io/ideas/XTA-I-50\r\n\r\nAdd-Type -AssemblyName System.IO.Compression.FileSystem\r\n\r\nfunction Unzip\r\n{\r\n    param([string]$zipfile, [string]$outpath)\r\n\r\n    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipfile, $outpath)\r\n}\r\n\r\n$symbolFileDirectoryPath = \"\"\r\nif($symbolFileFullPath) # has a full zip path\r\n{\r\n    $parentPath = Split-Path -parent $symbolFileFullPath\r\n    Unzip $symbolFileFullPath $parentPath\r\n\r\n    # get unzipped folder name ending in dSYM\r\n    $symbolFileDirectoryPath = (Get-ChildItem -Path $parentPath -Recurse -Filter *.dSYM).FullName\r\n}\r\nelseif ($symbolPathOverride) # no zip, try to find folder\r\n{\r\n    # search for dSYM folder instead\r\n\r\n    $symbolFileDirectorySearchResults = Get-ChildItem -Path $searchPath -Recurse -Filter *.dSYM\r\n    \r\n    # if exactly one result\r\n    if($symbolFileDirectorySearchResults.Count -eq 1)\r\n    {\r\n        $symbolFileDirectoryPath = $symbolFileDirectorySearchResults.FullName\r\n    }\r\n}\r\n\r\n######################\r\n# Invoke the request #\r\n######################\r\n \r\nWrite-Host \"App path                   : \" $appFileFullPath\r\nWrite-Host \"Symbol File path (optional): \" $symbolFileFullPath\r\nWrite-Host \"Test DLL full path         : \" $dllDirectoryFullPath\r\nWrite-Host \"TestCloud exe path         : \" $testCloudExeFullPath\r\nWrite-Host\r\n\r\n# run command with optional argument\r\n\r\nif($symbolFileDirectoryPath) # symbols file present\r\n{\r\n    Write-Host \"Running command: \" \r\n    Write-Host \"\"\"$testCloudExeFullPath\"\" submit \"\"$appFileFullPath\"\" $apiKey --user $testCloudUserName --devices $devicesCode --series \"\"$series\"\" --locale \"\"$locale\"\" --assembly-dir \"\"$dllDirectoryFullPath\"\" --dsym \"\"$symbolFileDirectoryPath\"\"\"\r\n    Write-Host \r\n    cmd /c \"$testCloudExeFullPath\" submit \"$appFileFullPath\" $apiKey --user $testCloudUserName --devices $devicesCode --series \"$series\" --locale \"$locale\" --assembly-dir \"$dllDirectoryFullPath\" --dsym \"$symbolFileDirectoryPath\"\r\n}\r\nelse # no symbols file\r\n{\r\n    Write-Host \"Running command: \" \r\n    Write-Host \"\"\"$testCloudExeFullPath\"\" submit \"\"$appFileFullPath\"\" $apiKey --user $testCloudUserName --devices $devicesCode --series \"\"$series\"\" --locale \"\"$locale\"\" --assembly-dir \"\"$dllDirectoryFullPath\"\"\"\r\n    Write-Host\r\n    cmd /c \"$testCloudExeFullPath\" submit \"$appFileFullPath\" $apiKey --user $testCloudUserName --devices $devicesCode --series \"$series\" --locale \"$locale\" --assembly-dir \"$dllDirectoryFullPath\"\r\n}\r\n\r\nWrite-Host\r\nWrite-Host \"TestCloud upload command complete.\"",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "apiKey",
+      "Label": "Api Key",
+      "HelpText": "The app specific API key for your test run. This may be found in the testcloud interface for your application:\n\n1. Visit the testcloud interface: https://testcloud.xamarin.com/\n2. Choose \"New Test Run\" and configure as desired.\n3. In the last step, copy the large hash (app specific API Key), devices parameter code, and username",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "devicesCode",
+      "Label": "Devices Code",
+      "HelpText": "The code identifying the devices to test against.\n\nThis may be found in the testcloud interface for your application:\n\n1. Visit the testcloud interface: https://testcloud.xamarin.com/\n2. Choose \"New Test Run\" and configure as desired.\n3. In the last step, copy the large hash (app specific API Key), devices parameter code, and username",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "testCloudUserName",
+      "Label": "TestCloud user name",
+      "HelpText": "The TestCloud user name (e.g. email) that should own the test run. This user must have appropriate permissions for test runs for the configured application.\n\n(Note that this user name will automatically be converted to lower case at this time, to work around an issue with the TestCloud API)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "PackageStepName",
+      "Label": "Package Step Name",
+      "HelpText": "The name of the previously-deployed package step that contains the app files that you want to test.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Name": "series",
+      "Label": "Series",
+      "HelpText": "You may specify a test series to run, or use the default of \"master\".",
+      "DefaultValue": "master",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "locale",
+      "Label": "Locale",
+      "HelpText": "You may specify a locate to run the tests under, or use the default of \"en_US\".",
+      "DefaultValue": "en_US",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "appPathOverride",
+      "Label": "App path override (optional)",
+      "HelpText": "This fully optional search path allows you to look for app files in a specific folder path in your nuget file, such as \"bin\\iPhone\". This may be needed in cases when the nuget file has multiple app files in different locations. This path override is a path relative to the root of the nuget file.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "dllPathOverride",
+      "Label": "UITest DLL path override (optional)",
+      "HelpText": "This fully optional search path allows you to look for the UITest DLL library files in a specific folder path in your nuget file, such as \"bin\\UITest\\Release\". This may be needed in cases when the nuget file has multiple UITest libraries in different locations. This path override is a path relative to the root of the nuget file.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "symbolPathOverride",
+      "Label": "Symbol Path Override (optional)",
+      "HelpText": "!!IMPORTANT!!\nA symbols file is NOT REQUIRED for TestCloud. It only provides more information for crashes.\n\nThis optional search path allows you to look in a specific folder path in your nuget file, such as \"bin\\iPhone\", for a *.dSYM.zip symbols file. This path override is a path relative to the root of the nuget file.\n\nIf an override is specified and a .zip file is not found, the script will search for a *.dSYM folder to use instead. This means if you have a dSYM folder and not a zip file, you can specify \".\" as an override to search the entire nuget package for the folder, or specify a more specific search path.\n\nThis may be needed in cases when the nuget file has multiple symbol files in different locations, or when you only have a dSYM folder, not a .zip file available.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "testCloudExePathOverride",
+      "Label": "test-cloud.exe path override (optional)",
+      "HelpText": "This fully optional search path allows you to look for the test-cloud.exe utility file in a specific folder path in your nuget file, such as \"tools\". This may be needed in cases when the nuget file has multiple instances of the test-cloud.exe utility in different locations. This path override is a path relative to the root of the nuget file.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2016-01-18T21:50:44.530+00:00",
+  "LastModifiedBy": "colin.dabritz@viewpoint.com",
+  "$Meta": {
+    "ExportedAt": "2016-01-19T23:14:49.354+00:00",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  },
+  "Category": "xamarin"
+}

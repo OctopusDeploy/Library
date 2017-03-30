@@ -1,0 +1,30 @@
+{
+  "Id": "c8781255-615a-4092-99f1-82ddefdb6d6b",
+  "Name": "Wait until time",
+  "Description": "Pauses the process until a given time",
+  "ActionType": "Octopus.Script",
+  "Version": 25,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "if(($DefaultTargetTime -eq $null-or $DefaultTargetTime -eq '') -and ($TargetTime -eq $null -or $TargetTime -eq'') ){\n    Write-Output 'Deploy will start immediately because neither TargetTime or DefaultTargetTime is set' \n}else{\n    \n    if($TargetTime -eq $null){\n        $deployTime = get-date($DefaultTargetTime)\n        Write-Output 'DeployTime is set to DefaultTargetTime since TargetTime is not configured as a variable for this build scope.'\n    }else{\n        $deployTime = get-date($TargetTime)\n    }\n    if((get-date)  -ge $deployTime){\n        $deployTime = $deployTime.AddDays(1)\n    }\n    Write-Output ('Deploy will pause until ' + $deployTime)\n\n    \n    do {\n    \tStart-Sleep 1\n    }\n    until ((get-date) -ge $deployTime)\n}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "DefaultTargetTime",
+      "Label": "Time to deploy",
+      "HelpText": "Will deploy within the next 24 hours if only time is specified or at a specific date if that is specified\nA time set here will be used unless the project has a variable TargetTime.\nExamples:\n\n\t03:00\t\t\t\tWill deploy within 24 hours when the time is 03:00 in the morning\n\t2099-09-14 05:00\tWill deploy at that day and time\n\t2025-10-01\t\t\tWill deploy at 00:00 the first of october 2025\n\nIf the deployment time changes often it is suggested to create a variable named TargetTime and make it promptable. This will force the user to set the deployment time before the build process starts.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "PeterOsterdahl",
+  "$Meta": {
+    "ExportedAt": "2016-09-15T10:46:20.183+00:00",
+    "OctopusVersion": "3.2.21",
+    "Type": "ActionTemplate"
+  },
+  "Category": "wait"
+}

@@ -1,0 +1,40 @@
+{
+  "Id": "7eaad6c2-fd5c-40a4-b880-350c983dc51d",
+  "Name": "File System - Create Folders",
+  "Description": "Ensure/Create multiple folders separated by ;",
+  "ActionType": "Octopus.Script",
+  "Version": 7,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\r\nparam(\r\n    [string]$FolderPaths,\r\n    [string]$ContinueOnError\r\n) \r\n\r\n$ErrorActionPreference = \"Stop\" \r\n\r\nfunction Get-Param($Name, [switch]$Required, $Default) {\r\n    $result = $null\r\n\r\n    if ($OctopusParameters -ne $null) {\r\n        $result = $OctopusParameters[$Name]\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        $variable = Get-Variable $Name -EA SilentlyContinue   \r\n        if ($variable -ne $null) {\r\n            $result = $variable.Value\r\n        }\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        if ($Required) {\r\n            throw \"Missing parameter value $Name\"\r\n        } else {\r\n            $result = $Default\r\n        }\r\n    }\r\n\r\n    return $result\r\n}\r\n\r\n& {\r\n    param(\r\n        [string]$FolderPaths,\r\n        [string]$ContinueOnError\r\n    ) \r\n\r\n    Write-Host \"File System - Create Folders\"\r\n    Write-Host \"FolderPaths: $FolderPaths\"\r\n    \r\n    $isContinueOnError = $ContinueOnError.ToLower() -match \"(y|yes|true)\"\r\n\r\n    $FolderPaths.Split(\";\") | ForEach {\r\n        $path = $_.Trim()\r\n\r\n        if($path.Length -lt 1){\r\n            break;\r\n        }\r\n\r\n        Write-Host \"Trying to ensure directory structure for $path.\"\r\n        try {\r\n            $newFolder = New-Item -ItemType directory -Path $path -force\r\n            Write-Host \"SUCCESS\" -ForegroundColor Green\r\n        } catch {\r\n            $errorMessage = \"FAILED - $_.Exception.Message\"\r\n            \r\n            if($isContinueOnError){\r\n                Write-Host $errorMessage  -ForegroundColor Red\r\n            } else {\r\n                throw $errorMessage\r\n            }\r\n        }\r\n        \r\n    }\r\n\r\n } `\r\n (Get-Param 'FolderPaths' -Required) `\r\n (Get-Param 'ContinueOnError')",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "FolderPaths",
+      "Label": "Folder Paths",
+      "HelpText": "A list of folders to create separated by a ;",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "ContinueOnError",
+      "Label": "Continue On Error",
+      "HelpText": "When this is selected the script will log failures but continue and succeed in octopus.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-07-02T13:40:37.523+00:00",
+  "LastModifiedBy": "jbennett",
+  "$Meta": {
+    "ExportedAt": "2015-07-02T13:47:00.305+00:00",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  },
+  "Category": "filesystem"
+}

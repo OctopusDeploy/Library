@@ -1,0 +1,58 @@
+{
+  "Id": "551a6f13-9e4c-4d45-8387-f424d5ca02a4",
+  "Name": "Execute AWS Powershell Script",
+  "Description": "This combines two previous library templates of [checking for Chocolatey being installed](http://library.octopusdeploy.com/#!/step-templates/actiontemplate-chocolatey-ensure-installed), and [installing something via Chocolatey](http://library.octopusdeploy.com/#!/step-templates/actiontemplate-chocolatey-install-package), in this case awstools.powershell, and then adds on a third piece of running a custom Powershell script using AWS Powershell tools",
+  "ActionType": "Octopus.Script",
+  "Version": 6,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "Write-Output \"Ensuring the Chocolatey package manager is installed...\"\n\n$chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"Machine\") + \"\\bin\"\n$chocolateyExe = \"$chocolateyBin\\cinst.exe\"\n$chocInstalled = Test-Path $chocolateyExe\n\nif (-not $chocInstalled) {\n  Write-Output \"Chocolatey not found, installing...\"\n\n  $installPs1 = ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1'))\n  Invoke-Expression $installPs1\n\n  Write-Output \"Chocolatey installation complete.\"\n} else {\n  Write-Output \"Chocolatey was found at $chocolateyBin and won't be reinstalled.\"\n}\n\n$ChocolateyPackageId = 'awstools.powershell'\n\nif (-not $ChocolateyPackageId) {\n  throw \"Please specify the ID of an application package to install.\"\n}\n\nif (-not $ChocolateyPackageVersion) {\n  Write-Output \"Installing package $ChocolateyPackageId from the Chocolatey package repository...\"\n  & $chocolateyExe $ChocolateyPackageId\n} else {\n  Write-Output \"Installing package $ChocolateyPackageId version $ChocolateyPackageVersion from the Chocolatey package repository...\"\n  & $chocolateyExe $ChocolateyPackageId -Version $ChocolateyPackageVersion\n}\n\nImport-Module \"C:\\Program Files (x86)\\AWS Tools\\PowerShell\\AWSPowerShell\\AWSPowerShell.psd1\"\n\nSet-AWSCredentials -AccessKey $AccessKey -SecretKey $SecretKey -StoreAs AWSKeyProfile\n\nInitialize-AWSDefaults -ProfileName AWSKeyProfile -Region $Region\n\n\nInvoke-Expression $AWSScript",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "SecretKey",
+      "Label": "SecretKey",
+      "HelpText": "Enter your AWS Secret Key here. This will be used to authenticate the session with AWS",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AccessKey",
+      "Label": "AccessKey",
+      "HelpText": "Enter your AWS Access Key here. This will be used to authenticate the session with AWS",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Region",
+      "Label": "Region",
+      "HelpText": "Enter the region for where you will be executing your powershell scripts against. If you are unsure of the region you are in, check the list found [here](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AWSScript",
+      "Label": "AWSScript",
+      "HelpText": "This is the Powershell Script that contains commands using the AWSPowershell module that you want to execute",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-05-01T18:13:05.077+00:00",
+  "LastModifiedBy": "hulahomer",
+  "$Meta": {
+    "ExportedAt": "2015-05-01T18:13:07.633+00:00",
+    "OctopusVersion": "2.5.8.447",
+    "Type": "ActionTemplate"
+  },
+  "Category": "aws"
+}

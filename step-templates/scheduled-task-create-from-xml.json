@@ -1,0 +1,49 @@
+{
+  "Id": "26c779af-4cce-447e-98bb-4741c25e0b3c",
+  "Name": "Create Scheduled Tasks From XML",
+  "Description": "This will create a schedule task based on exported xml. See https://msdn.microsoft.com/en-us/library/windows/desktop/bb736357%28v=vs.85%29.aspx for instructions on how to export scheduled tasks as xml.",
+  "ActionType": "Octopus.Script",
+  "Version": 27,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\r\nparam(\r\n    [string]$xmlFileName,\r\n    [string]$userName,\r\n    [string]$password\r\n)\r\n\r\n$ErrorActionPreference = \"Stop\" \r\n\r\nfunction Get-Param($Name, [switch]$Required, $Default) {\r\n    $result = $null\r\n\r\n    if ($OctopusParameters -ne $null) {\r\n        $result = $OctopusParameters[$Name]\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        $variable = Get-Variable $Name -EA SilentlyContinue    \r\n        if ($variable -ne $null) {\r\n            $result = $variable.Value\r\n        }\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        if ($Required) {\r\n            throw \"Missing parameter value $Name\"\r\n        } else {\r\n            $result = $Default\r\n        }\r\n    }\r\n\r\n    return $result\r\n}\r\n\r\nFunction Create-ScheduledTask($xmlFileName, $taskName, $username, $password){\r\n\t$Command = \"schtasks.exe /create /tn $($taskName) /RU $($username) /RP $($password) /XML $($xmlFileName)\"\r\n\r\n\tWrite-Host $Command\r\n\tInvoke-Expression $Command\r\n }\r\n\r\nFunction Delete-ScheduledTask($TaskName) {   \r\n\t$Command = \"schtasks.exe /delete /tn `\"$TaskName`\" /F\"            \r\n\tInvoke-Expression $Command \r\n}\r\n\r\nFunction Stop-ScheduledTask($TaskName) {  \r\n\t$Command = \"schtasks.exe /end /tn `\"$TaskName`\"\"            \r\n\tInvoke-Expression $Command \r\n}\r\n\r\nFunction Start-ScheduledTask($TaskName) {   \r\n\t$Command = \"schtasks.exe /run /tn `\"$TaskName`\"\"            \r\n\tInvoke-Expression $Command \r\n}\r\n\r\nFunction ScheduledTask-Exists($taskName) {\r\n   $schedule = new-object -com Schedule.Service \r\n   $schedule.connect() \r\n   $tasks = $schedule.getfolder(\"\\\").gettasks(0)\r\n\r\n   foreach ($task in ($tasks | select Name)) {\r\n\t  #echo \"TASK: $($task.name)\"\r\n\t  if($task.Name -eq $taskName) {\r\n\t\t #write-output \"$task already exists\"\r\n\t\t return $true\r\n\t  }\r\n   }\r\n\r\n   return $false\r\n}\r\n\r\nFunction GetTaskNameFromXmlPath($xmlFile){\r\n    return (Split-Path -Path $xmlFile -Leaf -Resolve).Split(\".\")[0]\r\n}\r\n\r\n& {\r\n    param(\r\n        [string]$xmlFileName,\r\n        [string]$userName,\r\n        [string]$password\r\n    ) \r\n\r\n    Write-Host \"Create Schedule Task From XML\"\r\n    Write-Host \"xmlFileName: $xmlFileName\"\r\n    Write-Host \"userName: $userName\"\r\n    Write-Host \"password: <Hidden>\"\r\n\r\n    $xmlFileName.Split(\";\") | foreach{\r\n        $xmlFile = $_.Trim()\r\n        $taskName = GetTaskNameFromXmlPath($xmlFile)\r\n\r\n\r\n        if((ScheduledTask-Exists($taskName))){\r\n\t        Write-Output \"$taskName already exists, Tearing down...\"\r\n\t        Write-Output \"Stopping $taskName...\"\r\n\t        Stop-ScheduledTask($taskName)\r\n\t        Write-Output \"Successfully Stopped $taskName\"\r\n\t        Write-Output \"Deleting $taskName...\"\r\n\t        Delete-ScheduledTask($taskName)\r\n\t        Write-Output \"Successfully Deleted $taskName\"\r\n        }\r\n\r\n        Write-Output \"Create a Scheduled Task from $xmlFile called $taskName. Run as $username\" \r\n        Create-ScheduledTask \"$($xmlFile)\" $taskName $username $password\r\n    }\r\n\r\n}`\r\n(Get-Param 'xmlFileName' -Required)`\r\n(Get-Param 'userName' -Required)`\r\n(Get-Param 'password' -Required)",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "xmlFileName",
+      "Label": "Xml File List",
+      "HelpText": "A list of XML files, separated by ';', containing the scheduled tasks to create.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "username",
+      "Label": "User Name",
+      "HelpText": "The User that the task will run as",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "password",
+      "Label": "Password",
+      "HelpText": "The password of the user the task will run as",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-04-29T14:04:16.639+00:00",
+  "LastModifiedBy": "josh3ennett",
+  "$Meta": {
+    "ExportedAt": "2015-04-29T14:15:45.938+00:00",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  },
+  "Category": "xml"
+}

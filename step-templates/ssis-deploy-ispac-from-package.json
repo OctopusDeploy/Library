@@ -1,0 +1,123 @@
+{
+  "Id": "bf005449-60c2-4746-8e07-8ba857f93605",
+  "Name": "Deploy ISPAC SSIS project from a package",
+  "Description": "This step template will deploy SSIS ISPAC projects to SQL Server Integration Services Catalogs",
+  "ActionType": "Octopus.Script",
+  "Version": 11,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "#region Functions\r\n\r\n#region Get-Catalog\r\nFunction Get-Catalog\r\n{\r\n     # define parameters\r\n    Param ($CatalogName)\r\n    # NOTE: using $integrationServices variable defined in main\r\n    \r\n    # define working varaibles\r\n    $Catalog = $null\r\n    # check to see if there are any catalogs\r\n    if($integrationServices.Catalogs.Count -gt 0 -and $integrationServices.Catalogs[$CatalogName])\r\n    {\r\n    \t# get reference to catalog\r\n    \t$Catalog = $integrationServices.Catalogs[$CatalogName]\r\n    }\r\n    else\r\n    {\r\n    \tif((Get-CLREnabled) -eq 0)\r\n    \t{\r\n    \t\tif(-not $EnableCLR)\r\n    \t\t{\r\n    \t\t\t# throw error\r\n    \t\t\tthrow \"SQL CLR is not enabled.\"\r\n    \t\t}\r\n    \t\telse\r\n    \t\t{\r\n    \t\t\t# display sql clr isn't enabled\r\n    \t\t\tWrite-Warning \"SQL CLR is not enabled on $($sqlConnection.DataSource).  This feature must be enabled for SSIS catalogs.\"\r\n    \r\n    \t\t\t# enablign SQLCLR\r\n    \t\t\tWrite-Host \"Enabling SQL CLR ...\"\r\n    \t\t\tEnable-SQLCLR\r\n    \t\t\tWrite-Host \"SQL CLR enabled\"\r\n    \t\t}\r\n    \t}\r\n    \r\n    \t# Provision a new SSIS Catalog\r\n    \tWrite-Host \"Creating SSIS Catalog ...\"\r\n    \r\n    \t$Catalog = New-Object \"$ISNamespace.Catalog\" ($integrationServices, $CatalogName, $CatalogPwd)\r\n    \t$Catalog.Create()\r\n    \r\n    \r\n    }\r\n    \r\n    # return the catalog\r\n    return $Catalog\r\n}\r\n#endregion\r\n\r\n#region Get-CLREnabled\r\nFunction Get-CLREnabled\r\n{\r\n    # define parameters\r\n    # Not using any parameters, but am using $sqlConnection defined in main\r\n    \r\n    # define working variables\r\n    $Query = \"SELECT * FROM sys.configurations WHERE name = 'clr enabled'\"\r\n    \r\n    # execute script\r\n    $CLREnabled = Invoke-Sqlcmd -ServerInstance $sqlConnection.DataSource -Database \"master\" -Query $Query | Select value\r\n    \r\n    # return value\r\n    return $CLREnabled.Value\r\n}\r\n#endregion\r\n\r\n#region Enable-SQLCLR\r\nFunction Enable-SQLCLR\r\n{\r\n    $QueryArray = \"sp_configure 'show advanced options', 1\", \"RECONFIGURE\", \"sp_configure 'clr enabled', 1\", \"RECONFIGURE \"\r\n    # execute script\r\n    \r\n    foreach($Query in $QueryArray)\r\n    {\r\n    \tInvoke-Sqlcmd -ServerInstance $sqlConnection.DataSource -Database \"master\" -Query $Query\r\n    }\r\n    \r\n    # check that it's enabled\r\n    if((Get-CLREnabled) -ne 1)\r\n    {\r\n    \t# throw error\r\n    \tthrow \"Failed to enable SQL CLR\"\r\n    }\r\n}\r\n#endregion\r\n\r\n#region Get-Folder\r\nFunction Get-Folder\r\n{\r\n # parameters\r\n    Param($FolderName, $Catalog)\r\n    \r\n    $Folder = $null\r\n    # try to get reference to folder\r\n    \r\n    if(!($Catalog.Folders -eq $null))\r\n    {\r\n    \t$Folder = $Catalog.Folders[$FolderName]\r\n    }\r\n    \r\n    # check to see if $Folder has a value\r\n    if($Folder -eq $null)\r\n    {\r\n    \t# display\r\n    \tWrite-Host \"Folder $FolderName doesn't exist, creating folder...\"\r\n    \r\n    \t# create the folder\r\n    \t$Folder = New-Object \"$ISNamespace.CatalogFolder\" ($Catalog, $FolderName, $FolderName) \r\n    \t$Folder.Create() \r\n    }\r\n    \r\n    # return the folde reference\r\n    return $Folder\r\n}\r\n#endregion\r\n\r\n#region Get-Environment\r\nFunction Get-Environment\r\n{\r\n     # define parameters\r\n    Param($Folder, $EnvironmentName)\r\n    \r\n    $Environment = $null\r\n    # get reference to Environment\r\n    if(!($Folder.Environments -eq $null) -and $Folder.Environments.Count -gt 0)\r\n    {\r\n    \t$Environment = $Folder.Environments[$EnvironmentName]\r\n    }\r\n    \r\n    # check to see if it's a null reference\r\n    if($Environment -eq $null)\r\n    {\r\n    \t# display\r\n    \tWrite-Host \"Environment $EnvironmentName doesn't exist, creating environment...\"\r\n    \r\n    \t# create environment\r\n    \t$Environment = New-Object \"$ISNamespace.EnvironmentInfo\" ($Folder, $EnvironmentName, $EnvironmentName)\r\n    \t$Environment.Create() \r\n    }\r\n    \r\n    # return the environment\r\n    return $Environment\r\n}\r\n#endregion\r\n\r\n#region Set-EnvironmentReference\r\nFunction Set-EnvironmentReference\r\n{\r\n     # define parameters\r\n    Param($Project, $Environment, $Folder)\r\n    \r\n    # get reference\r\n    $Reference = $null\r\n    \r\n    if(!($Project.References -eq $null))\r\n    {\r\n    \t$Reference = $Project.References[$Environment.Name, $Folder.Name]\r\n    \r\n    }\r\n    \r\n    # check to see if it's a null reference\r\n    if($Reference -eq $null)\r\n    {\r\n    \t# display\r\n    \tWrite-Host \"Project does not reference environment $($Environment.Name), creating reference...\"\r\n    \r\n    \t# create reference\r\n    \t$Project.References.Add($Environment.Name, $Folder.Name)\r\n    \t$Project.Alter() \r\n    }\r\n}\r\n#endregion\r\n\r\n#region Set-ProjectParametersToEnvironmentVariablesReference\r\nFunction Set-ProjectParametersToEnvironmentVariablesReference\r\n{\r\n     # define parameters\r\n    Param($Project, $Environment)\r\n    \r\n    if($Project.Parameters -eq $null)\r\n    {\r\n        Write-Host \"No project parameters exist\"\r\n        return\r\n    }\r\n\r\n    # loop through project parameters\r\n    foreach($Parameter in $Project.Parameters)\r\n    {\r\n        $Variable = $null\r\n        if(!($Environment.Variables -eq $null))\r\n        {\r\n    \t    # get reference to variable\r\n    \t    $Variable = $Environment.Variables[$Parameter.Name]\r\n        }\r\n    \r\n    \t# check to see if variable exists\r\n    \tif($Variable -eq $null)\r\n    \t{\r\n    \t\t# add the environment variable\r\n    \t\tAdd-EnvironmentVariable -Environment $Environment -Parameter $Parameter\r\n    \r\n    \t\t# get reference to the newly created variable\r\n    \t\t$Variable = $Environment.Variables[$Parameter.Name]\r\n    \t}\r\n    \r\n    \t# set the environment variable value\r\n    \tSet-EnvironmentVariableValue -Variable $Variable -Parameter $Parameter\r\n    }\r\n    \r\n    # alter the environment\r\n    $Environment.Alter()\r\n    $Project.Alter()\r\n\r\n}\r\n#endregion\r\n\r\nFunction Set-PackageVariablesToEnvironmentVariablesReference\r\n{\r\n    # define parameters\r\n    Param($Project, $Environment)\r\n    \r\n    # loop through packages in project\r\n    foreach($Package in $Project.Packages)\r\n    {\r\n    \t# loop through parameters of package\r\n    \tforeach($Parameter in $Package.Parameters)\r\n    \t{\r\n    \t\t# get reference to variable\r\n    \t\t$Variable = $Environment.Variables[$Parameter.Name]\r\n    \r\n    \t\t# check to see if the parameter exists\r\n    \t\tif(!$Variable)\r\n    \t\t{\r\n    \t\t\t# add the environment variable\r\n    \t\t\tAdd-EnvironmentVariable -Environment $Environment -Parameter $Parameter\r\n    \r\n    \t\t\t# get reference to the newly created variable\r\n    \t\t\t$Variable = $Environment.Variables[$Parameter.Name]\r\n    \t\t}\r\n    \r\n    \t\t# set the environment variable value\r\n    \t\tSet-EnvironmentVariableValue -Variable $Variable -Parameter $Parameter\r\n    \t}\r\n    \r\n    \t# alter the package\r\n    \t$Package.Alter()\r\n    }\r\n    \r\n    # alter the environment\r\n    $Environment.Alter()\r\n}\r\n\r\n#region Add-EnvironmentVariable\r\nFunction Add-EnvironmentVariable\r\n{\r\n    # define parameters\r\n    Param($Environment, $Parameter)\r\n    \r\n    # display \r\n    Write-Host \"Adding environment variable $($Parameter.Name)\"\r\n    \r\n    # check to see if design default value is emtpy or null\r\n    if([string]::IsNullOrEmpty($Parameter.DesignDefaultValue))\r\n    {\r\n    \t# give it something\r\n    \t$DefaultValue = \"\" # sensitive variables will not return anything so when trying to use the property of $Parameter.DesignDefaultValue, the Alter method will fail.\r\n    }\r\n    else\r\n    {\r\n    \t# take the design\r\n    \t$DefaultValue = $Parameter.DesignDefaultValue\r\n    }\r\n    \r\n    # add variable with an initial value\r\n    $Environment.Variables.Add($Parameter.Name, $Parameter.DataType, $DefaultValue, $Parameter.Sensitive, $Parameter.Description)\r\n}\r\n#endregion\r\n\r\n#region Set-EnvironmentVariableValue\r\nFunction Set-EnvironmentVariableValue\r\n{\r\n     # define parameters\r\n    Param($Variable, $Parameter)\r\n    \r\n    # check to make sure variable value is available\r\n    if($OctopusParameters -and $OctopusParameters.ContainsKey($Parameter.Name))\r\n    {\r\n    \t# set the variable value\r\n    \t$Variable.Value = $OctopusParameters[\"$($Parameter.Name)\"]\r\n    }\r\n    else\r\n    {\r\n    \t# warning\r\n    \tWrite-Warning \"OctopusParameters collection is null or $($Parameter.Name) not found in collection\"\r\n    }\r\n    \r\n    # Set reference\r\n    $Parameter.Set([Microsoft.SqlServer.Management.IntegrationServices.ParameterInfo+ParameterValueType]::Referenced, \"$($Variable.Name)\")\r\n}\r\n#endregion\r\n\r\n\r\n#endregion\r\n\r\n#region Dependent assemblies\r\n\r\n# Load the IntegrationServices Assembly\r\n[Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.Management.IntegrationServices\") | Out-Null # Out-Null supresses a message that would normally be displayed saying it loaded out of GAC\r\n\r\n# Store the IntegrationServices Assembly namespace to avoid typing it every time\r\n$ISNamespace = \"Microsoft.SqlServer.Management.IntegrationServices\"\r\n\r\n# add snapins-- applies to sql server 2008 r2, newer version of SQL do not require this.\r\nAdd-PSSnapin SqlServerCmdletSnapin100 -ErrorAction SilentlyContinue\r\nAdd-PSSnapin SqlServerProviderSnapin100 -ErrorAction SilentlyContinue\r\n\r\n#endregion\r\n\r\n#region Main\r\ntry\r\n{\r\n\t# ensure all boolean variables are true booleans\r\n    $EnableCLR = [System.Convert]::ToBoolean(\"$EnableCLR\")\r\n    $UseEnvironment = [System.Convert]::ToBoolean(\"$UseEnvironment\")\r\n    $ReferenceProjectParametersToEnvironmentVairables = [System.Convert]::ToBoolean(\"$ReferenceProjectParametersToEnvironmentVairables\")\r\n    Write-Host \"Value is $ReferencePackageParametersToEnvironmentVairables\"\r\n    $ReferencePackageParametersToEnvironmentVairables = [System.Convert]::ToBoolean(\"$ReferencePackageParametersToEnvironmentVairables\")\r\n\r\n\r\n\r\n    \r\n    # Get file path where Octopus deployed it\r\n    $DeployedPath = $OctopusParameters[\"Octopus.Action[$NugetPackageStepName].Output.Package.InstallationDirectoryPath\"]\r\n\r\n    \r\n    # display the path where it's referencing\r\n    Write-Host \"Package deployed to $DeployedPath\"\r\n\r\n\t# Get all .ispac files from the deployed path\r\n\t$IsPacFiles = Get-ChildItem -Recurse -Path $DeployedPath | Where {$_.Extension.ToLower() -eq \".ispac\"}\r\n\r\n\t# display number of files\r\n\tWrite-Host \"$($IsPacFiles.Count) .ispac file(s) found.\"\r\n\r\n\tWrite-Host \"Connecting to server ...\"\r\n\r\n\t# Create a connection to the server\r\n    $sqlConnectionString = \"Data Source=$ServerName;Initial Catalog=master;Integrated Security=SSPI;\"\r\n    $sqlConnection = New-Object System.Data.SqlClient.SqlConnection $sqlConnectionString\r\n\r\n\t# create integration services object\r\n\t$integrationServices = New-Object \"$ISNamespace.IntegrationServices\" $sqlConnection\r\n\r\n\t# get reference to the catalog\r\n\tWrite-Host \"Getting reference to catalog $CataLogName\"\r\n\t$Catalog = Get-Catalog -CatalogName $CataLogName\r\n\r\n\t# get folder reference\r\n\t$Folder = Get-Folder -FolderName $FolderName -Catalog $Catalog\r\n\r\n\t# loop through ispac files\r\n\tforeach($IsPacFile in $IsPacFiles)\r\n\t{\r\n\t\t# read project file\r\n\t\t$ProjectFile = [System.IO.File]::ReadAllBytes($IsPacFile.FullName)\r\n\r\n\t\t# deploy project\r\n\t\tWrite-Host \"Deploying project $($IsPacFile.Name)...\"\r\n\t\t$Folder.DeployProject($ProjectName, $ProjectFile) | Out-Null\r\n\r\n\t\t# get reference to deployed project\r\n\t\t$Project = $Folder.Projects[$ProjectName]\r\n\r\n\t\t# check to see if they want to use environments\r\n\t\tif($UseEnvironment)\r\n\t\t{\r\n\t\t\t# get environment reference\r\n\t\t\t$Environment = Get-Environment -Folder $Folder -EnvironmentName $EnvironmentName\r\n\r\n\t\t\t# set environment reference\r\n\t\t\tSet-EnvironmentReference -Project $Project -Environment $Environment -Folder $Folder\r\n\r\n\t\t\t# check to see if the user wants to convert project parameters to environment variables\r\n\t\t\tif($ReferenceProjectParametersToEnvironmentVairables)\r\n\t\t\t{\r\n\t\t\t\t# set environment variables\r\n\t\t\t\tWrite-Host \"Referencing Project Parameters to Environment Variables...\"\r\n\t\t\t\tSet-ProjectParametersToEnvironmentVariablesReference -Project $Project -Environment $Environment \r\n\t\t\t}\r\n\r\n\t\t\t# check to see if the user wants to convert the package parameters to environment variables\r\n\t\t\tif($ReferencePackageParametersToEnvironmentVairables)\r\n\t\t\t{\r\n\t\t\t\t# set package variables\r\n\t\t\t\tWrite-Host \"Referencing Package Parameters to Environment Variables...\"\r\n\t\t\t\tSet-PackageVariablesToEnvironmentVariablesReference -Project $Project -Environment $Environment\r\n\t\t\t}\r\n\t\t}\r\n\t}\r\n}\r\n\r\nfinally\r\n{\r\n\t# check to make sure sqlconnection isn't null\r\n\tif($sqlConnection)\r\n\t{\r\n\t\t# check state of sqlconnection\r\n\t\tif($sqlConnection.State -eq [System.Data.ConnectionState]::Open)\r\n\t\t{\r\n\t\t\t# close the connection\r\n\t\t\t$sqlConnection.Close()\r\n\t\t}\r\n\r\n\t\t# cleanup\r\n\t\t$sqlConnection.Dispose()\r\n\t}\r\n}\r\n#endregion\r\n",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "ServerName",
+      "Label": "Database server name (\\instance)",
+      "HelpText": "Name of the SQL Server you are deploying to.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "EnableCLR",
+      "Label": "Enable SQL CLR",
+      "HelpText": "This will reconfigure SQL Server to enable the SQL CLR.  It is highly recommended that this be previously authorized by your Database Administrator.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "CatalogName",
+      "Label": "Catalog name",
+      "HelpText": "Name of the catalog to create in Integration Services Catalogs on SQL Server.  When using the GUI, this value gets hardcoded to SSISDB and cannot be changed.  It is recommended that you do not change the default value.",
+      "DefaultValue": "SSISDB",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "CatalogPwd",
+      "Label": "Catalog password",
+      "HelpText": "Password to the Integration Services Catalog.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "FolderName",
+      "Label": "Folder name",
+      "HelpText": "Name of the folder to use within the Integration Services Catalog",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ProjectName",
+      "Label": "Project name",
+      "HelpText": "Name of the project within the folder of the Integration Services catalog",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "UseEnvironment",
+      "Label": "Use environment",
+      "HelpText": "This will make a project reference to the defined environment.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "EnvironmentName",
+      "Label": "Environment name",
+      "HelpText": "Name of the environment to reference the project to. If the environment doesn't exist, it will create it.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ReferenceProjectParametersToEnvironmentVairables",
+      "Label": "Reference project parameters to environment variables",
+      "HelpText": "Checking this box will make Project Parameters reference Environment Variables.  If the Environment Variable doesn't exist, it will create it.  This expects that an Octopus variable of the same name exists.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "ReferencePackageParametersToEnvironmentVairables",
+      "Label": "Reference package parameters to environment variables",
+      "HelpText": "Checking this box will make Package Parameters reference Environment Variables.  If the Environment Variable doesn't exist, it will create it.  This expects than an Octopus variable of the same name exists.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "NugetPackageStepName",
+      "Label": "NuGet package step",
+      "HelpText": "The step that uploaded the NuGet package to the server.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    }
+  ],
+  "LastModifiedBy": "Raechen79",
+  "$Meta": {
+    "ExportedAt": "2016-10-17T19:59:22.607+00:00",
+    "OctopusVersion": "3.3.11",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

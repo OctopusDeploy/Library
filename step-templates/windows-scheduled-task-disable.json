@@ -1,11 +1,12 @@
 {
-  "Id": "ActionTemplates-2",
+  "Id": "1be30b21-ba58-4667-bff4-2d0ef9a806af",
   "Name": "Windows Scheduled Task - Disable",
   "Description": "Disables a Windows Scheduled Task for both 2008 and 2012.",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 3,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$taskName = $OctopusParameters['TaskName']\r\rWrite-Output \"Disabling $taskName...\"\r\r#Check if 2008 Server\rif ((Get-WmiObject Win32_OperatingSystem).Name.Contains(\"2008\"))\r{\r    schtasks /Change /Disable /TN $taskName\r    do { \r        Start-Sleep -Milliseconds 200;\r        Write-Host \"Disabling\" $taskName;\r    }\r    until (((schtasks /TN $taskName) | Out-String).Contains(\"Disabled\"))\r}\relse\r{\r    $task = Get-ScheduledTask $taskName;\r    Disable-ScheduledTask $task;\r    do { \r        Start-Sleep -Milliseconds 200;\r        Write-Host \"Disabling\" $task.TaskName;\r    }\r    until ((Get-ScheduledTask $task.TaskName).State -eq 'Disabled')\r}"
+    "Octopus.Action.Script.ScriptBody": "$taskName = $OctopusParameters['TaskName']\n$maximumWaitTime = $OctopusParameters['MaximumWaitTime']\n\n#Check if the PowerShell cmdlets are available\n$cmdletSupported = [bool](Get-Command -Name Get-ScheduledTask -ErrorAction SilentlyContinue)\n\ntry {\n\tif($cmdletSupported) {\n\t\t$taskExists = Get-ScheduledTask | Where-Object { $_.TaskName -eq $taskName }\n\t}\n\telse {\n\t\t$taskService = New-Object -ComObject \"Schedule.Service\"\n\t\t$taskService.Connect()\n\t\t$taskFolder = $taskService.GetFolder('\\')\n\t\t$taskExists = $taskFolder.GetTasks(0) | Select-Object Name, State | Where-Object { $_.Name -eq $taskName }\n\t}\n\n\tif(-not $taskExists) {\n\t\tWrite-Output \"Scheduled task '$taskName' does not exist\"\n\t\treturn\n\t}\n\n\tWrite-Output \"Disabling $taskName...\"\n\t$waited = 0\n\tif($cmdletSupported) {\n\t\t$task = Disable-ScheduledTask $taskName\n\t\tWrite-Output \"Waiting until $taskName is disabled...\"\n\t\twhile(($task.State -ne [Microsoft.PowerShell.Cmdletization.GeneratedTypes.ScheduledTask.StateEnum]::Disabled) -and (($maximumWaitTime -eq 0) -or ($waited -lt $maximumWaitTime))) \n\t\t{\n\t\t\tStart-Sleep -Milliseconds 200\n\t\t\t$waited += 200\n\t\t\t$task = Get-ScheduledTask $taskName\n\t\t}\n\t\t\n\t\tif($task.State -ne [Microsoft.PowerShell.Cmdletization.GeneratedTypes.ScheduledTask.StateEnum]::Disabled) {\n\t\t\tthrow \"The scheduled task $taskName could not be disabled within the specified wait time\"\n\t\t}\n\t}\n\telse {\n\t\tschtasks /Change /Disable /TN \"$taskName\"\n\t\t#The State property can hold the following values:\n\t\t# 0: Unknown\n\t\t# 1: Disabled\n\t\t# 2: Queued\n\t\t# 3: Ready\n\t\t# 4: Running\n\t\twhile(($taskFolder.GetTask($taskName).State -ne 1) -and (($maximumWaitTime -eq 0) -or ($waited -lt $maximumWaitTime))) {\n\t\t\tStart-Sleep -Milliseconds 200\n\t\t\t$waited += 200\n\t\t}\n\t\t\n\t\tif($taskFolder.GetTask($taskName).State -ne 1) {\n\t\t    throw \"The scheduled task '$taskName' could not be disabled within the specified wait time\"\n\t\t}\n\t}\n}\nfinally {\n    if($taskFolder -ne $NULL) {\n\t    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($taskFolder)   \n\t}\n\t\n\tif($taskService -ne $NULL) {\n\t    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($taskService)   \n\t}\n}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -14,13 +15,19 @@
       "Label": "Task Name",
       "HelpText": "Name of the Windows Scheduled Task.",
       "DefaultValue": null
+    },
+    {
+      "Name": "MaximumWaitTime",
+      "Label": "Maximum Wait Time",
+      "HelpText": "Maximum time the script must wait before aborting. Use '0' to wait indefinitely.",
+      "DefaultValue": 0
     }
   ],
-  "LastModifiedOn": "2014-05-14T19:43:43.601+00:00",
-  "LastModifiedBy": "maohde",
+  "LastModifiedBy": "HumanPrinter",
   "$Meta": {
-    "ExportedAt": "2014-05-14T19:48:28.023Z",
+    "ExportedAt": "2017-03-13T19:50:10.728Z",
     "OctopusVersion": "2.4.5.46",
     "Type": "ActionTemplate"
-  }
+  },
+  "Category": "windows"
 }
