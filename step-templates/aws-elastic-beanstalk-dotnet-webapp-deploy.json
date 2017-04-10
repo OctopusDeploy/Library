@@ -1,0 +1,114 @@
+{
+  "Id": "11060b54-15bc-4b12-a912-197c6c18b7b7",
+  "Name": "AWS Elastic Beanstalk .Net WebApp Deploy",
+  "Description": "Deploy a .Net WebApp build to AWS Elastic Beanstalk. This template uses the awsdeploy tool. ALL step fields need to be populated for this template to work.\n\nAWS Toolkit needs to be installed on your deployment server for this to work properly:\nhttps://aws.amazon.com/visualstudio/",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "$env:Path += \";C:\\Program Files (x86)\\AWS Tools\\Deployment Tool\\;C:\\Program Files (x86)\\IIS\\Microsoft Web Deploy V3\\\"\r\n$AwsDeployConfigFileName = \"aws-deploy.config\"\r\n$AwsDeployConfigFile = Join-Path $BuildDirectory $AwsDeployConfigFileName\r\n$MSDeployParamsFile = Join-Path $BuildDirectory $MSDeployParamsFilePath\r\n$DeployArchive = Join-Path $MSDeployOutputDirectory.trim().replace(\" \", \"_\") \"deploy.zip\"\r\n\r\nif (!(Test-Path $AwsDeployConfigFile))\r\n{\r\n    # Create an empty, dummy file (not used, awsdeploy params used instead)\r\n    New-Item -path $BuildDirectory -name $AwsDeployConfigFileName -type \"file\"\r\n}\r\n\r\nif (Test-Path $DeployArchive)\r\n{\r\n    # Delete deploy archive if it exists\r\n    Remove-Item $DeployArchive\r\n}\r\n\r\n$EscapedBuildDirectory = $BuildDirectory -replace \"\\\\\",\"\\\\\"\r\n$EscapedBuildDirectory = $EscapedBuildDirectory -replace \"\\.\",\"\\.\"\r\n$MSDeployParamsContent = (Get-Content $MSDeployParamsFile)\r\n$MSDeployParamsContent = $MSDeployParamsContent -replace \"{BUILD_DIRECTORY}\",$EscapedBuildDirectory\r\nSet-Content $MSDeployParamsFile $MSDeployParamsContent\r\n\r\nWrite-Host \"Creating WebDeploy package file $DeployArchive with the contents of directory $BuildDirectory\"\r\nmsdeploy.exe -verb:sync `\r\n    -source:iisApp=\"$BuildDirectory\" `\r\n    -dest:package=\"$DeployArchive\" `\r\n    -declareParamFile=\"$MSDeployParamsFile\"\r\n\r\nWrite-Host \"Starting AWSdeploy\"\r\nawsdeploy -r -v `\r\n    \"-DAWSProfileName=$($ProfileName)\" `\r\n    \"-DApplication.Name=$($ApplicationName)\" `\r\n    \"-DEnvironment.Name=$($EnvironmentName)\" `\r\n    \"-DRegion=$($Region)\" `\r\n    \"-DUploadBucket=$($UploadBucket)\" `\r\n    \"-DAWSAccessKey=$($AccessKey)\" `\r\n    \"-DAWSSecretKey=$($SecretKey)\" `\r\n    \"-DTemplate=ElasticBeanstalk\" `\r\n    \"-DDeploymentPackage=$($DeployArchive)\" `\r\n    \"$AwsDeployConfigFile\"\r\n\r\n# Sleep to give time to the deployment process to start\r\nStart-Sleep -Seconds 5\r\n\r\n$i = 0\r\n$isReady = $FALSE\r\n# Wait no more than 10 minutes for the deployment to finish (or 120 sleeps of 5 seconds)\r\nwhile ((!$isReady) -and ($i -lt 120)) {\r\n    $i++\r\n    $ebHealth = Get-EBEnvironment -AccessKey \"$AccessKey\" -SecretKey \"$SecretKey\" -Region \"$Region\" -EnvironmentName \"$EnvironmentName\"\r\n\r\n    if ($ebHealth.Status -eq \"Ready\") {\r\n        Write-Host \"Deployment successful.\"\r\n        $isReady=$TRUE;\r\n    } else {\r\n        Write-Host \"Deployment status: $($ebHealth.Status)\"\r\n    }\r\n    Start-Sleep -Seconds 5\r\n}\r\n\r\nif (!$isReady) {\r\n    Write-Host \"Deployment failed. Please check your AWS console.\"\r\n}",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "ProfileName",
+      "Label": "Profile Name",
+      "HelpText": "AWS Profile Name",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ApplicationName",
+      "Label": "Application Name",
+      "HelpText": "AWS Application Name",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "EnvironmentName",
+      "Label": "Environment Name",
+      "HelpText": "AWS Environment Name",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Region",
+      "Label": "Region",
+      "HelpText": "AWS Application Region",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "UploadBucket",
+      "Label": "Upload Bucket",
+      "HelpText": "AWS Application Upload Bucket",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AccessKey",
+      "Label": "Access Key",
+      "HelpText": "AWS Access Key",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SecretKey",
+      "Label": "Secret Key",
+      "HelpText": "AWS Secret Key",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "BuildDirectory",
+      "Label": "Build Directory",
+      "HelpText": "Path to the compiled code that needs to be packaged by MSDeploy.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "MSDeployOutputDirectory",
+      "Label": "MSDeploy Output Directory",
+      "HelpText": "Path where MSDeploy should put the newly created package.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "MSDeployParamsFilePath",
+      "Label": "MSDeploy Params File Path",
+      "HelpText": "Subpath (relative to your #{BuildDirectory}) to the \"parameters.xml\" file. Include filename.",
+      "DefaultValue": "parameters.xml",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "dovetail-technologies",
+  "$Meta": {
+    "ExportedAt": "2017-01-05T09:21:06.133Z",
+    "OctopusVersion": "3.3.15",
+    "Type": "ActionTemplate"
+  },
+  "Category": "aws"
+}

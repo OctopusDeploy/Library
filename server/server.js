@@ -19,6 +19,7 @@ let app = express();
 
 app.use(express.static(path.join(__dirname, 'public'), { maxage: '1d' }));
 app.use(express.static(path.join(__dirname, 'views'), { maxage: '1d' }));
+app.use('/.well-known', express.static('.well-known'));
 
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'jade');

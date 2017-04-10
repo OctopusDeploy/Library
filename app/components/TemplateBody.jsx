@@ -34,7 +34,7 @@ export default class TemplateBody extends React.Component {
       case 'Octopus.Script':
       case 'Octopus.AzurePowerShell':
         header = 'Script body';
-        description = 'Steps based on this template will execute the following <em>PowerShell</em> script.';
+        description = 'Steps based on this template will execute the following <em>' + this.props.scriptSyntax + '</em> script.';
         break;
       case 'Octopus.Email':
         header = 'Email body';
@@ -58,7 +58,7 @@ export default class TemplateBody extends React.Component {
         <div className="templateContent" 
             style={style}
         >
-          <SyntaxHiglighter language="powershell" 
+          <SyntaxHiglighter language={this.props.scriptSyntax} 
               style={solarizedLight}
           >
               {this.props.templateBody}
@@ -73,6 +73,7 @@ TemplateBody.displayName = displayName;
 
 TemplateBody.propTypes = {
   actionType: React.PropTypes.string,
+  scriptSyntax: React.PropTypes.string,
   templateBody: React.PropTypes.string
 };
 

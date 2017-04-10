@@ -32,6 +32,7 @@ import jasmineTerminalReporter from 'jasmine-terminal-reporter';
 import eventStream from 'event-stream';
 import {Converter} from 'csvtojson';
 import fs from 'fs';
+import jsonlint from 'gulp-jsonlint';
 
 const clientDir = 'app';
 const serverDir = 'server';
@@ -73,15 +74,23 @@ gulp.task('lint:client', lint(`${clientDir}/**/*.jsx`));
 gulp.task('lint:server', lint(`./${serverDir}/server.js`));
 gulp.task('lint:step-templates', () => {
   return gulp.src('./step-templates/*.json')
-    .pipe($.expect({ errorOnFailure: true, silent: true }, glob.sync('step-templates/*.json')));
+    .pipe($.expect({ errorOnFailure: true, silent: true }, glob.sync('step-templates/*.json')))
+    .pipe(jsonlint())
+    .pipe(jsonlint.failOnError())
+    .pipe(jsonlint.reporter());
 });
 
-gulp.task('tests', [], () => {
+gulp.task('tests', ['lint:step-templates'], () => {
   return gulp.src('./spec/*-tests.js')
   // gulp-jasmine works on filepaths so you can't have any plugins before it
     .pipe(jasmine({
       includeStackTrace: false,
-      reporter: [ new jasmineReporters.JUnitXmlReporter(), new jasmineTerminalReporter() ]
+      reporter: [ 
+        new jasmineReporters.JUnitXmlReporter(), 
+        (process.env.TEAMCITY_VERSION 
+          ? new jasmineReporters.TeamCityReporter() 
+          : new jasmineTerminalReporter())
+      ]
     }))
     .on('error', function(){
       process.exit(1);
@@ -98,6 +107,7 @@ function humanize(categoryId){
     case 'edgecast': return 'EdgeCast';
     case 'elmah': return 'ELMAH';
     case 'entityframework': return 'Entity Framework';
+    case 'event-tracing': return 'Event Tracing for Windows';
     case 'filesystem': return 'File System';
     case 'github': return 'GitHub';
     case 'ghostinspector': return 'Ghost Inspector';
@@ -105,6 +115,8 @@ function humanize(categoryId){
     case 'hockeyapp': return 'HockeyApp';
     case 'http': return 'HTTP';
     case 'iis': return 'IIS';
+    case 'linux': return 'Linux';
+    case 'microsoft-teams': return 'Microsoft Teams';
     case 'netscaler': return 'NetScaler';
     case 'newrelic': return 'New Relic';
     case 'nunit': return 'NUnit';
@@ -134,11 +146,11 @@ function provideMissingData() {
       var fileName = pathParts[pathParts.length - 1];
 
       if (!template.HistoryUrl) {
-        template.HistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/step-templates/" + fileName;
+        template.HistoryUrl = 'https://github.com/OctopusDeploy/Library/commits/master/step-templates/' + fileName;
       }
 
       if (!template.Website) {
-        template.Website = "/step-templates/" + template.Id;
+        template.Website = '/step-templates/' + template.Id;
       }
 
       var categoryId = template.Category;
@@ -151,7 +163,7 @@ function provideMissingData() {
       template.Category = humanize(categoryId);
 
       if (!template.Logo) {
-        var logo = fs.readFileSync("./step-templates/logos/" + categoryId + ".png");
+        var logo = fs.readFileSync('./step-templates/logos/' + categoryId + '.png');
         template.Logo = new Buffer(logo).toString('base64');
       }
 
@@ -162,7 +174,7 @@ function provideMissingData() {
 }
 
 
-gulp.task('step-templates', ['lint:step-templates', 'tests'], () => {
+gulp.task('step-templates', ['tests'], () => {
   return gulp.src('./step-templates/*.json')
     .pipe(provideMissingData())
     .pipe(concat('step-templates.json', {newLine: ','}))

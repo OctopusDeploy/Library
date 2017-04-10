@@ -1,0 +1,86 @@
+{
+  "Id": "55aff8d8-61b4-4657-9a00-d002b394790e",
+  "Name": "SQL - Execute Scripts Ordered",
+  "Description": "Given a path to a folder containing SQL scripts, this module will execute each script on the database server and catalog provided.  It will execute them in order based on their name.",
+  "ActionType": "Octopus.Script",
+  "Version": 64,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "\n$paramContinueOnError = $OctopusParameters['ContinueOnError']\nif($paramContinueOnError -eq $null) { $paramContinueOnError = 'False' }\n\n$paramVersionRegEx = $OctopusParameters['VersionRegEx']\nif($paramVersionRegEx -eq $null) { $paramVersionRegEx = 'Release(\\d+)_(\\d+)\\.' }\n\n$paramPathToScripts = $OctopusParameters['PathToScripts'] \nif($paramPathToScripts -eq $null) { throw \"*** Path to scrips must be defined.\" }\n\n$paramCommandTimeout = $OctopusParameters['CommandTimeout'] \nif($paramCommandTimeout -eq $null) { $paramCommandTimeout = '0' }\n\n$paramConnectionString = $OctopusParameters['ConnectionString']\nif($paramConnectionString -eq $null) { throw \"*** Connection string must be defined.\" }\n\n$continueOnError = $paramContinueOnError.ToLower() -eq 'true'\n\n$connection = New-Object System.Data.SqlClient.SqlConnection\n$connection.ConnectionString = $paramConnectionString\n\nRegister-ObjectEvent -inputobject $connection -eventname InfoMessage -action {\n    write-host $event.SourceEventArgs\n} | Out-Null\n\nfunction Execute-SqlQuery($fileName) \n{\n    Write-Host \"Executing scripts in file '$fileName'\"\n\n    $content = gc $fileName -raw\n    $queries = [System.Text.RegularExpressions.Regex]::Split($content, '\\r\\n\\s*GO\\s*\\r\\n', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase) | ? { $_ -ne '' }\n\n    foreach($q in $queries)\n    {\n        if ((-not [String]::IsNullOrWhiteSpace($q)) -and ($q.Trim().ToLowerInvariant() -ne \"go\")) \n        {   \n            $command = $connection.CreateCommand()\n            $command.CommandText = $q\n            $command.CommandTimeout = $paramCommandTimeout\n            $command.ExecuteNonQuery() | Out-Null\n        }\n    }\n}\n\ntry \n{\n    Write-Host \"Executing scripts in folder '$paramPathToScripts'\"\n\n    Write-Host \"Sorting script files based on regular expression '$paramVersionRegEx'\"\n    \n    Write-Host \"Opening SQL server connection...\"\n    $connection.Open()\n\n    Get-ChildItem $paramPathToScripts *.sql |\n        % { \n            $matches = [System.Text.RegularExpressions.Regex]::Match($_.Name, $paramVersionRegEx, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase )\n            new-object psobject -Property @{ \"File\"=$_; \"Level1\"=$matches.Groups[1]; \"Level2\"=$matches.Groups[2] }\n          } | \n          sort Level1, Level2 |\n          % {\n              Execute-SqlQuery -fileName $_.File.FullName\n            }\n}\ncatch \n{\n\tif ($continueOnError) \n\t{\n\t\tWrite-Host $_.Exception.Message\n\t}\n\telse \n\t{\n\t\tthrow\n\t}\n}\nfinally \n{\n    Write-Host \"Closing connection.\"\n    $connection.Dispose()\n}\n",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "696365b9-e02e-49e9-8ff7-6d9145ec36df",
+      "Name": "ConnectionString",
+      "Type": "String",
+      "Label": "Connection String",
+      "HelpText": "Connection string for the SQL connection. Example:\n\nServer=.\\SQLExpress;Database=OctoFX;Integrated Security=True;\n\nBind to a variable to provide different values for different environments.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "004c2019-b733-4010-bf76-03f3757b1e9d",
+      "Name": "ContinueOnError",
+      "Type": "String",
+      "Label": "Continue On Error",
+      "HelpText": "If set to true, an error with the SQL statement will simply write to the log and not cause an error in the deployment.",
+      "DefaultValue": "\"False\"",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "52add130-b220-410f-8b46-e653e2b1ef2a",
+      "Name": "CommandTimeout",
+      "Type": "String",
+      "Label": "Individual Go Timeout",
+      "HelpText": "Each individual go statements timeout value in seconds.\n\nA value of 0 indicates no limit (an attempt to execute a command will wait indefinitely).",
+      "DefaultValue": "0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "19a1de2e-988c-4ccf-867d-bd64fb0338df",
+      "Name": "PathToScripts",
+      "Type": "String",
+      "Label": "Path to Script Files",
+      "HelpText": "The path to the SQL script files you wish to execute.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "1e09f697-563a-46a6-ad6d-0c1b2013d044",
+      "Name": "VersionRegEx",
+      "Type": "String",
+      "Label": "Filename Version Reg Ex",
+      "HelpText": "The regular expression to extract major and minor version number from file name.  Given Release2_61.sql, use \"Release(\\d+)\\_(\\d+)\\\\.\".",
+      "DefaultValue": "Release(\\d+)_(\\d+)\\.",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy":"tylerrbrown",
+  "$Meta": {
+    "ExportedAt": "2017-03-20T21:28:30.917Z",
+    "OctopusVersion": "3.11.12",
+    "Type": "ActionTemplate"
+  },
+  "Category":"SQL"
+}

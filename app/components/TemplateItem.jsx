@@ -18,6 +18,7 @@ import LibraryStore from './../stores/LibraryStore';
 import Analytics from './../services/Analytics.js';
 
 const displayName = 'octopus-library-template-item';
+import slugMaker from './../services/SlugMaker';
 
 export default class TemplateItem extends React.Component {
   constructor(props) {
@@ -68,7 +69,9 @@ export default class TemplateItem extends React.Component {
         <div className="step-template">
           <div className="row clearfix">
             <div className="column two-thirds">
-              <img className="logo" src={'data:image/gif;base64,' + this.state.template.Logo} />
+              <img className="logo" 
+                  src={'data:image/gif;base64,' + this.state.template.Logo} 
+              />
               <h2 className="name">{this.state.template.Name}</h2>
               <p className="who-when faint no-top-margin">
                 <i>{this.state.template.ActionType}</i> exported {moment(this.state.template.ExportedAt).calendar()} by
@@ -82,6 +85,7 @@ export default class TemplateItem extends React.Component {
               />
               <TemplateParameters parameters={this.state.template.Parameters} />
               <TemplateBody actionType={this.state.template.ActionType}
+                  scriptSyntax={this.state.template.Properties['Octopus.Action.Script.Syntax'] || ''}
                   templateBody={this.state.template.Properties['Octopus.Action.Script.ScriptBody'] || this.state.template.Properties['Octopus.Action.Email.Body']}
               />
             </div>
@@ -132,7 +136,7 @@ export default class TemplateItem extends React.Component {
                 </p>
                 <SocialButtons />
                 <h3>Comments</h3>
-                <ReactDisqusThread identifier={this.state.template.Id}
+                <ReactDisqusThread identifier={slugMaker.make(this.state.template.Name)}
                     shortname="octolibrary"
                 />
               </div>

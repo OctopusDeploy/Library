@@ -1,0 +1,58 @@
+{
+  "Id": "929f72d3-e1c3-4b97-bac9-d84434ca63c3",
+  "Name": "IIS Website - HTTP to HTTPS Redirect",
+  "Description": "Adds either a global or site specific rule which redirects from http to https",
+  "ActionType": "Octopus.Script",
+  "Version": 7,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$Name = \"HTTP to HTTPS Redirect (Octopus Deploy)\"\r\n$PsPath = \"MACHINE/WEBROOT/APPHOST\"\r\n$Filter = \"system.webserver/rewrite/GlobalRules\"\r\n\r\nClear-WebConfiguration -pspath $PsPath -filter \"$Filter/rule[@name='$Name']\"\r\nif ($Site) {\r\n    $Filter = \"system.webserver/rewrite/rules\"\r\n    Clear-WebConfiguration -location $Site -pspath $PsPath -filter \"$Filter/rule[@name='$Name']\"\r\n}\r\n\r\nif ($Disabled -eq \"true\") {\r\n    exit\r\n}\r\n\r\n#Clear-WebConfiguration -location $Site -pspath $PsPath -filter \"$Filter/rule[@name='$Name']\"\r\nAdd-WebConfigurationProperty -location $Site -pspath $PsPath -filter \"$Filter\" -name \".\" -value @{name=$Name; patternSyntax='ECMAScript'; stopProcessing='True'}\r\nSet-WebConfigurationProperty -location $Site -pspath $PsPath -filter \"$Filter/rule[@name='$Name']/match\" -name url -value \"(.*)\"\r\nAdd-WebConfigurationProperty -location $Site -pspath $PsPath -filter \"$Filter/rule[@name='$Name']/conditions\" -name \".\" -value @{input=\"{HTTPS}\"; pattern='^OFF$'}\r\nif ($EnableProxyRules -eq \"true\") {\r\n    Add-WebConfigurationProperty -location $Site -pspath $PsPath -filter \"$Filter/rule[@name='$Name']/conditions\" -name \".\" -value @{input=\"{HTTP_X_FORWARDED_PROTO}\"; pattern='^HTTP$'}\r\n}\r\n\r\nSet-WebConfigurationProperty -location $Site -pspath $PsPath -filter \"$Filter/rule[@name='$Name']/action\" -name \"type\" -value \"Redirect\"\r\nSet-WebConfigurationProperty -location $Site -pspath $PsPath -filter \"$Filter/rule[@name='$Name']/action\" -name \"url\" -value \"https://{HTTP_HOST}/{R:1}\"\r\nSet-WebConfigurationProperty -location $Site -pspath $PsPath -filter \"$Filter/rule[@name='$Name']/action\" -name \"redirectType\" -value \"Permanent\" ",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "4cb5e060-d027-465f-aa17-29d806f7cb6f",
+      "Name": "Site",
+      "Label": "Name of Website",
+      "HelpText": "Set the rule for a specific website.\nIf not supplied, a global rule will be created.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2854ab2d-a000-48dd-9b20-6930c73c96fb",
+      "Name": "EnableProxyRules",
+      "Label": "Enable proxy rules",
+      "HelpText": "If the website is running behind a proxy, this setting most likely need to be checked.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "4f341e5c-0694-471c-ac04-3ce525fefad5",
+      "Name": "Disabled",
+      "Label": "Disable",
+      "HelpText": "Disable adding rules.\nThis will remove any rules mathing current values.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "perosb",
+  "$Meta": {
+    "ExportedAt": "2017-02-20T12:37:13.724Z",
+    "OctopusVersion": "3.7.4",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}
