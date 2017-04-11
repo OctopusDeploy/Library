@@ -50,5 +50,9 @@ if(!isTeamCity)
 }
 else 
 {
-    Console.WriteLine($"##teamcity[setParameter name='Library.ReleaseNotes' value='{releaseNotes.Replace("[", "|[").Replace("]", "|]").Replace(Environment.NewLine, "|n")}']");
+    var cwd = Directory.GetCurrentDirectory();
+    var releaseNotesFile = $"{cwd}\\Library_ReleaseNotes.txt";
+    File.WriteAllText(releaseNotesFile, releaseNotes);
+
+    Console.WriteLine($"##teamcity[setParameter name='Library.ReleaseNotesFile' value='{releaseNotesFile}'");
 }
