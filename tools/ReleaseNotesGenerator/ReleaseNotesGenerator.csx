@@ -54,5 +54,5 @@ else
     var releaseNotesFile = $"{cwd}\\Library_ReleaseNotes.txt";
     File.WriteAllText(releaseNotesFile, releaseNotes);
 
-    Console.WriteLine($"##teamcity[setParameter name='Library.ReleaseNotesFile' value='{releaseNotesFile}'");
+    Console.WriteLine($"##teamcity[setParameter name='Library.ReleaseNotesFile' value='{releaseNotesFile}']");
 }
