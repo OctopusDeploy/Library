@@ -50,5 +50,5 @@ if(!isTeamCity)
 }
 else 
 {
-    Console.WriteLine($"##teamcity[setParameter name='Library.ReleaseNotes' value='{releaseNotes.Replace(Environment.NewLine, "|n")}']");
+    Console.WriteLine($"##teamcity[setParameter name='Library.ReleaseNotes' value='{releaseNotes.Replace("[", "|[").Replace("]", "|]").Replace(Environment.NewLine, "|n")}']");
 }
