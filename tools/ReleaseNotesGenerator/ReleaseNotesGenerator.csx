@@ -22,7 +22,7 @@ async Task<string> BuildGitHubReleaseNotes()
         Console.WriteLine($"Found {milestoneIssues.Count()} closed PRs in milestone {milestone}");
         foreach (var issue in milestoneIssues)
         {
-            var files = (await client.PullRequest.Files(owner, repo, issue.Number)).Where(f => f.FileName.EndsWith(".json")).ToList();
+            var files = (await client.PullRequest.Files(owner, repo, issue.Number)).Where(f => f.FileName.EndsWith(".json") || f.FileName.EndsWith(".png")).ToList();
             var status = "";
             var fileNameFormat = "{0}";
             if (files.Count() > 1)
