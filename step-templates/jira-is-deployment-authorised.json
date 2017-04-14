@@ -1,0 +1,68 @@
+{
+  "Id": "ActionTemplates-3",
+  "Name": "Jira - Is Deployment Authorised",
+  "Description": "Validates whether the current deployment is authorised by checking the status of a JIRA issue.\n\nOptionally a comment can be added to the JIRA to indicate the outcome of the authorisation check.",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrEmpty($Jira_Url)) {\n    throw \"A 'Jira_Url' is required\"\n}\n\n\nif ([string]::IsNullOrEmpty($Jira_User)) {\n    throw \"A 'Jira_User' is required\"\n}\n\nif ([string]::IsNullOrEmpty($Jira_Password)) {\n    throw \"A 'Jira_Password' is required\"\n}\n\nif ([string]::IsNullOrEmpty($Jira_Issue)) {\n    throw \"A 'Jira_Issue' is required\"\n}\n\nif ([string]::IsNullOrEmpty($Jira_CheckValue)) {\n    throw \"A 'Jira_CheckValue' is required\"\n}\n\n$addComment = [System.Convert]::ToBoolean($Jira_AddComment)\n\nif ($addComment -and [string]::IsNullOrEmpty($Jira_AuthComment)) {\n    throw \"A 'Jira_AuthComment' is required\"\n}\n\nif ($addComment -and [string]::IsNullOrEmpty($Jira_NotAuthComment)) {\n    throw \"A 'Jira_NotAuthComment' is required\"\n}\n\n$jira = New-Module -ScriptBlock {\n    $bytes = [System.Text.Encoding]::UTF8.GetBytes(\"$Jira_User`:$Jira_Password\")\n    $encodedCredentials = [System.Convert]::ToBase64String($bytes)\n    \n    function GetIssue {\n        param([string] $issueId)\n        \n        return Invoke-RestMethod -Uri \"$Jira_Url/rest/api/latest/issue/$issueId\" -Headers @{\"Authorization\"=\"Basic $encodedCredentials\"} -ContentType application/json -Verbose\n    }\n    \n    function AddComment {\n        param(\n            [string] $issueId,\n            [string] $comment\n            )\n        return Invoke-RestMethod -Uri \"$jira_url/rest/api/latest/issue/$issueId/comment\" -Method Post -Body \"{ `\"body`\": `\"$comment`\"}\" -Headers @{\"Authorization\"=\"Basic $encodedCredentials\"} -ContentType application/json -Verbose\n    }\n    \n    Export-ModuleMember -Function GetIssue\n    Export-ModuleMember -Function AddComment\n} -AsCustomObject\n\n$jiraIssue = $jira.GetIssue($Jira_Issue)\n\nif ($jiraIssue.fields.status.name.Contains($Jira_CheckValue))\n{\n    if ($addComment) \n    {\n        Write-Host \"Adding Authorised Comment\"\n        $jira.AddComment($Jira_Issue, $Jira_AuthComment)\n    }\n} else {\n    if ($addComment) \n    {\n        Write-Host \"Adding Not Authorised Comment\"\n        $jira.AddComment($Jira_Issue, $Jira_NotAuthComment)\n    }\n    throw \"$Jira_Issue is not authorised\"\n}\n\n        \n        \n        \n        "
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Jira_AddComment",
+      "Label": "Update with comment",
+      "HelpText": "A Boolean value indicating whether a comment should be added to the JIRA. If so then the Jira_AuthComment and Jira_NotAuthComment parameters must also be set.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "Jira_AuthComment",
+      "Label": "Authorised comment",
+      "HelpText": "When adding comments then this is the comment that should be set if the deployment is authorised.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "Jira_NotAuthComment",
+      "Label": "Authorisation failed comment",
+      "HelpText": "When adding comments then this is the comment that should be set if the deployment authorisation fails.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "Jira_Url",
+      "Label": "Base JIRA URL",
+      "HelpText": "This should be the base URL of your JIRA instance so https://company.atlassian.net for example",
+      "DefaultValue": null
+    },
+    {
+      "Name": "Jira_User",
+      "Label": "A Jira User",
+      "HelpText": "The name of the user that should be used to access JIRA.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "Jira_Password",
+      "Label": "JIRA Password",
+      "HelpText": "The password associated with the user set in the Jira_User parameter.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "Jira_Issue",
+      "Label": "The issue to be checked",
+      "HelpText": "The identifier of the JIRA Issue where the status should be checked. This should be in the ProjectIdentifier-IssueNumber form.",
+      "DefaultValue": null
+    },
+    {
+      "Name": "Jira_CheckValue",
+      "Label": "Value to check for",
+      "HelpText": "The value that should be looked for in the status value of the issue.",
+      "DefaultValue": null
+    }
+  ],
+  "LastModifiedOn": "2014-06-26T21:30:00.361+00:00",
+  "LastModifiedBy": "Yewridge",
+  "$Meta": {
+    "ExportedAt": "2014-06-26T21:30:05.395Z",
+    "OctopusVersion": "2.4.2.1412",
+    "Type": "ActionTemplate"
+  }
+}
