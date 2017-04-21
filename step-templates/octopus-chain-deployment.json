@@ -1,92 +1,169 @@
 {
-  "Id": "18392835-d50e-4ce9-9065-8e15a3c30954",
-  "Name": "Chain Deployment",
-  "Description": "Trigger a deployment for another project in Octopus",
-  "ActionType": "Octopus.Script",
-  "Version": 12,
-  "Properties": {
-    "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptSource": "Inline",
-    "Octopus.Action.Script.ScriptBody": "Write-Host \"**********\"\nWrite-Host \"Chained Deployment of '$Chain_ProjectName' version '$Chain_ReleaseNum' to '$Chain_DeployTo'.\"\nswitch ($Chain_CreateOption) {\n    \"Try\" { Write-Host \" Release will be created if it doesn't exist.\" }\n    \"Create\" { Write-Host \" Release will be created before deploying.\" }\n    \"NoCreate\" { Write-Host \" Release will not be created and should already exist.\" }\n}\nWrite-Host \"**********\"\n\n$baseUri = $OctopusParameters['Octopus.Web.BaseUrl']\n$reqheaders = @{\"X-Octopus-ApiKey\" = $Chain_ApiKey }\n\n# Find Environment\n$environments = Invoke-WebRequest \"$baseUri/api/environments/all\" -Headers $reqheaders -UseBasicParsing | ConvertFrom-Json\n$environment = $environments | Where-Object {$_.Name -eq $Chain_DeployTo }\nif ($environment -eq $null) {\n    throw \"Environment $Chain_DeployTo not found.\"\n}\n\n# Find Project\n$projects = Invoke-WebRequest \"$baseUri/api/projects/all\" -Headers $reqheaders -UseBasicParsing | ConvertFrom-Json\n$project = $projects | Where-Object {$_.Name -eq $Chain_ProjectName }\nif ($project -eq $null) {\n    throw \"Project $Chain_ProjectName not found.\"\n}\n\n# Check for existing release with given release number\n$releaseUri = \"$baseUri$($project.Links.Self)/releases/$Chain_ReleaseNum\"\ntry {\n$release = Invoke-WebRequest $releaseUri -Headers $reqheaders -UseBasicParsing | ConvertFrom-Json\n} catch {\n    if ($_.Exception.Response.StatusCode.Value__ -ne 404) {\n        $result = $_.Exception.Response.GetResponseStream()\n        $reader = New-Object System.Io.StreamReader($result);\n        $responseBody = $reader.ReadToEnd();\n        throw \"Error occurred retrieving a Release: $responseBody\"\n    }\n}\n\n# Create Release if needed\nif ($release -eq $null -and $Chain_CreateOption -eq \"NoCreate\") {\n    # release doesn't exist and we're not allowed to create it\n    throw \"Release $Chain_ReleaseNum of $Chain_ProjectName not found and the creation behaviour is set to never create.\"\n} elseif ($release -ne $null -and $Chain_CreateOption -eq \"Create\") {\n    # Release exists and we're being told to create it\n    throw \"Release $Chain_ReleaseNum of $Chain_ProjectName already exists and the creation behaviour is set to always create.\"\n} elseif ($release -eq $null) {\n    try {\n        Write-Host \"Creating Release version '$Chain_ReleaseNum' of '$Chain_ProjectName'\"\n        $releaseBody =  @{ Projectid = $Project.Id\n            version = $Chain_ReleaseNum } | ConvertTo-Json\n        $release = Invoke-WebRequest -Uri \"$baseUri/api/releases\" -Method Post -Headers $reqheaders -Body $releaseBody -UseBasicParsing | ConvertFrom-Json\n    } catch {\n        $result = $_.Exception.Response.GetResponseStream()\n        $reader = New-Object System.Io.StreamReader($result);\n        $responseBody = $reader.ReadToEnd();\n        throw \"Error occurred creating a Release: $responseBody\"\n    }\n}\n\n# We should have a release at this point\nif ($release -eq $null) {\n    throw \"Release $Chain_ReleaseNum of $Chain_ProjectName not found. Could not create deployment.\"\n}\n\n\n\n# Create deployment\n$deployment = @{\n    ReleaseId = $release.Id\n    EnvironmentId = $environment.Id\n    UseGuidedFailure = $environment.UseGuidedFailure\n} | ConvertTo-Json\ntry {\n    Write-Host \"Deploying '$Chain_ProjectName' version '$Chain_ReleaseNum' to '$Chain_DeployTo'\"\n    $result = Invoke-WebRequest \"$baseUri/api/deployments\" -Method Post -Headers $reqHeaders -Body $deployment -UseBasicParsing | ConvertFrom-Json\n} catch {\n    $result = $_.Exception.Response.GetResponseStream()\n    $reader = New-Object System.Io.StreamReader($result);\n    $responseBody = $reader.ReadToEnd();\n    throw \"Error occurred creating a Deployment: $responseBody\"\n}\n\nif([bool]::Parse($Chain_WaitForDeployment)) {\n    Write-Host \"Waiting for deployment to complete before continuing...\"\n    $taskId = $result.TaskId\n    $task = Invoke-WebRequest \"$baseUri/api/tasks/$taskId\" -Headers $reqHeaders -UseBasicParsing | ConvertFrom-Json\n    while($task.State -eq \"Queued\" -or $task.State -eq \"Executing\") {\n        Start-Sleep -Seconds 2\n        $task = Invoke-WebRequest \"$baseUri/api/tasks/$taskId\" -Headers $reqHeaders -UseBasicParsing | ConvertFrom-Json\n    }\n    if( $task.State -eq \"Failed\" ){\n        \n        throw \"Deployment Failed\"\n    }\n}",
-    "Octopus.Action.RunOnServer": "true",
-    "Octopus.Action.Script.ScriptFileName": null,
-    "Octopus.Action.Package.FeedId": null,
-    "Octopus.Action.Package.PackageId": null
-  },
-  "Parameters": [
-    {
-      "Id": "61bffab9-bb89-4107-a5e0-79d69eaf8f2a",
-      "Name": "Chain_ApiKey",
-      "Label": "API Key",
-      "HelpText": "The API Key to use for authentication",
-      "DefaultValue": null,
-      "DisplaySettings": {
-        "Octopus.ControlType": "Sensitive"
-      },
-      "Links": {}
+    "Id": "18392835-d50e-4ce9-9065-8e15a3c30954",
+    "Name": "Chain Deployment",
+    "Description": "Triggers a deployment of another project in Octopus",
+    "ActionType": "Octopus.Script",
+    "Version": 13,
+    "Properties": {
+        "Octopus.Action.Script.Syntax": "PowerShell",
+        "Octopus.Action.Script.ScriptSource": "Inline",
+        "Octopus.Action.RunOnServer": "true",
+        "Octopus.Action.Script.ScriptBody": "$Chain_BaseUrl = $OctopusParameters['Octopus.Web.BaseUrl'].Trim('/')\r\n$ErrorActionPreference = 'Stop'\r\n$ProgressPreference = 'SilentlyContinue'\r\n\r\nfunction Invoke-OctopusApi {\r\n    param(\r\n        [Parameter(Position = 0, ValueFromRemainingArguments, Mandatory)]$Uri,\r\n        [ValidateSet(\"Get\", \"Post\", \"Put\")]$Method = 'Get',\r\n        $Body = $null,\r\n        [switch]$NullOnError\r\n    )\r\n    if ([string]::IsNullOrWhiteSpace($Uri)) { $Uri = '/' }\r\n    $absoluteUri = '{0}/{1}' -f $Chain_BaseUrl, $Uri.Trim('/')\r\n\r\n    $wait = 0\r\n    $shouldRetry = $true\r\n    while ($shouldRetry) {\t\r\n        try {\r\n            $json = ConvertTo-Json -InputObject $Body -Depth 99\r\n            if ($Method -ne 'Get') {\r\n                Write-Verbose \"$($Method.ToUpperInvariant()) $absoluteUri\"\r\n                Write-Verbose $json\r\n            }\r\n            Invoke-WebRequest -Uri $absoluteUri -Method $Method -Body:$json -Headers @{ \"X-Octopus-ApiKey\" = $Chain_ApiKey } -UseBasicParsing | % Content | ConvertFrom-Json | Write-Output\r\n            $shouldRetry = $false\r\n        } catch {\r\n            if (($_.Exception.Response.StatusCode -eq [System.Net.HttpStatusCode]::NotFound) -or ($NullOnError -and $_.Exception.Response.StatusCode -eq [System.Net.HttpStatusCode]::InternalServerError)) {\r\n                return $null\r\n            }\r\n            if ($wait -eq 120) { throw $_ }\r\n            $wait = switch ($wait) {\r\n                0 { 30 }\r\n                30 { 60 }\r\n                60 { 120 }\r\n            }\r\n            Write-Warning \"Octopus API call ($($Method.ToUpperInvariant()):$absoluteUri) failed & will be retried in $wait seconds:`n$($_.Exception.Message)\"\r\n            Start-Sleep -Seconds $wait\r\n        }\r\n    }\r\n}\r\n\r\nclass DeploymentFactory {\r\n    $BaseUrl\r\n    DeploymentFactory($baseUrl) {\r\n        $this.BaseUrl = $baseUrl\r\n    }\r\n    $Project\r\n    [void] SetProject($projectName) {\r\n        $this.Project = Invoke-OctopusApi /api/projects/all | ? Name -eq $projectName\r\n        if ($null -eq $this.Project) { throw \"Project $projectName not found\" }\r\n        Write-Host \"Project: $($this.Project.Name)\"\r\n        Write-Verbose \"`t$($this.BaseUrl)$($this.Project.Links.Self)\"\r\n    }\r\n    $Channel\r\n    [void] SetChannel($channelName) {\r\n        $this.Channel = Invoke-OctopusApi $this.Project.Links.Channels | % Items | ? Name -eq $channelName\r\n        if ($null -eq $this.Channel) { throw \"Channel $channelName not found\" }\r\n        Write-Host \"Channel: $($this.Channel.Name)\"\r\n        Write-Verbose \"`t$($this.BaseUrl)$($this.Channel.Links.Self)\"\r\n    }\r\n    $Release\r\n    [void] SetRelease($releaseVersion) {\r\n        $this.Release = Invoke-OctopusApi $this.Channel.Links.Releases | % Items | ? { ([string]::IsNullOrWhiteSpace($releaseVersion)) -or $_.Version -eq $releaseVersion } | Select-Object -First 1\r\n        if ($null -eq $this.Release) { throw \"Release $releaseVersion not found\" }\r\n        Write-Host \"Release: $($this.Release.Version)\"\r\n        Write-Verbose \"`t$($this.BaseUrl)/api/releases/$($this.Release.Id)\"\r\n    }\r\n    [void] CreateRelease($releaseVersion) {\r\n        if ([string]::IsNullOrWhiteSpace($releaseVersion)) {\r\n            Write-Host \"Getting next version increment for channel: $($this.Channel.Name)\"\r\n            $template = Invoke-OctopusApi \"$($this.Project.Links.DeploymentProcess)/template?channel=$($this.Channel.Id)\"\r\n            if (!$template.NextVersionIncrement -and $template.VersioningPackageStepName) {\r\n                $donorPackageReference = $template.Packages | ? StepName -eq $template.VersioningPackageStepName\r\n                $donorPackage = Invoke-OctopusApi \"/api/feeds/$($donorPackageReference.FeedId)/packages?packageId=$($donorPackageReference.PackageId)&partialMatch=false&includeMultipleVersions=false&includeNotes=false&includePreRelease=true&take=1\" \r\n                Write-Host \"Found $($donorPackage.Title), version $($donorPackage.Version) published $($donorPackage.Published)\"\r\n                $releaseVersion = $donorPackage.Version\r\n            }\r\n            else {\r\n                $releaseVersion = $template.NextVersionIncrement\r\n            }\r\n        }\r\n        $ruleTest = Invoke-OctopusApi \"/api/\"\r\n        Write-Host \"Creating new release with version: $releaseVersion\"\r\n        $this.Release = Invoke-OctopusApi /api/releases -Method Post -Body @{\r\n            ProjectId = $this.Project.Id\r\n            Version = $releaseVersion\r\n        }\r\n    }\r\n    [void] UpdateVariableSnapshot() {\r\n        $this.Release = Invoke-OctopusApi $this.Release.Links.SnapshotVariables -Method Post\r\n        Write-Host \" `nVariables snapshot update performed. The release now references the latest variables.\"\r\n    }\r\n    $Environment\r\n    [void] SetEnvironment($environmentName) {\r\n        $this.Environment = Invoke-OctopusApi /api/environments/all | ? Name -eq $environmentName\r\n        if ($null -eq $this.Environment) { throw \"Environment $environmentName not found\" }\r\n        Write-Host \"Environment: $($this.Environment.Name)\"\r\n        Write-Verbose \"`t$($this.BaseUrl)$($this.Environment.Links.Self)\"\r\n    }\r\n    $Tenants\r\n    [void] SetTenants($tenantTags) {\r\n        $encodedTags = [uri]::EscapeUriString((($tenantTags.Split(\"`n\") | % { $_.Trim() }) -join ','))\r\n        $this.Tenants = Invoke-OctopusApi \"/api/tenants/all?projectId=$($this.Project.Id)&tags=$encodedTags\" -NullOnError | ? { $_.ProjectEnvironments.$($this.Project.Id) -contains $this.Environment.Id }\r\n        if ($null -eq $this.Tenants) { throw \"Tenants for $tenantTags not found\" }\r\n        Write-Host \"Tenants: $(($this.Tenants | % Name) -join ', ')\"\r\n    }\r\n  \r\n    [void] WriteLinks() {\r\n\t\tWrite-Host \" `nRelated Links:\"\r\n        Write-Host \"`t$($this.BaseUrl)$($this.Project.Links.Web)\"\r\n        Write-Host \"`t$($this.BaseUrl)$($this.Release.Links.Web)\"\r\n    }\r\n\r\n    [Deployment] CreateDeployment() {\r\n        Write-Verbose \"Pre-Deployment Snapshots:\"\r\n        Write-Verbose \"$($this.BaseUrl)$($this.Release.Links.ProjectDeploymentProcessSnapshot)\"\r\n        Write-Verbose \"$($this.BaseUrl)$($this.Release.Links.ProjectVariableSnapshot)\"\r\n        $this.Release.LibraryVariableSetSnapshotIds | % { Write-Verbose \"$($this.BaseUrl)/api/variables/$_\" }\r\n\r\n        return [Deployment]::new($this.BaseUrl, $this.Release, $this.Environment)\r\n    }\r\n}\r\nenum GuidedFailure {\r\n    Default\r\n    Enabled\r\n    Disabled\r\n    RetryIgnore\r\n    RetryAbort\r\n    Ignore\r\n}\r\nclass Deployment {\r\n    $BaseUrl\r\n    $DeploymentPreview\r\n    Deployment($baseUrl, $release, $environment) {\r\n        $this.BaseUrl = $baseUrl\r\n        $this.Release = $release\r\n        $this.Environment = $environment\r\n        $this.DeploymentPreview = Invoke-OctopusApi \"/api/releases/$($this.Release.Id)/deployments/preview/$($this.Environment.Id)\"\r\n        $this.FormValues = @{}\r\n        $this.DeploymentPreview.Form.Values | Get-Member -MemberType NoteProperty | % {\r\n            $this.FormValues.Add($_.Name, $this.DeploymentPreview.Form.Values.$($_.Name))\r\n        }\r\n    }\r\n\t\r\n    $Release\r\n    $Environment\r\n\r\n    [string[]]$SkipActions = @()\r\n    [void] SetStepsToSkip($stepsToSkip) {\r\n        $comparisonArray = $stepsToSkip.Split(\"`n\") | % Trim\r\n        $this.SkipActions = $this.DeploymentPreview.StepsToExecute | ? {\r\n            $_.CanBeSkipped -and ($_.ActionName -in $comparisonArray -or $_.ActionNumber -in $comparisonArray)\r\n        } | % {\r\n            Write-Host \"Skipping Step $($_.ActionNumber): $($_.ActionName)\"\r\n            $_.ActionId\r\n        }\r\n    }\r\n    [hashtable]$FormValues\r\n    [void] SetFormValues($formValuesToSet) {\r\n        $formValuesToSet.Split(\"`n\") | % {\r\n            $entry = $_.Split('=') | % Trim\r\n            $this.DeploymentPreview.Form.Elements | ? { $_.Control.Name -ieq $entry[0] } | % {\r\n                Write-Host \"Setting Form Value '$($_.Control.Label)' to: $($entry[1])\"\r\n                $this.FormValues[$_.Name] = $entry[1]\r\n            }\r\n        }\r\n    }\r\n    [bool]$UseGuidedFailure\r\n    [string[]]$GuidedFailureActions\r\n    [string]$GuidedFailureMessage\r\n    [void] SetGuidedFailure([GuidedFailure]$guidedFailure, $guidedFailureMessage) {\r\n        $this.UseGuidedFailure = switch ($guidedFailure) {\r\n            ([GuidedFailure]::Default) { $global:OctopusUseGuidedFailure }\r\n            ([GuidedFailure]::Enabled) { $true }\r\n            ([GuidedFailure]::Disabled) { $false }\r\n            ([GuidedFailure]::RetryIgnore) { $true }\r\n            ([GuidedFailure]::RetryAbort) { $true }\r\n            ([GuidedFailure]::Ignore) { $true } \r\n        }\r\n        Write-Host \"Setting Guided Failure: $($this.UseGuidedFailure)\"\r\n\r\n        $this.GuidedFailureActions = switch ($guidedFailure) {\r\n            ([GuidedFailure]::Default) { $null }\r\n            ([GuidedFailure]::Enabled) { $null }\r\n            ([GuidedFailure]::Disabled) { $null }\r\n            ([GuidedFailure]::RetryIgnore) { @('Retry', 'Ignore') }\r\n            ([GuidedFailure]::RetryAbort) { @('Retry', 'Abort') }\r\n            ([GuidedFailure]::Ignore) { @('Ignore') } \r\n        }\r\n        $this.GuidedFailureMessage = $guidedFailureMessage\r\n    }\r\n\r\n    [ServerTask] CreateServerTask() {\r\n        return $this.CreateServerTask($null)\r\n    }\r\n    [ServerTask] CreateServerTask($tenant) {\r\n        $request = @{\r\n            ReleaseId = $this.Release.Id\r\n            EnvironmentId = $this.Environment.Id\r\n            SkipActions = $this.SkipActions\r\n            FormValues = $this.FormValues\r\n            UseGuidedFailure = $this.UseGuidedFailure\r\n        }\r\n        if ($tenant) { $request.Add('TenantId', $tenant.Id) }\r\n        \r\n        $deployment = Invoke-OctopusApi 'api/deployments' -Method Post -Body $request\r\n        Write-Host \"Queued $($deployment.Name)...\"\r\n        Write-Host \"`t$($this.BaseUrl)$($deployment.Links.Web)\"\r\n        Write-Verbose \"`t$($this.BaseUrl)$($deployment.Links.Self)\"\r\n        Write-Verbose \"`t$($this.BaseUrl)/api/deploymentprocesses/$($deployment.DeploymentProcessId)\"\r\n        Write-Verbose \"`t$($this.BaseUrl)$($deployment.Links.Variables)\"\r\n        Write-Verbose \"`t$($this.BaseUrl)$($deployment.Links.Task)/details\"\r\n\r\n        return [ServerTask]::new($deployment, $tenant, $this.GuidedFailureActions, $this.GuidedFailureMessage)\r\n    }\r\n}\r\n\r\nclass ServerTask {\r\n    [object]$Deployment\r\n    [object]$Tenant\r\n    [bool] $IsCompleted = $false\r\n    [bool] $FinishedSuccessfully\r\n    [string] $ErrorMessage\r\n\r\n    hidden [string[]]$GuidedFailureActions\r\n    hidden [string]$GuidedFailureMessage\r\n    hidden [string]$LogPrefix\r\n    hidden [int]$PollCount = 0\r\n    hidden [bool]$HasInterruptions = $false\r\n    hidden [hashtable]$TaskStatePersist = @{}\r\n    hidden [hashtable]$TaskStatePend = @{}\r\n \r\n    ServerTask($deployment, $tenant, $guidedFailureActions, $guidedFailureMessage) {\r\n        $this.Deployment = $deployment\r\n        $this.Tenant = $tenant\r\n        $this.GuidedFailureActions = $guidedFailureActions\r\n        $this.GuidedFailureMessage = $guidedFailureMessage\r\n        if ($tenant) {\r\n            $this.LogPrefix = \"[$($tenant.Name)] \"\r\n        }\r\n    }\r\n    \r\n    [void] Poll() {\r\n        if ($this.IsCompleted) { return }\r\n\t\r\n        $details = Invoke-OctopusApi \"/api/tasks/$($this.Deployment.TaskId)/details?verbose=false&tail=20\"\r\n        $this.IsCompleted = $details.Task.IsCompleted\r\n        $this.FinishedSuccessfully = $details.Task.FinishedSuccessfully\r\n        $this.ErrorMessage = $details.Task.ErrorMessage\r\n\r\n        $this.PollCount++\r\n        if ($this.PollCount % 10 -eq 0) {\r\n            $this.Verbose(\"$($details.Task.State). $($details.Task.Duration), $($details.Progress.EstimatedTimeRemaining)\")\r\n        }\r\n        $this.LogQueuePosition($details.Task)\r\n        \r\n        if ($details.Task.HasPendingInterruptions) { $this.HasInterruptions = $true }\r\n        \r\n        $activityLogs = $this.FlattenActivityLogs($details.ActivityLogs)    \r\n        $this.WriteLogMessages($activityLogs)\r\n    }\r\n\t\r\n    hidden [bool] StartState($id) {\r\n        $exists = $this.TaskStatePersist.ContainsKey($id)\r\n        if (!$exists) { $this.TaskStatePersist[$id] = @{} \r\n        }\r\n        $this.TaskStatePend[$id] = $this.TaskStatePersist[$id].Clone()\r\n        return !$exists\r\n    }\r\n    hidden [object] GetState($id, $key) {\r\n        if ($this.TaskStatePersist.ContainsKey($id)) { return $this.TaskStatePersist[$id][$key] }\r\n        else { return $null }\r\n    }\r\n    hidden [bool] SetAndCheckState($id, $key, $value) {\r\n        $this.TaskStatePend[$id][$key] = $value\r\n        if ($this.TaskStatePersist.ContainsKey($id)) { return $this.TaskStatePersist[$id][$key] -ine $this.TaskStatePend[$id][$key] }\r\n        else { return $true }\r\n    }\r\n    hidden [void] ResetState($id, $key) {\r\n        if ($this.TaskStatePersist.ContainsKey($id)) { $this.TaskStatePersist[$id].Remove($key) }\r\n        if ($this.TaskStatePend.ContainsKey($id)) { $this.TaskStatePend[$id].Remove($key) }\r\n    }\r\n    hidden [void] CommitState($id) {\r\n        $this.TaskStatePersist[$id] = $this.TaskStatePend[$id]\r\n        $this.TaskStatePend.Remove($id)\r\n    }\r\n\r\n    hidden [void] Error($message) { Write-Host \"##octopus[stdout-error]`n$($this.LogPrefix)${message}`n##octopus[stdout-default]\" }\r\n    hidden [void] Warn($message) { Write-Host \"##octopus[stdout-warning]`n$($this.LogPrefix)${message}`n##octopus[stdout-default]\" }\r\n    hidden [void] Host($message) { Write-Host \"##octopus[stdout-default]`n$($this.LogPrefix)${message}`n##octopus[stdout-default]\" }   \r\n    hidden [void] Verbose($message) { Write-Host \"##octopus[stdout-verbose]`n$($this.LogPrefix)${message}`n##octopus[stdout-default]\" }\r\n\r\n    hidden [psobject[]] FlattenActivityLogs($ActivityLogs) {\r\n        return $this.FlattenActivityLogs($ActivityLogs, $null, {@()}.Invoke())\r\n    }\r\n    hidden [psobject[]] FlattenActivityLogs($ActivityLogs, $Parent, $IntoArray) {\r\n        $ActivityLogs | % {\r\n            $log = $_\r\n            $log | Add-Member -MemberType NoteProperty -Name Parent -Value $Parent\r\n            $insertBefore = $null -eq $log.Parent -and $log.Status -eq 'Running'\t\r\n            if ($insertBefore) { $IntoArray.Add($log) }\r\n            $_.Children | % { $this.FlattenActivityLogs($_, $log, $IntoArray) }\r\n            if (!$insertBefore) { $IntoArray.Add($log) }\r\n        }\r\n        return $IntoArray\r\n    }\r\n    hidden [void] LogQueuePosition($Task) {\r\n        if ($Task.HasBeenPickedUpByProcessor) {\r\n            $this.ResetState($Task.Id, 'QueuePosition')\r\n            return\r\n        }\r\n\t\t\r\n        $this.StartState($Task.Id)\r\n        $queuePosition = (Invoke-OctopusApi \"/api/tasks/$($this.Deployment.TaskId)/queued-behind\").Items.Count\r\n        if ($this.SetAndCheckState($Task.Id, 'QueuePosition', $queuePosition) -and $queuePosition -ne 0) {\r\n            $this.Host(\"Queued behind $queuePosition tasks...\")\r\n        }\r\n        $this.CommitState($Task.Id)\r\n    }\r\n    hidden [void] WriteLogMessages($ActivityLogs) {\r\n        $interrupts = if ($this.HasInterruptions) {\r\n            Invoke-OctopusApi \"/api/interruptions?regarding=$($this.Deployment.TaskId)\" | % Items\r\n        }\r\n        foreach ($activity in $ActivityLogs) {\r\n            $this.StartState($activity.Id)\r\n            $correlatedInterrupts = $interrupts | ? CorrelationId -eq $activity.Id         \r\n            $correlatedInterrupts | ? IsPending -eq $false | % { $this.LogInterruptMessages($activity, $_) }\r\n\r\n            $this.LogStepTransition($activity)         \r\n            $this.LogErrorsAndWarnings($activity)\r\n            $correlatedInterrupts | ? IsPending -eq $true | % { \r\n                $this.LogInterruptMessages($activity, $_)\r\n                $this.HandleInterrupt($_)\r\n            }\r\n            \r\n            $this.CommitState($activity.Id)\r\n        }\r\n    }\r\n    hidden [void] LogStepTransition($ActivityLog) {\r\n        if ($ActivityLog.ShowAtSummaryLevel -and $this.SetAndCheckState($ActivityLog.Id, 'Status', $ActivityLog.Status) -and $ActivityLog.Status -ne 'Pending') {\r\n            $existingState = $this.GetState($ActivityLog.Id, 'Status')\r\n            $existingStateText = if ($existingState) {  \"$existingState -> \" }\r\n            $this.Host(\"$($ActivityLog.Name) ($existingStateText$($ActivityLog.Status))\")\r\n        }\r\n    }\r\n    hidden [void] LogErrorsAndWarnings($ActivityLog) {\r\n        $ActivityLog.LogElements | ? Category -ne 'Info' | % {\r\n            $log = $_\r\n            if ($this.SetAndCheckState($ActivityLog.Id, $log.OccurredAt, $log.MessageText)) {\r\n                switch ($log.Category) {\r\n                    'Fatal' {\r\n                        if ($ActivityLog.Parent) {\r\n                            $this.Error(\"FATAL: During $($ActivityLog.Parent.Name)\")\r\n                            $this.Error(\"FATAL: $($log.MessageText)\")\r\n                        }\r\n                    }\r\n                    'Error' { $this.Error(\"[$($ActivityLog.Parent.Name)] $($log.MessageText)\") }\r\n                    'Warning' { $this.Warn(\"[$($ActivityLog.Parent.Name)] $($log.MessageText)\") }\r\n                }\r\n            }\r\n        }\r\n    }\r\n    hidden [void] LogInterruptMessages($ActivityLog, $Interrupt) {\r\n        $message = $Interrupt.Form.Elements | ? Name -eq Instructions | % Control | % Text\r\n        if ($this.StartState($Interrupt.Id)) {\r\n            $this.Warn(\"Deployment is paused at '$($ActivityLog.Parent.Name)' for manual intervention: $message\")\r\n        }\r\n        if ($this.SetAndCheckState($Interrupt.Id, 'ResponsibleUserId', $Interrupt.ResponsibleUserId)) {\r\n            $user = Invoke-OctopusApi $Interrupt.Links.User\r\n            $this.Warn(\"$($user.DisplayName) ($($user.EmailAddress)) has taken responsibility for the manual intervention\")\r\n        }\r\n        if ($null -ne ($Interrupt.Form.Elements | ? Name -eq Result)) {\r\n            $action = $Interrupt.Form.Values.Result\r\n            if ($this.SetAndCheckState($Interrupt.Id, 'Action', $action)) {\r\n                $this.Warn(\"Manual intervention action '$action' submitted with notes: $($Interrupt.Form.Values.Notes)\")\r\n            }\r\n        }\r\n        if ($null -ne ($Interrupt.Form.Elements | ? Name -eq Guidance)) {\r\n            $action = $Interrupt.Form.Values.Guidance\r\n            if ($this.SetAndCheckState($Interrupt.Id, 'Action', $action)) {\r\n                $this.Warn(\"Failure guidance to '$action' submitted with notes: $($Interrupt.Form.Values.Notes)\")\r\n            }\r\n        }\r\n        $this.CommitState($Interrupt.Id)\r\n    }\r\n    hidden [void] HandleInterrupt($Interrupt) {\r\n        $isGuidedFailure = $null -ne ($Interrupt.Form.Elements | ? Name -eq Guidance)\r\n        if (!$isGuidedFailure -or !$this.GuidedFailureActions -or !$Interrupt.IsPending) {\r\n            return\r\n        }\r\n        $id = @($Interrupt.CorrelationId, 'AutoGuidance') -join '/'\r\n        if ($this.StartState($id)) {\r\n            $this.SetAndCheckState($id, 'ActionIndex', 0)\r\n        }\r\n        if ($Interrupt.CanTakeResponsibility -and $null -eq $Interrupt.ResponsibleUserId) {\r\n            Invoke-OctopusApi $Interrupt.Links.Responsible -Method Put\r\n        }\r\n        if ($Interrupt.HasResponsibility) {\r\n            $guidanceIndex = $this.GetState($id, 'ActionIndex')\r\n            $guidance = $this.GuidedFailureActions[$guidanceIndex]\r\n            $guidanceIndex++\r\n            \r\n            Invoke-OctopusApi $Interrupt.Links.Submit -Body @{\r\n                Notes = $this.GuidedFailureMessage.Replace('#{GuidedFailureActionIndex}', $guidanceIndex).Replace('#{GuidedFailureAction}', $guidance)\r\n                Guidance = $guidance\r\n            } -Method Post\r\n\r\n            $this.SetAndCheckState($id, 'ActionIndex', $guidanceIndex)\r\n        }\r\n        $this.CommitState($id)\r\n    }\r\n}\r\n\r\nfunction Show-Heading {\r\n    param($Text)\r\n    $padding = ' ' * ((80 - 2 - $Text.Length) / 2)\r\n    Write-Host \" `n\"\r\n    Write-Host (@((\"`t \"), ([string][char]0x2554), (([string][char]0x2550) * 80), ([string][char]0x2557)) -join '')\r\n    Write-Host \"`t\" \"$(([string][char]0x2551))$padding $Text $padding$([string][char]0x2551)\"  \r\n    Write-Host (@((\"`t \"), ([string][char]0x255A), (([string][char]0x2550) * 80), ([string][char]0x255D)) -join '')\r\n    Write-Host \" `n\"\r\n}\r\n\r\nif (!$OctopusParameters['Octopus.Action.RunOnServer']) {\r\n    Write-Warning \"For optimal performance use 'Run On Server' for this action\"\r\n}\r\n\r\nShow-Heading 'Getting Deployment Context'\r\n$deploymentFactory = [DeploymentFactory]::new($Chain_BaseUrl)\r\n$deploymentFactory.SetProject($Chain_ProjectName)\r\n$deploymentFactory.SetChannel($Chain_Channel)\r\nif ($Chain_CreateOption -ieq 'True') {\r\n    $deploymentFactory.CreateRelease($Chain_ReleaseNum)\r\n}\r\nelse {\r\n    $deploymentFactory.SetRelease($Chain_ReleaseNum)\r\n}\r\n$deploymentFactory.SetEnvironment($Chain_DeployTo)\r\nif (![string]::IsNullOrWhiteSpace($Chain_TenantTags)) {\r\n    $deploymentFactory.SetTenants($Chain_TenantTags)\r\n}\r\nif ($Chain_SnapshotVariables -ieq 'True') {\r\n    $deploymentFactory.UpdateVariableSnapshot()\r\n}\r\n$deploymentFactory.WriteLinks()\r\n\r\nShow-Heading 'Configuring Deployment'\r\n$deployment = $deploymentFactory.CreateDeployment()\r\nif (![string]::IsNullOrWhiteSpace($Chain_StepsToSkip)) {\r\n    $deployment.SetStepsToSkip($Chain_StepsToSkip)\r\n}\r\nif (![string]::IsNullOrWhiteSpace($Chain_FormValues)) {\r\n    $deployment.SetFormValues($Chain_FormValues)\r\n}\r\n$guidedFailureMessage = $OctopusParameters['Octopus.Actions.GuidedFailureMessage']\r\nif ([string]::IsNullOrWhiteSpace($guidedFailureMessage)) {\r\n    if ([string]::IsNullOrWhiteSpace($OctopusParameters['Octopus.Deployment.CreatedBy.EmailAddress'])) {\r\n        $email = $null\r\n    }\r\n    else {\r\n        $email = \"($($OctopusParameters['Octopus.Deployment.CreatedBy.EmailAddress']))\"\r\n    }\r\n    $guidedFailureMessage = @\"\r\nAutomatic Failure Guidance will #{GuidedFailureAction} (###{GuidedFailureActionIndex})\r\nOrigin Deployment: $($OctopusParameters['Octopus.Task.Name'])\r\nDeploying User: $($OctopusParameters['Octopus.Deployment.CreatedBy.DisplayName']) $email\r\n$($OctopusParameters['Octopus.Web.BaseUrl'])$($OctopusParameters['Octopus.Web.DeploymentLink'])\r\n\"@\r\n}\r\n$deployment.SetGuidedFailure($Chain_GuidedFailure, $guidedFailureMessage)\r\n\r\nShow-Heading 'Queue Deployment'\r\n$tasks = @()\r\nif ([string]::IsNullOrWhiteSpace($Chain_TenantTags)) {\r\n    Write-Host 'Queueing untenanted deployment...'\r\n    $tasks += $deployment.CreateServerTask()\r\n}\r\nelse {\r\n    Write-Host 'Queueing tenant deployments...'\r\n    $deploymentFactory.Tenants | ? { $null -ne $_ } | % {\r\n        $tasks += $deployment.CreateServerTask($_)\r\n    }\r\n}\r\n\r\nif (!$Chain_WaitForDeployment) {\r\n    Write-Host \"WaitForDeployment is False, proceeding to next deployment step\"\r\n    return\r\n}\r\n\r\nShow-Heading 'Waiting For Deployment'\r\n$tasksStillRunning = $true\r\nwhile ($tasksStillRunning) {\r\n    Start-Sleep -Seconds 1\r\n    $tasksStillRunning = $false\r\n    foreach ($task in $tasks) {\r\n        $task.Poll()\r\n        if (!$task.IsCompleted) { $tasksStillRunning = $true }\r\n    }\r\n}\r\nif ($tasks | ? FinishedSuccessfully -eq $false) {\r\n    Show-Heading 'Deployment Error'\r\n    Write-Error (($tasks | % ErrorMessage) -join \"`n\") -ErrorAction Stop\r\n}\r\n\r\nif ([string]::IsNullOrWhiteSpace($Chain_PostDeploy)) {\r\n    return \r\n}\r\nShow-Heading 'Post-Deploy Script'\r\n$rawPostDeployScript = Invoke-OctopusApi \"/api/releases/$($OctopusParameters['Octopus.Release.Id'])\" |\r\n    % { Invoke-OctopusApi $_.Links.ProjectDeploymentProcessSnapshot } |\r\n    % Steps | ? Id -eq $OctopusParameters['Octopus.Step.Id'] |\r\n    % Actions | ? Id -eq $OctopusParameters['Octopus.Action.Id'] |\r\n    % { $_.Properties.Chain_PostDeploy }\r\nWrite-Verbose \"Raw Post-Deploy Script:`n$rawPostDeployScript\"\r\n\r\nAdd-Type -Path (Get-WmiObject Win32_Process | ? ProcessId -eq $PID | % { Get-Process -Id $_.ParentProcessId } | % { Join-Path (Split-Path -Path $_.Path -Parent) 'Octostache.dll' })\r\n\r\n$tasks | % {\r\n    $deployment = $_.Deployment\r\n    $tenant = $_.Tenant\r\n    $variablesDictionary = [Octostache.VariableDictionary]::new()\r\n    Invoke-OctopusApi \"/api/variables/$($_.Deployment.ManifestVariableSetId)\" | % Variables | ? {\r\n        ($_.IsSensitive -eq $false) -and `\r\n        ($_.Scope.Private -ne 'True') -and `\r\n\t\t($null -eq $_.Scope.Action) -and `\r\n\t\t($null -eq $_.Scope.Machine) -and `\r\n        ($null -eq $_.Scope.TargetRole) -and `\r\n\t\t($null -eq $_.Scope.Role) -and `\r\n        ($null -eq $_.Scope.Tenant -or $_.Scope.Tenant -contains $tenant.Id) -and `\r\n\t\t($null -eq $_.Scope.TenantTag -or $_.Scope.TenantTag -in $tenant.TenantTags) -and `\r\n        ($null -eq $_.Scope.Environment -or $_.Scope.Environment -contains $deployment.EnvironmentId) -and `\r\n\t\t($null -eq $_.Scope.Channel -or $_.Scope.Channel -contains $deployment.ChannelId) -and `\r\n\t\t($null -eq $_.Scope.Project -or $_.Scope.Project -contains $deployment.ProjectId)\r\n    } | % { $variablesDictionary.Set($_.Name, $_.Value) }\r\n    $postDeployScript = $variablesDictionary.Evaluate($rawPostDeployScript)\r\n    Write-Host \"$($_.LogPrefix)Evaluated Post-Deploy Script:\"\r\n    Write-Host $postDeployScript\r\n    Write-Host \"Script output:\"\r\n    [scriptblock]::Create($postDeployScript).Invoke()\r\n}",
+        "Octopus.Action.Script.ScriptFileName": null,
+        "Octopus.Action.Package.FeedId": null,
+        "Octopus.Action.Package.PackageId": null
     },
-    {
-      "Id": "a37cac4d-8fd3-4d58-bfda-45a436be8dd5",
-      "Name": "Chain_ProjectName",
-      "Label": "Project Name",
-      "HelpText": "The name of the project to trigger a deployment for",
-      "DefaultValue": null,
-      "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
-      },
-      "Links": {}
+    "Parameters": [
+        {
+            "Id": "61bffab9-bb89-4107-a5e0-79d69eaf8f2a",
+            "Name": "Chain_ApiKey",
+            "Label": "API Key",
+            "HelpText": "An Octopus API Key with appropriate permissions to perform the deployment",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Sensitive"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "a37cac4d-8fd3-4d58-bfda-45a436be8dd5",
+            "Name": "Chain_ProjectName",
+            "Label": "Project Name",
+            "HelpText": "Name of the Octopus project that should be deployed",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "4fd440af-70fe-41ca-bec3-074f05155e81",
+            "Name": "Chain_Channel",
+            "Label": "Channel Name",
+            "HelpText": "The project channel to use when finding or creating the release to deploy",
+            "DefaultValue": "#{Octopus.Release.Channel.Name}",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "78739052-438d-4dc7-862a-d4567eafc5df",
+            "Name": "Chain_ReleaseNum",
+            "Label": "Release Number",
+            "HelpText": "Release number to use for the deployment\n\n_Leave blank to use the latest release in the channel_",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "fd2c3474-7187-4356-aaec-96f4910bb9c5",
+            "Name": "Chain_CreateOption",
+            "Label": "Create new release?",
+            "HelpText": "If a new release should be created for this deployment\n\n\nThe release is created using the **Release Number**\n\nIf no **Release Number** is given the project's version template or selected package step is used as specified in the project's settings",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Checkbox"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "f648fa0c-b271-4e4a-b4f2-7a88db6b605c",
+            "Name": "Chain_SnapshotVariables",
+            "Label": "Snapshot Variables?",
+            "HelpText": "Should a snapshot update on the release's variables be performed before deploying",
+            "DefaultValue": "False",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Checkbox"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "80634b3b-3171-4643-b164-a5077c6d387b",
+            "Name": "Chain_DeployTo",
+            "Label": "Environment Name",
+            "HelpText": "Which environment to deploy the release to",
+            "DefaultValue": "#{Octopus.Environment.Name}",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "1334093d-0be4-4115-bb93-d752171a19d8",
+            "Name": "Chain_TenantTags",
+            "Label": "Tenant Tags",
+            "HelpText": "A list of tenant tags to deploy against\n\nOne tenant tag per line, in **Canonical Name** format  which looks like this: Tag Set Name/Tag Name\n\n_Leave blank for an untenanted deployment_",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "MultiLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "83d9d973-7a72-4f71-a890-8f19d955bc37",
+            "Name": "Chain_FormValues",
+            "Label": "Form Values",
+            "HelpText": "Values of [prompted variables](https://octopus.com/docs/deploying-applications/variables/prompted-variables) to submit into the deployment\n\nEntries are listed one per line in the format:\n\n**Name = Value**",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "MultiLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "6522ca29-898a-4da6-b0c3-da52991e6812",
+            "Name": "Chain_StepsToSkip",
+            "Label": "Steps To Skip",
+            "HelpText": "Step names/numbers which should be skipped in the deployment\n\nSteps are listed one per line",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "MultiLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "acb2cd0e-fc53-42a7-95da-089955ea1870",
+            "Name": "Chain_GuidedFailure",
+            "Label": "Guided Failure Handling",
+            "HelpText": "Determines how [guided failure](https://octopus.com/docs/deploying-applications/guided-failures) should be handled during the deployment\n\nAutomatic actions are performed by enabling [guided failure](https://octopus.com/docs/deploying-applications/guided-failures) on the deployment and submitting the appropriate action\n\nThe template for the submission note can be overridden with the Octopus variable **Octopus.Actions.GuidedFailureMessage**\n\n_#{GuidedFailureActionIndex}_ - The attempt number\n\n_#{GuidedFailureAction}_ - The action being submitted by the step",
+            "DefaultValue": "Default",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Select",
+                "Octopus.SelectOptions": "Default|Default - Use the same guided failure as this project's deployment\nEnabled|Enable - Guided Failure is enabled\nDisabled|Disable - Guided Failure is disabled\nRetryIgnore|Retry & Ignore - Automatically retry failing steps and ignore a second failure\nRetryAbort|Retry & Abort - Automatically retry failing steps and abort on a second failure \nIgnore|Ignore - Automatically ignore failing steps"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "73a80735-4ca0-4c12-9fa3-f0123db6349f",
+            "Name": "Chain_WaitForDeployment",
+            "Label": "Wait for deployment?",
+            "HelpText": "If checked, waits for the deployment to complete before continuing",
+            "DefaultValue": "True",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Checkbox"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "7e7f9ac5-8674-4a91-a94a-896a3ee1334d",
+            "Name": "Chain_PostDeploy",
+            "Label": "Post-Deploy Script",
+            "HelpText": "A PowerShell script which should be run after a successful deployment\n\nVariables are replaced in the script using the resultant **Manifest VariableSet** from the deployment in the [binding syntax](https://octopus.com/docs/deploying-applications/variables/binding-syntax) format\n\nVariables are not available if they are:\n- [Sensitive](https://octopus.com/docs/deploying-applications/variables/sensitive-variables)\n- Action scoped\n- Machine scoped\n- Role scoped\n\n\nWhen performing a tenanted deployment the script will be run once for each tenant using the specific variables from their deployment",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "MultiLineText"
+            },
+            "Links": {}
+        }
+    ],
+    "LastModifiedBy": "paulmarsy",
+    "$Meta": {
+        "ExportedAt": "2017-04-21T16:10:13.341Z",
+        "OctopusVersion": "3.12.0",
+        "Type": "ActionTemplate"
     },
-    {
-      "Id": "4fd440af-70fe-41ca-bec3-074f05155e81",
-      "Name": "Chain_DeployTo",
-      "Label": "Deploy to Environment",
-      "HelpText": "The Environment to deploy the Release to",
-      "DefaultValue": "#{Octopus.Environment.Name}",
-      "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
-      },
-      "Links": {}
-    },
-    {
-      "Id": "78739052-438d-4dc7-862a-d4567eafc5df",
-      "Name": "Chain_ReleaseNum",
-      "Label": "Release Number",
-      "HelpText": "The Release number to deploy",
-      "DefaultValue": "#{Octopus.Release.Number}",
-      "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
-      },
-      "Links": {}
-    },
-    {
-      "Id": "fd2c3474-7187-4356-aaec-96f4910bb9c5",
-      "Name": "Chain_CreateOption",
-      "Label": "Release Creation Behaviour",
-      "HelpText": "- **Create if Release doesn't exist** - Creates a new Release only if it doesn't already exist.\n- **Create new Release** - Creates a new release. This will fail if the Release already exists.\n- **Don't create a Release** - Assume the Release already exists and will fail if creation fails.",
-      "DefaultValue": "Try",
-      "DisplaySettings": {
-        "Octopus.ControlType": "Select",
-        "Octopus.SelectOptions": "Try|Create if Release doesn't exist\nCreate|Create a new Release\nNoCreate|Don't create a Release"
-      },
-      "Links": {}
-    },
-    {
-      "Id": "73a80735-4ca0-4c12-9fa3-f0123db6349f",
-      "Name": "Chain_WaitForDeployment",
-      "Label": "Wait For Deployment",
-      "HelpText": "If checked, waits for the deployment to complete before continuing",
-      "DefaultValue": null,
-      "DisplaySettings": {
-        "Octopus.ControlType": "Checkbox"
-      },
-      "Links": {}
-    }
-  ],
-  "LastModifiedBy": "alfhenrik",
-  "$Meta": {
-    "ExportedAt": "2017-03-30T22:41:10.654Z",
-    "OctopusVersion": "3.11.13",
-    "Type": "ActionTemplate"
-  },
-  "Category": "octopus"
+    "Category": "octopus"
 }
