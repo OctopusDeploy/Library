@@ -3,10 +3,10 @@
   "Name": "Rollbar - Notify Deployment",
   "Description": "Posts a deployment notification to Rollbar.",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "CommunityActionTemplateId": null,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "try {\r    $uri = $OctopusParameters[\"URI\"];    \r    $accessToken = $OctopusParameters[\"AccessToken\"];\r    $environment = $OctopusParameters[\"Environment\"];\r    $revision = $OctopusParameters[\"Revision\"];\r    $localUsername = $OctopusParameters[\"LocalUsername\"];\r    $rollbarUsername = $OctopusParameters[\"RollbarUsername\"];\r    $comment = $OctopusParameters[\"Comment\"];\r    \r    $arguments = \"access_token=$accessToken&environment=$environment&revision=$revision&local_username=$localUsername&rollbar_username=$rollbarUsername&comment=$comment\";\r    \r    Write-Host 'Notifying Deployment to Rollbar';\r    Write-Host $arguments;\r    \r    (new-object net.webclient).UploadString($uri, $arguments);\r    \r} catch {\r    $ErrorMessage = $_.Exception.Message;\r    Write-Error $ErrorMessage;\r}\r",
+    "Octopus.Action.Script.ScriptBody": "try {\r    $uri = $OctopusParameters[\"URI\"];    \r    $accessToken = $OctopusParameters[\"AccessToken\"];\r    $environment = $OctopusParameters[\"Environment\"];\r    $revision = $OctopusParameters[\"Revision\"];\r    $revisionFilename = $OctopusParameters[\"RevisionFilename\"];\r    $localUsername = $OctopusParameters[\"LocalUsername\"];\r    $rollbarUsername = $OctopusParameters[\"RollbarUsername\"];\r    $comment = $OctopusParameters[\"Comment\"];\r    \r    if ($revisionFilename) {\r        $revision = Get-Content $revisionFilename;\r    }\r    \r    $arguments = \"access_token=$accessToken&environment=$environment&revision=$revision&local_username=$localUsername&rollbar_username=$rollbarUsername&comment=$comment\";\r    \r    Write-Host 'Notifying Deployment to Rollbar';\r    Write-Host $arguments;\r    \r    (new-object net.webclient).UploadString($uri, $arguments);\r    \r} catch {\r    $ErrorMessage = $_.Exception.Message;\r    Write-Error $ErrorMessage;\r}\r",
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false",
@@ -41,7 +41,18 @@
       "Id": "47651ca8-9d07-4981-8aa6-c2ccee241bc9",
       "Name": "Revision",
       "Label": "Revision",
-      "HelpText": "Revision number/sha being deployed. If using git, use the full sha. Required.",
+      "HelpText": "Revision number/sha being deployed. If using git, use the full sha. Required unless using Revision Filename.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "f8b27505-bac6-4690-b1f8-d171a3bc399a",
+      "Name": "RevisionFilename",
+      "Label": "Revision Filename",
+      "HelpText": "Name of a file to read revision number/sha being deployed from. If using git, use the full sha. Required unless using Revision.",
       "DefaultValue": null,
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -93,7 +104,7 @@
       "Links": {}
     }
   ],
-  "LastModifiedOn": "2017-02-07T13:42:26.852Z",
+  "LastModifiedOn": "2017-04-26T14:41:00.000Z",
   "LastModifiedBy": "sandord",
   "$Meta": {
     "ExportedAt": "2017-02-07T13:42:26.852Z",
