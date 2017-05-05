@@ -1,0 +1,91 @@
+{
+    "Id": "54b22700-3217-48ac-8749-e4a31b424834",
+    "Name": "Save Octopus Output Variable",
+    "Description": "Saves an [output variable](https://octopus.com/docs/deploying-applications/variables/output-variables) to the given project / library variable set",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "Properties": {
+        "Octopus.Action.Script.Syntax": "PowerShell",
+        "Octopus.Action.Script.ScriptSource": "Inline",
+        "Octopus.Action.RunOnServer": "true",
+        "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = 'Stop'\n\n$StepTemplate_BaseUrl = $OctopusParameters['Octopus.Web.BaseUrl'].Trim('/')\nif ([string]::IsNullOrWhiteSpace($StepTemplate_ApiKey)) {\n    throw \"The step parameter 'API Key' was not found. This step requires an API Key to function, please provide one and try again.\"\n}\n\nfunction Invoke-OctopusApi {\n    param(\n        [Parameter(Position = 0, Mandatory)]$Uri,\n        [ValidateSet(\"Get\", \"Put\")]$Method = 'Get',\n        $Body\n    )\n    $requestParameters = @{\n        Uri = ('{0}/{1}' -f $StepTemplate_BaseUrl, $Uri.TrimStart('/'))\n        Method = $Method\n        Headers = @{ \"X-Octopus-ApiKey\" = $StepTemplate_ApiKey }\n        UseBasicParsing = $true\n    }\n    if ($null -ne $Body) { $requestParameters.Add('Body', ($Body | ConvertTo-Json -Depth 10)) }\n    Write-Verbose \"$($Method.ToUpperInvariant()) $($requestParameters.Uri)\"   \n    Invoke-WebRequest @requestParameters | % Content | ConvertFrom-Json | Write-Output\n}\n\nfunction Get-OctopusSetting {\n    param([Parameter(Position = 0, Mandatory)][string]$Name, [Parameter(Position = 1, Mandatory)]$DefaultValue)\n    $formattedName = 'Octopus.Action.{0}' -f $Name\n    if ($OctopusParameters.ContainsKey($formattedName)) {\n        $value = $OctopusParameters[$formattedName]\n        if ($DefaultValue -is [bool]) { return ([System.Convert]::ToBoolean($value)) }\n        if ($DefaultValue -is [array] -or $DefaultValue -is [hashtable] -or $DefaultValue -is [pscustomobject]) { return (ConvertFrom-Json -InputObject $value) }\n        return $value\n    }\n    else { return $DefaultValue }\n}\n\n$outputVariableKey = \"Octopus.Action[${StepTemplate_DeploymentStep}].Output.${StepTemplate_VariableName}\"\nif (!$OctopusParameters.ContainsKey($outputVariableKey)) {\n    throw \"Variable '$StepTemplate_VariableName' has not been output from '$StepTemplate_DeploymentStep'\"\n}\n$isSensitive = [System.Convert]::ToBoolean($StepTemplate_IsSensitive)\n$variableType = if ($isSensitive) { \"Sensitive\" } else { \"String\" }\n\n$variableValue = $OctopusParameters[$outputVariableKey]\nWrite-Host \"Name: $StepTemplate_VariableName\"\nWrite-Host \"Type: $variableType\"\nWrite-Host \"Value: $(if ($isSensitive) { \"********\" } else { $variableValue })\"\nWrite-Host ' '\n\nWrite-Host \"Retrieving $StepTemplate_VariableSetType variable set...\"\nif ($StepTemplate_VariableSetType -eq 'project') {\n    $variableSet = Invoke-OctopusApi '/api/projects/all' | ? Name -eq $StepTemplate_VariableSetName | % { Invoke-OctopusApi $_.Links.Variables }\n}\nif ($StepTemplate_VariableSetType -eq 'library') {\n    $variableSet = Invoke-OctopusApi '/api/libraryvariablesets/all?ContentType=Variables' | ? Name -eq $StepTemplate_VariableSetName | % { Invoke-OctopusApi $_.Links.Variables }\n}\nif ($null -eq $variableSet) {\n    throw \"Unable to find $StepTemplate_VariableSetType variable set '$StepTemplate_VariableSetName'\"\n}\n\n$variableExists = $false\n$variableSet.Variables | ? Name -eq $StepTemplate_VariableName | % {\n    Write-Host \"Updating existing variable...\"\n    Write-Verbose \"Existing value:\"\n    Write-Verbose $_.Value\n    $_.Value = $variableValue\n    $_.Type = $variableType\n    $_.IsSensitive = $isSensitive\n    $_.Scope = Get-OctopusSetting Scope $_.Scope\n    $variableExists = $true\n}\nif (!$variableExists) {\n    Write-Host \"Creating new variable...\"\n    $variableSet.Variables += @{\n        Name = $StepTemplate_VariableName\n        Value = $variableValue\n        Type = $variableType\n        IsSensitive = $isSensitive\n        Scope = (Get-OctopusSetting Scope @{})\n    }\n}\n\nWrite-Host \"Saving updated variable set...\"\nInvoke-OctopusApi $variableSet.Links.Self -Method Put -Body $variableSet | Out-Null\n",
+        "Octopus.Action.Script.ScriptFileName": null,
+        "Octopus.Action.Package.FeedId": null,
+        "Octopus.Action.Package.PackageId": null
+    },
+    "Parameters": [{
+            "Id": "41e164af-94b1-42ac-8462-3e1a6ba49bbb",
+            "Name": "StepTemplate_ApiKey",
+            "Label": "API Key",
+            "HelpText": "Provide an Octopus API Key with appropriate permissions to save the variable",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Sensitive"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "ceddb0a2-621a-4cce-94e1-42ad1bf4ba72",
+            "Name": "StepTemplate_DeploymentStep",
+            "Label": "Deployment Step",
+            "HelpText": "Select the step with the [output variable](https://octopus.com/docs/deploying-applications/variables/output-variables)",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "StepName"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "fdd47428-d7ce-4f8d-b73b-e4d513d1aea8",
+            "Name": "StepTemplate_VariableName",
+            "Label": "Variable Name",
+            "HelpText": "Name of the [variable used when it was set](https://octopus.com/docs/deploying-applications/variables/output-variables#Outputvariables-Settingoutputvariablesusingscripts)\n\n_Note: The same name will be given to the saved variable_",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "7a81c569-063f-41cb-ae61-1c4ebb67293a",
+            "Name": "StepTemplate_VariableSetType",
+            "Label": "Variable Set Type",
+            "HelpText": "If the output variable is being saved to a project or [library variable set](https://octopus.com/docs/deploying-applications/variables/library-variable-sets)",
+            "DefaultValue": "project",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Select",
+                "Octopus.SelectOptions": "project|Project Variable\nlibrary|Library Variable Set"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "09e61027-ab16-4171-80c7-c7656f68833a",
+            "Name": "StepTemplate_VariableSetName",
+            "Label": "Variable Set Name",
+            "HelpText": "Name of the project or [library](https://octopus.com/docs/deploying-applications/variables/library-variable-sets) variable set where the output variable should be saved",
+            "DefaultValue": "#{Octopus.Project.Name}",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "6e3cf177-1dcc-4b7c-9d24-ec7805167cef",
+            "Name": "StepTemplate_IsSensitive",
+            "Label": "Is Sensitive?",
+            "HelpText": "If the variable should be marked as [sensitive](https://octopus.com/docs/deploying-applications/variables/sensitive-variables) and the value masked from logs",
+            "DefaultValue": "False",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Checkbox"
+            },
+            "Links": {}
+        }
+    ],
+    "LastModifiedBy": "paulmarsy",
+    "$Meta": {
+        "ExportedAt": "2017-04-29T22:41:11.896Z",
+        "OctopusVersion": "3.12.8",
+        "Type": "ActionTemplate"
+    },
+    "Category": "octopus"
+}
