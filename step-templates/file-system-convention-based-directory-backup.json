@@ -1,0 +1,56 @@
+{
+  "Id": "ActionTemplates-5",
+  "Name": "Convention Based Deployment Backup",
+  "Description": "Easily backup NuGet Package steps by following the naming convention. (\"Backup MyService\" will automatically backup \"Deploy MyService\")",
+  "ActionType": "Octopus.Script",
+  "Version": 9,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function Get-Stamped-Destination($destination) {\n\t$stampedFolderName = get-date -format \"yyyy-MM-dd\"\n\t$count = 1\n\t$stampedDestination = Join-Path $destination $stampedFolderName\n\twhile(Test-Path $stampedDestination) {\n\t\t$count++\n\t\t$stamped = $stampedFolderName + \"(\" + $count + \")\"\n\t\t$stampedDestination = Join-Path $destination $stamped\n\t}\n\treturn $stampedDestination\n}\n\n$backupKeyword = $OctopusParameters['BackupKeyword']\n$backupSuffix = $OctopusParameters['BackupSuffix']\n$deployKeyword = $OctopusParameters['DeployKeyword']\n$purgeDestination = $OctopusParameters['PurgeDestination']\n\n$current = $OctopusParameters[\"Octopus.Action.Name\"]\nWrite-Host \"Current action: $current\"\n\n$parent = $current.Replace($backupKeyword, $deployKeyword);\nWrite-Host \"Finding parent action: $parent\"\n\n$source = $OctopusParameters[\"Octopus.Action[$parent].Package.CustomInstallationDirectory\"]\nWrite-Host \"Parent CustomInstallationDirectory: $source\"\n\nif([String]::IsNullOrEmpty($source)) {\n    Write-Error \"Could not locate deployment package location\"\n}\nelse {\n    if([String]::IsNullOrEmpty($backupSuffix)) {\n        $backupSuffix = \"_BK\"\n    }\n    \n    $destination = $source + $backupSuffix\n    \n    if($purgeDestination -like \"True\") {\n        if(Test-Path $destination) {\n        \tWrite-Host \"Purging $destination\"\n        \tRemove-Item \"$destination\\*\" -recurse -force\n        } else {\n        \tWrite-Host \"$destination does not exist.\"\n        }\n    }\n    \n    $CreateStampedBackupFolder = $OctopusParameters['CreateStampedBackupFolder']\n    if($CreateStampedBackupFolder -like \"True\" ) {\n    \t$destination = get-stamped-destination $destination\n    }\n    \n    $options = $OctopusParameters['Options'] -split \"\\s+\"\n    robocopy $source $destination $options\n}\n\nif($LastExitCode -gt 8) {\n    exit 1\n}\nelse {\n    exit 0\n}"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "DeployKeyword",
+      "Label": "Deploy Keyword",
+      "HelpText": "Keyword to replace the Backup Keyword in order to find the deployment step.",
+      "DefaultValue": "Deploy"
+    },
+    {
+      "Name": "BackupKeyword",
+      "Label": "Backup Keyword",
+      "HelpText": "Keyword in name of the step to replace with the Deploy Keyword to find the deployment step.",
+      "DefaultValue": "Backup"
+    },
+    {
+      "Name": "BackupSuffix",
+      "Label": "Backup Suffix",
+      "HelpText": "Suffix to apply to the folder name when creating the backup.",
+      "DefaultValue": "_BK"
+    },
+    {
+      "Name": "Options",
+      "Label": "Robocopy options",
+      "HelpText": "Robocopy accepts a few command line options (e.g. /S /E /Z). List of these can be found here",
+      "DefaultValue": "/E /V /XF *.log"
+    },
+    {
+      "Name": "CreateStampedBackupFolder",
+      "Label": "Create stamped backup folder",
+      "HelpText": "If set to True then it will create a dated backup folder under the destination folder (e.g. c:\\backup\\2014-05-11)",
+      "DefaultValue": "True"
+    },
+    {
+      "Name": "PurgeDestination",
+      "Label": "Purge backups",
+      "HelpText": "Purge historical backups prior to creating backup.",
+      "DefaultValue": "#{PurgeBackups}"
+    }
+  ],
+  "LastModifiedOn": "2014-06-18T17:15:33.924+00:00",
+  "LastModifiedBy": "JarrodJ83",
+  "$Meta": {
+    "ExportedAt": "2014-06-19T14:30:02.620Z",
+    "OctopusVersion": "2.4.7.85",
+    "Type": "ActionTemplate"
+  }
+}
