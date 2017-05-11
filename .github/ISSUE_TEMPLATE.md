@@ -3,7 +3,7 @@ Thanks for reporting an issue! Please make sure you click the link above to view
 This repository is a collection of community step templates where the majority of step templates were written by members of the Octopus Deploy community, not the Octopus team.
 
 If you are reporting a bug with a specific step template, we'd really appreciate it if you could send a PR with a fix for the bug. 
-If you want to send a PR but you're not sure how to create a PR, see GitHub's excellent [Pull Request guides](https://help.github.com/articles/proposing-changes-to-your-work-with-pull-requests/).
+If you want to send a PR but you're not sure how to create a PR, see GitHub's excellent [Pull Request guides](https://help.github.com/articles/proposing-changes-to-your-work-with-pull-requests/). Note that sending your own PR will give you a faster resolution than the below options.
 
 If you can't send a PR, that's all good, we understand! A member of the Octopus team will take a look at your issue and make sure that we get a fix merged as soon as convenient. 
 **Please note** that it might take a bit longer to get a fix out there depending on what step template and what the bug is as it might require some setup to replicate the bug.
