@@ -1,0 +1,44 @@
+{
+  "Id": "ActionTemplates-33",
+  "Name": "HipChat - Notify Deployment",
+  "Description": "Notifies HipChat of a deployment succeeding or failing. To add the failure notification, you need to add a step that runs on failure and set DeploySuccessful to false.",
+  "ActionType": "Octopus.Script",
+  "Version": 0,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function HipChat-Notification ($notification)\r\n{\r\n    $payload = @{\r\n        room_id = $OctopusParameters['RoomId'];\r\n        from = $OctopusParameters['From'];\r\n        color = $notification[\"color\"];\r\n        notify = $notification['notify'];\r\n        message = $notification['message'];\r\n    }\r\n\r\n    Invoke-RestMethod `\r\n        -Method POST `\r\n        -Body $payload `\r\n        -Uri \"https://api.hipchat.com/v1/rooms/message?auth_token=$($OctopusParameters['ApiKey'])\"\r\n}\r\n\r\nif ($OctopusParameters['DeploySuccessful'] -eq \"true\"){\r\n    HipChat-Notification @{\r\n        message = \"Deployed $OctopusProjectName $OctopusReleaseNumber to $OctopusEnvironmentName successfully\";\r\n        color = \"green\";\r\n        notify = \"0\";\r\n    };\r\n} else {\r\n    HipChat-Notification @{\r\n        message = \"Failed to deploy $OctopusProjectName $OctopusReleaseNumber to $OctopusEnvironmentName\";\r\n        color = \"red\";\r\n        notify = \"1\";\r\n    };\r\n}"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ApiKey",
+      "Label": "API Key",
+      "HelpText": null,
+      "DefaultValue": null
+    },
+    {
+      "Name": "RoomId",
+      "Label": "RoomId",
+      "HelpText": null,
+      "DefaultValue": null
+    },
+    {
+      "Name": "From",
+      "Label": "From",
+      "HelpText": "The user to display the message from",
+      "DefaultValue": "OctopusDeploy"
+    },
+    {
+      "Name": "DeploySuccessful",
+      "Label": "Deploy Successful",
+      "HelpText": "This flag controls whether to post a success or failure message.",
+      "DefaultValue": "true"
+    }
+  ],
+  "LastModifiedOn": "2014-06-19T13:45:32.169+00:00",
+  "LastModifiedBy": "jamescrowley",
+  "$Meta": {
+    "ExportedAt": "2014-06-19T13:53:05.289Z",
+    "OctopusVersion": "2.4.7.85",
+    "Type": "ActionTemplate"
+  }
+}
