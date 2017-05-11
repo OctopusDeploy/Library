@@ -8,7 +8,11 @@ If you want to send a PR but you're not sure how to create a PR, see GitHub's ex
 If you can't send a PR, that's all good, we understand! A member of the Octopus team will take a look at your issue and make sure that we get a fix merged as soon as convenient. 
 **Please note** that it might take a bit longer to get a fix out there depending on what step template and what the bug is as it might require some setup to replicate the bug.
 
-Please provide the following information when submitting an issue, where appropriate replace the `[ ]` with a `[X]`
+Please provide the following information when submitting an issue.
+
+_Before submitting your issue, please delete everything above the line below._
+
+---
 
 ### Step template
 _Please tell us which step template you are having issues with_
