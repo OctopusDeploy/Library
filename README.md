@@ -13,7 +13,7 @@ Organization
 Contributing step templates or to the website
 ---------------------------------------------
 
-Read our [contributing guidelines](https://github.com/OctopusDeploy/Library/blob/master/CONTRIBUTING.md) for information about contributing step templates and to the website.
+Read our [contributing guidelines](https://github.com/OctopusDeploy/Library/blob/master/.github/CONTRIBUTING.md) for information about contributing step templates and to the website.
 
 Reviewing PRs
 -------------
