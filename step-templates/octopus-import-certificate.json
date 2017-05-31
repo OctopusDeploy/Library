@@ -1,0 +1,81 @@
+{
+  "Id": "3b1f6c62-c2cb-480b-9b14-435686b9f2cc",
+  "Name": "Octopus - Import Certificate",
+  "Description": "Create or replace an [Octopus Certificate](https://octopus.com/docs/deploying-applications/certificates) from a certificate file",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "<#\n ----- Octopus - Import Certificate ----- \n    Paul Marston @paulmarsy (paul@marston.me)\nLinks\n    https://github.com/OctopusDeploy/Library/commits/master/step-templates/octopus-import-certificate.json\n#>    \n    \n$ErrorActionPreference = 'Stop'\n\n$StepTemplate_BaseUrl = $OctopusParameters['Octopus.Web.BaseUrl'].Trim('/')\nif ([string]::IsNullOrWhiteSpace($StepTemplate_ApiKey)) {\n    throw \"The step parameter 'API Key' was not found. This step requires an API Key to function, please provide one and try again.\"\n}\nfilter Out-Verbose {\n    Write-Verbose ($_ | Out-String)\n}\nfilter Out-Indented {\n    $_ | Out-String | % Trim | % Split \"`n\" | % { \"`t$_\" }  \n}\nfunction Invoke-OctopusApi {\n    param(\n        [Parameter(Position = 0, Mandatory)]$Uri,\n        [ValidateSet(\"Get\", \"Post\")]$Method = 'Get',\n        $Body\n    )\n    $requestParameters = @{\n        Uri = ('{0}/{1}' -f $StepTemplate_BaseUrl, $Uri.TrimStart('/'))\n        Method = $Method\n        Headers = @{ \"X-Octopus-ApiKey\" = $StepTemplate_ApiKey }\n        UseBasicParsing = $true\n    }\n    Write-Verbose \"$($Method.ToUpperInvariant()) $($requestParameters.Uri)\"   \n    if ($null -ne $Body) { $requestParameters.Add('Body', ($Body | ConvertTo-Json -Depth 10)) }\n    try {\n        Invoke-WebRequest @requestParameters | % Content | ConvertFrom-Json | Write-Output\n    }\n    catch [System.Net.WebException] {\n        if ($_.Exception.Response) {\n            $errorResponse = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream()).ReadToEnd()\n            throw (\"$($_.Exception.Message)`n{0}\" -f $errorResponse)\n        }\n    }\n}\n\n$certificate = switch ($StepTemplate_CertEncoding) {\n    'file' {   \n        if (!(Test-Path $StepTemplate_Certificate)) {\n            throw \"Certificate file $StepTemplate_Certificate does not exist\"\n        }\n        $certificateBytes = Get-Content -Path $StepTemplate_Certificate -Encoding Byte\n        [System.Convert]::ToBase64String($certificateBytes)\n    }\n    'base64' {\n        $StepTemplate_Certificate\n    }\n}\n\n$existingCert = Invoke-OctopusApi '/api/certificates' | % Items | ? Name -eq $StepTemplate_CertificateName\nif ($existingCert) {\n    Write-Host 'Existing certificate will be archived & replaced...'\n    Invoke-OctopusApi ('/api/certificates/{0}/replace' -f $existingCert.Id) -Method Post -Body @{\n        certificateData = $certificate\n        password = $StepTemplate_Password\n    } | % {\n        $_.CertificateData = $null\n        $_.Password = $null\n        $_\n    } | Out-Verbose\n} else {\n    Write-Host 'Creating & importing new certificate...'\n    Invoke-OctopusApi '/api/certificates' -Method Post -Body @{\n        Name = $StepTemplate_CertificateName\n        CertificateData = @{\n            HasValue = $true\n            NewValue = $certificate\n        }\n        Password = @{\n            HasValue = $true\n            NewValue = $StepTemplate_Password\n        }\n    } | Out-Verbose\n}\nWrite-Host 'Certificate has been imported:'\nInvoke-OctopusApi '/api/certificates' | % Items | ? Name -eq $StepTemplate_CertificateName | Out-Indented",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "9a84f62c-99f7-4349-bf6d-f42397f4de73",
+      "Name": "StepTemplate_ApiKey",
+      "Label": "API Key",
+      "HelpText": "Provide an Octopus API Key with appropriate permissions to save the certificate",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "4fcb5ddf-14a9-42b1-8e77-d8d68e69b2fe",
+      "Name": "StepTemplate_CertificateName",
+      "Label": "Certificate Name",
+      "HelpText": "A short, memorable, unique name for this certificate.\n\nIf the certificate already exists it [will be replaced](https://octopus.com/docs/deploying-applications/certificates/replace-certificate).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "0664b204-c11e-47d1-b388-58ef0b0a7b1a",
+      "Name": "StepTemplate_CertEncoding",
+      "Label": "Certificate Encoding",
+      "HelpText": "Defines the format of the **Certificate** parameter.",
+      "DefaultValue": "file",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "file|File Path\nbase64|Base64 Encoded String"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "df336e72-328a-4bad-92b1-374155ec3fb4",
+      "Name": "StepTemplate_Certificate",
+      "Label": "Certificate",
+      "HelpText": "The certificate to import into Octopus, either as a **File Path** to the certificate, or as a **Base64 Encoded String** representation depending on the _Certificate Encoding_ chosen.\n\nSupported formats: [PFX (PKCS #12), DER, PEM](https://octopus.com/docs/deploying-applications/certificates/file-formats)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b875e962-5edc-44e8-be03-51f8a87eca5d",
+      "Name": "StepTemplate_Password",
+      "Label": "Password",
+      "HelpText": "The password protecting the certificate (if required).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "paulmarsy",
+  "$Meta": {
+    "ExportedAt": "2017-05-31T00:37:02.264Z",
+    "OctopusVersion": "3.13.7",
+    "Type": "ActionTemplate"
+  },
+  "Category": "octopus"
+}
