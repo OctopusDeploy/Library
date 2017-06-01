@@ -3,13 +3,13 @@
   "Name": "File System - Rename File",
   "Description": "Renames a file on the file system.",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "CommunityActionTemplateId": null,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptBody": "$filePath = $OctopusParameters['FilePath']\r\n$newName = $OctopusParameters['NewName']\r\n\r\n$fileExists = Test-Path -Path $filePath\r\n\r\nif($fileExists)\r\n{\r\n  Rename-Item -Path $filePath -NewName $newName\r\n\r\n  Write-Host \"Successfully renamed file at location: $filePath to $newName\"\r\n}\r\nelse\r\n{\r\n  Write-Warning \"File not found at location: $filePath\"\r\n}",
+    "Octopus.Action.Script.ScriptBody": "$filePath = $OctopusParameters['FilePath']\r\n$newName = $OctopusParameters['NewName']\r\n\r\nfunction Test-FileLocked([string]$filePath)\r\n{\r\n  Rename-Item $filePath $filePath -ErrorVariable errs -ErrorAction SilentlyContinue\r\n  return ($errs.Count -ne 0)\r\n}\r\n\r\n$fileExists = Test-Path -Path $filePath\r\n\r\nif (!$fileExists)\r\n{\r\n  Write-Warning \"File not found at $filePath\"\r\n\r\n  return\r\n}\r\n\r\n$fileIsLocked = Test-FileLocked($filePath)\r\n\r\nfunction Wait-ForFileUnlock\r\n{\r\n  for ($attemptNo = 1; $attemptNo -lt 6; $attemptNo++) {\r\n    Write-Host \"Waiting for the file to become unlocked $attemptNo/5\"\r\n\r\n    Start-Sleep -Seconds 10\r\n\r\n    $fileIsLocked = Test-FileLocked($filePath)\r\n\r\n    if (!$fileIsLocked)\r\n    {\r\n      return\r\n    }\r\n\r\n    if ($attemptNo -eq 5) {\r\n      Write-Error \"File at location $filePath is locked and cannot be renamed\"\r\n\r\n      return\r\n    }\r\n  }\r\n}\r\n\r\nif ($fileIsLocked)\r\n{\r\n  Wait-ForFileUnlock\r\n}\r\n\r\nRename-Item -Path $filePath -NewName $newName\r\n\r\nWrite-Host \"Successfully renamed file at location: $filePath to $newName\"",
     "Octopus.Action.Script.ScriptFileName": null,
     "Octopus.Action.Package.FeedId": null,
     "Octopus.Action.Package.PackageId": null
@@ -42,7 +42,7 @@
   ],
   "LastModifiedBy": "daviesaus",
   "$Meta": {
-    "ExportedAt": "2017-06-01T10:06:57.494Z",
+    "ExportedAt": "2017-06-01T11:11:00.134Z",
     "OctopusVersion": "3.11.11",
     "Type": "ActionTemplate"
   },
