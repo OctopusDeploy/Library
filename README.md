@@ -6,7 +6,7 @@ A repository of step templates and other community-contributed extensions to Oct
 Organization
 ------------
 
-* *Step templates* are checked into `/step-templates` as raw JSON exports direct from Octopus Deploy
+* *Step templates* are checked into `/step-templates` as raw JSON exports directly from Octopus Deploy
 * The *library website* is largely under `/app`, with build artifacts at the root of the repository
 * The `/tools` folder contains utilities to help with editing step templates
 
