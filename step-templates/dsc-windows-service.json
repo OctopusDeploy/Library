@@ -1,0 +1,59 @@
+{
+  "Id": "1cdf63ce-50c8-45a8-cce2-f6ca2d6d617b",
+  "Name": "DSC Windows Service",
+  "Description": "Starts/stops one or more services asynchronously, and then waits for them to align to the specified state",
+  "ActionType": "Octopus.Script",
+  "Version": 15,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "\n    $ServicesToManage = $OctopusParameters['Services']\n    $ServicesToIgnore = $OctopusParameters['ServicesToIgnore']\n    $TimeoutSeconds = $OctopusParameters['TimeoutSeconds']\n    $DesiredState = $OctopusParameters['DesiredState']\n\n    # Gather information about the list of services\n    $services_status = @{}\n\n    # For each \"service to manage\" or wildcard specified ...\n    $ServicesToManage -split \",\" |% `\n    {\n        $service = $_\n    \n        # ... retrieve all the services that match that name or wildcard ...\n        $service_states = Get-Service |? { $_.Name -match $service }\n    \n        # ... and add them into an array; we use a key/value array so that services only get added to the array once, even if they are\n        # matched by multiple wildcard specifications\n        $service_states |% { $services_status[$_.Name] = $_.Status }\n    }\n    \n    # For each \"service to ignore\" or wildcard specified ...\n    $ServicesToIgnore -split \",\" |% `\n    {\n        $service = $_\n        \n        # Copy the keys within services_status, since we will need to change services_status as we enumerate them\n        $keys = @()\n        $services_status.Keys |% { $keys += $_ }\n        \n        $keys |% `\n        {\n           $key = $_\n \n           if ($key -match $service -and $service -match \"[a-z]+\")\n           {\n                $services_status.Remove($_)\n           }\n        }\n    }\n\n    Write-Host \"Matched the following set of services, along with their current status:\"\n    $services_status\n\n    # Now act as required to bring the services to the desired configuration state\n    [DateTime]$startTime = [DateTime]::Now\n    \n    # State to pass to sc\n    $state_type = if ($DesiredState -match \"Stopped\") { \"stop\" } else { \"start\" }\n\n\t$unaligned_services = ($services_status.Keys |? { $services_status[$_] -notmatch $DesiredState })\n\t# Attempt to align the remaining services\n\t$unaligned_services |% `\n\t{ \n\t\tWrite-Host \"Attempting to $state_type service: $_\"\n\t\tStart-Process -FilePath \"cmd\" -ArgumentList \"/c sc.exe $state_type `\"$_`\"\"\n\t}\t\n   \n   while ($startTime.AddSeconds($TimeoutSeconds) -gt [DateTime]::Now)\n    {\n\t\t# Attempt to align the remaining services\n\t\t$unaligned_services |% `\n\t\t{ \n\t\t\tWrite-Host \"Attempting to $state_type service: $_\"\n\t\t\t$services_status[$_] = Get-Service $_ | Select-Object -Property \"Status\"\n\t\t}\t\n\t\t$unaligned_services = ($services_status.Keys |? { $services_status[$_] -notmatch $DesiredState })\n\t\tWrite-Host \"$([DateTime]::Now): $($unaligned_services.Count) services of $($services_status.Count) not yet at status: $DesiredState\"\n\t\t\n        if ($unaligned_services.Count -eq 0)\n        {\n            Write-Host \"All services now at desired state; exiting\"\n            exit 0\n        }\n\n          \n        # Pause for a second\n        [System.Threading.Thread]::Sleep(1000)\n    }\n\n    throw \"Error: not all services reached the desired state within the specified timeframe: $unaligned_services\"\n\n\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Services",
+      "Label": "Services to align",
+      "HelpText": "A comma delimited list of services or wildcards (eg. \"Sky\") to align",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ServicesToIgnore",
+      "Label": "Services to ignore",
+      "HelpText": "A comma delimited list of services or wildcards (eg. \"Sky\") to ignore",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DesiredState",
+      "Label": "Desired state",
+      "HelpText": "The desired state of the service/s. Specify either \"Started\" or \"Stopped\"",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Running|Started\nStopped|Stopped"
+      }
+    },
+    {
+      "Name": "TimeoutSeconds",
+      "Label": "Timeout in seconds",
+      "HelpText": "The number of seconds to wait for the service/s to align before timing out and throwing an exception",
+      "DefaultValue": "300",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2017-06-20T14:00:00.000+00:00",
+  "LastModifiedBy": "dunedinsoftware",
+  "$Meta": {
+    "ExportedAt": "2017-06-20T14:35:09.389Z",
+    "OctopusVersion": "3.1.5",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}
