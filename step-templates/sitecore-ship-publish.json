@@ -1,0 +1,114 @@
+{
+  "Id": "17dddbc9-07a7-4eaf-b868-878560bbe8ce",
+  "Name": "Sitecore.Ship Publish Util",
+  "Description": "Helps you publish .update files to a Sitecore instance from Powershell assuming you are using the Sitecore.Ship module",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "<#\r\n    This function \"smart\" publishes the specified Sitecore target to the given $SiteUrl.\r\n    Example usage: \r\n    .\\publish-sitecorepackage.ps1 mysite.dev \"preview,web\" \"en\" \"smart\" 300\r\n\t.\\publish-sitecorepackage.ps1 mysite.dev \"preview,web\" \"en\" \"listofitems\" 300 MyUserName MyPassword \"C:/temp/ids.txt\"\r\n\r\n\r\nParam(\r\n    [Parameter(Position=0, Mandatory=$true)]\r\n    [string]$SiteUrl,\r\n    [Parameter(Position=1, Mandatory=$true)]\r\n    [string]$PublishTargets = \"preview,web\",\r\n\t[Parameter(Position=2, Mandatory=$true)]\r\n    [string]$PublishLanguaes = \"en\",\r\n\t[Parameter(Position=3, Mandatory=$false)]\r\n    [string]$PublishMode = \"smart\",\r\n    [Parameter(Position=4)]\r\n    [ValidateRange(0, 99999)]\r\n    [int]$ConnectionTimeOutInSeconds = 300,\r\n\t[Parameter(Position=5)]\r\n    [string]$Username,\r\n\t[Parameter(Position=6)]\r\n    [string]$Password,\r\n\t[Parameter(Position=7)]\r\n    [string]$ListOfIDsInputPath\r\n)#>\r\n\r\n$SiteUrl = if($OctopusParameters[\"SiteUrl\"]){$OctopusParameters[\"SiteUrl\"]} else { throw \"SiteUrl required\"}\r\n$PublishTargets = if($OctopusParameters[\"PublishTargets\"]){$OctopusParameters[\"PublishTargets\"]} else { \"web\"}\r\n$PublishLanguaes = if($OctopusParameters[\"PublishLanguaes\"]){$OctopusParameters[\"PublishLanguaes\"]} else { \"en\"}\r\n$PublishMode = if($OctopusParameters[\"PublishMode\"]){$OctopusParameters[\"PublishMode\"]} else { \"smart\"}\r\n$ConnectionTimeOutInSeconds = if($OctopusParameters[\"ConnectionTimeOutInSeconds\"]){$OctopusParameters[\"ConnectionTimeOutInSeconds\"]} else { 300 }\r\n$Username = $OctopusParameters[\"Username\"]\r\n$Password = $OctopusParameters[\"Password\"]\r\n\r\n$previousDeployStep = $OctopusParameters[\"PreviousDeployStep\"];\r\n$ListOfIDsInputPath = ($OctopusParameters[\"Octopus.Action[\" + $previousDeployStep + \"].Output.Package.InstallationDirectoryPath\"] + \"_output.txt\")\r\n\r\n\r\nWrite-Host \"SiteUrl:\" $SiteUrl\r\nWrite-Host \"PreviousDeployStep:\" $previousDeployStep\r\nWrite-Host \"ListOfIDsInputPath:\" $ListOfIDsInputPath\r\nWrite-Host \"PublishTargets:\" $PublishTargets\r\nWrite-Host \"PublishLanguaes:\" $PublishLanguaes\r\nWrite-Host \"PublishMode:\" $PublishMode\r\nWrite-Host \"ConnectionTimeOutInSeconds:\" $ConnectionTimeOutInSeconds\r\nWrite-Host \"Username:\" $Username\r\nWrite-Host \"Password:\" $Password\r\n\r\n$publishUrl = \"$SiteUrl/services/publish/$PublishMode\"\r\n\r\n$targetDatabases = $PublishTargets -split \",\"\r\n$targetLanguages = $PublishLanguaes -split \",\"\r\n$pubishItems = @{\r\n\t\ttargets = $targetDatabases\r\n\t\tlanguages = $targetLanguages\r\n\t}\r\n\r\nif($PublishMode -eq \"listofitems\")\r\n{\r\n\tif (-not (Test-Path $ListOfIDsInputPath)) \r\n\t{\r\n\t\tthrow [System.IO.FileNotFoundException] \"listofitems publish: $ListOfIDsInputPath not found.\"\r\n\t}\r\n    [Collections.Generic.List[String]]$items = [IO.File]::ReadAllLines($ListOfIDsInputPath) \r\n\tWrite-Host $items -foregroundcolor cyan\r\n\t$pubishItems = @{\r\n\t\t\tTargetDatabases = $targetDatabases\r\n\t\t\tTargetLanguages = $targetLanguages\r\n\t\t\tItems = $items\r\n\t\t}\r\n}\r\n\t\r\nif($Username){\r\n\t$secpasswd = ConvertTo-SecureString $Password -AsPlainText -Force\r\n\t$mycreds = New-Object System.Management.Automation.PSCredential ($Username, $secpasswd)\r\n\tWrite-Host \"POST Publish $PublishMode with credentials to $publishUrl\" -foregroundcolor green\r\n\tInvoke-RestMethod -Uri $publishUrl -Method POST -ContentType \"application/json\" -Body ($pubishItems | ConvertTo-Json) -cred $mycreds\r\n}\r\nelse{\r\n\tWrite-Host \"POST Publish $PublishMode to $publishUrl\" -foregroundcolor green\r\n\tInvoke-RestMethod -Uri $publishUrl -Method POST -ContentType \"application/json\" -Body ($pubishItems | ConvertTo-Json)\r\n}",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "228741aa-9bae-441d-bb2c-1af426863146",
+      "Name": "SiteUrl",
+      "Label": "Site Url",
+      "HelpText": "Url for the site you are installing the .update package on (ex: _http://mysite.dev_)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ff09a832-5736-400d-a438-aa19023138c6",
+      "Name": "PublishTargets",
+      "Label": "Publish Targets",
+      "HelpText": "The db targets for the publish, comma delimited (ex: _preview, web_)",
+      "DefaultValue": "web",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "8cdd686d-e01a-45c5-b372-47fda3e55e56",
+      "Name": "PublishLanguages",
+      "Label": "Publish Languages",
+      "HelpText": "The language targets for the publish, comma delimited (ex: _en_)",
+      "DefaultValue": "en",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "68396c7e-ccc1-4782-bd0b-5ccdc314478c",
+      "Name": "PublishMode",
+      "Label": "Publish Mode",
+      "HelpText": "The publish mode (ex: smart, full, incremental or listofitems)",
+      "DefaultValue": "smart",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "smart|smart\nfull|full\nincremental|incremental\nlistofitems|listofitems"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "74027445-6d9c-4f61-81c4-3e170dc15833",
+      "Name": "ConnectionTimeOutInSeconds",
+      "Label": "Connection Timeout",
+      "HelpText": "Connection Timeout in seconds (ex: 300",
+      "DefaultValue": "300",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "573a0b9b-c951-4f43-9c58-7263111a51da",
+      "Name": "Username",
+      "Label": "Username",
+      "HelpText": "If your Ship endpoint requires authentication, insert Username here.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "523ada58-f5b7-4bb4-ab87-12193c58bed7",
+      "Name": "Password",
+      "Label": "Password",
+      "HelpText": "If your Ship endpoint requires authentication, insert Password here.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b981883e-0b08-4d08-9787-a466eaebaeae",
+      "Name": "PreviousDeployStep",
+      "Label": "Previous Deploy Step",
+      "HelpText": "Use this only if you are publishing the site using the _ListOfItems_ publish mode, associating the previous deploy step will grab the created list",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      },
+      "Links": {}
+    }
+  ],
+  "Category": "sitecore",
+  "LastModifiedBy" : "svandenbush@geekhive.com",
+  "$Meta": {
+    "ExportedAt": "2017-07-12T22:10:44.553Z",
+    "OctopusVersion": "3.13.0",
+    "Type": "ActionTemplate"
+  }
+}

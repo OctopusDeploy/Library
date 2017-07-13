@@ -1,0 +1,82 @@
+{
+  "Id": "3f8dd076-efc6-42ab-90a5-485b751cc666",
+  "Name": "Sitecore.Ship Deploy Util",
+  "Description": "Helps you upload and install .update files to a Sitecore instance from Powershell assuming you are using the Sitecore.Ship module.",
+  "ActionType": "Octopus.TentaclePackage",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Package.AutomaticallyRunConfigurationTransformationFiles": "False",
+    "Octopus.Action.Package.AutomaticallyUpdateAppSettingsAndConnectionStrings": "True",
+    "Octopus.Action.EnabledFeatures": "Octopus.Features.CustomScripts",
+    "Octopus.Action.Package.DownloadOnTentacle": "False",
+    "Octopus.Action.Package.FeedId": "feeds-builtin",
+    "Octopus.Action.Package.PackageId": "#{PackageID}",
+    "Octopus.Action.CustomScripts.PreDeploy.ps1": "<#\r\n    This function uploads & installs the specified Sitecore update package to the given $SiteUrl.\r\n    Example usage:\r\n    .\\deploy-sitecorepackage.ps1 mysite.dev \"C:\\Project\\Build\\Artifacts\\1-mysite-templates.update\" 300 MyUsername MyPassword\r\n\t.\\deploy-sitecorepackage.ps1 mysite.dev \"C:\\Project\\Build\\Artifacts\\1-mysite-templates.update\" 300 -ResultsOutputPath \"c:/temp/ids.txt\"\r\n\r\nParam(\r\n    [Parameter(Position=0, Mandatory=$true)]\r\n    [string]$SiteUrl,\r\n    [Parameter(Position=1, Mandatory=$true)]\r\n    [string]$UpdatePackagePath,\r\n    [Parameter(Position=2)]\r\n    [ValidateRange(0, 99999)]\r\n    [int]$ConnectionTimeOutInSeconds = 300,\r\n\t[Parameter(Position=3)]\r\n    [string]$Username,\r\n\t[Parameter(Position=4)]\r\n    [string]$Password,\r\n\t[Parameter(Position=5)]\r\n    [string]$ResultsOutputPath\r\n)\r\n#>\r\n\r\n$SiteUrl = if($OctopusParameters[\"SiteUrl\"]){$OctopusParameters[\"SiteUrl\"]} else { throw \"SiteUrl required\"}\r\n$UpdatePackagePath = if($OctopusParameters['Octopus.Action.Package.InstallationDirectoryPath']){$OctopusParameters['Octopus.Action.Package.InstallationDirectoryPath']} else { throw \"UpdatePackagePath required\"}\r\n$ConnectionTimeOutInSeconds = if($OctopusParameters[\"ConnectionTimeOutInSeconds\"]){$OctopusParameters[\"ConnectionTimeOutInSeconds\"]} else { 300 }\r\n$Username = $OctopusParameters[\"Username\"]\r\n$Password = $OctopusParameters[\"Password\"]\r\n$ResultsOutputPath = ($OctopusParameters[\"Octopus.Action.Package.InstallationDirectoryPath\"] + \"_output.txt\")\r\n\r\n$UpdatePackagePathZip = ($UpdatePackagePath + \"/\" + ($OctopusParameters[\"Octopus.Action.Package.PackageId\"]) + \"_update.zip\")\r\nCompress-Archive -Path ($UpdatePackagePath + \"/package.zip\") -DestinationPath $UpdatePackagePathZip\r\nWrite-Host \"SiteUrl:\" $SiteUrl\r\nWrite-Host \"UpdatePackagePath:\" $UpdatePackagePathZip (Test-Path $UpdatePackagePathZip)\r\nWrite-Host \"ConnectionTimeOutInSeconds:\" $ConnectionTimeOutInSeconds\r\nWrite-Host \"Username:\" $Username\r\nWrite-Host \"Password:\" $Password\r\nWrite-Host \"ResultsOutputPath:\" $ResultsOutputPath\r\n\r\n<#Invoke-MultipartFormDataUpload#>\r\nfunction Invoke-MultipartFormDataUpload\r\n{\r\n    [CmdletBinding()]\r\n    PARAM\r\n    (\r\n        [string][parameter(Mandatory = $true)][ValidateNotNullOrEmpty()]$InFile,\r\n        [string]$ContentType,\r\n        [Uri][parameter(Mandatory = $true)][ValidateNotNullOrEmpty()]$Uri,\r\n        [System.Management.Automation.PSCredential]$Credential,\r\n\t\t[int]$Timeout\r\n    )\r\n    BEGIN\r\n    {\r\n        if (-not (Test-Path $InFile))\r\n        {\r\n            $errorMessage = (\"File {0} missing or unable to read.\" -f $InFile)\r\n            $exception =  New-Object System.Exception $errorMessage\r\n\t\t\t$errorRecord = New-Object System.Management.Automation.ErrorRecord $exception, 'MultipartFormDataUpload', ([System.Management.Automation.ErrorCategory]::InvalidArgument), $InFile\r\n\t\t\t$PSCmdlet.ThrowTerminatingError($errorRecord)\r\n        }\r\n \r\n        if (-not $ContentType)\r\n        {\r\n            Add-Type -AssemblyName System.Web\r\n \r\n            $mimeType = [System.Web.MimeMapping]::GetMimeMapping($InFile)\r\n            \r\n            if ($mimeType)\r\n            {\r\n                $ContentType = $mimeType\r\n            }\r\n            else\r\n            {\r\n                $ContentType = \"application/octet-stream\"\r\n            }\r\n        }\r\n    }\r\n    PROCESS\r\n    {\r\n        Add-Type -AssemblyName System.Net.Http\r\n \r\n\t\t$httpClientHandler = New-Object System.Net.Http.HttpClientHandler\r\n \r\n        if ($Credential)\r\n        {\r\n\t\t    $networkCredential = New-Object System.Net.NetworkCredential @($Credential.UserName, $Credential.Password)\r\n\t\t    $httpClientHandler.Credentials = $networkCredential\r\n        }\r\n \r\n        $httpClient = New-Object System.Net.Http.Httpclient $httpClientHandler\r\n\t\tif($Timeout)\r\n\t\t{\r\n\t\t\t$httpClient.Timeout = New-Object TimeSpan(0, 0, $Timeout);\r\n\t\t}\r\n        $packageFileStream = New-Object System.IO.FileStream @($InFile, [System.IO.FileMode]::Open)\r\n        \r\n\t\t$contentDispositionHeaderValue = New-Object System.Net.Http.Headers.ContentDispositionHeaderValue \"form-data\"\r\n\t    $contentDispositionHeaderValue.Name = \"fileData\"\r\n\t\t$contentDispositionHeaderValue.FileName = (Split-Path $InFile -leaf)\r\n \r\n        $streamContent = New-Object System.Net.Http.StreamContent $packageFileStream\r\n        $streamContent.Headers.ContentDisposition = $contentDispositionHeaderValue\r\n        $streamContent.Headers.ContentType = New-Object System.Net.Http.Headers.MediaTypeHeaderValue $ContentType\r\n        \r\n        $content = New-Object System.Net.Http.MultipartFormDataContent\r\n        $content.Add($streamContent)\r\n \r\n        try\r\n        {\r\n\t\t\t$response = $httpClient.PostAsync($Uri, $content).Result\r\n \r\n\t\t\tif (!$response.IsSuccessStatusCode)\r\n\t\t\t{\r\n\t\t\t\t$responseBody = $response.Content.ReadAsStringAsync().Result\r\n\t\t\t\t$errorMessage = \"Status code {0}. Reason {1}. Server reported the following message: {2}.\" -f $response.StatusCode, $response.ReasonPhrase, $responseBody\r\n \r\n\t\t\t\tthrow [System.Net.Http.HttpRequestException] $errorMessage\r\n\t\t\t}\r\n \r\n\t\t\treturn $response.Content.ReadAsStringAsync().Result\r\n        }\r\n        catch [Exception]\r\n        {\r\n\t\t\t$PSCmdlet.ThrowTerminatingError($_)\r\n        }\r\n        finally\r\n        {\r\n            if($null -ne $httpClient)\r\n            {\r\n                $httpClient.Dispose()\r\n            }\r\n \r\n            if($null -ne $response)\r\n            {\r\n                $response.Dispose()\r\n            }\r\n        }\r\n    }\r\n    END { }\r\n}\r\n<#Invoke-MultipartFormDataUpload#>\r\n\r\n\r\n$fileUploadUrl = \"$SiteUrl/services/package/install/fileupload\"\r\n\r\nif($Username){\r\n\t$secpasswd = ConvertTo-SecureString $Password -AsPlainText -Force\r\n\t$mycreds = New-Object System.Management.Automation.PSCredential ($Username, $secpasswd)\r\n\tWrite-Host \"POST Fileupload with credentials\" -foregroundcolor green\r\n\t$shipResponse = Invoke-MultipartFormDataUpload -InFile $UpdatePackagePathZip -Uri $fileUploadUrl -Timeout $ConnectionTimeOutInSeconds -Credential $mycreds | ConvertFrom-Json\r\n}\r\nelse{\r\n\tWrite-Host \"POST Fileupload\" -foregroundcolor green\r\n\t$shipResponse = Invoke-MultipartFormDataUpload -InFile $UpdatePackagePathZip -Uri $fileUploadUrl -Timeout $ConnectionTimeOutInSeconds  | ConvertFrom-Json\r\n}\r\n\r\n$shipEntries = $shipResponse.Entries\r\n$items = New-Object System.Collections.Generic.List[string]\r\n$shipEntries | \r\n\tForEach-Object {\r\n\t\tif($_.ID -ne $null)\r\n\t\t{\r\n\t\t\tWrite-Host $_.ID -foregroundcolor cyan\r\n\t\t\t$items.Add($_.ID )\r\n\t\t}\r\n\t}\r\n\t\r\nif($ResultsOutputPath -ne $null)\r\n{\r\n    Write-Host \"Saving Results to:\" $ResultsOutputPath\r\n\t$items  | out-file $ResultsOutputPath\r\n}\r\n\r\n",
+    "Octopus.Action.CustomScripts.Deploy.ps1": "",
+    "Octopus.Action.CustomScripts.PostDeploy.ps1": ""
+  },
+  "Parameters": [
+    {
+      "Id": "8be53044-a688-48db-bc0c-d7c29c9d5993",
+      "Name": "SiteUrl",
+      "Label": "Site Url",
+      "HelpText": "Url for the site you are installing the .update package on (ex: _http://mysite.dev_)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "d4bd2493-7325-43b5-9e41-6a5c2fd03434",
+      "Name": "ConnectionTimeOutInSeconds",
+      "Label": "Connection Timeout",
+      "HelpText": "Connection Timeout in seconds (ex: _300_)",
+      "DefaultValue": "300",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "a3365b81-a8c2-4554-ba29-0fca2d52a2bd",
+      "Name": "Username",
+      "Label": "Username",
+      "HelpText": "If your Ship endpoint requires authentication, insert Username here",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "0151a6e4-f79b-4847-811c-eb6c43a40838",
+      "Name": "Password",
+      "Label": "Password",
+      "HelpText": "If your Ship endpoint requires authentication, insert Password here",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b03b95c5-aabc-4c5f-9585-cbaa0c93f621",
+      "Name": "PackageID",
+      "Label": "Package ID",
+      "HelpText": "The ID of the package (from the builtin feed) you want to deploy",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "Category": "sitecore",
+  "LastModifiedBy" : "svandenbush@geekhive.com",
+  "$Meta": {
+    "ExportedAt": "2017-07-12T21:51:52.045Z",
+    "OctopusVersion": "3.13.0",
+    "Type": "ActionTemplate"
+  }
+}
