@@ -9,7 +9,7 @@
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptBody": "$action = $OctopusParameters[\"Action\"]\nif ($Action -eq \"/RESET\") { Write-Host \"Resetting IIS\" }\nelseif ($Action -eq \"/START\") { Write-Host \"Starting IIS\" }\nelseif ($Action -eq \"/STOP\") { Write-Host \"Stopping IIS\" }\n\nStart-Process -FilePath \"iisreset\" -ArgumentList $Action -Wait -ErrorAction $OctopusParameters[\"ErrorAction\"]",
+    "Octopus.Action.Script.ScriptBody": "$wait = $OctopusParameters[\"iisWait\"] -and [boolean]::Parse($OctopusParameters[\"iisWait\"])\n$action = $OctopusParameters[\"iisAction\"]\nif ($Action -eq \"/RESTART\") { Write-Host \"Resetting IIS\" }\nelseif ($Action -eq \"/START\") { Write-Host \"Starting IIS\" }\nelseif ($Action -eq \"/STOP\") { Write-Host \"Stopping IIS\" }\n\nif ($wait) {\n    Write-Host \"Running with wait\"\n    Start-Process -FilePath \"iisreset\" -ArgumentList $Action -ErrorAction $OctopusParameters[\"iisErrorAction\"] -Wait\n}\nelse {\n    Write-Host \"Running without wait\"\n    Start-Process -FilePath \"iisreset\" -ArgumentList $Action -ErrorAction $OctopusParameters[\"iisErrorAction\"]\n}\n",
     "Octopus.Action.Script.ScriptFileName": null,
     "Octopus.Action.Package.FeedId": null,
     "Octopus.Action.Package.PackageId": null
@@ -17,7 +17,7 @@
   "Parameters": [
     {
       "Id": "aff3b743-7ca7-452b-a4bb-0bc4b4811763",
-      "Name": "Wait",
+      "Name": "iisWait",
       "Label": "Wait for command to finish",
       "HelpText": null,
       "DefaultValue": "True",
@@ -28,7 +28,7 @@
     },
     {
       "Id": "993ab611-208d-4a41-bd76-cd243fa5e5ce",
-      "Name": "ErrorAction",
+      "Name": "iisErrorAction",
       "Label": "Action on error",
       "HelpText": "",
       "DefaultValue": "Stop",
@@ -40,13 +40,13 @@
     },
     {
       "Id": "a1826626-c86a-4ce0-892a-8a09a53f9f8b",
-      "Name": "Action",
+      "Name": "iisAction",
       "Label": "Action",
       "HelpText": "Start, stop, or reset",
-      "DefaultValue": "/RESET",
+      "DefaultValue": "/RESTART",
       "DisplaySettings": {
         "Octopus.ControlType": "Select",
-        "Octopus.SelectOptions": "/RESET|Reset\n/START|Start\n/STOP|Stop"
+        "Octopus.SelectOptions": "/RESTART|Restart\n/START|Start\n/STOP|Stop"
       },
       "Links": {}
     }
