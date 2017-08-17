@@ -85,10 +85,10 @@ gulp.task('tests', ['lint:step-templates'], () => {
   // gulp-jasmine works on filepaths so you can't have any plugins before it
     .pipe(jasmine({
       includeStackTrace: false,
-      reporter: [ 
-        new jasmineReporters.JUnitXmlReporter(), 
-        (process.env.TEAMCITY_VERSION 
-          ? new jasmineReporters.TeamCityReporter() 
+      reporter: [
+        new jasmineReporters.JUnitXmlReporter(),
+        (process.env.TEAMCITY_VERSION
+          ? new jasmineReporters.TeamCityReporter()
           : new jasmineTerminalReporter())
       ]
     }))
@@ -116,6 +116,7 @@ function humanize(categoryId){
     case 'hockeyapp': return 'HockeyApp';
     case 'http': return 'HTTP';
     case 'iis': return 'IIS';
+    case 'json': return 'JSON';
     case 'linux': return 'Linux';
     case 'microsoft-teams': return 'Microsoft Teams';
     case 'netscaler': return 'NetScaler';
