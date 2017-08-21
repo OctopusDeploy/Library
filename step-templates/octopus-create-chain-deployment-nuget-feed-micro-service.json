@@ -1,0 +1,113 @@
+{
+  "Id": "8332e070-f822-44e4-94ff-b9e70430d1e0",
+  "Name": "Octopus - Create Chain Deployment NuGet Feed micro service",
+  "Description": "Provisions & registers a _NuGet External Feed_ micro service in Octopus that can be used to initiate chain deployments. \n[View the OctopusNuGetDeploymentFeed GitHub page for more information](https://github.com/paulmarsy/OctopusNuGetDeploymentFeed)",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Azure.AccountId": "#{StepTemplate_Account}",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "<#\r\n ----- Octopus - Create Chain Deployment NuGet Feed ----- \r\n    Paul Marston @paulmarsy (paul@marston.me)\r\nLinks\r\n    https://github.com/OctopusDeploy/Library/commits/master/step-templates/octopus-create-chain-deployment-nuget-feed-micro-service.json\r\n\r\n----- Advanced Configuration Settings -----\r\nVariable names can use either of the following two formats: \r\n    Octopus.Action.<Setting Name> - will apply to all steps in the deployment, e.g.\r\n        Octopus.Action.DebugLogging\r\n    Octopus.Action[Step Name].<Setting Name> - will apply to 'step name' alone, e.g.\r\n        Octopus.Action[Capture Web VM Image].StorageAccountKey\r\n\r\nAvailable Settings:\r\n    VMName - change the name of the VM, default is OctopusFeed\r\n    AdminUsername - specifies the admin username, default is {vm name}admin\r\n    AdminPassword - specifies a specific password for the admin user, default is a random guid\r\n    DebugEnabled - set to true to write out the username and password for the VM administrator user \r\n    InstallScript - PowerShell script to run on the VM after the service has been deployed, but before starting\r\n#>\r\n#Requires -Modules AzureRM.Resources\r\n#Requires -Modules AzureRM.Network\r\n\r\n$ErrorActionPreference = 'Stop'\r\n\r\nfunction Get-OctopusSetting  {\r\n    param([Parameter(Position = 0, Mandatory)][string]$Name, [Parameter(Position = 1, Mandatory)]$DefaultValue)\r\n    $formattedName = 'Octopus.Action.{0}' -f $Name\r\n    if ($OctopusParameters.ContainsKey($formattedName)) {\r\n        $value = $OctopusParameters[$formattedName]\r\n        if ($DefaultValue -is [int]) { return ([int]::Parse($value)) }\r\n        if ($DefaultValue -is [bool]) { return ([System.Convert]::ToBoolean($value)) }\r\n        if ($DefaultValue -is [array] -or $DefaultValue -is [hashtable] -or $DefaultValue -is [pscustomobject]) { return (ConvertFrom-Json -InputObject $value) }\r\n        return $value\r\n    }\r\n    else { return $DefaultValue }\r\n}\r\n\r\n$vnet = Get-AzureRmVirtualNetwork -Name $StepTemplate_VNetName -ResourceGroupName $StepTemplate_VNetResourceGroupName\r\nWrite-Host \"Found Virtual Network '$($vnet.Name)' in resource group '$($vnet.ResourceGroupName)'\"\r\n$subnet = Get-AzureRmVirtualNetworkSubnetConfig -Name $StepTemplate_SubnetName -VirtualNetwork $vnet\r\nWrite-Host \"Found subnet '$($subnet.Name)' with address prefix '$($subnet.AddressPrefix)'\"\r\n\r\n$resourceGroup = Get-AzureRmResourceGroup -Name $StepTemplate_ResourceGroupName -ErrorAction Ignore\r\nif ($resourceGroup) {\r\n    Write-Host \"Removing existing resource group: $($resourceGroup.ResourceGroupName)\"\r\n    Remove-AzureRmResourceGroup -Name $StepTemplate_ResourceGroupName -Force | Out-Null\r\n}\r\nWrite-Host \"Creating resource group '$StepTemplate_ResourceGroupName' in region '$($vnet.Location)'\"\r\n$resourceGroup = New-AzureRmResourceGroup -Name $StepTemplate_ResourceGroupName -Location $vnet.Location\r\nWrite-Verbose ($resourceGroup | Out-String)\r\n\r\n$vmName = Get-OctopusSetting VMName 'OctopusFeed'\r\n$adminUsername = Get-OctopusSetting AdminUsername ('{0}admin' -f $vmName.ToLower())\r\n$adminPassword = Get-OctopusSetting AdminPassword (New-Guid).Guid\r\nif (Get-OctopusSetting DebugEnabled $False) {\r\n    Write-Warning \"Virtual machine running in debug mode!\"\r\n    Write-Host \"Admin Username: $adminUsername\"\r\n    Write-Host \"Admin Password: $adminPassword\"\r\n}\r\n$installScript = Get-OctopusSetting InstallScript \"Write-Host 'Install completed'\"\r\n\r\nWrite-Host \"Starting resource group deployment...\"\r\n$deployment = New-AzureRmResourceGroupDeployment -Name OctopusNuGetFeedDeployment -ResourceGroupName $resourceGroup.ResourceGroupName -Force `\r\n  -TemplateUri 'https://raw.githubusercontent.com/paulmarsy/OctopusNuGetDeploymentFeed/master/Provisioning/template.json' `\r\n  -virtualMachineName $vmName `\r\n  -virtualMachineSize $StepTemplate_VMSize `\r\n  -adminUsername $adminUsername `\r\n  -adminPassword (ConvertTo-SecureString -String $adminPassword -AsPlainText -Force) `\r\n  -virtualNetworkResourceGroupName $vnet.ResourceGroupName `\r\n  -virtualNetworkName $vnet.Name `\r\n  -virtualNetworkSubnetName $subnet.Name `\r\n  -timestamp $OctopusParameters['Octopus.Deployment.CreatedUtc'] `\r\n  -installScript:$installScript\r\nWrite-Host ($deployment | Format-List -Property @('DeploymentName','ResourceGroupName','ProvisioningState','Timestamp','ParametersString', 'OutputsString') | Out-String)\r\n\r\nWrite-Host 'Registering NuGet feed with Octopus...'\r\n$credential = New-Object pscredential -ArgumentList @($StepTemplate_BaseUrl, (ConvertTo-SecureString -AsPlainText -Force $StepTemplate_ApiKey))\r\n$registerFeedUrl = 'http://{0}/admin/registerfeed' -f $deployment.Outputs.privateIp.Value\r\nWrite-Host \"Calling REST method: $registerFeedUrl\"\r\n$registerResult = Invoke-RestMethod -UseBasicParsing -Credential $credential -Uri $registerFeedUrl\r\nWrite-Host \"$($registerResult.action) Nuget feed: ${StepTemplate_BaseUrl}/app#/library/feeds/$($registerResult.id)\"\r\n\r\nWrite-Host ('-'*80)\r\nWrite-Host \"NuGet Feed URL: http://$($deployment.Outputs.privateIp.Value)/nuget\"\r\nWrite-Host \"Test URL: ${StepTemplate_BaseUrl}/app#/library/feeds/$($registerResult.id)/test\"\r\nWrite-Host 'More Info: https://github.com/paulmarsy/OctopusNuGetDeploymentFeed/blob/master/README.md'",
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "603ad1fe-6aae-4df6-ba70-653f5c0554cd",
+      "Name": "StepTemplate_BaseUrl",
+      "Label": "Octopus Server URL",
+      "HelpText": "URL of the Octopus Web Portal that the NuGet feed will connect to & create deployable NuGet packages for e.g.\n\nhttps://demo.octopusdeploy.com/",
+      "DefaultValue": "#{Octopus.Web.BaseUrl}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "3e3f415b-58d1-4717-980f-ca6bb1f49ac2",
+      "Name": "StepTemplate_ApiKey",
+      "Label": "API Key",
+      "HelpText": "An Octopus API Key with appropriate permissions to create the NuGet [External Feed](#/library/feeds) & perform Octopus deployments",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "d3ccdbbd-c28f-4024-8d32-f5b3f8361215",
+      "Name": "StepTemplate_Account",
+      "Label": "Octopus Azure Account",
+      "HelpText": "The [account id](#/accounts) of an Azure Service Principal to provision the micro service VM.\n\nMust be in the Octopus id format i.e. **azureserviceprincipal-visual-studio-enterprise**",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "f5218137-d3c9-4bc8-bbad-56c1a7500a1b",
+      "Name": "StepTemplate_ResourceGroupName",
+      "Label": "Resource Group Name",
+      "HelpText": "Name of the Azure Resource Group to create & deploy the micro service into.\n\n_The resource group will be deleted & recreated if it already exists_",
+      "DefaultValue": "OctopusNuGetChainFeed",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ab9357fc-61e9-441c-915d-203d13d1d631",
+      "Name": "StepTemplate_VMSize",
+      "Label": "Virtual Machine Size",
+      "HelpText": "Select the size of VM to provision for the micro service.\n\nRecommended sizes\n- _Personal Use:_ Basic series\n- _Test:_ Av2 series\n- _Production:_ F series",
+      "DefaultValue": "Standard_A1_v2",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Basic_A0|Basic A0 (1 core, 0.75 GiB)\nBasic_A1|Basic A1 (1 core, 1.75 GiB)\nStandard_A1_v2|Standard A1 v2 (1 core, 2.00 GiB)\nStandard_A2_v2|Standard A2 v2 (2 core, 4.00 GiB)\nStandard_F1|Standard F1 (1 core, 2.00 GiB)\nStandard_F2|Standard F2 (2 core, 4.00 GiB)\nStandard_F4|Standard F4 (4 core, 8.00 GiB)"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "f4f2add0-bbf6-4ee8-89da-7590feac0280",
+      "Name": "StepTemplate_VNetResourceGroupName",
+      "Label": "Virtual Network Resource Group Name",
+      "HelpText": "Resource group of the virtual network to connect the provisioned VM to.\n\n**The virtual network must allow two-way connectivity between the Octopus web portal and the VM over HTTP.**",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "dbfbfbed-d726-4b12-bc02-d6defb1907d2",
+      "Name": "StepTemplate_VNetName",
+      "Label": "Virtual Network Name",
+      "HelpText": "Name of the virtual network to associate the virtual machine with.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "d245aa67-d9f3-45e5-a5ad-1ddd05bfad12",
+      "Name": "StepTemplate_SubnetName",
+      "Label": "Subnet Name",
+      "HelpText": "Specify which subnet in the virtual network the VM should use.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "paulmarsy",
+  "$Meta": {
+    "ExportedAt": "2017-08-21T02:35:41.058Z",
+    "OctopusVersion": "3.16.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "octopus"
+}
