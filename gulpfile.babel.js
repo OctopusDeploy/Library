@@ -105,6 +105,7 @@ function humanize(categoryId){
     case 'aws': return 'AWS';
     case 'azureFunctions': return 'Azure Functions';
     case 'clickonce': return 'ClickOnce';
+    case 'dotnetcore': return '.NET Core';
     case 'edgecast': return 'EdgeCast';
     case 'elmah': return 'ELMAH';
     case 'entityframework': return 'Entity Framework';
