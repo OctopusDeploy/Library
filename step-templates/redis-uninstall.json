@@ -1,0 +1,37 @@
+{
+  "Id": "959fbb4a-8e2e-4e21-bc55-863837b3cbed",
+  "Name": "Redis - Uninstall service",
+  "Description": "This step can be used before unpacking a package with Redis service to stop and remove the previous installation, if there is one.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$name = $OctopusParameters['rus_ServiceName']\r\n\r\n$service = Get-Service -Name $name -ErrorAction SilentlyContinue\r\n\r\nif (-not $service) {\r\n    Write-Host \">>> $name service not found. Skipping this time.\"\r\n    return\r\n}\r\n\r\nWrite-Host \">>> Uninstalling with: sc.exe\"\r\nif ($service.Status -eq 'Running') {\r\n    &\"sc.exe\" stop $name | Write-Host\r\n}\r\n&\"sc.exe\" delete $name | Write-Host\r\n\r\n$limit = 15\r\nwhile (Get-Service -Name $name -ErrorAction SilentlyContinue) {\r\n    Start-Sleep -s 1\r\n    \r\n    $limit = $limit - 1\r\n    if ($limit -eq 0) {\r\n        Throw \"Unable to stop Redis service within 15s\"\r\n    }\r\n}",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "12713171-c487-4118-8a4c-7bd8c2e5e269",
+      "Name": "rus_ServiceName",
+      "Label": "Service name",
+      "HelpText": null,
+      "DefaultValue": "Redis",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "J-Sek",
+  "$Meta": {
+    "ExportedAt": "2017-08-31T23:11:05.000Z",
+    "OctopusVersion": "3.16.6",
+    "Type": "ActionTemplate"
+  },
+  "Category": "redis"
+}
