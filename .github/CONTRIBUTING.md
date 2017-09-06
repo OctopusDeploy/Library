@@ -10,7 +10,7 @@ Have a great custom step that other Octopus users will love? Here's how to get i
 5. Check that the `LastModifiedBy` username is one you're happy to use on the site (ideally your plain GitHub username)
 6. Add Id property and set it to a GUID using the following format `abcdef00-ab00-cd00-ef00-000000abcdef`, you can use [this site](https://www.guidgen.com/) to generate one automatically
 7. Optional: Assign your template to an existing category. Have a look at existing templates to find the category that matches your template. If you don't specify it your template will be assigned to 'other' category.
-   - If you add a new category, make sure that you add an icon in `.png` format with a size of 200x200px to the `logos` folder with the same name as your category.
+   - If you add a new category, make sure that you add an icon in `.png` format with a size of 200x200px to the `logos` folder with the same name as your category. Also, the `switch` in the `humanize` function in [`gulpfile.babel.js`](https://github.com/OctopusDeploy/Library/blob/master/gulpfile.babel.js#L92) must have a `case` statement corresponding to it.
 8. If you're updating an existing step template, make sure the `Version` property is incremented (e.g. by 1). If the `Version` doesn't change then the [Community Library Integration](http://docs.octopusdeploy.com/display/OD/Step+Templates#StepTemplates-TheCommunityLibrary) in Octopus won't see your changes.
 9. Commit and push your changes to your fork
 10. View your fork in GitHub to create a _pull request_
