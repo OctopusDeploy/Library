@@ -104,6 +104,7 @@ function humanize(categoryId){
     case 'aspnet': return 'ASP.NET';
     case 'aws': return 'AWS';
     case 'azureFunctions': return 'Azure Functions';
+    case 'azure-site-extensions': return 'Azure Site Extensions';
     case 'clickonce': return 'ClickOnce';
     case 'dotnetcore': return '.NET Core';
     case 'edgecast': return 'EdgeCast';
