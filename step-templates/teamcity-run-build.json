@@ -1,0 +1,67 @@
+{
+  "Id": "a7fa3e51-14aa-4bb9-8686-781adc9bf93e",
+  "Name": "TeamCity - Run Build2",
+  "Description": "Trigger a specific Team City build from an Octopus Deploy process and wait for the result. The step will fail if the build fails.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$teamCityBuildConfigId = $OctopusParameters['tcrb_TeamCityBuildConfigurationId']\n$teamCityUrl = $OctopusParameters['tcrb_TeamCityUrl']\n$teamCityUsername = $OctopusParameters['tcrb_TeamCityUsername']\n$teamCityPassword = $OctopusParameters['tcrb_TeamCityPassword']\n$teamCityInterval = [int]::Parse($OctopusParameters['tcrb_TeamCityInterval'])\n\nfunction Start-TeamCityBuild($Url, $Username, $Password, $BuildConfigId) {\n    $endpoint = \"${Url}/httpAuth/app/rest/buildQueue\"\n    $content = \"<build><buildType id=`\"${BuildConfigId}`\" /></build>\"\n    $encodedContent = [System.Text.Encoding]::UTF8.GetBytes($content)\n\n    Write-Host \"Triggering build with Id ${BuildConfigId} in TeamCity. Server: ${Url}\"\n\n    $req = [System.Net.WebRequest]::Create($endpoint)\n    $req.Credentials = New-Object System.Net.NetworkCredential($Username, $Password)\n    $req.Method = \"POST\"\n    $req.ContentType = \"application/xml\"\n\n    $req.ContentLength = $encodedContent.length\n    $requestStream = $req.GetRequestStream()\n    $requestStream.Write($encodedContent, 0, $encodedContent.length)\n    $requestStream.Close()\n\n    $resp = $req.GetResponse()\n    $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())\n    $result = [xml]$reader.ReadToEnd()\n    $buildUrl = $result.build.webUrl\n\n    Write-Host $buildUrl\n    Write-Host \"================================================================================\"\n\n    return $result\n}\n\nfunction Get-TeamCityBuildState($Url, $Username, $Password, $BuildInfo) {\n    $href = $BuildInfo.href\n    $buildId = $BuildInfo.id\n    $endpoint = \"${Url}${href}\"\n\n    Write-Host \"Getting state of build ${buildId} in TeamCity. Server: ${Url}\"\n\n    $req = [System.Net.WebRequest]::Create($endpoint)\n    $req.Credentials = New-Object System.Net.NetworkCredential($Username, $Password)\n    $req.Method = \"GET\"\n\n    $resp = $req.GetResponse()\n    $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())\n    return [xml]$reader.ReadToEnd();\n}\n\nfunction Invoke-TeamCityBuild ($Url, $Username, $Password, $BuildConfigId, $Interval) {\n    $build = Start-TeamCityBuild -Url $Url -Username $Username -Password $Password -BuildConfigId $BuildConfigId\n    $buildInfo = $build.build\n\n    while ($true) {\n        $buildState = Get-TeamCityBuildState -Url $teamCityUrl -Username $teamCityUsername -Password $teamCityPassword -BuildInfo $buildInfo\n        Write-Host $buildState.build.state\n        if ($buildState.build.state -eq 'finished') {\n            return $buildState.build\n        }\n        \n        Start-Sleep -Seconds $Interval\n    }\n}\n\n$buildResult = Invoke-TeamCityBuild -Url $teamCityUrl -Username $teamCityUsername -Password $teamCityPassword -BuildConfigId $teamCityBuildConfigId -Interval $teamCityInterval\n$message = $buildResult.statusText\nWrite-Host \"================================================================================\"\nWrite-Host $buildResult.webUrl\nif ($buildResult.status -eq 'FAILURE') {\n    Write-Host \"Build failed: ${message}\"\n    exit 1\n}\nelse {\n    Write-Host \"Build successful: ${message}\"\n    exit 0\n}\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "tcrb_TeamCityBuildConfigurationId",
+      "Label": "BuildConfigurationId",
+      "HelpText": "The Id of the build configuration to trigger.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "tcrb_TeamCityUrl",
+      "Label": "TeamCityUrl",
+      "HelpText": "The URL of the Team City server.\nE.g. `http://teamcity.example.com`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "tcrb_TeamCityUsername",
+      "Label": "TeamCityUsername",
+      "HelpText": "The username to use for accessing TeamCity.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "tcrb_TeamCityPassword",
+      "Label": "TeamCityPassword",
+      "HelpText": "The password for the TeamCity user.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "tcrb_TeamCityInterval",
+      "Label": "TeamCityInterval",
+      "HelpText": "Number of seconds to wait between each check of the build's state.",
+      "DefaultValue": "5",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2017-09-12T19:12:43.500+00:00",
+  "LastModifiedBy": "zappy-shu",
+  "$Meta": {
+    "ExportedAt": "2017-09-12T19:12:43.500+00:00",
+    "OctopusVersion": "3.16.2",
+    "Type": "ActionTemplate"
+  },
+  "Category": "teamcity"
+}
