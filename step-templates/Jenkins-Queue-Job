@@ -1,6 +1,6 @@
 {
   "Id": "ccb7ad4c-a19e-426f-822e-cd0e0243bda3",
-  "Name": "Queue Jenkins Job",
+  "Name": "Jenkins - Queue Job",
   "Description": "Trigger a job in Jenkins",
   "ActionType": "Octopus.Script",
   "Version": 1,
@@ -9,7 +9,7 @@
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptBody": "$JenkinsServer = \"http://jenkins:8080/\"\r\n$jobURL = $JenkinsServer + $OctopusParameters['JobUrl']\r\n$failBuild = $OctopusParameters['FailBuild']\r\n$jobTimeout = $OctopusParameters['JobTimeout']\r\n$buildParam = $OctopusParameters['BuildParam']\r\n$buildResult = \"/lastBuild/api/json?tree=result,number,building\"\r\n\r\nWrite-Host \"job url: \" $jobURL$buildParam \r\n$response = Invoke-WebRequest -Uri $jobURL$buildParam  -Method Post\r\n\r\nif ($failBuild -eq \"True\")\r\n{\r\n   $isBuilding=\"True\"\r\n   $i = 0\r\n   Write-Host \"Estimate Job Duration: \" $jobTimeout\r\n   while ($isBuilding -eq \"True\" -and $i -lt $jobTimeout)\r\n   {       \r\n       $i +=20\r\n       Write-Host \"waiting $i secs for build to complete\"\r\n       Start-Sleep -s 20\r\n       $retyJobStatus = Invoke-RestMethod -Uri $jobURL$buildResult -Method Get\r\n       $isBuilding=$retyJobStatus[0].building\r\n       $result = $retyJobStatus[0].result\r\n       $buildNumber = $retyJobStatus[0].number\r\n       Write-Host \"Retry Job Status: \" $result \" BuildNumber: \"  $buildNumber  \" IsBuilding: \"  $isBuilding \r\n   }\r\n   \r\n   if ($result -ne \"SUCCESS\")\r\n   {\r\n       echo \"BUILD FAILURE: build is unsuccessful or status could not be obtained.\"\r\n       exit 1\r\n   }\r\n}",
+    "Octopus.Action.Script.ScriptBody": "$jenkinsServer = $OctopusParameters['jqj_JenkinsServer'] \r\n$jobURL = $jenkinsServer + $OctopusParameters['jqj_JobUrl']\r\n$failBuild = $OctopusParameters['jqj_FailBuild']\r\n$jobTimeout = $OctopusParameters['jqj_JobTimeout']\r\n$buildParam = $OctopusParameters['jqj_BuildParam']\r\n$buildResult = \"/lastBuild/api/json?tree=result,number,building\"\r\n\r\nWrite-Host \"job url: \" $jobURL$buildParam \r\n$response = Invoke-WebRequest -Uri $jobURL$buildParam  -Method Post\r\n\r\nif ($failBuild -eq \"True\")\r\n{\r\n   $isBuilding=\"True\"\r\n   $i = 0\r\n   Write-Host \"Estimate Job Duration: \" $jobTimeout\r\n   while ($isBuilding -eq \"True\" -and $i -lt $jobTimeout)\r\n   {       \r\n       $i +=20\r\n       Write-Host \"waiting 20 secs for build to complete\"\r\n       Start-Sleep -s 20\r\n       $retyJobStatus = Invoke-RestMethod -Uri $jobURL$buildResult -Method Get\r\n       $isBuilding=$retyJobStatus[0].building\r\n       $result = $retyJobStatus[0].result\r\n       $buildNumber = $retyJobStatus[0].number\r\n       Write-Host \"Retry Job Status: \" $result \" BuildNumber: \"  $buildNumber  \" IsBuilding: \"  $isBuilding \r\n   }\r\n   \r\n   if ($result -ne \"SUCCESS\")\r\n   {\r\n       echo \"BUILD FAILURE: build is unsuccessful or status could not be obtained.\"\r\n       exit 1\r\n   }\r\n}",
     "Octopus.Action.Script.ScriptFileName": null,
     "Octopus.Action.Package.FeedId": null,
     "Octopus.Action.Package.PackageId": null
@@ -17,9 +17,9 @@
   "Parameters": [
     {
       "Id": "b8337514-3989-4b33-930c-b5ebde5b4be0",
-      "Name": "JobUrl",
+      "Name": "jqj_JobUrl",
       "Label": "Job Url",
-      "HelpText": "e.g. job/projectname/build",
+      "HelpText": "e.g. job/jobname/build",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -28,18 +28,18 @@
     },
     {
       "Id": "a52f7318-6f45-4e9f-b825-b3ae767608f8",
-      "Name": "FailBuild",
+      "Name": "jqj_FailBuild",
       "Label": "Fail Build",
       "HelpText": "Should this fail the deployment?",
-      "DefaultValue": "No",
+      "DefaultValue": "false",
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
       },
       "Links": {}
     },
     {
-      "Id": "299a4df6-dd1c-4e38-9d9e-d64c69c9cc65",
-      "Name": "JobTimeout",
+      "Id": "a59c57d3-0177-470c-80e0-f103e57f30d3",
+      "Name": "jqj_JobTimeout",
       "Label": "Timeout Duration(secs)",
       "HelpText": "e.g. 60. Specify in secs how long to check for the job status before timing out.",
       "DefaultValue": "0",
@@ -49,8 +49,8 @@
       "Links": {}
     },
     {
-      "Id": "36b50c4e-e086-4e6a-ac91-311cf5dc3bef",
-      "Name": "BuildParam",
+      "Id": "70e9cf06-3712-4950-a174-a5c5c7bd5858",
+      "Name": "jqj_BuildParam",
       "Label": "Build Param",
       "HelpText": "e.g. ?Param=Value or ?delay=10sec",
       "DefaultValue": "/build",
@@ -58,13 +58,24 @@
         "Octopus.ControlType": "SingleLineText"
       },
       "Links": {}
+    },
+    {
+      "Id": "da8cdc0a-3cd8-4b34-9e5d-13245f77002c",
+      "Name": "jqj_JenkinsServer",
+      "Label": "Jenkins Server",
+      "HelpText": null,
+      "DefaultValue": "http://jenkins:8080/",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
     }
   ],
   "LastModifiedOn": 2017-08-11T15:50:26.518Z",
-  "LastModifiedBy": "George Nelson",
+  "LastModifiedBy": "@george-nelson",
   "$Meta": {
-    "ExportedAt": "2017-08-11T15:50:26.518Z",
-    "OctopusVersion": "3.15.7",
+    "ExportedAt": "2017-09-22T15:24:11.311Z",
+    "OctopusVersion": "3.17.2",
     "Type": "ActionTemplate"
   },
   "Category": "jenkins"
