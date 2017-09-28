@@ -118,6 +118,7 @@ function humanize(categoryId){
     case 'hockeyapp': return 'HockeyApp';
     case 'http': return 'HTTP';
     case 'iis': return 'IIS';
+    case 'jira': return 'JIRA';
     case 'json': return 'JSON';
     case 'linux': return 'Linux';
     case 'microsoft-teams': return 'Microsoft Teams';
