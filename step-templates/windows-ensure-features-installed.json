@@ -3,9 +3,9 @@
   "Name": "Windows - Ensure Features Installed",
   "Description": "Ensures that a set of Windows Features are installed on the system.",
   "ActionType": "Octopus.Script",
-  "Version": 3,
+  "Version": 4,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$requiredFeatures = $OctopusParameters['WindowsFeatures'].split(\",\") | foreach { $_.trim() }\nif(! $requiredFeatures) {\n    Write-Output \"No required Windows Features specified...\"\n    exit\n}\n$requiredFeatures | foreach { $feature = DISM.exe /ONLINE /Get-FeatureInfo /FeatureName:$_; if($feature -like \"*Feature name $_ is unknown*\") { throw $feature } }\n\nWrite-Output \"Retrieving all Windows Features...\"\n$allFeatures = DISM.exe /ONLINE /Get-Features /FORMAT:List | Where-Object { $_.StartsWith(\"Feature Name\") -OR $_.StartsWith(\"State\") } \n$features = new-object System.Collections.ArrayList\nfor($i = 0; $i -lt $allFeatures.length; $i=$i+2) {\n    $feature = $allFeatures[$i]\n    $state = $allFeatures[$i+1]\n    $features.add(@{feature=$feature.split(\":\")[1].trim();state=$state.split(\":\")[1].trim()}) | OUT-NULL\n}\n\nWrite-Output \"Checking for missing Windows Features...\"\n$missingFeatures = new-object System.Collections.ArrayList\n$features | foreach { if( $requiredFeatures -contains $_.feature -and $_.state -eq 'Disabled') { $missingFeatures.add($_.feature) | OUT-NULL } }\nif(! $missingFeatures) {\n    Write-Output \"All required Windows Features are installed\"\n    exit\n}\nWrite-Output \"Installing missing Windows Features...\"\n$featureNameArgs = \"\"\n$missingFeatures | foreach { $featureNameArgs = $featureNameArgs + \" /FeatureName:\" + $_ }\n$dism = \"DISM.exe\"\nIF ($SuppressReboot)\n{\n    $arguments = \"/NoRestart \"\n}\nELSE\n{\n    $arguments = \"\"\n}\n$arguments = $arguments + \"/ONLINE /Enable-Feature /All $featureNameArgs\"\nWrite-Output \"Calling DISM with arguments: $arguments\"\nstart-process -NoNewWindow $dism $arguments",
+    "Octopus.Action.Script.ScriptBody": "$requiredFeatures = $OctopusParameters['WindowsFeatures'].split(\",\") | foreach { $_.trim() }\nif(! $requiredFeatures) {\n    Write-Output \"No required Windows Features specified...\"\n    exit\n}\n$requiredFeatures | foreach { $feature = DISM.exe /ONLINE /Get-FeatureInfo /FeatureName:$_; if($feature -like \"*Feature name $_ is unknown*\") { throw $feature } }\n\nWrite-Output \"Retrieving all Windows Features...\"\n$allFeatures = DISM.exe /ONLINE /Get-Features /FORMAT:List | Where-Object { $_.StartsWith(\"Feature Name\") -OR $_.StartsWith(\"State\") } \n$features = new-object System.Collections.ArrayList\nfor($i = 0; $i -lt $allFeatures.length; $i=$i+2) {\n    $feature = $allFeatures[$i]\n    $state = $allFeatures[$i+1]\n    $features.add(@{feature=$feature.split(\":\")[1].trim();state=$state.split(\":\")[1].trim()}) | OUT-NULL\n}\n\nWrite-Output \"Checking for missing Windows Features...\"\n$missingFeatures = new-object System.Collections.ArrayList\n$features | foreach { if( $requiredFeatures -contains $_.feature -and $_.state.StartsWith(\"Disabled\")) { $missingFeatures.add($_.feature) | OUT-NULL } }\nif(! $missingFeatures) {\n    Write-Output \"All required Windows Features are installed\"\n    exit\n}\nWrite-Output \"Installing missing Windows Features...\"\n$featureNameArgs = \"\"\n$missingFeatures | foreach { $featureNameArgs = $featureNameArgs + \" /FeatureName:\" + $_ }\n$dism = \"DISM.exe\"\nIF ($SuppressReboot)\n{\n    $arguments = \"/NoRestart \"\n}\nELSE\n{\n    $arguments = \"\"\n}\n$arguments = $arguments + \"/ONLINE /Enable-Feature /All $featureNameArgs\"\nWrite-Output \"Calling DISM with arguments: $arguments\"\nstart-process -NoNewWindow $dism $arguments",
     "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
@@ -29,11 +29,11 @@
       }
     }
   ],
-  "LastModifiedOn": "2014-08-30T15:17:19.861+00:00",
-  "LastModifiedBy": "cjuroz",
+  "LastModifiedOn": "2017-10-03T21:58:18.839Z",
+  "LastModifiedBy": "WesleySSmith",
   "$Meta": {
-    "ExportedAt": "2014-07-29T16:54:34.499+00:00",
-    "OctopusVersion": "2.5.5.318",
+    "ExportedAt": "2017-10-03T21:58:18.839Z",
+    "OctopusVersion": "3.17.1",
     "Type": "ActionTemplate"
   },
   "Category": "windows"
