@@ -2,6 +2,7 @@
 
 import React from 'react';
 import marked from 'marked';
+import PropTypes from 'prop-types';
 
 const displayName = 'octopus-library-template-parameters';
 
@@ -63,7 +64,7 @@ export default class TemplateParameters extends React.Component {
 TemplateParameters.displayName = displayName;
 
 TemplateParameters.propTypes = {
-  parameters: React.PropTypes.array
+  parameters: PropTypes.array
 };
 
 TemplateParameters.defaultProps = {

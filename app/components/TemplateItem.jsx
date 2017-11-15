@@ -5,6 +5,7 @@ import moment from 'moment';
 import marked from 'marked';
 import SyntaxHiglighter from 'react-syntax-highlighter';
 import {solarizedLight} from 'react-syntax-highlighter/dist/styles';
+import PropTypes from 'prop-types';
 
 import CopyToClipboard from 'react-copy-to-clipboard';
 
@@ -151,7 +152,7 @@ export default class TemplateItem extends React.Component {
 TemplateItem.displayName = displayName;
 
 TemplateItem.propTypes = {
-  params: React.PropTypes.object
+  params: PropTypes.object
 };
 
 TemplateItem.defaultProps = {

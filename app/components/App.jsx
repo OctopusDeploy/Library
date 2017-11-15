@@ -2,6 +2,7 @@
 
 import React from 'react';
 import RouteHandler from 'react-router';
+import PropTypes from 'prop-types';
 
 import Header from './Header';
 import Listing from './Listing';
@@ -34,7 +35,7 @@ export default class App extends React.Component {
 App.displayName = displayName;
 
 App.propTypes = {
-  children: React.PropTypes.object
+  children: PropTypes.object
 };
 
 App.defaultProps = {

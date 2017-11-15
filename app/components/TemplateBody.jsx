@@ -3,6 +3,7 @@
 import React from 'react';
 import SyntaxHiglighter from 'react-syntax-highlighter';
 import {solarizedLight} from 'react-syntax-highlighter/dist/styles';
+import PropTypes from 'prop-types';
 
 const displayName = 'octopus-library-template-body';
 
@@ -72,9 +73,9 @@ export default class TemplateBody extends React.Component {
 TemplateBody.displayName = displayName;
 
 TemplateBody.propTypes = {
-  actionType: React.PropTypes.string,
-  scriptSyntax: React.PropTypes.string,
-  templateBody: React.PropTypes.string
+  actionType: PropTypes.string,
+  scriptSyntax: PropTypes.string,
+  templateBody: PropTypes.string
 };
 
 TemplateBody.defaultProps = {

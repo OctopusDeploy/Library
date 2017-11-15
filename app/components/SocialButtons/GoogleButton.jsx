@@ -2,6 +2,7 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom';
+import PropTypes from 'prop-types';
 
 const displayName = 'octopus-library-template-social-buttons-google';
 
@@ -59,7 +60,7 @@ export default class GoogleButton extends React.Component{
 }
 
 GoogleButton.propTypes = {
-  url: React.PropTypes.string
+  url: PropTypes.string
 };
 
 GoogleButton.defaultProps = {
