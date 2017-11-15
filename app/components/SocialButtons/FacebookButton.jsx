@@ -59,8 +59,7 @@ export default class FacebookButton extends React.Component{
           data-layout="button_count"
           id="fbsharebutton"
           ref={(btn) => this._fbsharebutton = btn}
-      >
-      </div>
+      />
     );
 
   }

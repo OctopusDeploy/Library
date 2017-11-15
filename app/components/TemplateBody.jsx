@@ -42,27 +42,27 @@ export default class TemplateBody extends React.Component {
         description = 'Steps based on this template will render the email body below.';
         break;
       default:
-        return <div></div>;
+        return <div/>;
     }
     var style = { maxHeight: this.getTemplateBodyHeight() };
     return (
       <div>
         <h3>{header}</h3>
         <div className="tutorial">
-          <div dangerouslySetInnerHTML={{ __html: description }}></div>
+          <div dangerouslySetInnerHTML={{ __html: description }}/>
           <a className="faint"
               onClick={this.toggleTemplateBody.bind(this)}
           >
             {this.state.showTemplateBody ? 'Hide' : 'Show '} script
           </a>
         </div>
-        <div className="templateContent" 
+        <div className="templateContent"
             style={style}
         >
-          <SyntaxHiglighter language={this.props.scriptSyntax} 
+          <SyntaxHiglighter language={this.props.scriptSyntax}
               style={solarizedLight}
           >
-              {this.props.templateBody}
+            {this.props.templateBody}
           </SyntaxHiglighter>
         </div>
       </div>

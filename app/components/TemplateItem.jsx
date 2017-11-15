@@ -70,8 +70,8 @@ export default class TemplateItem extends React.Component {
         <div className="step-template">
           <div className="row clearfix">
             <div className="column two-thirds">
-              <img className="logo" 
-                  src={'data:image/gif;base64,' + this.state.template.Logo} 
+              <img className="logo"
+                  src={'data:image/gif;base64,' + this.state.template.Logo}
               />
               <h2 className="name">{this.state.template.Name}</h2>
               <p className="who-when faint no-top-margin">
@@ -115,7 +115,7 @@ export default class TemplateItem extends React.Component {
                 <SyntaxHiglighter language="json"
                     style={solarizedLight}
                 >
-                    {this.toJson(this.state.template)}
+                  {this.toJson(this.state.template)}
                 </SyntaxHiglighter>
               </div>
               <p className="align-right">

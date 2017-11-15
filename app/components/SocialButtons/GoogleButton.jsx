@@ -52,8 +52,7 @@ export default class GoogleButton extends React.Component{
           data-annotation="bubble"
           id="gpbutton"
           ref={(btn) => this._gpbutton = btn}
-      >
-      </div>
+      />
     );
 
   }
