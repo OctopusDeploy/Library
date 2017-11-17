@@ -1,6 +1,7 @@
 'use strict';
 
 import React from 'react';
+import PropTypes from 'prop-types';
 
 import SearchBox from './SearchBox';
 import TemplateList from './TemplateList';
@@ -52,7 +53,7 @@ export default class Listing extends React.Component {
 }
 
 Listing.propTypes = {
-  params: React.PropTypes.object
+  params: PropTypes.object
 };
 
 Listing.defaultProps = {

@@ -1,6 +1,7 @@
 'use strict';
 
 import React from 'react';
+import PropTypes from 'prop-types';
 
 const displayName = 'octopus-library-search-box';
 
@@ -52,9 +53,9 @@ export default class SearchBox extends React.Component {
 }
 
 SearchBox.propTypes = {
-  filterText: React.PropTypes.string,
-  handleUserInput: React.PropTypes.any,
-  templateCount: React.PropTypes.number
+  filterText: PropTypes.string,
+  handleUserInput: PropTypes.any,
+  templateCount: PropTypes.number
 };
 
 SearchBox.defaultProps = {
