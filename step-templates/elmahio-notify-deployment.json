@@ -3,12 +3,12 @@
   "Name": "elmah.io - Register Deployment",
   "Description": "Step template for notifying elmah.io about deployments on Octopus.",
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 4,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptBody": "$version = $OctopusReleaseNumber\n$versionPrefix = $OctopusParameters['VersionPrefix']\nif ($versionPrefix) {\n    $version = $versionPrefix + $version\n}\n\n$url = 'https://api.elmah.io/v3/deployments?api_key=' + $OctopusParameters['ApiKey']\n$body = @{\n  version = $version\n  description = $OctopusReleaseNotes\n  userName = $OctopusParameters['Octopus.Deployment.CreatedBy.Username']\n  userEmail = $OctopusParameters['Octopus.Deployment.CreatedBy.EmailAddress']\n}\nInvoke-RestMethod -Method Post -Uri $url -Body $body",
+    "Octopus.Action.Script.ScriptBody": "$version = $OctopusReleaseNumber\n$url = 'https://api.elmah.io/v3/deployments?api_key=' + $OctopusParameters['ApiKey']\n$body = @{\n  version = $version\n  description = $OctopusReleaseNotes\n  userName = $OctopusParameters['Octopus.Deployment.CreatedBy.Username']\n  userEmail = $OctopusParameters['Octopus.Deployment.CreatedBy.EmailAddress']\n  logId = $OctopusParameters['LogId']\n}\nTry {\n  Invoke-RestMethod -Method Post -Uri $url -Body $body\n}\nCatch {\n  Write-Error $_.Exception.Message -ErrorAction Continue\n}",
     "Octopus.Action.Script.ScriptFileName": null,
     "Octopus.Action.Package.FeedId": null,
     "Octopus.Action.Package.PackageId": null
@@ -18,17 +18,17 @@
       "Id": "0a3fe2a0-5c89-4e56-b1c3-b31bf4978ca4",
       "Name": "ApiKey",
       "Label": "API Key",
-      "HelpText": "Input your elmah.io API key located on your [profile](https://elmah.io/profile).",
+      "HelpText": "Required: Input your elmah.io API key located on the organization settings page.",
       "DefaultValue": null,
       "DisplaySettings": {
         "Octopus.ControlType": "Sensitive"
       }
     },
     {
-      "Id": "93a9044a-5e74-406d-8339-227a851a7b9b",
-      "Name": "VersionPrefix",
-      "Label": "Version Prefix",
-      "HelpText": "To support multiple services with different version ranges, the version prefix can be used to prefix the version number specified on Octopus with a prefix. For more information, check out [Versioning Different Services](http://docs.elmah.io/setup-deployment-tracking/#versioning-different-services).",
+      "Id": "63e08bca-37d8-45ca-bd41-912efa1dfb86",
+      "Name": "LogId",
+      "Label": "Log ID",
+      "HelpText": "Optional: As default, new deployments are shown on all logs on the organization. If you want the deployment to show up on a single log only, input the ID of the log here.",
       "DefaultValue": null,
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -37,7 +37,7 @@
   ],
   "LastModifiedBy": "thomasardal",
   "$Meta": {
-    "ExportedAt": "2016-11-01T06:56:32.501+00:00",
+    "ExportedAt": "2017-02-08T11:36:00.000+00:00",
     "OctopusVersion": "3.4.13",
     "Type": "ActionTemplate"
   },

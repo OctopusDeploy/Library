@@ -1,0 +1,104 @@
+{
+  "Id": "2abc4f4f-06f4-4af6-8b10-52651ab4d3d5",
+  "Name": "AWS - Add or Remove instance from ELBv2",
+  "Description": "Add or Remove the current instance from an ELBv2 Target Group.",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$accessKey = $OctopusParameters['accessKey']\n$secretKey = $OctopusParameters['secretKey']\n$region = $OctopusParameters['region']\n\n$targetGroupArn = $OctopusParameters['targetGroupArn']\n\n$action = $OctopusParameters['action']\n\n$checkInterval = $OctopusParameters['checkInterval']\n$maxChecks = $OctopusParameters['maxChecks']\n\n$awsProfile = (get-date -Format '%y%d%M-%H%m').ToString() # random\n\nImport-Module AWSPowerShell\n\nfunction GetCurrentInstanceId\n{\n    Write-Host \"Getting instance id\"\n\n\t$response = Invoke-RestMethod -Uri \"http://169.254.169.254/latest/meta-data/instance-id\" -Method Get\n\n\tif ($response)\n\t{\n\t\t$instanceId = $response\n\t}\n\telse\n\t{\n\t\tWrite-Error -Message \"Returned Instance ID does not appear to be valid\"\n\t\tExit 1\n\t}\n\n\t$response\n}\n\nfunction GetTarget\n{\n    $instanceId = GetCurrentInstanceId\n\n    $target = New-Object -TypeName Amazon.ElasticLoadBalancingV2.Model.TargetDescription\n    $target.Id = $instanceId\n    \n    Write-Host \"Current instance id: $instanceId\"\n\n    return $target\n}\n\nfunction GetInstanceState\n{\n\t$state = (Get-ELB2TargetHealth -TargetGroupArn $targetGroupArn -Target $target -AccessKey $accessKey -SecretKey $secretKey -Region $region).TargetHealth.State\n\n\tWrite-Host \"Current instance state: $state\"\n\n\treturn $state\n}\n\nfunction WaitForState\n{\n    param([string]$expectedState)\n\n    $instanceState = GetInstanceState -arn $targetGroupArn -target $target\n\n    if ($instanceState -eq $expectedState)\n    {\n        return\n    }\n\n    $checkCount = 0\n\n    Write-Host \"Waiting for instance state to be $expectedState\"\n    Write-Host \"Maximum Checks: $maxChecks\"\n    Write-Host \"Check Interval: $checkInterval\"\n\n    while ($instanceState -ne $expectedState -and $checkCount -le $maxChecks)\n    {\t\n\t    $checkCount += 1\n\t\n\t    Write-Host \"Waiting for $checkInterval seconds for instance state to be $expectedState\"\n\t    Start-Sleep -Seconds $checkInterval\n\t\n\t    if ($checkCount -le $maxChecks)\n\t    {\n\t\t    Write-Host \"$checkCount/$maxChecks Attempts\"\n\t    }\n\t\n\t    $instanceState = GetInstanceState\n    }\n\n    if ($instanceState -ne $expectedState)\n    {\n\t    Write-Error -Message \"Instance state is not $expectedState, giving up.\"\n\t    Exit 1\n    }\n}\n\nfunction DeregisterInstance\n{\n    Write-Host \"Deregistering instance from $targetGroupArn\"\n    Unregister-ELB2Target -TargetGroupArn $targetGroupArn -Target $target -AccessKey $accessKey -SecretKey $secretKey -Region $region\n    WaitForState -expectedState \"unused\"\n    Write-Host \"Instance deregistered\"\n}\n\nfunction RegisterInstance\n{\n    Write-Host \"Registering instance with $targetGroupArn\"\n    Register-ELB2Target -TargetGroupArn $targetGroupArn -Target $target -AccessKey $accessKey -SecretKey $secretKey -Region $region\n    WaitForState -expectedState \"healthy\"\n    Write-Host \"Instance registered\"\n}\n\n$target = GetTarget\n\nswitch ($action)\n{\n    \"deregister\" { DeregisterInstance }\n    \"register\" { RegisterInstance }\n}",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "81fc5ef2-2df8-4f10-a041-7277792e270a",
+      "Name": "accessKey",
+      "Label": "IAM Access Key ID",
+      "HelpText": "The IAM Access Key ID to use when authenticating with AWS.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "c0f7d960-ffce-4046-9996-f7ef39a82306",
+      "Name": "secretKey",
+      "Label": "IAM Secret Key",
+      "HelpText": "The IAM secret access key used to authenticate with AWS.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ed692709-1332-4b18-9ec8-4bc02609bdee",
+      "Name": "region",
+      "Label": "AWS Region",
+      "HelpText": "The region in which the ELBv2 and Target Group live.",
+      "DefaultValue": "eu-west-1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "13d12f79-447f-4e2a-b4fb-460117b9301d",
+      "Name": "targetGroupArn",
+      "Label": "Target Group ARN",
+      "HelpText": "The ARN of the target group.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "8c6fa0f4-6ebd-4021-aba9-39c7a5394ecd",
+      "Name": "action",
+      "Label": "Action",
+      "HelpText": "Choose if you want to add or remove the current instance from the selected target group.",
+      "DefaultValue": "deregister",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "deregister|Remove\nregister|Add"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "15e771c5-7fb5-45f3-ad9e-180d90aae785",
+      "Name": "checkInterval",
+      "Label": "State Check Interval",
+      "HelpText": "The number of seconds to wait before checking if the instances has been successfully added or removed from the target group.",
+      "DefaultValue": "10",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "68c5d2d8-e991-4f64-87df-cd548fc16ffe",
+      "Name": "maxChecks",
+      "Label": "Maximum State Checks",
+      "HelpText": "The maximum number of times to check if the instance has been successfully added or removed from the target group.",
+      "DefaultValue": "6",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedOn": "2017-06-02T11:46:34.696Z",
+  "LastModifiedBy": "amaclean",
+  "$Meta": {
+    "ExportedAt": "2017-06-02T11:46:34.696Z",
+    "OctopusVersion": "3.12.6",
+    "Type": "ActionTemplate"
+  },
+  "Category": "aws"
+}

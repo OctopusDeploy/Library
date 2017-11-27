@@ -2,6 +2,7 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom';
+import PropTypes from 'prop-types';
 
 const displayName = 'octopus-library-template-social-buttons-facebook';
 
@@ -58,15 +59,14 @@ export default class FacebookButton extends React.Component{
           data-layout="button_count"
           id="fbsharebutton"
           ref={(btn) => this._fbsharebutton = btn}
-      >
-      </div>
+      />
     );
 
   }
 }
 
 FacebookButton.propTypes = {
-  url: React.PropTypes.string
+  url: PropTypes.string
 };
 
 FacebookButton.defaultProps = {

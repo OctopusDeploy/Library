@@ -2,6 +2,7 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom';
+import PropTypes from 'prop-types';
 
 const displayName = 'octopus-library-template-social-buttons-twitter';
 
@@ -62,8 +63,8 @@ export default class TwitterButton extends React.Component{
 }
 
 TwitterButton.propTypes = {
-  text: React.PropTypes.string,
-  url: React.PropTypes.string
+  text: PropTypes.string,
+  url: PropTypes.string
 };
 
 TwitterButton.defaultProps = {

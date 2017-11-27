@@ -17,11 +17,11 @@ export default class Footer extends React.Component {
                   target="_blank"
               > support forum</a>.
             </p>
-            <span className="faint">Built with <i className="fa fa-heart fa-fw dark-red"></i> by the <div className="icon-octopus">team</div></span>
+            <span className="faint">Built with <i className="fa fa-heart fa-fw dark-red"/> by the <div className="icon-octopus">team</div></span>
             <ul>
-              <li><a href="https://twitter.com/OctopusDeploy"><i className="fa fa-twitter fa-fw"></i></a></li>
-              <li><a href="https://plus.google.com/102650558422902813929"><i className="fa fa-google-plus fa-fw"></i></a></li>
-              <li><a href="http://feeds.feedburner.com/OctopusDeploy"><i className="fa fa-rss fa-fw"></i></a></li>
+              <li><a href="https://twitter.com/OctopusDeploy"><i className="fa fa-twitter fa-fw"/></a></li>
+              <li><a href="https://plus.google.com/102650558422902813929"><i className="fa fa-google-plus fa-fw"/></a></li>
+              <li><a href="http://feeds.feedburner.com/OctopusDeploy"><i className="fa fa-rss fa-fw"/></a></li>
             </ul>
           </div>
         </div>

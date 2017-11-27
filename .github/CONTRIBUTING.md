@@ -10,8 +10,8 @@ Have a great custom step that other Octopus users will love? Here's how to get i
 5. Check that the `LastModifiedBy` username is one you're happy to use on the site (ideally your plain GitHub username)
 6. Add Id property and set it to a GUID using the following format `abcdef00-ab00-cd00-ef00-000000abcdef`, you can use [this site](https://www.guidgen.com/) to generate one automatically
 7. Optional: Assign your template to an existing category. Have a look at existing templates to find the category that matches your template. If you don't specify it your template will be assigned to 'other' category.
-   - If you add a new category, make sure that you add an icon in `.png` format with a size of 200x200px to the `logos` folder with the same name as your category.
-8. Make sure the Version property is incremented (e.g. by 1). If the Version doesn't change then the [Community Library Integration](http://docs.octopusdeploy.com/display/OD/Step+Templates#StepTemplates-TheCommunityLibrary) in Octopus won't see your changes.
+   - If you add a new category, make sure that you add an icon in `.png` format with a size of 200x200px to the `logos` folder with the same name as your category. Also, the `switch` in the `humanize` function in [`gulpfile.babel.js`](https://github.com/OctopusDeploy/Library/blob/master/gulpfile.babel.js#L92) must have a `case` statement corresponding to it.
+8. If you're updating an existing step template, make sure the `Version` property is incremented (e.g. by 1). If the `Version` doesn't change then the [Community Library Integration](http://docs.octopusdeploy.com/display/OD/Step+Templates#StepTemplates-TheCommunityLibrary) in Octopus won't see your changes.
 9. Commit and push your changes to your fork
 10. View your fork in GitHub to create a _pull request_
 
@@ -28,6 +28,7 @@ Here's a **checklist** to consider:
 * Is the template a minor variation on an existing one? If so, please consider improving the existing template if possible.
 * Is the name of the template consistent with the examples already in the library, in style ("Noun - Verb"), layout and casing?
 * Are all parameters in the template consistent with the examples here, including help text documented with Markdown?
+* **To minimize the risk of step template parameters clashing with other variables in a project that uses the step template, ensure that you prefix your parameter names (e.g. an abbreviated name for the step template or the category of the step template**
 * Is the description of the template complete, correct Markdown?
 * Is the `.json` filename consistent with the name of the template?
 * Do scripts in the template validate required arguments and fail by returning a non-zero exit code when things go wrong?

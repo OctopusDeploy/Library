@@ -5,6 +5,7 @@ import moment from 'moment';
 import marked from 'marked';
 import SyntaxHiglighter from 'react-syntax-highlighter';
 import {solarizedLight} from 'react-syntax-highlighter/dist/styles';
+import PropTypes from 'prop-types';
 
 import CopyToClipboard from 'react-copy-to-clipboard';
 
@@ -69,7 +70,9 @@ export default class TemplateItem extends React.Component {
         <div className="step-template">
           <div className="row clearfix">
             <div className="column two-thirds">
-              <img className="logo" src={'data:image/gif;base64,' + this.state.template.Logo} />
+              <img className="logo"
+                  src={'data:image/gif;base64,' + this.state.template.Logo}
+              />
               <h2 className="name">{this.state.template.Name}</h2>
               <p className="who-when faint no-top-margin">
                 <i>{this.state.template.ActionType}</i> exported {moment(this.state.template.ExportedAt).calendar()} by
@@ -83,6 +86,7 @@ export default class TemplateItem extends React.Component {
               />
               <TemplateParameters parameters={this.state.template.Parameters} />
               <TemplateBody actionType={this.state.template.ActionType}
+                  scriptSyntax={this.state.template.Properties['Octopus.Action.Script.Syntax'] || ''}
                   templateBody={this.state.template.Properties['Octopus.Action.Script.ScriptBody'] || this.state.template.Properties['Octopus.Action.Email.Body']}
               />
             </div>
@@ -111,7 +115,7 @@ export default class TemplateItem extends React.Component {
                 <SyntaxHiglighter language="json"
                     style={solarizedLight}
                 >
-                    {this.toJson(this.state.template)}
+                  {this.toJson(this.state.template)}
                 </SyntaxHiglighter>
               </div>
               <p className="align-right">
@@ -148,7 +152,7 @@ export default class TemplateItem extends React.Component {
 TemplateItem.displayName = displayName;
 
 TemplateItem.propTypes = {
-  params: React.PropTypes.object
+  params: PropTypes.object
 };
 
 TemplateItem.defaultProps = {

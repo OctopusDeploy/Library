@@ -3,36 +3,57 @@
   "Name": "Install TopShelf service",
   "Description": null,
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "CommunityActionTemplateId": null,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptBody": "$step = $OctopusParameters['Unpackage step']\r\n$exe = $OctopusParameters[\"Octopus.Action[$step].Package.NuGetPackageId\"] + \".exe\"\r\n\r\n$outputPath = $OctopusParameters[\"Octopus.Action[$step].Package.CustomInstallationDirectory\"]\r\nif(!$outputPath) \r\n{\r\n    $outputPath = $OctopusParameters[\"Octopus.Action[$step].Output.Package.InstallationDirectoryPath\"]\r\n}\r\n\r\n$path = Join-Path $outputPath $exe\r\nif(-not (Test-Path $path) )\r\n{\r\n    Throw \"$path was not found\"\r\n}\r\n\r\nWrite-Host \"Installing from: $path\"\r\n& $path install | Write-Host\r\n& $path start | Write-Host",
+    "Octopus.Action.Script.ScriptBody": "$step = $OctopusParameters['Unpackage step']\n$username = $OctopusParameters['Username'];\n$password = $OctopusParameters['Password'];\n$exe = $OctopusParameters[\"Octopus.Action[$step].Package.NuGetPackageId\"] + \".exe\"\n\n$outputPath = $OctopusParameters[\"Octopus.Action[$step].Package.CustomInstallationDirectory\"]\nif(!$outputPath) \n{\n    $outputPath = $OctopusParameters[\"Octopus.Action[$step].Output.Package.InstallationDirectoryPath\"]\n}\n\n$path = Join-Path $outputPath $exe\nif(-not (Test-Path $path) )\n{\n    Throw \"$path was not found\"\n}\n\nWrite-Host \"Installing from: $path\"\nif(!$username)\n{\n    Start-Process $path -ArgumentList \"install\" -NoNewWindow -Wait | Write-Host\n} \nelse \n{\n    Start-Process $path -ArgumentList @(\"install\", \"-username\", $username, \"-password\", $password) -NoNewWindow -Wait | Write-Host\n}\nStart-Process $path -ArgumentList \"start\" -NoNewWindow -Wait | Write-Host\n",
     "Octopus.Action.Script.ScriptFileName": null,
     "Octopus.Action.Package.FeedId": null,
     "Octopus.Action.Package.PackageId": null
   },
   "Parameters": [
     {
-      "Id": "59bca262-3631-4b6d-bc0f-3689a8efc389",
+      "Id": "463159e1-62fa-4150-bdb9-dfb7dac6ecfa",
       "Name": "Unpackage step",
       "Label": "",
       "HelpText": "The step where you unpack the topshelf service",
-      "DefaultValue": null,
+      "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "StepName"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "d5d3e88e-b16a-4864-ac1e-614f11c861ed",
+      "Name": "Username",
+      "Label": "Service username",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "0fcca6af-0ba4-495c-b120-b06ac8de2ebd",
+      "Name": "Password",
+      "Label": "Service password",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
       },
       "Links": {}
     }
   ],
   "LastModifiedBy": "georgiosd",
   "$Meta": {
-    "ExportedAt": "2016-12-31T11:50:16.935Z",
-    "OctopusVersion": "3.7.10",
+    "ExportedAt": "2017-11-22T10:26:42.319Z",
+    "OctopusVersion": "3.17.14",
     "Type": "ActionTemplate"
   },
   "Category": "topshelf"
 }
-

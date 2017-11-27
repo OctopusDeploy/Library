@@ -1,0 +1,153 @@
+{
+  "Id": "fc54e757-fbd9-40b1-98fa-7b2e16c649de",
+  "Name": "NSSM Windows Service - Create",
+  "Description": "Create Windows Service using NSSM and powershell script. \n\nVisit https://nssm.cc/usage for more information.\n\nNOTE: This site may be blocked due to .cc domain",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$serviceStopStepAdded = $OctopusParameters['ServiceStopStepAdded']\r\n$serviceName = $OctopusParameters['ServiceNameValue']\r\n$displayName = $OctopusParameters['ServiceDisplayNameValue']\r\n$startupType = $OctopusParameters['StartupTypeValue']\r\n$description = $OctopusParameters['ServiceDescriptionValue']\r\n$serviceExecutable = $OctopusParameters['ServiceExecutableValue']\r\n$serviceExecutableArgs = $OctopusParameters['serviceExecutableArgsValue']\r\n$serviceAppDirectory = $OctopusParameters['ServiceAppDirectoryValue']\r\n$serviceUserAccount = $OctopusParameters['serviceUserAccountValue']\r\n$serviceUserPassword = $OctopusParameters['serviceUserPasswordValue']\r\n$dependsOn = $OctopusParameters['DependsOnValue']\r\n$serviceErrorLogFile = $OctopusParameters['serviceErrorLogFileValue']\r\n$serviceOutputLogFile = $OctopusParameters['serviceOutputLogFileValue']\r\n$nssmExecutable = $OctopusParameters['NSSMExecutableValue']\r\n\r\nif($serviceStopStepAdded -ne 'True'){\r\n    Write-Host Please add a step to stop the windows service as the first step!\r\n    Write-Host If already added, make sure to check the checkbox - Step to stop service added as first step? - in NSSM Windows Service Setup\r\n    return\r\n}\r\n\r\nWrite-Host Installing service $serviceName -foreground \"green\"\r\nWrite-Host \"NSSM path\" $serviceAppDirectory\r\nWrite-Host $serviceName\r\nWrite-Host $serviceExecutable\r\nWrite-Host $serviceExecutableArgs\r\nWrite-Host $serviceAppDirectory\r\nWrite-Host $serviceErrorLogFile\r\nWrite-Host $serviceOutputLogFile\r\nWrite-Host $serviceUserAccount\r\nWrite-Host $serviceUserPassword\r\n\r\npush-location\r\nSet-Location $serviceAppDirectory\r\n\r\n$service = Get-Service $serviceName -ErrorAction SilentlyContinue\r\n\r\nif($service) {\r\n    Write-host service $service.Name is $service.Status\r\n    Write-Host Removing $serviceName service   \r\n    if($service.Status -ne 'Stopped'){\r\n        &$nssmExecutable stop $serviceName\r\n    }\r\n    &$nssmExecutable remove $serviceName confirm\r\n}\r\n\r\nWrite-Host Installing $serviceName as a service\r\n&$nssmExecutable install $serviceName $serviceExecutable $serviceExecutableArgs\r\n\r\nif($displayName){\r\n    &$nssmExecutable set $serviceName DisplayName $displayName\r\n} \r\n\r\nif($startupType){\r\n    &$nssmExecutable set $serviceName Start $startupType\r\n}\r\n\r\nif($description){\r\n    &$nssmExecutable set $serviceName Description $description\r\n}\r\n\r\nif($dependsOn){\r\n    &$nssmExecutable set $serviceName DependOnService $dependsOn\r\n}\r\n\r\n# setting log file \r\nif($serviceErrorLogFile){\r\n    &$nssmExecutable set $serviceName AppStderr $serviceErrorLogFile\r\n    &$nssmExecutable set $serviceName AppStderrCreationDisposition 2\r\n}\r\n\r\nif($serviceOutputLogFile){\r\n    &$nssmExecutable set $serviceName AppStdout $serviceOutputLogFile\r\n    &$nssmExecutable set $serviceName AppStdoutCreationDisposition 2\r\n}\r\n\r\n# setting app directory\r\nif($serviceAppDirectory) {\r\n    Write-host setting app directory to $serviceAppDirectory -foreground \"green\"\r\n    &$nssmExecutable set $serviceName AppDirectory $serviceAppDirectory\r\n}\r\n\r\n# setting user account\r\nif($serviceUserAccount -And $serviceUserPassword) {\r\n    &$nssmExecutable set $serviceName ObjectName $serviceUserAccount $serviceUserPassword\r\n}\r\n\r\n#start service right away\r\n&$nssmExecutable start $serviceName\r\npop-location",
+    "Octopus.Action.Script.ScriptFileName": "",
+    "Octopus.Action.Package.FeedId": "",
+    "Octopus.Action.Package.PackageId": ""
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+	{
+      "Name": "ServiceStopStepAdded",
+      "Label": "Step to stop service added as first step?",
+      "HelpText": "Ensure that a step to stop the service added as first step",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },  
+    {
+      "Name": "ServiceNameValue",
+      "Label": "ServiceName",
+      "HelpText": "[Required] Service Name",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ServiceDisplayNameValue",
+      "Label": "DisplayName",
+      "HelpText": "Display Name for the service",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "StartupTypeValue",
+      "Label": "StartupType",
+      "HelpText": "StartupType (check https://nssm.cc/usage for the Valid values)",
+      "DefaultValue": "SERVICE_AUTO_START",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ServiceDescriptionValue",
+      "Label": "Description",
+      "HelpText": "Description",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ServiceExecutableValue",
+      "Label": "Service Executable",
+      "HelpText": "[Required] Path of the executable to run as Windows Service",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "serviceExecutableArgsValue",
+      "Label": "Service Executable Arguments",
+      "HelpText": "Any arguments to be passed to Service Executable",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ServiceAppDirectoryValue",
+      "Label": "Service App Directory",
+      "HelpText": "[Required] Directory path of the Service Executable",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "serviceUserAccountValue",
+      "Label": "Service User Account",
+      "HelpText": "[Required] User Account to run Service as.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "serviceUserPasswordValue",
+      "Label": "Service User Password",
+      "HelpText": "[Required] Password for the User Account to run service as.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "DependsOnValue",
+      "Label": "Depends On",
+      "HelpText": "Any services or service groups which must be started before the the service can run.\n(check https://nssm.cc/usage for more info)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "serviceErrorLogFileValue",
+      "Label": "Service Error Log File",
+      "HelpText": "Capture error log messages generated by the application",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "serviceOutputLogFileValue",
+      "Label": "Service Output Log File",
+      "HelpText": "Capture output log messages generated by the application",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "NSSMExecutableValue",
+      "Label": "NSSM Executable",
+      "HelpText": "Allows you to override the NSSM.exe installation location.",
+      "DefaultValue": ".\\nssm.exe",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2017-05-12T22:50:12.920+00:00",
+  "LastModifiedBy": "1FastSTi",
+  "$Meta": {
+    "ExportedAt": "2017-05-12T22:50:16.405Z",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"  
+}

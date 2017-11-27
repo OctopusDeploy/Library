@@ -4,6 +4,7 @@ import React from 'react';
 import moment from 'moment';
 import {Link} from 'react-router';
 import SlugMaker from './../services/SlugMaker';
+import PropTypes from 'prop-types';
 
 const displayName = 'octopus-library-template-list';
 
@@ -47,8 +48,8 @@ export default class TemplateList extends React.Component {
 }
 
 TemplateList.propTypes = {
-  filterText: React.PropTypes.string,
-  templateList: React.PropTypes.array
+  filterText: PropTypes.string,
+  templateList: PropTypes.array
 };
 
 TemplateList.defaultProps = {

@@ -1,6 +1,7 @@
 'use strict';
 
 import React from 'react';
+import PropTypes from 'prop-types';
 
 import FacebookButton from './SocialButtons/FacebookButton';
 import GoogleButton from './SocialButtons/GoogleButton';
@@ -25,7 +26,7 @@ export default class SocialButtons extends React.Component {
 }
 
 SocialButtons.propTypes = {
-  url: React.PropTypes.string
+  url: PropTypes.string
 };
 
 SocialButtons.defaultProps = {

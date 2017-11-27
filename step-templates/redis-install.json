@@ -1,0 +1,71 @@
+{
+  "Id": "3cf1dadf-169d-4fd2-b95b-f5f07343b911",
+  "Name": "Redis - Install service",
+  "Description": "Script will make sure that Redis server is installed as a Windows service\n\n- It will start Redis inside package directory\n- To provide custom config you can prepare your own package (e.g. my-redis-64) or improve this template",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$step  = $OctopusParameters['ris_UnpackageStep']\r\n$force = $OctopusParameters['ris_ForceReinstall']\r\n$name  = $OctopusParameters['ris_ServiceName']\r\n$port  = $OctopusParameters['ris_Port']\r\n\r\n$outputPath = $OctopusParameters[\"Octopus.Action[$step].Package.CustomInstallationDirectory\"]\r\nif(!$outputPath) \r\n{\r\n    $outputPath = $OctopusParameters[\"Octopus.Action[$step].Output.Package.InstallationDirectoryPath\"]\r\n}\r\nif(!$outputPath) \r\n{\r\n    Throw \"Unable to find output path for step $step. Make sure you've selected the correct step for your package.\"\r\n}\r\n\r\n$path   = Join-Path $outputPath '\\tools\\redis-server.exe'\r\nif (-not (Test-Path $path) )\r\n{\r\n    Throw \"$path was not found\"\r\n}\r\n\r\n$service = Get-Service -Name $name -ErrorAction SilentlyContinue\r\nif ($service) {\r\n\r\n    if (-not $force) {\r\n        Write-Host \"Service already installed. Skipping this time.\"\r\n        return\r\n    }\r\n\r\n    Write-Host \">>> Uninstalling with: sc.exe\"\r\n    if ($service.Status -eq 'Running') {\r\n        &\"sc.exe\" stop $name | Write-Host\r\n    }\r\n    &\"sc.exe\" delete $name | Write-Host\r\n\r\n    $limit = 15\r\n    while (Get-Service -Name $name -ErrorAction SilentlyContinue) {\r\n        Start-Sleep -s 1\r\n        \r\n        $limit = $limit - 1\r\n        if ($limit -eq 0) {\r\n            Throw \"Unable to stop Redis service within 15s\"\r\n        }\r\n    }\r\n}\r\n\r\nWrite-Host \">>> Installing with: $path\"\r\n\r\nSet-Location $outputPath\r\n\r\n& $path --service-install --service-name $name --port $port | echo\r\n& $path --service-start   --service-name $name              | echo\r\n\r\nWrite-Host \">>> Verification: Expecting the service with 'Running' status\"\r\n\r\n$limit = 15\r\ndo {\r\n    Start-Sleep -s 1\r\n\r\n    $limit = $limit - 1\r\n    if ($limit -eq 0) {\r\n        Throw \"Redis service did not start within 15s\"\r\n    }\r\n\r\n    $service = Get-Service -Name $name -ErrorAction SilentlyContinue\r\n\r\n} until ($service -and $service.Status -eq 'Running')",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "2fdb42bf-b1f0-4187-b925-bdf4975090e4",
+      "Name": "ris_UnpackageStep",
+      "Label": "Unpackage step",
+      "HelpText": "The step where you unpack the topshelf service",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "58802353-e686-421c-b71c-8866759eca42",
+      "Name": "ris_ServiceName",
+      "Label": "Service name",
+      "HelpText": null,
+      "DefaultValue": "Redis",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "0f7fdded-881d-4bb8-94ee-5d6d71d38575",
+      "Name": "ris_Port",
+      "Label": "Port",
+      "HelpText": null,
+      "DefaultValue": "6379",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "e7411860-8679-4519-b871-dd9724ee357e",
+      "Name": "ris_ForceReinstall",
+      "Label": "Force reinstall",
+      "HelpText": "Service with the same name will be removed before installation",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "J-Sek",
+  "$Meta": {
+    "ExportedAt": "2017-08-31T23:11:05.000Z",
+    "OctopusVersion": "3.16.6",
+    "Type": "ActionTemplate"
+  },
+  "Category": "redis"
+}
+

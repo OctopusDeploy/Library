@@ -16,6 +16,10 @@ function Get-OctopusStepTemplateFileType
             return ".ps1";
         }
 
+        "Bash" {
+            return ".sh";
+        }
+
         default {
             throw new-object System.NotImplementedException("Unhandled script syntax '$syntax'.");
         }

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import marked from 'marked';
+import PropTypes from 'prop-types';
 
 const displayName = 'octopus-library-template-parameters';
 
@@ -10,7 +11,7 @@ export default class TemplateParameters extends React.Component {
     super(props);
     this.state = { showParameterList: false };
   }
-  
+
   rawMarkup(text) {
     let markup = marked((text || ''), {sanitize: true});
     return { __html: markup };
@@ -21,7 +22,7 @@ export default class TemplateParameters extends React.Component {
       showParameterList: !this.state.showParameterList
     });
   }
-  
+
   getParameterListHeight() {
     if(this.state.showParameterList) {
       return '9000px';
@@ -32,7 +33,7 @@ export default class TemplateParameters extends React.Component {
 
   render() {
     if(this.props.parameters.length === 0) {
-      return (<div></div>);
+      return (<div/>);
     }
     let parameterList = this.props.parameters.map((item, index) => {
       return (
@@ -40,7 +41,7 @@ export default class TemplateParameters extends React.Component {
             key={index}
         >
           <h4>{item.Label || item.Name}</h4>
-          <div className="name-as-variable"><span className="code"><span>{item.Name}</span>{(item.DefaultValue && item.DefaultValue.length > 0) ? <span> = {item.DefaultValue}</span> : <span></span>}</span></div>
+          <div className="name-as-variable"><span className="code"><span>{item.Name}</span>{(item.DefaultValue && item.DefaultValue.length > 0) ? <span> = {item.DefaultValue}</span> : <span/>}</span></div>
           <span className="parameter-help"
               dangerouslySetInnerHTML={this.rawMarkup(item.HelpText)}
           />
@@ -63,7 +64,7 @@ export default class TemplateParameters extends React.Component {
 TemplateParameters.displayName = displayName;
 
 TemplateParameters.propTypes = {
-  parameters: React.PropTypes.array
+  parameters: PropTypes.array
 };
 
 TemplateParameters.defaultProps = {
