@@ -1,0 +1,33 @@
+{
+  "Id": "0e295d12-cc29-4f61-9eb1-dac387697d5c",
+  "Name": "Grant SeServiceLogonRight To Account",
+  "Description": "Grants `SeServiceLogonRight` to Windows account",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Code based on Stack Overflow solution https://stackoverflow.com/a/21235462/201382 from @grenade (https://stackoverflow.com/users/68115/grenade)\n\n$grantLogonAsServiceAccountName = $OctopusParameters['GrantLogonAsServiceAccountName']\n\n$tempPath = [System.IO.Path]::GetTempPath()\n$import = Join-Path -Path $tempPath -ChildPath \"import.inf\"\nif (Test-Path $import) { \n    Remove-Item -Path $import -Force \n}\n\n$export = Join-Path -Path $tempPath -ChildPath \"export.inf\"\nif (Test-Path $export) { \n    Remove-Item -Path $export -Force \n}\n\n$secedt = Join-Path -Path $tempPath -ChildPath \"secedt.sdb\"\nif (Test-Path $secedt) { \n    Remove-Item -Path $secedt -Force \n}\n\ntry {\n    Write-Output (\"Granting SeServiceLogonRight to user account: $grantLogonAsServiceAccountName.\") \n    $sid = ((New-Object System.Security.Principal.NTAccount($grantLogonAsServiceAccountName)).Translate([System.Security.Principal.SecurityIdentifier])).Value\n    secedit /export /cfg $export\n    $sids = (select-string $export -pattern \"SeServiceLogonRight\").line.Split(\"=\").Trim()[1]\n    foreach ($line in @(\"[Unicode]\", \"Unicode=yes\", \"[System Access]\", \"[Event Audit]\", \"[Registry Values]\", \"[Version]\", \"signature=`\"`$CHICAGO$`\"\", \"Revision=1\", \"[Profile Description]\", \"Description=GrantLogOnAsAService security template\", \"[Privilege Rights]\", \"SeServiceLogonRight = $sids,*$sid\")) {\n        Add-Content $import $line\n    }\n    \n    Write-Verbose \"Calling secedit...\"\n    secedit /import /db $secedt /cfg $import\n    secedit /configure /db $secedt\n    Write-Verbose \"Calling gpupdate...\"\n    gpupdate /force\n    Write-Verbose \"Cleaning up temp files...\"\n    Remove-Item -Path $import -Force\n    Remove-Item -Path $export -Force\n    Remove-Item -Path $secedt -Force\n    Write-Output(\"SeServiceLogonRight successfully granted to $grantLogonAsServiceAccountName\")\n}\ncatch {\n    Write-Error \"Failed to grant SeServiceLogonRight to user account: $grantLogonAsServiceAccountName.\"\n    $error[0]\n}\n"
+  },
+  "Parameters": [
+    {
+      "Id": "456ad1ed-286d-4bbf-a096-026d3928e3ef",
+      "Name": "GrantLogonAsServiceAccountName",
+      "Label": "Account Name",
+      "HelpText": "Domain account name to grant `SeServiceLogonRight`. Example: `US\\testAccount`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "nshenoy",
+  "$Meta": {
+    "ExportedAt": "2017-11-30T20:48:26.823Z",
+    "OctopusVersion": "4.0.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}
