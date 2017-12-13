@@ -1,9 +1,9 @@
 {
-  "Id": "ActionTemplates-101",
+  "Id": "73f89638-51d1-4fbb-b68f-b71ba9e86720",
   "Name": "SQL - Execute Script",
   "Description": "Execute a SQL script",
   "ActionType": "Octopus.Script",
-  "Version": 0,
+  "Version": 5,
   "CommunityActionTemplateId": null,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "$connection = New-Object System.Data.SqlClient.SqlConnection\n$connection.ConnectionString = $OctopusParameters['ConnectionString']\n$continueOnError = $($($OctopusParameters['ContinueOnError']).ToLower() -eq 'true')\nRegister-ObjectEvent -inputobject $connection -eventname InfoMessage -action {\n    write-host $event.SourceEventArgs\n} | Out-Null\n\nfunction Execute-SqlQuery($query) {\n    $queries = [System.Text.RegularExpressions.Regex]::Split($query, \"^\\s*GO\\s*`$\", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline)\n\n    $queries | ForEach-Object {\n        $q = $_\n        if ((-not [String]::IsNullOrWhiteSpace($q)) -and ($q.Trim().ToLowerInvariant() -ne \"go\")) {            \n            $command = $connection.CreateCommand()\n            $command.CommandText = $q\n            $command.CommandTimeout = $OctopusParameters['CommandTimeout']\n            $command.ExecuteNonQuery() | Out-Null\n        }\n    }\n\n}\n\n$handler = [System.Data.SqlClient.SqlInfoMessageEventHandler] {param($sender, $event) Write-Verbose $event.Message }\n\ntry {\n\t\n    Write-Host \"Attach InfoMessage event handler\"\n\t$connection.add_InfoMessage($handler)\n    \n\tWrite-Host \"Connecting\"\n    $connection.Open()\n\n    Write-Host \"Executing script\"\n    Execute-SqlQuery -query $OctopusParameters['SqlScript']\n}\ncatch {\n\tif ($continueOnError) {\n\t\tWrite-Host $_.Exception.Message\n\t}\n\telse {\n\t\tthrow\n\t}\n}\nfinally {\n\t\n    Write-Host \"Detach InfoMessage event handler\"\n\t$connection.remove_InfoMessage($handler)\n    Write-Host \"Closing connection\"\n    $connection.Dispose()\n}",
@@ -56,9 +56,12 @@
       "Links": {}
     }
   ],
+  "LastModifiedOn": "2017-12-12T10:43:07+00:00",
+  "LastModifiedBy": "prebenh",
   "$Meta": {
     "ExportedAt": "2017-12-13T10:43:07.699Z",
     "OctopusVersion": "4.1.1",
     "Type": "ActionTemplate"
-  }
+  },
+  "Category": "sql"
 }
