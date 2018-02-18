@@ -101,6 +101,7 @@ gulp.task('tests', ['lint:step-templates'], () => {
 function humanize(categoryId){
 
   switch(categoryId){
+    case 'amazon-chime' return 'Amazon Chime';
     case 'aspnet': return 'ASP.NET';
     case 'aws': return 'AWS';
     case 'azureFunctions': return 'Azure Functions';
