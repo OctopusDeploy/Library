@@ -3,16 +3,13 @@
   "Name": "Uninstall TopShelf service",
   "Description": "This step can be used before unpacking a package with your TopShelf service to stop and remove the previous installation, if there is one.",
   "ActionType": "Octopus.Script",
-  "Version": 3,
+  "Version": 4,
   "CommunityActionTemplateId": null,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptBody": "$step = $OctopusParameters['Unpackage step']\n$previous = $OctopusParameters[\"Octopus.Action[$step].Package.CustomInstallationDirectory\"]\n\nif(!$previous -or (-not (Test-Path $previous)) )\n{\n    Write-Host \"No installation found in: $previous\"\n\t\n    $previous = $OctopusParameters[\"Octopus.Action[$step].Output.Package.InstallationDirectoryPath\"]\n    if(!$previous -or (-not (Test-Path $previous)) )\n    {\n        Write-Host \"No installation found in: $previous\"\n        Break\n    }\n}\n\n$exe = $OctopusParameters[\"Octopus.Action[$step].Package.NuGetPackageId\"] + \".exe\"\n$path = Join-Path $previous $exe\n\nWrite-Host \"Previous installation: $path\"\n\nif(-not (Test-Path $path))\n{\n\tBreak\n}\n\nStart-Process $path -ArgumentList \"stop\" -NoNewWindow -Wait | Write-Host\nStart-Process $path -ArgumentList \"uninstall\" -NoNewWindow -Wait | Write-Host\n",
-    "Octopus.Action.Script.ScriptFileName": null,
-    "Octopus.Action.Package.FeedId": null,
-    "Octopus.Action.Package.PackageId": null
+    "Octopus.Action.Script.ScriptBody": "$step = $OctopusParameters['Unpackage step']\n$previous = $OctopusParameters[\"Octopus.Action[$step].Package.CustomInstallationDirectory\"]\n$customExeFilename = $OctopusParameters['Exe filename'];\n\nif(!$previous -or (-not (Test-Path $previous)) )\n{\n    Write-Host \"No installation found in: $previous\"\n\t\n    $previous = $OctopusParameters[\"Octopus.Action[$step].Output.Package.InstallationDirectoryPath\"]\n    if(!$previous -or (-not (Test-Path $previous)) )\n    {\n        Write-Host \"No installation found in: $previous\"\n        Break\n    }\n}\n\n\n$defaultExeFilename = $OctopusParameters[\"Octopus.Action[$step].Package.NuGetPackageId\"] + \".exe\"\n$exeFilename = If ($customExeFilename) {$customExeFilename} Else {$defaultExeFilename}\n$path = Join-Path $previous $exeFilename\n\nWrite-Host \"Previous installation: $path\"\n\nStart-Process $path -ArgumentList \"stop\" -NoNewWindow -Wait | Write-Host\nStart-Process $path -ArgumentList \"uninstall\" -NoNewWindow -Wait | Write-Host\n"
   },
   "Parameters": [
     {
@@ -25,12 +22,23 @@
         "Octopus.ControlType": "StepName"
       },
       "Links": {}
+    },
+    {
+      "Id": "75418f4b-48fb-4475-93a1-a6d793495693",
+      "Name": "Exe filename",
+      "Label": "",
+      "HelpText": "Name of exe file for service, if empty, package Id+\".exe.\" will be used as default",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
     }
   ],
-  "LastModifiedBy": "georgiosd",
+  "LastModifiedBy": "sphinxy",
   "$Meta": {
-    "ExportedAt": "2018-01-28T17:25:26.087Z",
-    "OctopusVersion": "3.17.14",
+    "ExportedAt": "2018-02-22T16:57:20.068Z",
+    "OctopusVersion": "4.0.10",
     "Type": "ActionTemplate"
   },
   "Category": "topshelf"
