@@ -3,16 +3,13 @@
   "Name": "Install TopShelf service",
   "Description": null,
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 3,
   "CommunityActionTemplateId": null,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptBody": "$step = $OctopusParameters['Unpackage step']\n$username = $OctopusParameters['Username'];\n$password = $OctopusParameters['Password'];\n$exe = $OctopusParameters[\"Octopus.Action[$step].Package.NuGetPackageId\"] + \".exe\"\n\n$outputPath = $OctopusParameters[\"Octopus.Action[$step].Package.CustomInstallationDirectory\"]\nif(!$outputPath) \n{\n    $outputPath = $OctopusParameters[\"Octopus.Action[$step].Output.Package.InstallationDirectoryPath\"]\n}\n\n$path = Join-Path $outputPath $exe\nif(-not (Test-Path $path) )\n{\n    Throw \"$path was not found\"\n}\n\nWrite-Host \"Installing from: $path\"\nif(!$username)\n{\n    Start-Process $path -ArgumentList \"install\" -NoNewWindow -Wait | Write-Host\n} \nelse \n{\n    Start-Process $path -ArgumentList @(\"install\", \"-username\", $username, \"-password\", $password) -NoNewWindow -Wait | Write-Host\n}\nStart-Process $path -ArgumentList \"start\" -NoNewWindow -Wait | Write-Host\n",
-    "Octopus.Action.Script.ScriptFileName": null,
-    "Octopus.Action.Package.FeedId": null,
-    "Octopus.Action.Package.PackageId": null
+    "Octopus.Action.Script.ScriptBody": "$step = $OctopusParameters['Unpackage step']\n$username = $OctopusParameters['Username'];\n$password = $OctopusParameters['Password'];\n$customExeFilename = $OctopusParameters['Exe filename'];\n\n$outputPath = $OctopusParameters[\"Octopus.Action[$step].Package.CustomInstallationDirectory\"]\nif(!$outputPath) \n{\n    $outputPath = $OctopusParameters[\"Octopus.Action[$step].Output.Package.InstallationDirectoryPath\"]\n}\n\n$defaultExeFilename = $OctopusParameters[\"Octopus.Action[$step].Package.NuGetPackageId\"] + \".exe\"\n$exeFilename = If ($customExeFilename) {$customExeFilename} Else {$defaultExeFilename}\n$path = Join-Path $outputPath $exeFilename\n\nif(-not (Test-Path $path) )\n{\n    Throw \"$path was not found\"\n}\n\nWrite-Host \"Installing from: $path\"\nif(!$username)\n{\n    Start-Process $path -ArgumentList \"install\" -NoNewWindow -Wait | Write-Host\n} \nelse \n{\n    Start-Process $path -ArgumentList @(\"install\", \"-username\", $username, \"-password\", $password) -NoNewWindow -Wait | Write-Host\n}\nStart-Process $path -ArgumentList \"start\" -NoNewWindow -Wait | Write-Host\n"
   },
   "Parameters": [
     {
@@ -47,12 +44,23 @@
         "Octopus.ControlType": "Sensitive"
       },
       "Links": {}
+    },
+    {
+      "Id": "40da9228-33db-402a-9404-8e06c2817d7d",
+      "Name": "Exe filename",
+      "Label": "",
+      "HelpText": "Name of exe file for service, if empty, package Id+\".exe.\" will be used as default",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
     }
   ],
-  "LastModifiedBy": "georgiosd",
+  "LastModifiedBy": "sphinxy",
   "$Meta": {
-    "ExportedAt": "2017-11-22T10:26:42.319Z",
-    "OctopusVersion": "3.17.14",
+    "ExportedAt": "2018-02-22T16:54:25.613Z",
+    "OctopusVersion": "4.0.10",
     "Type": "ActionTemplate"
   },
   "Category": "topshelf"
