@@ -3,12 +3,12 @@
     "Name": "Switch Azure Staging Deployment Slot",
     "Description": "This template will warm up your deployment slot then swap it with production. This step template should be placed after \"\"Deploy an Azure Web App\" Octopus Deploy template and be used with its sister step \"Create Azure RM Deployment Slot\"\n\nThis should be used for green-blue deployments, as referenced in this document: https://octopus.com/docs/deploying-applications/deploying-to-azure/deploying-a-package-to-an-azure-web-app/using-deployment-slots-with-azure-web-apps",
     "ActionType": "Octopus.AzurePowerShell",
-    "Version": 1,
+    "Version": 2,
     "CommunityActionTemplateId": null,
     "Properties": {
       "Octopus.Action.Azure.AccountId": "#{AzureAccount}",
       "Octopus.Action.Script.ScriptSource": "Inline",
-      "Octopus.Action.Script.ScriptBody": "###############################################\r\n# Switch Azure RM Staging Deployment Slot\r\n###############################################\r\n###############################################\r\n##Step1: Get Variables\r\n$ResourceGroupName             = $OctopusParameters[\"ResourceGroupName\"] \r\n$WebAppName                    = $OctopusParameters[\"WebAppName\"] \r\n$StagingSlotName               = $OctopusParameters[\"WebAppSlotName\"]\r\n$SmokeTestResponseCode         = $OctopusParameters[\"SmokeTestResponseCode\"]\r\n$smokeTestTimeoutSecs          = $OctopusParameters[\"smokeTestTimeoutSecs\"]\r\n###############################################\r\n###############################################\r\n$ErrorActionPreference = \"Stop\"\r\n\r\nFunction Invoke-RequiredVariablesCheck\r\n{\r\n    if([string]::IsNullOrEmpty($ResourceGroupName))\r\n    {\r\n        Write-Error \"ResourceGroupName variable is not set\"\r\n    }\r\n\r\n    if([string]::IsNullOrEmpty($WebAppName))\r\n    {\r\n        write-error \"WebAppName variable is not set\"\r\n    }\r\n\r\n    if([string]::IsNullOrEmpty($stagingSlotName))\r\n    {\r\n        write-error \"stagingSlotName variable is not set\"\r\n    }\r\n\r\n    if([string]::IsNullOrEmpty($smokeTestTimeoutSecs))\r\n    {\r\n        Write-Output \"Smoke test timeout not set, will use default of 180 seconds\"\r\n        $smokeTestTimeoutSecs = 180\r\n    }\r\n\r\n    if([string]::IsNullOrEmpty($SmokeTestResponseCode))\r\n    {\r\n        Write-Output \"Smoke test respose code not specfied will detail to 200\"\r\n        $SmokeTestResponseCode = \"200\"\r\n    }\r\n\r\n    Write-Verbose \"Variables in use are:\"\r\n    write-verbose \"ResourceGroupName:$ResourceGroupName\"\r\n    write-verbose \"WebAppName:$WebAppName\"\r\n    write-verbose \"stagingSlotName:$stagingSlotName\"\r\n    Write-Verbose \"smokeTestTimeoutSecs: $smokeTestTimeoutSecs\"\r\n    Write-Verbose \"SmokeTestResponseCode: $SmokeTestResponseCode\"\r\n}\r\n\r\ntry \r\n{\r\n    Invoke-RequiredVariablesCheck\r\n    Write-Output \"Will attempt to warm up staging slot\"\r\n    $slotDetails = Get-AzureRmWebAppSlot -ResourceGroupName $ResourceGroupName -Name $WebAppName -Slot $StagingSlotName\r\n    \r\n    $hostname = $slotDetails.EnabledHostNames | select-object -First 1\r\n\r\n    Write-Output \"Performing default smoke test to warm up deployment slot\"\r\n    \r\n    $response =Invoke-WebRequest -UseBasicParsing -Uri \"https://$hostname\" -TimeoutSec $smokeTestTimeoutSecs\r\n\r\n    if($response.statusCode -ne $SmokeTestResponseCode)\r\n    {\r\n        Write-Error \"Response code to https://$hostname was $($response.statusCode) and did not match the expected response code of $SmokeTestResponseCode. Deployment canceled\"\r\n    }\r\n    else \r\n    {\r\n        Write-Output \"Staging slot (https://$hostname) warmed up and responding ok\"\r\n    }\r\n\r\n    Write-Output \"Will now switch staging slot to production\"\r\n    Switch-AzureRmWebAppSlot -ResourceGroupName $ResourceGroupName -Name $WebAppName -SourceSlotName $StagingSlotName -DestinationSlotName \"Production\"\r\n    Write-Output \"Deployment slot switch complete\"\r\n}\r\ncatch \r\n{\r\n    Write-Error \"Error in Switch Azure RM Staging Deployment Slot Script. $_\"    \r\n}",
+      "Octopus.Action.Script.ScriptBody": "###############################################\r\n# Switch Azure RM Staging Deployment Slot\r\n###############################################\r\n###############################################\r\n##Step1: Get Variables\r\n$ResourceGroupName             = $OctopusParameters[\"ResourceGroupName\"] \r\n$AppName                       = $OctopusParameters[\"AppName\"] \r\n$StagingSlotName               = $OctopusParameters[\"SlotName\"]\r\n$SmokeTestResponseCode         = $OctopusParameters[\"SmokeTestResponseCode\"]\r\n$smokeTestTimeoutSecs          = $OctopusParameters[\"smokeTestTimeoutSecs\"]\r\n###############################################\r\n###############################################\r\n$ErrorActionPreference = \"Stop\"\r\n\r\nFunction Invoke-RequiredVariablesCheck\r\n{\r\n    if([string]::IsNullOrEmpty($ResourceGroupName))\r\n    {\r\n        Write-Error \"ResourceGroupName variable is not set\"\r\n    }\r\n\r\n    if([string]::IsNullOrEmpty($AppName))\r\n    {\r\n        write-error \"AppName variable is not set\"\r\n    }\r\n\r\n    if([string]::IsNullOrEmpty($stagingSlotName))\r\n    {\r\n        write-error \"stagingSlotName variable is not set\"\r\n    }\r\n\r\n    if([string]::IsNullOrEmpty($smokeTestTimeoutSecs))\r\n    {\r\n        Write-Output \"Smoke test timeout not set, will use default of 180 seconds\"\r\n        $smokeTestTimeoutSecs = 180\r\n    }\r\n\r\n    if([string]::IsNullOrEmpty($SmokeTestResponseCode))\r\n    {\r\n        Write-Output \"Smoke test respose code not specfied will detail to 200\"\r\n        $SmokeTestResponseCode = \"200\"\r\n    }\r\n\r\n    Write-Verbose \"Variables in use are:\"\r\n    write-verbose \"ResourceGroupName:$ResourceGroupName\"\r\n    write-verbose \"AppName:$AppName\"\r\n    write-verbose \"stagingSlotName:$stagingSlotName\"\r\n    Write-Verbose \"smokeTestTimeoutSecs: $smokeTestTimeoutSecs\"\r\n    Write-Verbose \"SmokeTestResponseCode: $SmokeTestResponseCode\"\r\n}\r\n\r\ntry \r\n{\r\n    Invoke-RequiredVariablesCheck\r\n    Write-Output \"Will attempt to warm up staging slot\"\r\n    $slotDetails = Get-AzureRmWebAppSlot -ResourceGroupName $ResourceGroupName -Name $AppName -Slot $StagingSlotName\r\n    \r\n    $hostname = $slotDetails.EnabledHostNames | select-object -First 1\r\n\r\n    Write-Output \"Performing default smoke test to warm up deployment slot\"\r\n    \r\n    $response =Invoke-WebRequest -UseBasicParsing -Uri \"https://$hostname\" -TimeoutSec $smokeTestTimeoutSecs\r\n\r\n    if($response.statusCode -ne $SmokeTestResponseCode)\r\n    {\r\n        Write-Error \"Response code to https://$hostname was $($response.statusCode) and did not match the expected response code of $SmokeTestResponseCode. Deployment canceled\"\r\n    }\r\n    else \r\n    {\r\n        Write-Output \"Staging slot (https://$hostname) warmed up and responding ok\"\r\n    }\r\n\r\n    Write-Output \"Will now switch staging slot to production\"\r\n    Switch-AzureRmWebAppSlot -ResourceGroupName $ResourceGroupName -Name $AppName -SourceSlotName $StagingSlotName -DestinationSlotName \"Production\"\r\n    Write-Output \"Deployment slot switch complete\"\r\n}\r\ncatch \r\n{\r\n    Write-Error \"Error in Switch Azure RM Staging Deployment Slot Script. $_\"    \r\n}",
       "Octopus.Action.Package.FeedId": null,
       "Octopus.Action.Script.ScriptFileName": null,
       "Octopus.Action.Package.PackageId": null
@@ -27,9 +27,9 @@
       },
       {
         "Id": "e44dbd73-6c0a-4c9f-b190-47396ea2534e",
-        "Name": "WebAppName",
-        "Label": "WebAppName",
-        "HelpText": "Enter the name of your web app",
+        "Name": "AppName",
+        "Label": "AppName",
+        "HelpText": "Enter the name of your app",
         "DefaultValue": "",
         "DisplaySettings": {
           "Octopus.ControlType": "SingleLineText"
@@ -49,8 +49,8 @@
       },
       {
         "Id": "e9559ca6-751a-4939-888a-cbf76ce5c91d",
-        "Name": "WebAppSlotName",
-        "Label": "WebAppSlotName",
+        "Name": "SlotName",
+        "Label": "SlotName",
         "HelpText": "Enter the name you wish to call your deployment slot",
         "DefaultValue": "",
         "DisplaySettings": {
@@ -81,10 +81,10 @@
         "Links": {}
       }
     ],
-    "LastModifiedOn": "2018-02-20T11:45:00.000+00:00",
+    "LastModifiedOn": "2018-02-27T11:27:00.000+00:00",
     "LastModifiedBy": "MarkDordoy",
     "$Meta": {
-      "ExportedAt": "2018-02-20T11:51:29.917Z",
+      "ExportedAt": "2018-02-27T11:28:29.917Z",
       "OctopusVersion": "3.16.2",
       "Type": "ActionTemplate"
     },
