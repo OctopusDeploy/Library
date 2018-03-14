@@ -3,13 +3,13 @@
   "Name": "Jenkins - Queue Job",
   "Description": "Trigger a job in Jenkins",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "CommunityActionTemplateId": null,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptBody": "$jenkinsServer = $OctopusParameters['jqj_JenkinsServer'] \r\n$jobURL = $jenkinsServer + $OctopusParameters['jqj_JobUrl']\r\n$failBuild = [System.Convert]::ToBoolean($OctopusParameters['jqj_FailBuild'])\r\n$jobTimeout = $OctopusParameters['jqj_JobTimeout']\r\n$buildParam = $OctopusParameters['jqj_BuildParam']\r\n$buildResult = \"/lastBuild/api/json?tree=result,number,building\"\r\n\r\nWrite-Host \"job url: \" $jobURL$buildParam \r\n$response = Invoke-WebRequest -Uri $jobURL$buildParam  -Method Post\r\n\r\nif ($failBuild)\r\n{\r\n   $isBuilding=\"True\"\r\n   $i = 0\r\n   Write-Host \"Estimate Job Duration: \" $jobTimeout\r\n   while ($isBuilding -eq \"True\" -and $i -lt $jobTimeout)\r\n   {       \r\n       $i +=20\r\n       Write-Host \"waiting 20 secs for build to complete\"\r\n       Start-Sleep -s 20\r\n       $retyJobStatus = Invoke-RestMethod -Uri $jobURL$buildResult -Method Get\r\n       $isBuilding=$retyJobStatus[0].building\r\n       $result = $retyJobStatus[0].result\r\n       $buildNumber = $retyJobStatus[0].number\r\n       Write-Host \"Retry Job Status: \" $result \" BuildNumber: \"  $buildNumber  \" IsBuilding: \"  $isBuilding \r\n   }\r\n   \r\n   if ($result -ne \"SUCCESS\")\r\n   {\r\n       echo \"BUILD FAILURE: build is unsuccessful or status could not be obtained.\"\r\n       exit 1\r\n   }\r\n}",
+    "Octopus.Action.Script.ScriptBody": "$jenkinsServer = $OctopusParameters['jqj_JenkinsServer'] \r\n    $jenkinsUserName = $OctopusParameters['jqj_JenkinsUserName']\r\n    $jenkinsUserPassword = $OctopusParameters['jqj_JenkinsUserPasword']\r\n    $jobURL = $jenkinsServer + $OctopusParameters['jqj_JobUrl']\r\n    $failBuild = [System.Convert]::ToBoolean($OctopusParameters['jqj_FailBuild'])\r\n    $jobTimeout = $OctopusParameters['jqj_JobTimeout']\r\n    $buildParam = $OctopusParameters['jqj_BuildParam']\r\n    $checkIntervals = $OctopusParameters['jqj_checkInterval']\r\n\r\n    Write-Host \"job url: \" $jobURL$buildParam \r\n\r\n    try {\r\n        if ($jenkinsUserName -ne \"\") {\r\n            $securePwd = ConvertTo-SecureString $jenkinsUserPassword -AsPlainText -Force \r\n            $credential = New-Object System.Management.Automation.PSCredential ($jenkinsUserName, $securePwd) \r\n            $head = @{\"Authorization\" = \"Basic \" + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($jenkinsUserName + \":\" + $jenkinsUserPassword ))}  \r\n            \r\n            Write-Host \"Start the build\"\r\n            $returned = Invoke-WebRequest -Uri $jobURL$buildParam -Method Post -Headers $head -Credential $credential -ContentType \"text/plain\" -UseBasicParsing\r\n            Write-Host \"Job URL Link: $($returned.BaseResponse.Headers['Location'])\"\r\n            $response = Invoke-RestMethod -Uri \"$($returned.BaseResponse.Headers['Location'])/api/json\" -Method Get -Headers $head -Credential $credential -ContentType \"text/plain\"\r\n        }\r\n        else {\r\n            Write-Host \"Start the build\"\r\n            $returned = Invoke-WebRequest -Uri $jobURL$buildParam  -Method Post -UseBasicParsing\r\n             Write-Host \"Job URL Link: $($returned.BaseResponse.Headers['Location'])\"\r\n            $response = Invoke-RestMethod -Uri \"$($returned.BaseResponse.Headers['Location'])/api/json\" -Method Get\r\n            \r\n        }\r\n        Write-Host \"Build Number is: $($Response.executable.number)\"\r\n        $buildUrl = $Response.executable.url\r\n        Write-Host \"Job URL Is: $($buildUrl)\"\r\n        $buildResult = \"$buildUrl/api/json?tree=result,number,building\"\r\n    \r\n        \r\n        $isBuilding = \"True\"\r\n        $i = 0\r\n        Write-Host \"Estimate Job Duration: \" $jobTimeout\r\n        while ($isBuilding -eq \"True\" -and $i -lt $jobTimeout) {       \r\n            $i += 5\r\n            Write-Host \"waiting $checkIntervals secs for build to complete\"\r\n            Start-Sleep -s $checkIntervals\r\n            if ($jenkinsUserName -ne \"\") {\r\n                $retyJobStatus = Invoke-RestMethod -Uri $buildResult -Method Get -Headers $head -Credential $credential \r\n            }\r\n            else {\r\n                $retyJobStatus = Invoke-RestMethod -Uri $buildResult -Method Get\r\n            }\r\n\r\n            $isBuilding = $retyJobStatus[0].building\r\n            $result = $retyJobStatus[0].result\r\n            $buildNumber = $retyJobStatus[0].number\r\n            Write-Host \"Retry Job Status: \" $result \" BuildNumber: \"  $buildNumber  \" IsBuilding: \"  $isBuilding \r\n        }\r\n        if ($failBuild) {\r\n            if ($result -ne \"SUCCESS\") {\r\n                Write-Host \"BUILD FAILURE: build is unsuccessful or status could not be obtained.\"\r\n                exit 1\r\n            }\r\n        }\r\n    }\r\n    catch {\r\n        Write-Host \"Exception in jenkins job: $($_.Exception.Message)\"\r\n        exit 1\r\n    }",
     "Octopus.Action.Script.ScriptFileName": null,
     "Octopus.Action.Package.FeedId": null,
     "Octopus.Action.Package.PackageId": null
@@ -69,13 +69,46 @@
         "Octopus.ControlType": "SingleLineText"
       },
       "Links": {}
+    },
+    {
+      "Id": "1e43a971-d6a2-4692-8dd2-d8b5344b706c",
+      "Name": "jqj_JenkinsUserName",
+      "Label": "Jenkins User Name",
+      "HelpText": "(Optional) User name  to use to connect to the Jenkins Server",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "fba79fa0-9221-4cd1-9259-5d59e716f0db",
+      "Name": "jqj_JenkinsUserPasword",
+      "Label": "Jenkins User Password",
+      "HelpText": "(Optional) The password to use to connect to the Jenkins Server",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "9fea70e1-ff39-4cc1-8937-7cc19b959e17",
+      "Name": "jqj_checkInterval",
+      "Label": "Check Interval",
+      "HelpText": "The sleep time between checking if the job is running in seconds",
+      "DefaultValue": "20",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
     }
   ],
-  "LastModifiedOn": "2017-08-11T15:50:26.518Z",
-  "LastModifiedBy": "george-nelson",
+  "LastModifiedOn": "2018-03-08T19:54:25.387Z",
+  "LastModifiedBy": "ekirmayer",
   "$Meta": {
-    "ExportedAt": "2017-09-22T15:24:11.311Z",
-    "OctopusVersion": "3.17.2",
+    "ExportedAt": "2018-03-08T19:54:25.387Z",
+    "OctopusVersion": "2018.2.1",
     "Type": "ActionTemplate"
   },
   "Category": "jenkins"
