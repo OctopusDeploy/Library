@@ -7,13 +7,13 @@
   "CommunityActionTemplateId": null,
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
-    "Octopus.Action.Azure.AccountId": "#{AzureSubscription}",
-    "Octopus.Action.Script.ScriptBody": "<#\nTakes an Octopus certificate variable and\n    1) Writes it to a temporary file with a password (as Azure requires the PFX have a password)\n    2) Invokes New-AzureRmWebAppSSLBinding\n    3) Removes the temporary certificate file\n#>\n\n$ErrorActionPreference = 'Stop'\n\nWrite-Verbose \"Creating temporary certificate file\"\n$TempCertificateFile = New-TemporaryFile\n# The PFX upload to Azure must have a password. So we give it a GUID.\n$Password = [guid]::NewGuid().ToString(\"N\")\n\n$CertificateName = $OctopusParameters[\"Certificate.Name\"]\n\nWrite-Host \"Creating HTTPS binding on web app '$WebApp' for domain $DomainName using certificate '$CertificateName' \"\n\n$CertificateBytes = [Convert]::FromBase64String($OctopusParameters[\"Certificate.Pfx\"])\n[IO.File]::WriteAllBytes($TempCertificateFile.FullName, $CertificateBytes)\nGet-PfxData -FilePath $TempCertificateFile.FullName | Export-PfxCertificate -FilePath $TempCertificateFile.FullName -Password (ConvertTo-SecureString -String $Password -AsPlainText -Force)\n\n$BindingParams = @{\n    WebAppName = $WebApp\n    ResourceGroupName = $ResourceGroup\n    Name = $DomainName\n    CertificateFilePath = $TempCertificateFile.FullName\n    CertificatePassword = $Password\n    SslState = $SslState\n}\n\nif ($Slot) { $BindingParams['Slot'] = $Slot }\n\nNew-AzureRmWebAppSSLBinding @BindingParams\n\nWrite-Verbose \"Removing temporary certificate file\"\nRemove-Item $TempCertificateFile.FullName -Force"
+    "Octopus.Action.Azure.AccountId": "#{SslAzureSubscription}",
+    "Octopus.Action.Script.ScriptBody": "<#\nTakes an Octopus certificate variable and\n    1) Writes it to a temporary file with a password (as Azure requires the PFX have a password)\n    2) Invokes New-AzureRmWebAppSSLBinding\n    3) Removes the temporary certificate file\n#>\n\n$ErrorActionPreference = 'Stop'\n\nWrite-Verbose \"Creating temporary certificate file\"\n$TempCertificateFile = New-TemporaryFile\n# The PFX upload to Azure must have a password. So we give it a GUID.\n$Password = [guid]::NewGuid().ToString(\"N\")\n\n$CertificateName = $OctopusParameters[\"SslCertificate.Name\"]\n\nWrite-Host \"Creating HTTPS binding on web app '$SslWebApp' for domain $SslDomainName using certificate '$CertificateName' \"\n\n$CertificateBytes = [Convert]::FromBase64String($OctopusParameters[\"SslCertificate.Pfx\"])\n[IO.File]::WriteAllBytes($TempCertificateFile.FullName, $CertificateBytes)\nGet-PfxData -FilePath $TempCertificateFile.FullName | Export-PfxCertificate -FilePath $TempCertificateFile.FullName -Password (ConvertTo-SecureString -String $Password -AsPlainText -Force)\n\n$BindingParams = @{\n    WebAppName = $SslWebApp\n    ResourceGroupName = $SslResourceGroup\n    Name = $SslDomainName\n    CertificateFilePath = $TempCertificateFile.FullName\n    CertificatePassword = $Password\n    SslState = $SslState\n}\n\nif ($SslSlot) { $BindingParams['Slot'] = $SslSlot }\n\nNew-AzureRmWebAppSSLBinding @BindingParams\n\nWrite-Verbose \"Removing temporary certificate file\"\nRemove-Item $TempCertificateFile.FullName -Force"
   },
   "Parameters": [
     {
       "Id": "a8d7da9d-39d6-4bcd-9a08-fe81210e364c",
-      "Name": "AzureSubscription",
+      "Name": "SslAzureSubscription",
       "Label": "Azure Subscription",
       "HelpText": null,
       "DefaultValue": "",
@@ -24,7 +24,7 @@
     },
     {
       "Id": "4b978b3d-4f87-49d7-b814-14e2f9ef878a",
-      "Name": "WebApp",
+      "Name": "SslWebApp",
       "Label": "Azure Web App",
       "HelpText": "The name of the Azure Web App for which the SSL binding will be created.",
       "DefaultValue": "",
@@ -35,7 +35,7 @@
     },
     {
       "Id": "df5ee03d-1a63-44c0-b3c4-d75020b1f2b8",
-      "Name": "ResourceGroup",
+      "Name": "SslResourceGroup",
       "Label": "Resource Group",
       "HelpText": "The name of the Azure Resource Group containing the Web App",
       "DefaultValue": "",
@@ -46,8 +46,8 @@
     },
     {
       "Id": "ff318b09-27de-483c-a9c8-b0583e15208c",
-      "Name": "Slot",
-      "Label": "",
+      "Name": "SslSlot",
+      "Label": "Slot",
       "HelpText": "The Azure Deployment Slot (optional)",
       "DefaultValue": "",
       "DisplaySettings": {
@@ -57,9 +57,9 @@
     },
     {
       "Id": "9f488222-f373-4f70-841b-3f340357bb85",
-      "Name": "DomainName",
+      "Name": "SslDomainName",
       "Label": "Domain Name",
-      "HelpText": "The fully qualified domain name for the SSL binding",
+      "HelpText": "The fully qualified domain name for the SSL binding. e.g. store.acme.com",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -68,8 +68,8 @@
     },
     {
       "Id": "b8bda333-894a-4223-a07d-afb336b8f75f",
-      "Name": "Certificate",
-      "Label": "",
+      "Name": "SslCertificate",
+      "Label": "Certificate",
       "HelpText": "The certificate to be used for the SSL binding",
       "DefaultValue": "",
       "DisplaySettings": {
