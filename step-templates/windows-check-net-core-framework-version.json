@@ -1,0 +1,48 @@
+{
+  "Id": "929ff903-29de-4217-b6a9-83fbfd477e11",
+  "Name": ".NET Core - Check .NET Core Framework Version",
+  "Description": "Check if given .NET Core framework version (or greater) is installed.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\" \r\nfunction Get-Parameter($Name, $Default, [switch]$Required) {\r\n    $result = $null\r\n\r\n    if ($OctopusParameters -ne $null) {\r\n        $result = $OctopusParameters[$Name]\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        if ($Required) {\r\n            throw \"Missing parameter value $Name\"\r\n        } else {\r\n            $result = $Default\r\n        }\r\n    }\r\n\r\n    return $result\r\n}\r\n\r\nfunction Get-DotNetCoreFrameworkVersions() {\r\n    $dotNetCoreVersions = @()\r\n    if(Test-Path \"$env:programfiles/dotnet/shared/Microsoft.NETCore.App\") {\r\n        $dotNetCoreVersions = (ls \"$env:programfiles/dotnet/shared/Microsoft.NETCore.App\").Name\r\n    }\r\n    return $dotNetCoreVersions\r\n}\r\n\r\n$targetVersion = (Get-Parameter \"TargetVersion\" -Required).Trim()\r\n$exact = [boolean]::Parse((Get-Parameter \"Exact\" -Required))\r\n\r\n$matchedVersions = Get-DotNetCoreFrameworkVersions | Where-Object { if ($exact) { $_ -eq $targetVersion } else { $_ -ge $targetVersion }  }\r\nif (!$matchedVersions) { \r\n    throw \"Can't find .NET Core Runtime $targetVersion installed in the machine.\"\r\n}\r\n$matchedVersions | foreach { Write-Host \"Found .NET Core Runtime $_ installed in the machine.\" }",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "694207ec-0e0b-42a1-841b-81aa4ee5cb7d",
+      "Name": "TargetVersion",
+      "Label": "Target .NET Core framework version",
+      "HelpText": "The target .NET Core framework version you expect to be installed in the machine. For example, 2.0.5.",
+      "DefaultValue": "2.0.5",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b570ac4a-44a8-42ef-90c4-822530ff6d52",
+      "Name": "Exact",
+      "Label": "Exact",
+      "HelpText": "If you check \"Exact\", it means the installed .NET Core framework version MUST match target version.\n\nOtherwise, as long as the installed .NET Coreframework version is greater than or equal to target version, the check will pass.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2018-03-29T10:34:36.483Z",
+    "OctopusVersion": "3.17.12",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "cjuroz",
+  "Category": "dotnetcore"
+}
