@@ -1,0 +1,67 @@
+{
+  "Id": "7351a3e7-df59-4e0c-863a-dca6f33ad2e1",
+  "Name": "Azure - Remove Resource Group Deployments",
+  "Description": "There is a cap in Azure that prevents having more than 800 deployments in the history at any given time: [link to microsoft docs](https://docs.microsoft.com/en-us/azure/azure-subscription-service-limits#resource-group-limits.)\n\nThis script helps alleviate this issue by limiting how many deployments are allowed exist, keeps the latest specified number of deployments, and will remove the rest.\n\n**What it does:** *Logs into Azure, selects the resource group of the app. Based on how many deployments it wants to keep, it will keep the latest X deployments and remove the rest. If there are less deployments than X to keep, the script will skip.*\n",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Azure.AccountId": "#{AzureSubscriptionAccount}",
+    "Octopus.Action.Script.ScriptBody": "Function Validate-Parameter($parameterValue, [string[]]$validInput, $parameterName) {\n    Write-Host \"${parameterName}: ${parameterValue}\"\n    if (! $parameterValue) {\n        throw \"$parameterName cannot be empty, please specify a value\"\n    }\n}\n\nFunction Remove-AzureRmResourceDeployments {\n\n    [CmdletBinding()]\n    Param(\n        [Parameter(Mandatory = $true)]\n        [string]$resourceGroupName,\n\n        [Parameter(Mandatory = $true)]\n        [string]$appServiceName,\n        \n        [Parameter(Mandatory = $true)]\n        [int]$numberOfDeploymentsToKeep\n    )\n\n    $listOfDeployments = Get-AzureRmResourceGroupDeployment -ResourceGroupName $resourceGroupName\n\n    $azureDeploymentNameAndDate = @()\n    $listOfDeployments | % {$azureDeploymentNameAndDate += [PSCustomObject]@{DeploymentName = $_.DeploymentName; AppName = $_.Parameters.webSiteName.value; Time = $_.Timestamp}}\n    Write-Output \"Found $($azureDeploymentNameAndDate.Count) deployments from the $resourceGroupName resource group\"\n    \n    $totalNumberOfDeployments = $azureDeploymentNameAndDate | where {$_.AppName -match $appServiceName} | sort Time -Descending \n    $itemsToRemove = $azureDeploymentNameAndDate | where {$_.AppName -match $appServiceName} | sort Time -Descending | select-object -skip $numberOfDeploymentsToKeep\n    $numberOfItemsToRemove = $itemsToRemove | measure\n    \n    Write-Output \"There is a total of $($totalNumberOfDeployments.Count) deployments for $appServiceName\"\n\n    if ($numberOfitemsToRemove.Count -eq 0) {\n        Write-Output \"There are $($totalNumberOfDeployments.Count) deployments, max number of deployments set to keep is $numberOfDeploymentsToKeep... skipping\"\n    }\n    else {\n        Write-Output \"Deleting $($numberOfitemsToRemove.Count) deployment(s) from $appServiceName\"\n        $itemsToRemove | % {Write-Output \"Deleting $($_.DeploymentName)\"; Remove-AzureRmResourceGroupDeployment -ResourceGroupName $resourceGroupName -name $_.DeploymentName}\n    }\n}\n\n## --------------------------------------------------------------------------------------\n## Input\n## --------------------------------------------------------------------------------------\n\n$resourceGroupName = $OctopusParameters['Azure.RemoveResourceGroupDeployments.ResourceGroupName']\n$appServiceName = $OctopusParameters['Azure.RemoveResourceGroupDeployments.AppServiceName']\n$numberOfDeploymentsToKeep = $OctopusParameters['Azure.RemoveResourceGroupDeployments.NumberOfDeploymentsToKeep']\n\n# Validate that all parameters have values\nWrite-Output \"Validating parameters...\"\nValidate-Parameter $resourceGroupName -parameterName \"resourceGroupName\"\nValidate-Parameter $appServiceName -parameterName \"appServiceName\"\nValidate-Parameter $numberOfDeploymentsToKeep -parameterName \"numberOfDeploymentsToKeep\"\n\nRemove-AzureRmResourceDeployments -resourceGroupName $resourceGroupName -appServiceName $appServiceName -numberOfDeploymentsToKeep $numberOfDeploymentsToKeep -Verbose",
+    "Octopus.Action.Package.DownloadOnTentacle": "False"
+  },
+  "Parameters": [
+    {
+      "Id": "0bbab39d-753d-479b-9ff4-b9bca412f980",
+      "Name": "AzureSubscriptionAccount",
+      "Label": "Azure Subscription Account",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "27c68d1f-7fdc-4e10-aa4a-77a0ff55eb29",
+      "Name": "Azure.RemoveResourceGroupDeployments.ResourceGroupName",
+      "Label": "ResourceGroupName",
+      "HelpText": "Enter the name of the resource group.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "8ffc310f-8731-4b96-9237-738b5b59438a",
+      "Name": "Azure.RemoveResourceGroupDeployments.AppServiceName",
+      "Label": "AppServiceName",
+      "HelpText": "Enter the name of your web/api/etc app.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2adcf1a9-d319-4ed3-80e7-4c533ddbe5cd",
+      "Name": "Azure.RemoveResourceGroupDeployments.NumberOfDeploymentsToKeep",
+      "Label": "Number Of Deployments To Keep",
+      "HelpText": "Number Of Deployments To Keep.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "Category": "Azure",
+  "LastModifiedBy": "kennymiyasato",
+  "$Meta": {
+    "ExportedAt": "2018-03-29T21:19:55.999Z",
+    "OctopusVersion": "2018.3.4",
+    "Type": "ActionTemplate"
+  }
+}
