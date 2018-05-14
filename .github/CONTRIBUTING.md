@@ -45,9 +45,10 @@ Licensing
 
 The entire library is covered by [this Apache 2.0 license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE.txt). [This site](http://choosealicense.com/licenses/apache-2.0/) provides a good explanation of what this license provides for you as a contributor. By contributing to this library:
 
-* your contribution is automatically covered by [this Apache 2.0 license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE.txt) without requiring a header in each file
-* your contribution is attributed to you (and your organisation) via commits and pull-requests
-* state changes are tracked automatically via commits and pull-requests
+* You will be asked to sign our [Contributor License Agreement (CLA)](https://en.wikipedia.org/wiki/Contributor_License_Agreement) which at the time of writing was [v1.0](https://gist.github.com/PaulStovell/568affdef31fda72d4302615ae9bcbe2). This basically allows us to accept your contribution for which you are claiming full ownership, and then relicense it under [this Apache 2.0 license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE.txt). We cannot accept your contribution without your consent, nor share it with anyone else.
+* Your contribution is automatically covered by [this Apache 2.0 license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE.txt) without requiring a header in each file.
+* Your contribution is attributed to you (and your organisation) via commits and pull-requests.
+* State changes are tracked automatically via commits and pull-requests.
 
 Contributing to the website
 ---------------------------
