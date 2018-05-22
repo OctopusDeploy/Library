@@ -1,0 +1,81 @@
+{
+  "Id": "2ecb9ec9-2c81-4e75-8093-175d2557ca54",
+  "Name": "Create VictorOps Alert",
+  "Description": "Create an alert in VictorOps via the REST integration. See [VictorOps docs](https://help.victorops.com/knowledge-base/victorops-restendpoint-integration/) for details.",
+  "ActionType": "Octopus.Script",
+  "Version": 20,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "Set-StrictMode -Version Latest\r\n\r\nfunction Send-VictorOpsAlert($url, $messageType, $entityDisplayName, $stateMessage, $customFields)\r\n{\r\n  $payload = @{\r\n      \"message_type\" = $messageType\r\n      \"entity_display_name\" = $entityDisplayName\r\n      \"state_message\" = $stateMessage\r\n  }\r\n\r\n  write-verbose \"Splitting custom fields\"\r\n  foreach($line in $customFields -split \"`n\") {\r\n    write-verbose \" - line is '$line'\"\r\n    $kv = $line.Split('|')\r\n    write-verbose \" - kv is '$kv'\"\r\n    $payload.Add($kv[0], $kv[1])\r\n  }\r\n\r\n  write-verbose \"Submitting payload`n$payload`n to $url\"\r\n\r\n  try {\r\n    $response = Invoke-Restmethod -Method POST -Uri $url -Body ($payload | ConvertTo-Json) -ContentType \"application/json\"\r\n    write-host \"Successfully submitted\"\r\n  } catch {\r\n    Fail-Step \"Failed to submit VictorOps alert - $($_)\"\r\n  }\r\n\r\n}\r\n\r\nif (Test-Path variable:OctopusParameters) {\r\n  Send-VictorOpsAlert -url $OctopusParameters['VictorOpsAlertUrl'] `\r\n                      -messageType $OctopusParameters['VictorOpsMessageType'] `\r\n                      -entityDisplayName $OctopusParameters['VictorOpsEntityDisplayName'] `\r\n                      -stateMessage $OctopusParameters['VictorOpsMessage'] `\r\n                      -customFields $OctopusParameters['VictorOpsCustomFields']\r\n}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "01cbb725-a18f-4543-8f35-e9687ab6c63b",
+      "Name": "VictorOpsAlertUrl",
+      "Label": "VictorOps Url",
+      "HelpText": "The URL to notify from the integrations->REST page in VictorOps, eg: `https://alert.victorops.com/integrations/generic/20131114/alert/XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXXX/MyApp`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "f53f9861-d051-4a30-9e5d-7091f50782fc",
+      "Name": "VictorOpsMessageType",
+      "Label": "Message Type",
+      "HelpText": "",
+      "DefaultValue": "WARNING",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "CRITICAL|Critical (triggers an incident)\nWARNING|Warning (may trigger an incident, depending on your settings)\nACKNOWLEDGEMENT|Acknowledgement (acks an incident)\nINFO|Info (creates a timeline event but does not trigger an incident)\nRECOVERY|Recovery (resolves an incident)"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "010734ae-9987-479b-bc41-642adf380eaf",
+      "Name": "VictorOpsEntityDisplayName",
+      "Label": "Title",
+      "HelpText": "Display Name in the UI and Notifications",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "606190a2-02a0-4590-a397-fab876c572af",
+      "Name": "VictorOpsMessage",
+      "Label": "Message",
+      "HelpText": "",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "525a75a3-db7d-45dd-99c1-d9821d527cbe",
+      "Name": "VictorOpsCustomFields",
+      "Label": "Custom fields",
+      "HelpText": "A list of keyvalue pairs (separated by `|`), one per line. eg: \nEnvironment|Production\nRegion|us-west-1",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "matt-richardson",
+  "$Meta": {
+    "ExportedAt": "2018-05-22T04:33:31.645Z",
+    "OctopusVersion": "2018.5.1",
+    "Type": "ActionTemplate"
+  },
+  "Category": "victorops"
+}
