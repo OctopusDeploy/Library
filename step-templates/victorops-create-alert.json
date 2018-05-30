@@ -1,0 +1,78 @@
+{
+  "Id": "2ecb9ec9-2c81-4e75-8093-175d2557ca54",
+  "Name": "VictorOps - Create Alert",
+  "Description": "Create an alert in VictorOps via the REST integration. See [VictorOps docs](https://help.victorops.com/knowledge-base/victorops-restendpoint-integration/) for details.",
+  "ActionType": "Octopus.Script",
+  "Version": 24,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "Set-StrictMode -Version Latest\n\nfunction Send-VictorOpsAlert($url, $messageType, $entityDisplayName, $stateMessage, $customFields)\n{\n  $payload = @{\n      \"message_type\" = $messageType\n      \"entity_display_name\" = $entityDisplayName\n      \"state_message\" = $stateMessage\n  }\n\n  if (-not ([string]::IsNullOrEmpty($customFields))) { \n    foreach($line in $customFields -split \"`n\") {\n      if (-not ([string]::IsNullOrEmpty($line))) { \n        if ($line -like '*|*') {\n          $kv = $line.Split('|')\n          $payload.Add($kv[0], $kv[1])\n        } else {\n          write-verbose \"The line '$line' in 'Custom fields' contained invalid data. Please ensure its a list of key value pairs, separated by '|'.\"\n        }\n      }\n    }\n  }\n\n  write-verbose \"Submitting payload`n$($payload | ConvertTo-Json)`n to $url\"\n\n  try {\n    $response = Invoke-Restmethod -Method POST -Uri $url -Body ($payload | ConvertTo-Json) -ContentType \"application/json\"\n    write-host \"Successfully submitted\"\n    write-verbose \"Response was `n$($response | ConvertTo-Json)\"\n  } catch {\n    Fail-Step \"Failed to submit VictorOps alert - $($_)\"\n  }\n\n}\n\nif (Test-Path variable:OctopusParameters) {\n  if ([string]::IsNullOrEmpty($OctopusParameters['VictorOpsAlertUrl']))  {\n  \tWrite-Host \"Please provide the VictorOps Url\"\n    exit 1\n  }\n  if ([string]::IsNullOrEmpty($OctopusParameters['VictorOpsMessageType']))  {\n  \tWrite-Host \"Please provide a valid Message Type\"\n    exit 1\n  }\n  if ([string]::IsNullOrEmpty($OctopusParameters['VictorOpsEntityDisplayName']))  {\n  \tWrite-Host \"Please provide a valid Title\"\n    exit 1\n  }\n  if ([string]::IsNullOrEmpty($OctopusParameters['VictorOpsMessage']))  {\n  \tWrite-Host \"Please provide a valid Message\"\n    exit 1\n  }\n  Send-VictorOpsAlert -url $OctopusParameters['VictorOpsAlertUrl'] `\n                      -messageType $OctopusParameters['VictorOpsMessageType'] `\n                      -entityDisplayName $OctopusParameters['VictorOpsEntityDisplayName'] `\n                      -stateMessage $OctopusParameters['VictorOpsMessage'] `\n                      -customFields $OctopusParameters['VictorOpsCustomFields']\n}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Id": "01cbb725-a18f-4543-8f35-e9687ab6c63b",
+      "Name": "VictorOpsAlertUrl",
+      "Label": "VictorOps Url",
+      "HelpText": "The URL to notify from the integrations->REST page in VictorOps, eg: `https://alert.victorops.com/integrations/generic/20131114/alert/XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXXX/MyApp`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "f53f9861-d051-4a30-9e5d-7091f50782fc",
+      "Name": "VictorOpsMessageType",
+      "Label": "Message Type",
+      "HelpText": "",
+      "DefaultValue": "WARNING",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "CRITICAL|Critical (triggers an incident)\nWARNING|Warning (may trigger an incident, depending on your settings)\nACKNOWLEDGEMENT|Acknowledgement (acks an incident)\nINFO|Info (creates a timeline event but does not trigger an incident)\nRECOVERY|Recovery (resolves an incident)"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "010734ae-9987-479b-bc41-642adf380eaf",
+      "Name": "VictorOpsEntityDisplayName",
+      "Label": "Title",
+      "HelpText": "Display Name in the UI and Notifications",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "606190a2-02a0-4590-a397-fab876c572af",
+      "Name": "VictorOpsMessage",
+      "Label": "Message",
+      "HelpText": "",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "525a75a3-db7d-45dd-99c1-d9821d527cbe",
+      "Name": "VictorOpsCustomFields",
+      "Label": "Custom fields",
+      "HelpText": "A list of keyvalue pairs (separated by `|`), one per line. eg: \n```\nEnvironment|Production\nRegion|us-west-1\n```",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "matt-richardson",
+  "$Meta": {
+    "ExportedAt": "2018-05-22T04:33:31.645Z",
+    "OctopusVersion": "2018.5.1",
+    "Type": "ActionTemplate"
+  },
+  "Category": "victorops"
+}

@@ -136,6 +136,7 @@ function humanize(categoryId){
     case 'ssl': return 'SSL';
     case 'statuspage': return 'StatusPage';
     case 'teamcity': return 'TeamCity';
+    case 'victorops': return 'VictorOps'
     case 'webdeploy': return 'Web Deploy';
     case 'xml': return 'XML';
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
