@@ -1,0 +1,104 @@
+{
+  "Id": "e2324451-0488-4dbf-acc8-656cc2f8defb",
+  "Name": "Pingdom - Modify Uptime Check",
+  "Description": "Modifies Pingdom http check using [Modify Check API method](https://www.pingdom.com/resources/api#MethodModify+Check).",
+  "ActionType": "Octopus.Script",
+  "Version": 26,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null,
+    "Octopus.Action.Package.DownloadOnTentacle": "False",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Ref: https://www.pingdom.com/resources/api#MethodModify+Check\n\nFunction Get-Parameter() {\n    Param(\n        [parameter(Mandatory=$true)]\n        [string]$Name, \n        [switch]$Required, \n        $Default, \n        [switch]$FailOnValidate\n    )\n\n    $result = $null\n    $errMessage = [string]::Empty\n\n    If ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n        Write-Host (\"Octopus parameter value for \" + $Name + \": \" + $result)\n    }\n\n    If ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue\n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    If ($result -eq $null -or [string]::IsNullOrEmpty($result)) {\n        If ($Required) {\n            $errMessage = \"Missing value for $Name\"\n        } ElseIf (-Not $Default -eq $null) {\n            Write-Host (\"Default value: \" + $Default)\n            $result = $Default\n        }\n    }\n\n    If (-Not [string]::IsNullOrEmpty($errMessage)) {\n        If ($FailOnValidate) {\n            Throw $errMessage\n        } Else {\n            Write-Warning $errMessage\n        }\n    }\n\n    return $result\n}\n\n& {\n    Write-Host \"Start PingdomModifyUptimeCheck\"\n\n    Add-Type -AssemblyName System.Web\n\n    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\n    $throwErrorWhenFailed = [System.Convert]::ToBoolean([string](Get-Parameter -Name \"Pingdom.ThrowErrorWhenFailed\" -Default \"False\"))\n\n    $pingdomUsername = [string] (Get-Parameter -Name \"Pingdom.Username\" -Required -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomPassword = [string] (Get-Parameter -Name \"Pingdom.Password\" -Required -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomAppKey = [string] (Get-Parameter -Name \"Pingdom.AppKey\" -Required -FailOnValidate:$throwErrorWhenFailed)\n\n    $pingdomCheckId = [string] (Get-Parameter -Name \"Pingdom.CheckId\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckPaused = [string] (Get-Parameter -Name \"Pingdom.CheckPaused\" -Default \"False\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckName = [string] (Get-Parameter -Name \"Pingdom.CheckName\" -Required -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckTarget = [string] (Get-Parameter -Name \"Pingdom.CheckTarget\" -Required -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckIntervalMinutes = [System.Nullable[int]] (Get-Parameter -Name \"Pingdom.CheckIntervalMinutes\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckContactIds = [string] (Get-Parameter -Name \"Pingdom.CheckContactIds\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckSendNotificationWhenDown = [System.Nullable[int]] (Get-Parameter -Name \"Pingdom.CheckSendNotificationWhenDown\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckNotifyAgainEvery = [System.Nullable[int]] (Get-Parameter -Name \"Pingdom.CheckNotifyAgainEvery\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckNotifyWhenBackUp = [string](Get-Parameter -Name \"Pingdom.CheckNotifyWhenBackUp\" -Default \"True\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckTags = [string] (Get-Parameter -Name \"Pingdom.CheckTags\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckHttpUrl = [string] (Get-Parameter -Name \"Pingdom.CheckHttpUrl\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckHttpEncryptionEnabled = [string](Get-Parameter -Name \"Pingdom.CheckHttpEncryptionEnabled\" -Default \"False\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckHttpTargetPort = [System.Nullable[int]] (Get-Parameter -Name \"Pingdom.CheckHttpTargetPort\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckAuth = [string] (Get-Parameter -Name \"Pingdom.CheckAuth\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckShouldContain = [string] (Get-Parameter -Name \"Pingdom.CheckShouldContain\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckShouldNotContain = [string] (Get-Parameter -Name \"Pingdom.CheckShouldNotContain\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckPostData = [string] (Get-Parameter -Name \"Pingdom.CheckPostData\" -FailOnValidate:$throwErrorWhenFailed)\n    $pingdomCheckIntegrationIds = [string] (Get-Parameter -Name \"Pingdom.CheckIntegrationIds\" -FailOnValidate:$throwErrorWhenFailed)\n\n    $apiVersion = \"2.1\"\n    $url = \"https://api.pingdom.com/api/{0}/checks\" -f $apiVersion\n    $securePassword = ConvertTo-SecureString $pingdomPassword -AsPlainText -Force\n    $credential = New-Object System.Management.Automation.PSCredential($pingdomUsername, $securePassword)\n    $headers = @{ \n        \"App-Key\" = $pingdomAppKey\n    }\n\n    If ([string]::IsNullOrEmpty($pingdomCheckId) -and [string]::IsNullOrEmpty($pingdomCheckName)) {\n        $errMessage = \"Please specify CheckId or CheckName!\"\n        If($throwErrorWhenFailed -eq $true) {\n            Write-Error $errMessage\n        }\n        Else {\n            Write-Warning $errMessage\n        }\n        Exit\n    } \n    \n    # Find check id by name\n\n    If (-Not [string]::IsNullOrEmpty($pingdomCheckName)) {\n        Write-Host \"Getting uptime check list to find check by name: $url\"\n        Try {\n            $response = Invoke-RestMethod -Uri $url -Method Get -ContentType \"application/json\" -Credential $credential -Headers $headers\n        } Catch {\n            Write-Host \"Error occured when getting uptime check list in Pingdom: \" + $_.Exception.Message\n        }\n\n        $checkFiltered = $response.checks | Where-Object { $_.name -eq $pingdomCheckName }\n        If ($checkFiltered -eq $null) {\n            Write-Warning \"Check with name $pingdomCheckName not found!\"\n            Exit\n        }\n\n        $pingdomCheckId = $checkFiltered.id\n    }\n\n    If ([string]::IsNullOrEmpty($pingdomCheckId)) {\n        Write-Warning \"Check with name $pingdomCheckName was not found!\"\n        Exit\n    }\n\n    # Pause or resume check\n\n    $url += \"/$pingdomCheckId\"\n\n    $apiParameters = @{}\n    $apiParameters.Add(\"host\", $pingdomCheckTarget)\n    $apiParameters.Add(\"contactids\", $pingdomCheckContactIds)\n    $apiParameters.Add(\"integrationids\", $pingdomCheckIntegrationIds)\n    If ($pingdomCheckPaused -eq \"True\") {\n        $apiParameters.Add(\"paused\", \"true\")\n    } Else {\n        $apiParameters.Add(\"paused\", \"false\")\n    }\n    If ($pingdomCheckIntervalMinutes -ne $null) {\n        $apiParameters.Add(\"resolution\", $pingdomCheckIntervalMinutes)\n    }\n    If ($pingdomCheckSendNotificationWhenDown -ne $null) {\n        $apiParameters.Add(\"sendnotificationwhendown\", $pingdomCheckSendNotificationWhenDown)\n    }\n    If ($pingdomCheckNotifyAgainEvery -ne $null) {\n        $apiParameters.Add(\"notifyagainevery\", $pingdomCheckNotifyAgainEvery)\n    }\n    If ($pingdomCheckNotifyWhenBackUp -ne $null) {\n        $apiParameters.Add(\"notifywhenbackup\", $pingdomCheckNotifyWhenBackUp.ToLower())\n    }\n    If ($pingdomCheckTags -ne $null) {\n        $apiParameters.Add(\"tags\", $pingdomCheckTags)\n    }\n    If ($pingdomCheckHttpUrl -ne $null) {\n        $apiParameters.Add(\"url\", $pingdomCheckHttpUrl)\n    }\n    If ($pingdomCheckHttpEncryptionEnabled -ne $null) {\n        $apiParameters.Add(\"encryption\", $pingdomCheckHttpEncryptionEnabled.ToLower())\n    }\n    If ($pingdomCheckHttpTargetPort -ne $null) {\n        $apiParameters.Add(\"port\", $pingdomCheckHttpTargetPort)\n    }\n    If ($pingdomCheckAuth -ne $null) {\n        $apiParameters.Add(\"auth\", $pingdomCheckAuth)\n    }\n    If (-Not [string]::IsNullOrEmpty($pingdomCheckShouldContain)) {\n        $apiParameters.Add(\"shouldcontain\", $pingdomCheckShouldContain)\n    }\n    If (-Not [string]::IsNullOrEmpty($pingdomCheckShouldNotContain)) {\n        $apiParameters.Add(\"shouldnotcontain\", $pingdomCheckShouldNotContain)\n    }\n    If ($pingdomCheckPostData -ne $null) {\n        $apiParameters.Add(\"postdata\", $pingdomCheckPostData)\n    }\n\n    If ($apiParameters.Count -gt 0) {\n        $queryString = \"\"\n        $apiParameters.Keys | ForEach-Object { \n            $queryString += ($_ + \"=\" + [Web.HttpUtility]::UrlEncode($apiParameters.Item($_)) + \"&\")  \n        }\n        $queryString = $queryString.Substring(0, $queryString.Length - 1)\n        $url += \"?$queryString\"\n    }\n\n    Write-Host \"Modifying uptime check: $url\"\n    Try {\n        $response = Invoke-RestMethod -Uri $url -Method Put -ContentType \"application/json\" -Credential $credential -Headers $headers\n        Write-Host $response.message\n    } Catch {\n        $errMessage = \"Error occured when adding uptime check in Pingdom: \" + $_.Exception + \"`n\"\n        $errMessage += \"Response: \" + $_\n        If($throwErrorWhenFailed -eq $true) {\n            Write-Error $errMessage\n        }\n        Else {\n            Write-Warning $errMessage\n        }\n    }\n\n    Write-Host \"End PingdomModifyUptimeCheck\"\n}"
+  },
+  "Parameters": [
+    {
+      "Id": "cc77291a-308c-414a-9e68-3a23ea2207da",
+      "Name": "Pingdom.Username",
+      "Label": "Username",
+      "HelpText": "Mandatory.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "815e7620-2f99-4231-a975-5a074b77260c",
+      "Name": "Pingdom.Password",
+      "Label": "Password",
+      "HelpText": "Mandatory.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ac459f1c-7688-481c-a954-05779adeac61",
+      "Name": "Pingdom.AppKey",
+      "Label": "App key",
+      "HelpText": "Mandatory.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "df91b159-d961-4a45-bb8b-9521b3e8848f",
+      "Name": "Pingdom.CheckId",
+      "Label": "Id",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "9a3d6294-799b-474c-9cd4-3404e281acb5",
+      "Name": "Pingdom.CheckName",
+      "Label": "Name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "4508116a-fb26-4500-b1d1-b75d13838204",
+      "Name": "Pingdom.CheckPaused",
+      "Label": "Paused",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "603710c6-e717-44e0-9eac-b84c06ff9351",
+      "Name": "Pingdom.ThrowErrorWhenFailed",
+      "Label": "Error when failed",
+      "HelpText": "When checked, throws Octopus exception if template script has failed.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "sarbis",
+  "$Meta": {
+    "ExportedAt": "2018-06-11T13:50:51.699Z",
+    "OctopusVersion": "2018.4.12",
+    "Type": "ActionTemplate"
+  },
+  "Category": "pingdom"
+}
