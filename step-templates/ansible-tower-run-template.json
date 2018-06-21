@@ -1,0 +1,189 @@
+{
+  "Id": "9a3d15aa-5a48-4922-9651-cf4ae75730dd",
+  "Name": "Ansible Tower - Run Template",
+  "Description": "Run a workflow or job template in Ansible Tower",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "function Write-AnsibleLine([String] $text) {\n    # split text at ESC-char\n    $ansi_colors = @(\n        '[0;30m' #= @{ fg = ConsoleColor.Black }\n        '[0;31m' #= @{ fg = ConsoleColor.DarkRed }\n        '[0;32m' #= @{ fg = ConsoleColor.DarkGreen }\n        '[0;33m' #= @{ fg = ConsoleColor.DarkYellow }\n        '[0;34m' #= @{ fg = ConsoleColor.DarkBlue }\n        '[0;35m' #= @{ fg = ConsoleColor.DarkMagenta }\n        '[0;36m' #= @{ fg = ConsoleColor.DarkCyan }\n        '[0;37m' #= @{ fg = ConsoleColor.White }\n        '[0m' #= @{ fg = $null; bg = $null }\n        '[1;35m' #= Magent (ansible warnings)\n        '[30;1m' #= @{ fg = ConsoleColor.Grey }\n        '[31;1m' #= @{ fg = ConsoleColor.Red }\n        '[32;1m' #= @{ fg = ConsoleColor.Green }\n        '[33;1m' #= @{ fg = ConsoleColor.Yellow }\n        '[34;1m' #= @{ fg = ConsoleColor.Blue }\n        '[35;1m' #= @{ fg = ConsoleColor.Magenta }\n        '[36;1m' #= @{ fg = ConsoleColor.Cyan }\n        '[37;1m' #= @{ fg = ConsoleColor.White }\n        '[0;40m' #= @{ bg = ConsoleColor.Black }\n        '[0;41m' #= @{ bg = ConsoleColor.DarkRed }\n        '[0;42m' #= @{ bg = ConsoleColor.DarkGreen }\n        '[0;43m' #= @{ bg = ConsoleColor.DarkYellow }\n        '[0;44m' #= @{ bg = ConsoleColor.DarkBlue }\n        '[0;45m' #= @{ bg = ConsoleColor.DarkMagenta }\n        '[0;46m' #= @{ bg = ConsoleColor.DarkCyan }\n        '[0;47m' #= @{ bg = ConsoleColor.White }\n        '[40;1m' #= @{ bg = ConsoleColor.DarkGrey }\n        '[41;1m' #= @{ bg = ConsoleColor.Red }\n        '[42;1m' #= @{ bg = ConsoleColor.Green }\n        '[43;1m' #= @{ bg = ConsoleColor.Yellow }\n        '[44;1m' #= @{ bg = ConsoleColor.Blue }\n        '[45;1m' #= @{ bg = ConsoleColor.Magenta }\n        '[46;1m' #= @{ bg = ConsoleColor.Cyan }\n        '[47;1m' #= @{ bg = ConsoleColor.White }\n    )\n    foreach ($segment in $text.split([char] 27)) {\n        foreach($code in $ansi_colors) {\n            if($segment.startswith($code)) {\n                $segment = $segment.replace($code, \"\")\n            }\n        }\n        Write-Host -NoNewline $segment\n    }\n    Write-Host \"\"\n}\n \n \nFunction Resolve-Tower-Asset{\n    Param($Name, $Url)\n    Process {\n        if($script:Verbose) { Write-Host \"Resolving name $Name\" }\n        $object = $null\n        if($Name -match '^[0-9]+$') {\n            if($script:Verbose) { Write-Host \"Using $Name as ID as its an int already\" }\n            $url = \"$Url/$Name/\"\n            try { $object = Invoke-RestMethod -Uri $url -Method GET -Headers $script:auth_headers -UseBasicParsing }\n            catch {\n                Write-Host \"Error when resolving ID for $Name\"\n                Write-Host $_\n                return $null\n            }\n        } else {\n           if($script:Verbose) { Write-Host \"Looking up ID of name $Name\" }\n            $url = \"$Url/?name=$Name\"\n            try { $response = Invoke-RestMethod -Uri $url -Method GET -Headers $script:auth_headers -UseBasicParsing }\n            catch {\n                Write-Host \"Unable to resolve name $Name\"\n                Write-Host $_\n                return $null\n            }\n            if($response.count -eq 0) {\n                Write-Host \"Got no results when trying to get ID for $Name\"\n                return $null\n            } elseif($response.count -ne 1) {\n                Write-Host \"Did not get a unique job ID for job name $Name\"\n                return $null\n            }\n            if($script:Verbose) { Write-Host \"Resolved to ID $($response.results[0].id)\" }\n            $object = $response.results[0]\n        }\n        return $object\n    }\n}\n\n\nfunction Get-Auth-Headers {\n    # If we did not get a TowerOAuthToken or a (TowerUsername and TowerPassword) then we can't even try to auth\n    if(-not (($TowerUsername -and $TowerPassword) -or $TowerOAuthToken)) {\n        Fail-Step \"Please pass an OAuth Token and or a Username/Password to authenticate to Tower with\"\n    }\n\n    if($TowerOAuthToken) {\n        if($verbose) { Write-Host \"Testing OAuth token\" }\n        $token_headers = @{ \"Authorization\" = \"Bearer $TowerOAuthToken\" }\n        try {\n            # We have to assign it to something or we get a line in the output\n            $junk = Invoke-RestMethod -Uri \"$api_base/job_templates/?name=Octopus\" -Method Get -Headers $token_headers -UseBasicParsing\n            $script:auth_headers = $token_headers\n            return\n        } catch {\n            Write-Host \"Unable to authenticate to the Tower server with OAuth token\"\n            Write-Host $_\n        }\n    }\n\n    if(-not ($TowerUsername -and $TowerPassword)) {\n        Fail-Step \"No username/password to fall back on\"\n    }\n\n    if($verbose) { Write-Host \"Testing basic auth\" }\n    $pair = \"${TowerUsername}:${TowerPassword}\"\n    $bytes = [System.Text.Encoding]::ASCII.GetBytes($pair)\n    $base64 = [System.Convert]::ToBase64String($bytes)\n    $basic_auth_value = \"Basic $base64\"\n    $headers = @{ \"Authorization\" = $basic_auth_value }\n    try {\n        # We have to assign it to something or we get a line in the output\n        $junk = Invoke-RestMethod -Uri \"$api_base/job_templates/?name=Octopus\" -Method Get -Headers $headers -UseBasicParsing\n        $script:auth_headers = $headers\n    } catch {\n        Write-Host $_\n        Fail-Step \"Username password combination failed to work\"\n    }\n\n    if ($script:Verbose) { Write-Host \"Attempting to get authentcation Token for $TowerUsername\" }\n    $body = @{\n        username = $TowerUsername\n        password = $TowerPassword\n    } | ConvertTo-Json\n    $url = \"$api_base/authtoken/\"\n    try {\n        $auth_token = Invoke-RestMethod -Uri $url -Method POST -Headers $headers -Body $body -ContentType \"application/json\" -UseBasicParsing\n        $script:auth_headers = @{ Authorization = \"Token $($auth_token.token)\" }\n        return\n    } catch {\n        if($_.Exception.Response.StatusCode -eq 404) {\n            Write-Host(\">>> Server does not support authtoken, try using an OAuth Token\")\n            Write-Host(\">>> Defaulting to perpetual basic auth. This can be slow for authentication with external sources\")\n            return\n        } else {\n            Write-Host $_\n            Fail-Step \"Unable to authenticate to the Tower server for Auth token\"\n        }\n    }\n}\n\nfunction Watch-Job-Complete {\n    Param($Id)\n    Process {\n        $last_log_id = 0\n        while($True) {\n            # First log any events if the user wants them\n            if($TowerImportLogs) {\n                $url = \"$api_base/jobs/$Id/job_events/?id__gt=$last_log_id\"\n                $response = Invoke-RestMethod -Uri $url -Method Get -Headers $script:auth_headers -UseBasicParsing\n                foreach($result in $response.results) {\n                    if($last_log_id -lt $result.id) { $last_log_id = $result.id }\n                    if($result.event_data -and $result.event_data.res -and $result.event_data.res.output) {\n                    \tforeach($line in $result.event_data.res.output) {\n                        \tWrite-AnsibleLine($line)\n                        }\n                    } else {\n\t                    $line = $result.stdout\n    \t                Write-AnsibleLine($line)\n                    }\n                }\n            }\n \n            # Now check the status of the job\n            $url = \"$api_base/jobs/$Id/\"\n            $response = Invoke-RestMethod -Uri $url -Method Get -Headers $script:auth_headers -UseBasicParsing\n            if($response.finished) {\n               $response.failed\n               return\n            } else {\n               Start-Sleep -s $SecondsBetweenChecks\n            }\n        }\n    }\n}\n \nfunction Watch-Workflow-Complete {\n    Param($Id)\n    Process {\n        $workflow_node_id = 0\n        while($True) {\n            # Check to see if there are any jobs we need to follow\n            $url = \"$tower_base/api/v2/workflow_jobs/$Id/workflow_nodes/?id__gt=$workflow_node_id\"\n            $response = Invoke-RestMethod -Uri $url -Method Get -Headers $script:auth_headers -UseBasicParsing\n\n            # If there are no nodes whose ID is > the last one we looked at we can see if we are complete\n            if($response.count -eq 0) {\n                $url = \"$tower_base/api/v2/workflow_jobs/$Id/\"\n                $response = Invoke-RestMethod -Uri $url -Method Get -Headers $script:auth_headers -UseBasicParsing\n                if($response.finished) {\n                    $response.failed\n                    return\n                } else {\n                    Start-Sleep -s $SecondsBetweenChecks\n                }\n            } else {\n                foreach($result in $response.results) {\n                    if($result.summary_fields.unified_job_template.unified_job_type -eq 'job') {\n                        $job_id = $result.summary_fields.job.id\n                        if(-not $job_id) {\n                            # This is a job but it hasn't started yet, lets sleep and try again\n                            Start-Sleep -s $SecondsBetweenChecks\n                            break\n                        }\n                        if($script:Verbose) { Write-Host \"Monitoring job $($result.summary_fields.job.name)\" }\n                        # We have to trap the return of Watch-Job-Complete\n                        $junk = Watch-Job-Complete -Id $job_id\n                    } else {\n                        if($script:Verbose) { Write-Host \"Not pulling logs for node $($result.id) which is a $($result.summary_fields.unified_job_template.unified_job_type)\" }\n                    }\n                    $workflow_node_id = $result.id\n                }\n            }\n        }\n    }\n}\n\n\n\n##### Main Body\n\n\n\n\n# Check that we got a TowerJobTemplate, without one we can't do anything\nif(-not ($TowerJobType -eq \"job\" -or $TowerJobType -eq \"workflow\")) { Fail-Stop \"The job type must be either job or workflow\" }\nif($TowerJobTemplate -eq $null -or $TowerJobTemplate -eq \"\") { Fail-Step \"A Job Name needs to be specified\" }\nif($TowerJobTags -eq \"\") { $TowerJobTags = $null }\nif($TowerExtraVars -eq \"\") { $TowerExtraVars = $null }\nif($TowerLimit -eq \"\") { $TowerLimit = $null }\nif($TowerInventory -eq \"\") { $TowerInventory = $null }\nif($TowerCredential -eq \"\") { $Credential = $null }\nif($TowerImportLogs -and $TowerImportLogs -eq \"True\") { $TowerImportLogs = $True } else { $TowerImportLogs = $False }\nif($TowerVerbose -and $TowerVerbose -eq \"True\") { $Verbose = $True} else { $Verbose = $False }\nif($TowerSecondsBetweenChecks) {\n    try { $SecondsBetweenChecks = [int]$TowerSecondsBetweenChecks }\n    catch {\n        write-Host \"Failed to parse $TowerSecondsBetweenChecks as integer, defaulting to 3\"\n        $SecondsBetweenChecks = 3\n    }\n} else {\n    $SecondsBetweenChecks = 3\n}\nif($TowerTimeLimitInSeconds) {\n    try { $TowerTimeLimitInSeconds = [int]$TowerTimeLimitInSeconds }\n    catch {\n        write-Host \"Failed to parse $TowerTimeLimitInSeconds as integer, defaulting to 600\"\n        $TowerTimeLimitInSeconds = 600\n    }\n} else {\n    $TowerTimeLimitInSeconds = 600\n}\nif($TowerIgnoreCert -and $TowerIgnoreCert -eq \"True\") {\n    # Joyfully borrowed from Markus Kraus' post on\n    # https://blog.ukotic.net/2017/08/15/could-not-establish-trust-relationship-for-the-ssltls-invoke-webrequest/\n    if(-not([System.Management.Automation.PSTypeName]'TrustAllCertsPolicy').Type) {\n        Add-Type @\"\n            using System.Net;\n            using System.Security.Cryptography.X509Certificates;\n            public class TrustAllCertsPolicy : ICertificatePolicy {\n                public bool CheckValidationResult(ServicePoint srvPoint, X509Certificate certificate, WebRequest request, int certificateProblem) {\n                    return true;\n                }\n            }\n\"@\n        [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy\n        [System.Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n    }\n    #endregion\n}\n \nif ($Verbose) { Write-Host \"Beginning Ansible Tower Run on $TowerServer\" }\n$tower_url = [System.Uri]$TowerServer\nif(-not $tower_url.Scheme) { $tower_url = [System.Uri]\"https://$TowerServer\" }\n$tower_base = $tower_url.ToString().TrimEnd(\"/\")\n$api_base = \"${tower_base}/api/v2\"\n \n# First handle authentication\n#   If we have a TowerOAuthToken try using that\n#   Else get an authentication token if we have a user name/password\n$auth_headers = @{'initial' = 'Data'}\nGet-Auth-Headers\n \n \n# If the TowerJobTemplate is actually an ID we can just use that.\n# If not we need to lookup the ID from the name\nif($TowerJobType -eq 'job') {\n    $template = Resolve-Tower-Asset -Name $TowerJobTemplate -Url \"$api_base/job_templates\"\n} else {\n    $template = Resolve-Tower-Asset -Name $TowerJobTemplate -Url \"$api_base/workflow_job_templates\"\n}\nif($template -eq $null) { Fail-Step \"Unable to resolve the job name\" }\n \nif($TowerExtraVars -ne $null -and $TowerExtraVars -ne '---' -and $template.ask_variables_on_launch -eq $False) {\n    Write-Warning \"Extra variables defined but prompt for variables on launch is not set in tower job\"\n}\nif($TowerLimit -ne $null -and $template.ask_limit_on_launch -eq $False) {\n    Write-Warning \"Limit defined but prompt for limit on launch is not set in tower job\"\n}\nif($TowerJobTags -ne $null -and $template.ask_tags_on_launch -eq $False) {\n    Write-Warning \"Job Tags defined but prompt for tags on launch is not set in tower job\"\n}\nif($TowerInventory -ne $null -and $template.ask_inventory_on_launch -eq $False) {\n    Write-Warning \"Inventory defined but prompt for inventory on launch is not set in tower job\"\n}\nif($TowerCredential -ne $null -and $template.ask_credential_on_launch -eq $False) {\n    Write-Warning \"Credential defined but prompt for credential on launch is not set in tower job\"\n}\n<#\n// Here are some more options we may want to use/check someday\n//    \"ask_diff_mode_on_launch\": false,\n//    \"ask_skip_tags_on_launch\": false,\n//    \"ask_job_type_on_launch\": false,\n//    \"ask_verbosity_on_launch\": false,\n#>\n \n \n# Construct the post body\n$post_body = @{}\nif($TowerInventory -ne $null) {\n    $inventory = Resolve-Tower-Asset -Name $TowerInventory -Url \"$api_base/inventories\"\n    if($inventory -eq $null) { Fail-Step(\"Unable to resolve inventory\") }\n    $post_body.inventory = $inventory.id\n}\n \nif($TowerCredential -ne $null) {\n    $credential = Resolve-Tower-Asset -Name $TowerCredential -Url \"$api_base/credentials\"\n    if($credential -eq $null) { Fail-Step(\"Unable to resolve credential\") }\n    $post_body.credential = $credential.id\n}\nif($TowerLimit -ne $null) { $post_body.limit = $TowerLimit }\nif($TowerJobTags -ne $null) { $post_body.job_tags = $TowerJobTags }\nif($TowerExtraVars -ne $null) { $post_body.extra_vars = $TowerExtraVars }\n \nif($Verbose) { Write-Host \"Requesting tower to run $TowerJobTemplate\" }\nif($TowerJobType -eq 'job') {\n    $url = \"$api_base/job_templates/$($template.id)/launch/\"\n} else {\n    $url = \"$api_base/workflow_job_templates/$($template.id)/launch/\"\n}\ntry {\n    $response = Invoke-WebRequest -Uri $url -Method POST -Headers $auth_headers -Body ($post_body | ConvertTo-JSON) -ContentType \"application/json\" -UseBasicParsing\n} catch {\n    Write-Host \"Failed to make request to invoke job\"\n    $initialError = $_\n    try {\n        $result = $_.Exception.Response.GetResponseStream()\n        $reader = New-Object System.IO.StreamReader($result)\n        $reader.BaseStream.Position = 0\n        $reader.DiscardBufferedData()\n        $body = $reader.ReadToEnd() | ConvertFrom-Json\n        <#\n            Some stuff that we might want to catch includes:\n                {\"extra_vars\":[\"Must be valid JSON or YAML.\"]}\n                {\"variables_needed_to_start\":[\"'my_var' value missing\"]}\n                {\"credential\":[\"Invalid pk \\\"999999\\\" - object does not exist.\"]}\n                {\"inventory\":[\"Invalid pk \\\"99999999\\\" - object does not exist.\"]}\n            The last two we don't really care about because we should never hit them\n        #>\n        if($body.extra_vars -ne $null) {\n            Fail-Step \"Failed to launch job: extra vars must be vailid JSON or YAML.\"\n        } elseif($body.variables_needed_to_start -ne $null) {\n            Fail-Step \"Failed to launch job: $($body.variables_needed_to_start)\"\n        } else {\n            Write-Host $body\n            Fail-Step \"Failed to launch job for an unknown reason\"\n        }\n    } catch {\n        Write-Host \"Failed to get response body from request\"\n        Write-Host $initialError\n    }\n}\n\n\n$template_id = $($response | ConvertFrom-Json).id\nWrite-Host(\"Best Guess Job URL: $tower_base/#/$($TowerJobType)s/$template_id\")\n \n# For whatever reason, this never fires\n#$timer = new-object System.Timers.Timer\n#$timer.Interval = 500 #1000 * $TowerTimeLimitInSeconds\n#$action = { Fail-Step \"Timed out waiting for Tower to complete tempate run. Template may still be running in Tower.\" }\n#$tower_timer = Register-ObjectEvent -InputObject $timer -EventName Elapsed -Action $action\n#$timer.AutoReset = $False\n#$timer.Enabled = $True\n\nif($TowerJobType -eq 'job') {\n    $failed = Watch-Job-Complete -Id $template_id\n} else {\n    $failed = Watch-Workflow-Complete -Id $template_id\n}\n\n#$timer.Stop()\n#Unregister-Event $tower_timer.Name\n\n\nif($failed) {\n    Fail-Step \"Job Failed\"\n} else {\n    Write-Host \"Job Succeeded\"\n}"
+  },
+  "Parameters": [
+    {
+      "Id": "6da92f7b-3e6b-496c-9095-508556a2e69a",
+      "Name": "TowerServer",
+      "Label": "Tower Server",
+      "HelpText": "The connection information of the Tower server to connect to. This can be a single host name or IP (https will be assumed) or a full specification like http://localhost:8081.",
+      "DefaultValue": "tower.example.com",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2e4148f9-73fd-430b-9ac4-d7aa0789b9d1",
+      "Name": "TowerUsername",
+      "Label": "Tower Username",
+      "HelpText": "The user to connect to Tower as. Be sure this user has permissions to execute the Job/Workflow templates you are attempting to launch.",
+      "DefaultValue": "admin",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "60f5667e-108a-4966-aaef-feb26e6739ad",
+      "Name": "TowerPassword",
+      "Label": "Tower Password",
+      "HelpText": "The password for the specified user.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "4f8baac7-0b3f-4ffe-af04-deff70484518",
+      "Name": "TowerOAuthToken",
+      "Label": "OAuth Token",
+      "HelpText": "An alternative to username/password which can be used on newer versions of Tower.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ccf787b8-6589-4d59-9f0d-d964f0785252",
+      "Name": "TowerJobType",
+      "Label": "Template Type",
+      "HelpText": "Select the type of template to execute. Supported template types are Workflow and Job",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "job|Job Template\nworkflow|Workflow Template"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "8b6c4e7c-65dd-40f8-8fa3-4371877083fb",
+      "Name": "TowerJobTemplate",
+      "Label": "Template Name",
+      "HelpText": "The Job or Workflow template ID or name. If a name is specified the ID will attempt to be resolved.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "6a64ff26-9b22-414d-9995-d1723aafdbb1",
+      "Name": "TowerExtraVars",
+      "Label": "Extra Vars",
+      "HelpText": "Extra variable to pass to the job. This can be either YAML or JSON.\n**NOTE:** prompt on launch must be set in your template for this setting to take affect.",
+      "DefaultValue": "---",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "f65ed9e0-2d50-4698-8e8e-3683ee6e0a41",
+      "Name": "TowerJobTags",
+      "Label": "Job Tags",
+      "HelpText": "Any job tags to pass to Tower. \n**NOTE:** prompt on launch must be set in your template for this setting to take affect.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "fe800bf5-ef04-43c5-b73d-0c9ca00172a8",
+      "Name": "TowerLimit",
+      "Label": "Limit",
+      "HelpText": "Limit field to be passed to Tower.\n**NOTE:** prompt on launch must be set in your template for this setting to take affect.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "8572d143-0ccd-4af4-b754-7df663f9e07a",
+      "Name": "TowerInventory",
+      "Label": "Inventory",
+      "HelpText": "The inventory for the job run.\n**NOTE:** prompt on launch must be set in your template for this setting to take affect.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "08514a4e-f34c-41cb-94f4-c6ac82f46634",
+      "Name": "TowerCredential",
+      "Label": "Credential",
+      "HelpText": "The credentials to use for this job.\n**NOTE:** prompt on launch must be set in your template for this setting to take affect.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "9691c6c0-ac17-4bcf-947d-38bbbf027ed3",
+      "Name": "TowerImportLogs",
+      "Label": "Import Tower Logs",
+      "HelpText": "Pull the Tower logs back into the step output",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "7e8c6ea0-637f-4440-9669-55971bc1f825",
+      "Name": "TowerSecondsBetweenChecks",
+      "Label": "Second Between Checks",
+      "HelpText": "How many seconds to pause between checks when monitoring a job. 0 means no checks. Failure to parse this field as an integer will default to 3 seconds.",
+      "DefaultValue": "3",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "7f8b11b1-3f4b-41eb-8cf2-38d4e984418e",
+      "Name": "TowerIgnoreCert",
+      "Label": "Ignore Certificate",
+      "HelpText": "**This parameter is intended only for testing.** This tells the step to ignore any https certificate presented to it from the Tower server. Please understand the ramifications before enabling this option.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "4c94cabd-ef0f-4a21-8028-430b7a0465b8",
+      "Name": "TowerVerbose",
+      "Label": "Verbose",
+      "HelpText": "Add additional details of what the plugin is doing.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2018-06-19T14:58:02.004Z",
+    "OctopusVersion": "2018.3.2",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedOn": "2018-05-08T14:00:00.000Z",
+  "LastModifiedBy": "john-westcott-iv",
+  "Category": "ansible"
+}
