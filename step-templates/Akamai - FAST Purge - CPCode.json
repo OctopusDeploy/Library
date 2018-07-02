@@ -1,0 +1,92 @@
+{
+  "Id": "ActionTemplates-183",
+  "Name": "Akamai - Content Fast Purge - CPCode",
+  "Description": "Allows to purge content using the Content Control Utility (CCU) v3 REST API.",
+  "ActionType": "Octopus.Script",
+  "Version": 12,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "$clientToken = $OctopusParameters['AkamaiClientToken']\n$clientAccessToken = $OctopusParameters['AkamaiClientAccessToken']\n$clientSecret = $OctopusParameters['AkamaiSecret']\n$objects = $OctopusParameters['AkamaiObjects'] -split \",\"\n$action = $OctopusParameters['AkamaiAction']\n$domain = $OctopusParameters['AkamaiDomain']\n$baseAPIURL =  $OctopusParameters['AkamaiBaseURL']\n$TimeStamper = [DateTime]::UtcNow.ToString(\"yyyyMMddTHH:mm:sszz00\")\nWrite-Host \"-----------------------------------------------------------------\"\nWrite-Host \"Variable set:\"\nWrite-Host \"-----------------------------------------------------------------\"\nWrite-Host \"clientToken      : $clientToken\"\nWrite-Host \"clientAccessToken: $clientAccessToken\"\nWrite-Host \"clientSecret     : $clientSecret\"\nWrite-Host \"objects          : $objects\"\nWrite-Host \"type             : $type\"\nWrite-Host \"action           : $action\"\nWrite-Host \"domain           : $domain\"\nWrite-Host \"baseAPIURL       : $baseAPIURL\"\nWrite-Host \"RequestTimeStamp : $TimeStamper\"\nWrite-Host \"-----------------------------------------------------------------\"\n\nif ($proxyUser) {\n    $securePassword = ConvertTo-SecureString $proxyPassword -AsPlainText -Force\n    $proxyCredential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $proxyUser,$securePassword\n\n    (New-Object System.Net.WebClient).Proxy.Credentials=$proxyCredential\n}\n\n# Copied from https://github.com/akamai-open/AkamaiOPEN-powershell/blob/master/Invoke-AkamaiOPEN.ps1\nfunction Invoke-AkamaiOpenRequest {\n    param(\n        [Parameter(Mandatory=$true)][string]$Method, \n        [Parameter(Mandatory=$true)][string]$ClientToken, \n        [Parameter(Mandatory=$true)][string]$ClientAccessToken, \n        [Parameter(Mandatory=$true)][string]$ClientSecret, \n        [Parameter(Mandatory=$true)][string]$ReqURL, \n        [Parameter(Mandatory=$false)][string]$Body)\n\n    #Function to generate HMAC SHA256 Base64\n    Function Crypto ($secret, $message)\n    {\n\t    [byte[]] $keyByte = [System.Text.Encoding]::ASCII.GetBytes($secret)\n\t    [byte[]] $messageBytes = [System.Text.Encoding]::ASCII.GetBytes($message)\n\t    $hmac = new-object System.Security.Cryptography.HMACSHA256((,$keyByte))\n\t    [byte[]] $hashmessage = $hmac.ComputeHash($messageBytes)\n\t    $Crypt = [System.Convert]::ToBase64String($hashmessage)\n\n\t    return $Crypt\n    }\n\n    #ReqURL Verification\n    If (($ReqURL -as [System.URI]).AbsoluteURI -eq $null -or $ReqURL -notmatch \"akamai\")\n    {\n\t    throw \"Error: Ivalid Request URI\"\n    }\n\n    #Sanitize Method param\n    $Method = $Method.ToUpper()\n\n    #Split $ReqURL for inclusion in SignatureData\n    $ReqArray = $ReqURL -split \"(.*\\/{2})(.*?)(\\/)(.*)\"\n\n    #Timestamp for request signing\n    $TimeStamp = [DateTime]::UtcNow.ToString(\"yyyyMMddTHH:mm:sszz00\")\n\n    #GUID for request signing\n    $Nonce = [GUID]::NewGuid()\n\n    #Build data string for signature generation\n    $SignatureData = $Method + \"`thttps`t\"\n    $SignatureData += $ReqArray[2] + \"`t\" + $ReqArray[3] + $ReqArray[4]\n\n    if (($Body -ne $null) -and ($Method -ceq \"POST\"))\n    {\n\t    $Body_SHA256 = [System.Security.Cryptography.SHA256]::Create()\n\t    $Post_Hash = [System.Convert]::ToBase64String($Body_SHA256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($Body.ToString())))\n\n\t    $SignatureData += \"`t`t\" + $Post_Hash + \"`t\"\n    }\n    else\n    {\n\t    $SignatureData += \"`t`t`t\"\n    }\n\n    $SignatureData += \"EG1-HMAC-SHA256 \"\n    $SignatureData += \"client_token=\" + $ClientToken + \";\"\n    $SignatureData += \"access_token=\" + $ClientAccessToken + \";\"\n    $SignatureData += \"timestamp=\" + $TimeStamp  + \";\"\n    $SignatureData += \"nonce=\" + $Nonce + \";\"\n\n    #Generate SigningKey\n    $SigningKey = Crypto -secret $ClientSecret -message $TimeStamp\n\n    #Generate Auth Signature\n    $Signature = Crypto -secret $SigningKey -message $SignatureData\n\n    #Create AuthHeader\n    $AuthorizationHeader = \"EG1-HMAC-SHA256 \"\n    $AuthorizationHeader += \"client_token=\" + $ClientToken + \";\"\n    $AuthorizationHeader += \"access_token=\" + $ClientAccessToken + \";\"\n    $AuthorizationHeader += \"timestamp=\" + $TimeStamp + \";\"\n    $AuthorizationHeader += \"nonce=\" + $Nonce + \";\"\n    $AuthorizationHeader += \"signature=\" + $Signature\n\n    #Create IDictionary to hold request headers\n    $Headers = @{}\n\n    #Add Auth header\n    $Headers.Add('Authorization',$AuthorizationHeader)\n\n    #Add additional headers if POSTing or PUTing\n    If (($Method -ceq \"POST\") -or ($Method -ceq \"PUT\"))\n    {\n\t    $Body_Size = [System.Text.Encoding]::UTF8.GetByteCount($Body)\n\t    $Headers.Add('max-body',$Body_Size.ToString())\n\n        # turn off the \"Expect: 100 Continue\" header\n        # as it's not supported on the Akamai side.\n        [System.Net.ServicePointManager]::Expect100Continue = $false\n    }\n\n    #Check for valid Methods and required switches\n    If (($Method -ceq \"POST\") -and ($Body -ne $null))\n    {\n        Invoke-RestMethod -Method $Method -Uri $ReqURL -Headers $Headers -Body $Body -ContentType 'application/json'\n    }\n    elseif  (($Method -ceq \"PUT\") -and ($Body -ne $null))\n    {\n\t    #Invoke API call with PUT and return\n\t    Invoke-RestMethod -Method $Method -Uri $ReqURL -Headers $Headers -Body $Body -ContentType 'application/json'\n    }\n    elseif (($Method -ceq \"GET\") -or ($Method -ceq \"DELETE\"))\n    {\n\t    #Invoke API call with GET or DELETE and return\n\t    Invoke-RestMethod -Method $Method -Uri $ReqURL -Headers $Headers\n    }\n    else\n    {\n\t    throw \"Error: Invalid -Method specified or missing required parameter\"\n    }\n}\n\nfunction Perform-AkamaiRequest {\n    param (\n        [string]$request, \n        [string]$method=\"Get\", \n        [int]$expectedStatusCode=200, \n        $body)\n\n    #  $baseUrl = \"http://private-anon-3934daf8d-akamaiopen2purgeccuv3production.apiary-mock.com\"\n    # $baseUrl = \"https://api.ccu.akamai.com\"\n    $baseURL = $baseAPIURL\n    $uri = \"{0}{1}\" -f $baseUrl,$request\n\n    if ($uri -match \"mock\"){\n        $requestHeaders = @{'Cache-Control'='no-cache,proxy-revalidate'}\n        $response = Invoke-RestMethod -Uri $uri -Method $method -DisableKeepAlive -Headers $requestHeaders -Body $body\n    } else {\n        $json = ConvertTo-Json $body -Compress\n        $response = Invoke-AkamaiOpenRequest -Method $method -ClientToken $clientToken -ClientAccessToken $clientAccessToken -ClientSecret $clientSecret -ReqURL $uri -Body $json\n    }\n\n    if ($response.httpStatus -ne $expectedStatusCode){\n        Write-Error \"Request not processed correctly: $($response.detail)\"\n    } elseif ($response.detail) {\n        Write-Verbose $response.detail\n    }\n\n    Write-Verbose $response\n\n    $response\n}\n\nfunction Request-Purge {\n    param ($objects,[string]$action=\"invalidate\",[string]$domain=\"production\")\n\n    $body = @{\n        objects = $objects\n    }\n\n    if ($objects -ne $null -and $objects -ne \"\") {\n        $body = @{\n            objects = $objects\n        }\n    } \n\n    Perform-AkamaiRequest \"/ccu/v3/$action/cpcode/$domain\" \"Post\" 201 $body\n}\n\n$purge = Request-Purge $objects $action $domain\n\nWrite-Output \"Purge request created\"\nWrite-Output \"PurgeId: $($purge.purgeId)\"\nWrite-Output \"SupportId: $($purge.supportId)\" ",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "bcba1a90-b380-412c-a822-b7b451f828c0",
+      "Name": "AkamaiClientToken",
+      "Label": "Client Token",
+      "HelpText": "Authentication token used in client authentication. Available in Luna Portal.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "1a35c341-c91a-4095-b663-e140fd1fbf79",
+      "Name": "AkamaiClientAccessToken",
+      "Label": "Client Access Token",
+      "HelpText": "Authentication token used in client authentication. Available in Luna Portal.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "29e66c59-c551-41d4-925f-d1699ac6e7ad",
+      "Name": "AkamaiSecret",
+      "Label": "Secret",
+      "HelpText": "Authentication password used in client authentication. Available in Luna Portal.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "d56a689d-a454-41f6-b11e-a0394d1be229",
+      "Name": "AkamaiObjects",
+      "Label": "Objects",
+      "HelpText": "A comma separated list of objects to purge, only URLs",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "34e48ce1-7402-4a7a-a757-5846f7b27a92",
+      "Name": "AkamaiAction",
+      "Label": "Action",
+      "HelpText": "The action to execute on the purge operation",
+      "DefaultValue": "invalidate",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "invalidate\ndelete"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "0d01e996-97d8-46eb-b437-124f28b5b72c",
+      "Name": "AkamaiDomain",
+      "Label": "Domain",
+      "HelpText": "The Akamai domain to perform the purge operation on",
+      "DefaultValue": "production",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "production\nstaging"
+      },
+      "Links": {}
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2017-07-20T20:50:42.430Z",
+    "OctopusVersion": "3.15.4",
+    "Type": "ActionTemplate"
+  }
+}
