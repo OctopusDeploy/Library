@@ -122,6 +122,7 @@ function humanize(categoryId){
     case 'iis': return 'IIS';
     case 'jira': return 'JIRA';
     case 'json': return 'JSON';
+    case 'launchdarkly': return 'LaunchDarkly';
     case 'linux': return 'Linux';
     case 'microsoft-teams': return 'Microsoft Teams';
     case 'netscaler': return 'NetScaler';
