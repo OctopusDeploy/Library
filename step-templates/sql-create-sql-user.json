@@ -1,0 +1,80 @@
+{
+  "Id": "d4d7d32d-0aec-4a9e-8455-7f91fcd0d6fb",
+  "Name": "SQL - Create SQL User If Not Exists",
+  "Description": "Create a SQL Login if the login doesn't already exist without using SMO",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedLogin = $createSqlLogin.Replace(\"'\", \"''\")\n$escapedPassword = $createSqlPassword.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create user command on the server\"\n$command.CommandText = \"IF NOT EXISTS(SELECT 1 FROM sys.server_principals WHERE name = '$escapedLogin')\n\tCREATE LOGIN [$createSqlLogin] with Password='$escapedPassword', default_database=[$createSqlDefaultDatabase]\"            \n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createSqlLogin\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+  },
+  "Parameters": [
+    {
+      "Id": "95996aae-c3ec-4d6f-ac24-486d33513620",
+      "Name": "createSqlServer",
+      "Label": "SQL Server",
+      "HelpText": "The SQL Server to perform the action on",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "443c9e33-4f94-4141-bae8-24eec4f133d2",
+      "Name": "createSqlLoginUserWhoHasCreateUserRights",
+      "Label": "SQL Login",
+      "HelpText": "The user who has permissions to create the user\n\nLeave blank for integrated security",
+      "DefaultValue": "",
+      "DisplaySettings": {}
+    },
+    {
+      "Id": "0bf48c89-31a2-4462-9be3-3f80e816f0de",
+      "Name": "createSqlLoginPasswordWhoHasRights",
+      "Label": "SQL Password",
+      "HelpText": "The password of the user who has permissions to create SQL Logins\n\nLeave blank for integrated security",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "3f9a4254-db16-4aa5-9ab9-bb8e369ee69e",
+      "Name": "createSqlLogin",
+      "Label": "Username to create",
+      "HelpText": "The SQL Login name that will be created",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b73a9fb0-1b09-473c-956b-07198e5028cc",
+      "Name": "createSqlPassword",
+      "Label": "Password",
+      "HelpText": "The password of the user being created",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "f9746a86-33b5-49b2-9bb2-d528585e9759",
+      "Name": "createSqlDefaultDatabase",
+      "Label": "Default Database",
+      "HelpText": "The default database for the user",
+      "DefaultValue": "master",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2018-07-11T20:39:04.366Z",
+  "LastModifiedBy": "OctopusBob",
+  "$Meta": {
+    "ExportedAt": "2018-07-11T20:39:04.366Z",
+    "OctopusVersion": "2018.6.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}
