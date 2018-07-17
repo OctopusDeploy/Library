@@ -1,0 +1,67 @@
+{
+  "Id": "0ad0ad00-adad-adad-adad-000000000002",
+  "Name": "Windows - Add poll rest endpoint scheduled task",
+  "Description": "Adds a scheduled task that polls a specified endpoint at a specific interval using the provided HTTP method",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\nParam(\n    [string] $AD_PollRestEndpoint_Uri,\n    [string] $AD_PollRestEndpoint_Name = \"Polling task for endpoint\",\n    [string] $AD_PollRestEndpoint_HttpMethod = \"GET\",\n    [string] $AD_PollRestEndpoint_Interval = 60,\n    [Int16] $AD_PollRestEndpoint_Attempts = 5,\n    [switch] $WhatIf\n)\n\n$ErrorActionPreference = \"Stop\"\n\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($null -ne $OctopusParameters) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($null -eq $result) {\n        $variable = Get-Variable $Name -EA SilentlyContinue\n        if ($null -ne $variable) {\n            $result = $variable.Value\n        }\n    }\n\n    if ($null -eq $result) {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        }\n        else {\n            $result = $Default\n        }\n    }\n\n    return $result\n}\nfunction Execute(\n    [Parameter(Mandatory = $true)][string] $Uri,\n    [Parameter(Mandatory = $false)][string] $Name = \"Polling task for endpoint\",\n    [Parameter(Mandatory = $false)][string] $HttpMethod = \"GET\",\n    [Parameter(Mandatory = $false)][string] $Interval = 60,\n    [Parameter(Mandatory = $false)][Int16] $Attempts = 5\n) {\n    $attemptCount = 0\n    $operationIncomplete = $true\n    $maxFailures = $Attempts\n    $sleepBetweenFailures = 1\n\n    $script = '-noprofile -executionpolicy bypass -command \"& { Invoke-RestMethod -Uri ' + $Uri + ' -Method ' + $HttpMethod + ' }\"'\n    $repeat = (New-TimeSpan -Seconds $Interval)\n\n    $action = New-ScheduledTaskAction \"powershell.exe\" -Argument  \"$script\"\n    $duration = (New-TimeSpan -Days 9999)\n    $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).Date -RepetitionInterval $repeat -RepetitionDuration $duration\n    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd\n\n    while ($operationIncomplete -and $attemptCount -lt $maxFailures) {\n        $attemptCount = ($attemptCount + 1)\n        if ($attemptCount -ge 2) {\n            Write-Output \"Waiting for $sleepBetweenFailures seconds before retrying...\"\n            Start-Sleep -s $sleepBetweenFailures\n            Write-Output \"Retrying...\"\n            $sleepBetweenFailures = ($sleepBetweenFailures * 2)\n        }\n        try {\n            $task = Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue\n            Write-Output $task\n            $msg = \"Task '$Name'\"\n            if ($null -ne $task) {\n                Write-Output \"$msg already exists - DELETING...\"\n                if (-Not ($WhatIf)) {\n                    Unregister-ScheduledTask -TaskName $name -Confirm:$false\n                }\n                Write-Output \"$msg - DELETED\"\n            }\n            Write-Output \"$msg - ADDING...\"\n            if (-Not ($WhatIf)) {\n                Register-ScheduledTask -TaskName $Name -Action $action -Trigger $trigger -RunLevel Highest -Settings $settings -User \"System\"\n            }\n            Write-Output \"$msg - ADDED\"\n            $operationIncomplete = $false\n        }\n        catch [System.Exception] {\n            if ($attemptCount -lt ($maxFailures)) {\n                Write-Host (\"Attempt $attemptCount of $maxFailures failed: \" + $_.Exception.Message)\n            }\n            else {\n                throw\n            }\n        }\n    }\n}\n& Execute `\n(Get-Param 'AD_PollRestEndpoint_Uri' -Required)`\n(Get-Param 'AD_PollRestEndpoint_Name')`\n(Get-Param 'AD_PollRestEndpoint_HttpMethod')`\n(Get-Param 'AD_PollRestEndpoint_Interval')`\n(Get-Param 'AD_PollRestEndpoint_Attempts')\n"
+  },
+  "Parameters": [
+    {
+      "Name": "AD_PollRestEndpoint_Uri",
+      "Label": "Endpoint Uri",
+      "HelpText": "The endpoint uri to poll",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AD_PollRestEndpoint_Name",
+      "Label": "Task name",
+      "HelpText": "Task name without any special characters",
+      "DefaultValue": "Polling task for endpoint",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AD_PollRestEndpoint_HttpMethod",
+      "Label": "HTTP Method",
+      "HelpText": "The HTTP method to be used for calling the endpoint",
+      "DefaultValue": "GET",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "GET\nPOST\nPUT\nDELETE\nPATCH"
+      }
+    },
+    {
+      "Name": "AD_PollRestEndpoint_Interval",
+      "Label": "Polling interval",
+      "HelpText": "Polling interval in seconds",
+      "DefaultValue": "60",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AD_PollRestEndpoint_Attempts",
+      "Label": "Attempts",
+      "HelpText": "Number of retry attempts in case the scheduling fails",
+      "DefaultValue": "5",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "anatolie-darii",
+  "$Meta": {
+    "ExportedAt": "2018-07-17T10:18:23.003Z",
+    "OctopusVersion": "2018.2.8",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}
