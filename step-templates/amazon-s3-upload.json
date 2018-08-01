@@ -3,9 +3,9 @@
   "Name": "Amazon S3 Upload",
   "Description": "Upload files and folders to an S3 bucket from a specified location.\n\nEither specify a single file or a folder containing the files and folders to be uploaded.\n\n**Important!** _For this plugin to function, you must install [AWS Tools for Windows PowerShell](http://aws.amazon.com/powershell/) on your tentacle server and you must restart your tentacle service._",
   "ActionType": "Octopus.Script",
-  "Version": 10,
+  "Version": 11,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "\r\n$recurse = [boolean]::Parse($Recursive)\r\n\r\n$params = @{}\r\n\r\n#Sets the Permissions to public if the selection is true\r\nif ($MakePublic -eq $True) {\r\n    $params.add(\"CannedACLName\", \"public-read\")\r\n}\r\n\r\n#Initialises the S3 Credentials based on the Access Key and Secret Key provided, so that we can invoke the APIs further down\r\nSet-AWSCredentials -AccessKey $S3AccessKey -SecretKey $S3SecretKey -StoreAs S3Creds\r\n\r\n#Initialises the Default AWS Region based on the region provided\r\nSet-DefaultAWSRegion -Region $S3Region\r\n\r\n#Gets all relevant files and uploads them\r\nfunction Upload($item) \r\n{\r\n    #Gets all files and child folders within the given directory\r\n    foreach ($i in Get-ChildItem $item) {\r\n\r\n        #Checks if the item is a folder\r\n        if($i -is [System.IO.DirectoryInfo]) {\r\n\r\n            #Inserts all files within a folder to AWS           \r\n            Write-S3Object -ProfileName S3Creds -BucketName $S3Bucket -KeyPrefix $i.Name -Folder $i.FullName -Recurse:$recurse @params\r\n\r\n        } else {\r\n\r\n            #Inserts file to AWS\r\n            Write-S3Object -ProfileName S3Creds -BucketName $S3Bucket -Key $i.Name -File $i.FullName @params\r\n\r\n        }\r\n    }\r\n}\r\n\r\nUpload($SourceFolderLocation)\r\n",
+    "Octopus.Action.Script.ScriptBody": "\r\n$recurse = [boolean]::Parse($Recursive)\r\n\r\n$params = @{}\r\n\r\n#Sets the Permissions to public if the selection is true\r\nif ($MakePublic -eq $True) {\r\n    $params.add(\"CannedACLName\", \"public-read\")\r\n}\r\n\r\n#Initialises the S3 Credentials based on the Access Key and Secret Key provided, so that we can invoke the APIs further down\r\nSet-AWSCredentials -AccessKey $S3AccessKey -SecretKey $S3SecretKey -StoreAs S3Creds\r\n\r\n#Initialises the Default AWS Region based on the region provided\r\nSet-DefaultAWSRegion -Region $S3Region\r\n\r\n#Gets all relevant files and uploads them\r\nfunction Upload($item) \r\n{\r\n    #Gets all files and child folders within the given directory\r\n    foreach ($i in Get-ChildItem $item) {\r\n\r\n        #Checks if the item is a folder\r\n        if($i -is [System.IO.DirectoryInfo]) {\r\n\r\n            #Inserts all files within a folder to AWS           \r\n            Write-S3Object -ProfileName S3Creds -BucketName $S3Bucket -KeyPrefix $S3Prefix$($i.Name) -Folder $i.FullName -Recurse:$recurse @params\r\n\r\n        } else {\r\n\r\n            #Inserts file to AWS\r\n            Write-S3Object -ProfileName S3Creds -BucketName $S3Bucket -Key $S3Prefix$($i.Name) -File $i.FullName @params\r\n\r\n        }\r\n    }\r\n}\r\n\r\nUpload($SourceFolderLocation)\r\n",
     "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
@@ -24,6 +24,15 @@
       "Name": "S3Bucket",
       "Label": "Bucket Name",
       "HelpText": "This is the name of the bucket on S3 to which you'd like your files and folders uploaded.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "S3Prefix",
+      "Label": "Prefix",
+      "HelpText": "This is the prefix for the path you want the folder to be uploaded to if they differ from the source structure.",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -75,10 +84,10 @@
       }
     }
   ],
-  "LastModifiedBy": "paulwitt",
+  "LastModifiedBy": "Phillip Haydon",
   "$Meta": {
-    "ExportedAt": "2016-09-16T13:01:48.230+00:00",
-    "OctopusVersion": "3.3.10",
+    "ExportedAt": "2018-04-10T11:05:46.352Z",
+    "OctopusVersion": "2018.2.7",
     "Type": "ActionTemplate"
   },
   "Category": "aws"

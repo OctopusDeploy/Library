@@ -1,0 +1,123 @@
+{
+  "Id": "e28b6898-c336-47b0-bfe0-6158c846ef94",
+  "Name": "Stackify's Retrace API Template",
+  "Description": "Notify Retrace about the status of your deployment via this script.",
+  "ActionType": "Octopus.Script",
+  "Version": 36,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "if (!$hostApi) { $hostApi= 'https://api.stackify.net' }\n\nif ($OctopusParameters[\"Octopus.Deployment.Error\"] -eq $null)\n{\n$post = $hostApi.TrimEnd('/') + '/api/v1/deployments/' + $action\n}\nelse\n{\n$post = $hostApi.TrimEnd('/') + '/api/v1/deployments/cancel'\n}\n# build the authorization header\n\n$headers = @{'authorization'='ApiKey ' + $apiKey}\n\n# build the body of the post\n\nif (!$name) { $name = $version }\n\n$bodyObj = @{ Version=$version; AppName=$app; EnvironmentName=$env; }\n\nif ($action -eq \"start\" -or $action -eq \"complete\"){\n\n        $bodyObj.Name = $name\n\n        if ($uri) { $bodyObj.Uri = $uri }\n\n        if ($branch) { $bodyObj.Branch = $branch }\n\n        if ($commit) { $bodyObj.Commit = $commit }\n\n}\n\n$body = ConvertTo-Json $bodyObj\n\n# send the request\nInvoke-WebRequest -Uri $post -Method POST -ContentType \"application/json\" -Headers $headers -Body $body -UseBasicParsing",
+    "Octopus.Action.Package.DownloadOnTentacle": "False"
+  },
+  "Parameters": [
+    {
+      "Id": "32391872-38c9-4be1-af4f-785629ab6f6e",
+      "Name": "apiKey",
+      "Label": "Stackify ApiKey",
+      "HelpText": "Located inside your Retrace account. To use the Stackify.ApiKey parameter check out support.stackify.com for more info!",
+      "DefaultValue": "#{Stackify.ApiKey}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "88767335-f5bd-4eae-8c6a-1d66883b95d7",
+      "Name": "app",
+      "Label": "Application Name",
+      "HelpText": "Name of your application. _Note this must match the name of an app in Retrace_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "66237479-d4f0-48b7-82a6-01ea9659c45b",
+      "Name": "env",
+      "Label": "Environment",
+      "HelpText": "Name of your app's environment in Retrace. _Note this must match the application's environment in Retrace_",
+      "DefaultValue": "#{Octopus.Environment.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "a7d6da84-6b3f-460c-a8bf-7048304943d5",
+      "Name": "version",
+      "Label": "Version",
+      "HelpText": "What version of your app is this?",
+      "DefaultValue": "#{Octopus.Release.Number}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "911474bd-527e-4b39-90e4-24ef861190e3",
+      "Name": "action",
+      "Label": "Deployment Action",
+      "HelpText": "either start/complete/cancel",
+      "DefaultValue": "complete",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "start|Start\ncomplete|Complete\ncancel|Cancel"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "56dd8f21-65b8-4dbc-9247-cb5cbb80f86c",
+      "Name": "uri",
+      "Label": "Deployment URI",
+      "HelpText": "**OPTIONAL** A link you would like to associate with this release _e.g release notes or a link to this release_",
+      "DefaultValue": "#{Octopus.Web.ReleaseLink}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "1fc3268f-7c4a-4877-8663-6fe00253af3c",
+      "Name": "branch",
+      "Label": "Branch",
+      "HelpText": "**OPTIONAL** _e.g. master_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "5a4618a6-97a9-42f9-abd3-88234de9a8a1",
+      "Name": "commit",
+      "Label": "Commit",
+      "HelpText": "**OPTIONAL** A unique identifier to assign to this release.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "645dab46-ee31-475b-a5a0-05eb059c0893",
+      "Name": "name",
+      "Label": "Release Name",
+      "HelpText": "**OPTIONAL** The name of this release.",
+      "DefaultValue": "#{Octopus.Deployment.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "mattjbrooksii",
+  "$Meta": {
+    "ExportedAt": "2018-01-29T22:12:56.674Z",
+    "OctopusVersion": "4.1.8",
+    "Type": "ActionTemplate"
+  },
+  "Category": "stackify"
+}

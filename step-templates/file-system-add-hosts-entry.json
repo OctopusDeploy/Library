@@ -1,0 +1,48 @@
+{
+  "Id": "0ad0ad00-adad-adad-adad-000000000001",
+  "Name": "File System - Add entry to hosts file",
+  "Description": "Adds an entry to etc/hosts file with the specified host name and optional ip address",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\nParam(\n    [string] $AD_AddHostsEntry_HostName,\n    [string] $AD_AddHostsEntry_IpAddress = \"127.0.0.1\",\n    [Int16] $AD_AddHostsEntry_Attempts = 5,\n    [switch] $WhatIf\n)\n\n$ErrorActionPreference = \"Stop\"\n\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($null -ne $OctopusParameters) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($null -eq $result) {\n        $variable = Get-Variable $Name -EA SilentlyContinue\n        if ($null -ne $variable) {\n            $result = $variable.Value\n        }\n    }\n\n    if ($null -eq $result) {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        }\n        else {\n            $result = $Default\n        }\n    }\n\n    return $result\n}\n\nfunction Execute(\n    [Parameter(Mandatory = $true)][string] $HostName,\n    [Parameter(Mandatory = $false)][string] $IpAddress = \"127.0.0.1\",\n    [Parameter(Mandatory = $false)][Int16] $Attempts = 5\n) {\n    $attemptCount = 0\n    $operationIncomplete = $true\n    $maxFailures = $Attempts\n    $sleepBetweenFailures = 1\n\n    $hostsFile = \"$($env:windir)\\system32\\Drivers\\etc\\hosts\"\n    $entry = \"$IpAddress $HostName\"\n    $regexMatch = \"^\\s*$IpAddress\\s+$HostName\"\n    while ($operationIncomplete -and $attemptCount -lt $maxFailures) {\n        $attemptCount = ($attemptCount + 1)\n        if ($attemptCount -ge 2) {\n            Write-Output \"Waiting for $sleepBetweenFailures seconds before retrying...\"\n            Start-Sleep -s $sleepBetweenFailures\n            Write-Output \"Retrying...\"\n            $sleepBetweenFailures = ($sleepBetweenFailures * 2)\n        }\n        try {\n            $matchingEntries = @(Get-Content $hostsFile) -match ($regexMatch)\n            if (-Not $matchingEntries) {\n                Write-Output \"Entry '$entry' doesn't exist - ADDING...\"\n                if (-Not ($WhatIf)) {\n                    $formattedEntry = [environment]::newline + $entry\n                    [System.IO.File]::AppendAllText($hostsFile, $formattedEntry)\n                }\n                Write-Output \"Entry '$entry' - ADDED\"\n            }\n            else {\n                Write-Output \"Entry '$entry' already exists - SKIPPING\"\n            }\n            $operationIncomplete = $false\n        }\n        catch [System.Exception] {\n            if ($attemptCount -lt ($maxFailures)) {\n                Write-Host (\"Attempt $attemptCount of $maxFailures failed: \" + $_.Exception.Message)\n            }\n            else {\n                throw\n            }\n        }\n    }\n}\n& Execute `\n(Get-Param 'AD_AddHostsEntry_HostName' -Required)`\n(Get-Param 'AD_AddHostsEntry_IpAddress')`\n(Get-Param 'AD_AddHostsEntry_Attempts')\n"
+  },
+  "Parameters": [
+    {
+      "Name": "AD_AddHostsEntry_HostName",
+      "Label": "Host name",
+      "HelpText": "The host name",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AD_AddHostsEntry_IpAddress",
+      "Label": "IP address",
+      "HelpText": "The optional IP address",
+      "DefaultValue": "127.0.0.1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AD_AddHostsEntry_Attempts",
+      "Label": "Nr of attempts",
+      "HelpText": "Optional number of attempts before failing",
+      "DefaultValue": "5",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "anatolie-darii",
+  "$Meta": {
+    "ExportedAt": "2018-07-16T12:37:14.428Z",
+    "OctopusVersion": "2018.2.8",
+    "Type": "ActionTemplate"
+  },
+  "Category": "filesystem"
+}

@@ -1,0 +1,60 @@
+{
+  "Id": "77331575-0628-455d-b484-cfd4703e2081",
+  "Name": "Load WIF Issuer Thumbprint(s)",
+  "Description": "Updates the web/app config files' WIF TrustedIssuer thumbprints based on a realtime metadata request.\n\nChanges are made to the following section:\n/configuration/system.identityModel/identityConfiguration/issuerNameRegistry/trustedIssuers",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$FilePath          = \"#{FilePath}\"\r\n$TrustedIssuerName = \"#{TrustedIssuerName}\"\r\n$MetadataUri       = \"#{MetadataUri}\"\r\n\r\n\r\n[void][System.Reflection.Assembly]::LoadWithPartialName(\"System.Xml.Linq\")\r\n\r\n# because Octo calls powershell steps in a stupid manor...\r\n$charGT = [System.Text.Encoding]::ASCII.GetString( @(62) )\r\n\r\nfunction Get-Thumbprints($MetadataUri) {\r\n    $MetadataTxt = Invoke-WebRequest -Uri $MetadataUri\r\n    $MetadataXml = [xml]($MetadataTxt.Content)\r\n    \r\n    $outval = @()\r\n    # new certs\r\n    \r\n    $MetadataXml.EntityDescriptor.IDPSSODescriptor.KeyDescriptor | ? { $_.use -eq \"signing\" } | % {\r\n        $Cert_Bytes = [System.Convert]::FromBase64String( $_.KeyInfo.X509Data.X509Certificate )\r\n        $Cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2( , $Cert_Bytes ) # powershell is stupid about arrays\r\n        Write-Host \"Found certificate for [$($_.use)] : [$($cert.NotBefore.ToString(\"yyyyMMdd\")) - $($cert.NotAfter.ToString(\"yyyyMMdd\"))] : Thumbprint [$($Cert.Thumbprint)] for Subject [$($Cert.Subject)]\"\r\n        $outval += $Cert.Thumbprint\r\n    }\r\n    return $outval\r\n}\r\n\r\nfunction Get-TextIndex([string]$text, [int]$LineNumber = 0, [int]$LinePosition = 0) {\r\n    # Ported from : https://github.com/futurist/src-location/blob/master/index.js  function locationToIndex\r\n    # NOTE: diff from source to address bug. Test-GetTextIndex validates the changes.\r\n    $strLF = [char]10 # \\n\r\n    $strCR = [char]13 # \\r\r\n    $idx   = -1       # text index\r\n    $lc    = 1        # Line Count\r\n    for($i = 0; $lc -lt $LineNumber -and $i -lt $text.Length; $i++) {\r\n        $idx++\r\n        $c = $text[$i] # cur char\r\n        if ($c -eq $strLF -or $c -eq $strCR) {\r\n            $lc++\r\n            if ($c -eq $strCR -and $text[$i + 1] -eq $strLF) { # DOS CRLF\r\n                $i++\r\n                $idx++\r\n            }\r\n        }\r\n    }\r\n    return $idx + $LinePosition\r\n}\r\n\r\nfunction Replace-TrustedIssuerThumbprints($FilePath, $TrustedIssuerName, $Thumbprints) {\r\n    # Load the file twice - once as text for manipulation, once as XML for xpath and positions\r\n    $fileText      = [System.IO.File]::ReadAllText($FilePath)\r\n    $fileXml       = [System.Xml.Linq.XDocument]::Load($FilePath, [System.Xml.Linq.LoadOptions]::SetLineInfo -bor [System.Xml.Linq.LoadOptions]::PreserveWhitespace )\r\n    $IdpsXml       = $fileXml.Descendants(\"configuration\")[0].Descendants(\"system.identityModel\")[0].Descendants(\"identityConfiguration\")[0].Descendants(\"issuerNameRegistry\")[0].Descendants(\"trustedIssuers\")[0].Descendants(\"add\")\r\n\r\n    # Figure out which elements to manipulate... First delete from the bottom up, then replace the top-most element\r\n    $IdpMatches    = $IdpsXml | ? { $_.Attribute(\"name\").Value -eq $TrustedIssuerName } | Sort-Object -Property LineNumber, LinePosition -Descending\r\n    $IdpsToDelete  = $IdpMatches | Select-Object -First ($IdpMatches.Count - 1)\r\n    $IdpsToReplace = $IdpMatches | Select-Object -Last 1\r\n\r\n    # Delete from the bottom up, so that the LineNumber/LinePosition remain valid during the manipulation\r\n    foreach ($IdP in $IdpsToDelete) {\r\n        Write-Host ( \"DEL [{0}:{1}] {2}\" -f $IdP.LineNumber, $IdP.LinePosition, $IdP.ToString() )\r\n\r\n        $fileIdxOpen  = Get-TextIndex -text $fileText -LineNumber $IdP.LineNumber -LinePosition ( $IdP.LinePosition - 1 )\r\n        $fileIdxClose = $fileText.IndexOf($charGT, $fileIdxOpen) + 1 # add one to include the closing &gt;\r\n        $fileSubstr   = $fileText.Substring($fileIdxOpen, $fileIdxClose - $fileIdxOpen)\r\n        Write-Host ( \"    [$fileIdxOpen .. $fileIdxClose] : $fileSubstr\" )\r\n\r\n        $fileIdxPrior = $fileText.LastIndexOf($charGT, $fileIdxOpen) + 1\r\n        $fileText     = $fileText.Remove($fileIdxPrior, $fileIdxClose - $fileIdxPrior)\r\n    }\r\n    # Replace the top-most element with each thumbprint\r\n    foreach ($IdP in $IdpsToReplace) {\r\n        Write-Host ( \"FIX [{0}:{1}] {2}\" -f $IdP.LineNumber, $IdP.LinePosition, $IdP.ToString() )\r\n\r\n        $fileIdxOpen  = Get-TextIndex -text $fileText -LineNumber $IdP.LineNumber -LinePosition ( $IdP.LinePosition - 1 )\r\n        $fileIdxClose = $fileText.IndexOf($charGT, $fileIdxOpen) + 1 # add one to include the closing &gt;\r\n        $fileSubstr   = $fileText.Substring($fileIdxOpen, $fileIdxClose - $fileIdxOpen)\r\n        Write-Host ( \"    [$fileIdxOpen .. $fileIdxClose] : $fileSubstr\" )\r\n\r\n        $fileIdxPrior = $fileText.LastIndexOf($charGT, $fileIdxOpen) + 1\r\n        $ElementDelim = $fileText.Substring($fileIdxPrior, $fileIdxOpen - $fileIdxPrior)\r\n        Write-Host ( \"   -[{0} .. {1}]\" -f $fileIdxPrior, $fileIdxClose )\r\n        $fileText     = $fileText.Remove($fileIdxPrior, $fileIdxClose - $fileIdxPrior)\r\n        foreach ($Thumbprint in $Thumbprints) {\r\n            $newAttribs = [System.Xml.Linq.XAttribute[]]@(\r\n                                ( New-Object System.Xml.Linq.XAttribute(\"thumbprint\", $Thumbprint       ) ),\r\n                                ( New-Object System.Xml.Linq.XAttribute(\"name\"      , $TrustedIssuerName) )\r\n                            )\r\n            $newValue = ( New-Object System.Xml.Linq.XElement(\"add\", $newAttribs) ).ToString()\r\n            $fileText = $fileText.Insert($fileIdxPrior, $ElementDelim + $newValue)\r\n        }\r\n    }\r\n    return $fileText\r\n}\r\n\r\n\r\n$ThumbPrints       = Get-Thumbprints -MetadataUri $MetadataUri\r\n$fileContent       = Replace-TrustedIssuerThumbprints -FilePath $FilePath -TrustedIssuerName $TrustedIssuerName -Thumbprints $ThumbPrints\r\n[System.IO.File]::WriteAllText($FilePath, $fileContent)\r\n",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "9fa8d0c0-53a3-4d38-b183-bab04037869e",
+      "Name": "FilePath",
+      "Label": "web config file path",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "e97dcceb-fbf1-41f2-9829-e32c6322fe58",
+      "Name": "TrustedIssuerName",
+      "Label": "Trusted Issuer Name",
+      "HelpText": "",
+      "DefaultValue": "https://adfs/adfs/services/trust",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "9670671a-5d7e-4232-9d45-5fc47d005167",
+      "Name": "MetadataUri",
+      "Label": "Metadata Uri",
+      "HelpText": null,
+      "DefaultValue": "https://adfs/FederationMetadata/2007-06/FederationMetadata.xml",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedOn": "2018-06-07T19:59:41.925Z",
+  "LastModifiedBy": "sbrickey",
+  "Category": "XML",
+  "$Meta": {
+    "ExportedAt": "2018-06-07T19:59:41.925Z",
+    "OctopusVersion": "3.17.2",
+    "Type": "ActionTemplate"
+  }
+}

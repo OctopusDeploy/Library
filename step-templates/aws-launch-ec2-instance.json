@@ -1,0 +1,156 @@
+{
+  "Id": "eed13694-0208-4614-aca9-e82309838dd8",
+  "Name": "AWS - Launch EC2 Instance",
+  "Description": "This step will launch an EC2 instance, or start an instance previously created by this step.\n\nThe goal being that only one specific instance will be created, and on subsequent deploys, if the instance is not running it will be started. If the instance was terminated, a new instance will be created in its place. Basically, this step says \"_I will make sure the specified Instance will be running after this step_\".\n\nThis step makes the following Octopus \"Output\" Variables available to subsequent steps:\n- **InstanceId** (e.g. i-a1b2c3d4e5f6g7h8i)\n- **PrivateIpAddress** (e.g. 192.168.0.100)\n- **PublicIpAddress** (e.g. 52.64.52.64)\n- Usage: _#{Octopus.Action[AWS - Launch EC2 Instance].Output.**InstanceId**}_\n\nNow what...? Well, you could use the \"UserData\" field to [automatically install and register a Tentacle](https://octopus.com/blog/auto-provision-ec2-instances-with-tentacle-installed).\n\nNote for UserData: _If you're creating your own image (AMI), you may need to [re-enable User Data](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/UsingConfig_WinAMI.html#UsingConfigInterface_WinAMI), then create the image._\n\nWith a couple of extra step templates you can:\n- Wait for the Instance to register as a Deployment Target (_Octopus - Wait for Deployment Target registration_)\n- Include the new Instance in subsequent deployment steps (_Health Check_)\n\n[AWS Tools for Windows PowerShell](http://aws.amazon.com/powershell/) must be installed on the Server/Target you plan on running this step template on.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\nparam(\n    [string]$odTags,\n    [string]$odImageId,\n    [string]$odInstanceType,\n    [string]$odSubnetId,\n    [string]$odSecurityGroupId,\n    [string]$odKeyName,\n    [string]$odRegion,\n    [string]$odUserData,\n    [decimal]$odSpotPrice,\n    [string]$odSpotProduct,\n    [string]$odAccessKey,\n    [string]$odSecretKey,\n    [switch]$whatIf\n)\n\n$ErrorActionPreference = \"Stop\"\n\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue   \n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    if (!$result -or $result -eq $null) {\n        if ($Default) {\n            $result = $Default\n        } elseif ($Required) {\n            Throw \"Missing parameter value $Name\"\n        }\n    }\n\n    return $result\n}\n\n\nfunction removeTags($instanceId, $tags)\n{\n    (ConvertFrom-StringData $tags).GetEnumerator() | Foreach-Object {\n        try {\n            Remove-EC2Tag -Tags @{key=$_.Key} -resourceId $instanceId -Force\n        }\n        catch [Amazon.EC2.AmazonEC2Exception] {\n            Throw $_.Exception.errorcode + '-' + $_.Exception.Message\n        }\n    }\n}\n\nfunction NewTags($instanceId, $tags)\n{\n    (ConvertFrom-StringData $tags).GetEnumerator() | Foreach-Object {\n        try {\n            New-EC2Tag -Tags @{key=$_.Key;value=$_.Value} -resourceId $instanceId\n        }\n        catch [Amazon.EC2.AmazonEC2Exception] {\n            Throw $_.Exception.errorcode + '-' + $_.Exception.Message\n        }\n    }\n}\n\n\n& {\n    param(\n        [string]$odTags,\n        [string]$odImageId,\n        [string]$odInstanceType,\n        [string]$odSubnetId,\n        [string]$odSecurityGroupId,\n        [string]$odKeyName,\n        [string]$odRegion,\n        [string]$odUserData,\n        [decimal]$odSpotPrice,\n        [string]$odSpotProduct,\n        [string]$odAccessKey,\n        [string]$odSecretKey\n    )\n\n    # If AWS key's are not provided as params, attempt to retrieve them from Environment Variables\n    if ($odAccessKey -or $odSecretKey) {\n        Set-AWSCredentials -AccessKey $odAccessKey -SecretKey $odSecretKey -StoreAs default\n    } elseif (([Environment]::GetEnvironmentVariable(\"AWS_ACCESS_KEY\", \"Machine\")) -or ([Environment]::GetEnvironmentVariable(\"AWS_SECRET_KEY\", \"Machine\"))) {\n        Set-AWSCredentials -AccessKey ([Environment]::GetEnvironmentVariable(\"AWS_ACCESS_KEY\", \"Machine\")) -SecretKey ([Environment]::GetEnvironmentVariable(\"AWS_SECRET_KEY\", \"Machine\")) -StoreAs default\n    } else {\n        Throw \"AWS API credentials were not available/provided.\"\n    }\n\n    if ($odTags) {\n        $filterArray = @()\n        (ConvertFrom-StringData $odTags).GetEnumerator() | Foreach-Object {\n            $filterHash = @{ Name=\"tag:\"+$_.Key;value=$_.Value }\n            $filterArray += $filterHash\n        }\n\n        $instanceObj = (Get-EC2Instance -Filter $filterArray | select -ExpandProperty Instances)\n        $instanceCount = ($instanceObj | measure).Count\n        $instanceId = $null\n        $currentState = \"missing\"\n\n        if ($instanceCount -gt 1) {\n            Throw \"More than one instance exists with the same tags - I don't know what to do!?\"\n        }\n        elseif ($instanceCount -eq 1) {\n            $instanceId = ($instanceObj).InstanceId\n            $currentState = (Get-EC2Instance $instanceId).Instances.State.Name\n            \n            Write-Output (\"------------------------------\")\n            Write-Output (\"Checking the EC2 Instance status:\")\n            Write-Output (\"------------------------------\")\n\n            $timeout = (New-Timespan -Seconds 90)\n            $sw = [diagnostics.stopwatch]::StartNew()\n\n            while ($true) {\n                $currentState = (Get-EC2Instance $instanceId).Instances.State.Name\n\n                if ($currentState -eq \"running\") {\n                    break\n                }\n                elseif ($currentState -eq \"terminated\") {\n                    (removeTags $instanceId $odTags) | out-null\n                    $instanceId = $null\n                    break\n                }\n                elseif ($currentState -eq \"stopped\") {\n                    (Start-EC2Instance -InstanceIds $instanceId) | out-null\n                }\n\n                Write-Output (\"$(Get-Date) | Waiting for Instance '$instanceId' to transition from state: $currentState\")\n\n                if ($sw.elapsed -gt $timeout) {Throw \"Timed out waiting for desired state\"}\n\n                Sleep -Seconds 5\n            }\n            \n            Write-Output (\"$(Get-Date) | Instance state: $currentState\")\n        }\n        \n        # If the instance doesn't exist, create it!\n        if ($instanceId -eq $null) {\n            Write-Output (\"------------------------------\")\n            Write-Output (\"Creating a new EC2 instance:\")\n            Write-Output (\"------------------------------\")\n\n            $encodedUserData = $null\n            if ($odUserData -ne $null) { $encodedUserData = [System.Convert]::ToBase64String( [System.Text.Encoding]::UTF8.GetBytes($odUserData) ) }\n\n            if (!$odSpotPrice) {\n                Write-Output (\"$(Get-Date) | Attempting to create a new EC2 instance from ImageId: $odImageId\")\n\n                try {\n                    $ec2Instances = (New-EC2Instance -ImageId $odImageId -KeyName $odKeyName -SecurityGroupId $odSecurityGroupId -InstanceType $odInstanceType -UserData $encodedUserData -SubnetId $odSubnetId -Region $odRegion)\n\n                    $instanceId = $ec2Instances.Instances[0].InstanceId\n                }\n                catch [Amazon.EC2.AmazonEC2Exception] {\n                    Write-Output ($_.Exception.errorcode)\n                    Write-Output ($_.Exception.Message)\n                    Throw \"Couldn't launch EC2 instance, sorry...\"\n                }\n            }\n            elseif ($odSpotPrice) {\n                Write-Output (\"$(Get-Date) | Attempting to create a new EC2 spot-instance from ImageId: $odImageId\")\n\n                try {\n                    $spotInstancePricingObj = (Get-EC2SpotPriceHistory -InstanceType $odInstanceType -Region $odRegion -Filter @{ Name=\"product-description\";value=\"$odSpotProduct\" } -MaxResult 10)\n                \n                    Write-Output (\"------------------------------\")\n                    Write-Output (\"Listing the 10 most recent spot price changes for \" + $odRegion + \":\")\n                    Write-Output (\"------------------------------\")\n\n                    [decimal]$highPrice=0\n                    $spotInstancePricingObj | Foreach-Object {\n                        if ($highPrice -lt $_.Price) { $highPrice=$_.Price }\n                        Write-Output ($_.AvailabilityZone + \" | \" + $_.InstanceType + \" | \" + $_.Price + \" | \" + $_.ProductDescription + \" | \" + $_.Timestamp)\n                    }\n\n                    if ($odSpotPrice -lt ($highPrice*1.1)) { Write-Output (\"WARNING: Requested spot price (\" + $odSpotPrice + \") may be too low: Below 10% of recent high (\" + $highPrice + \")\") }\n                    if ($odSpotPrice -gt ($highPrice*5)) { Write-Output (\"WARNING: Requested spot price (\" + $odSpotPrice + \") may be too high: Over 5x recent high (\" + $highPrice + \")\") }\n                }\n                catch [Amazon.EC2.AmazonEC2Exception] {\n                    Write-Output ($_.Exception.errorcode)\n                    Write-Output ($_.Exception.Message)\n                    Throw \"Couldn't gather spot pricing details, sorry...\"\n                }\n\n                try {\n                    $if0 = (New-Object Amazon.EC2.Model.InstanceNetworkInterfaceSpecification)\n                    $if0.DeviceIndex = 0\n                    $if0.SubnetId = $odSubnetId\n                    $if0.Groups.Add($odSecurityGroupId)\n\n                    $spotInstanceRequestObj = (Request-EC2SpotInstance -SpotPrice $odSpotPrice -InstanceCount 1 -Type one-time -LaunchSpecification_ImageId $odImageId -LaunchSpecification_KeyName $odKeyName -LaunchSpecification_InstanceType $odInstanceType -LaunchSpecification_UserData $encodedUserData -Region $odRegion -LaunchSpecification_NetworkInterfaces $if0)\n                \n                    Write-Output (\"------------------------------\")\n                    Write-Output (\"Checking the spot request status:\")\n                    Write-Output (\"------------------------------\")\n\n                    $timeout = (New-Timespan -Seconds 300)\n                    $sw = [diagnostics.stopwatch]::StartNew()\n\n                    while ($true)\n                    {\n                        if ($sw.elapsed -gt $timeout) { Throw \"Timed out waiting for spot instance - please check manually!\" }\n\n                        $spotcurrentState = (Get-EC2SpotInstanceRequest -SpotInstanceRequestId ($spotInstanceRequestObj.SpotInstanceRequestId)).State\n                        Write-Output (\"$(Get-Date) | Current State: $spotcurrentState | Desired State: active\")\n                        if ($spotcurrentState -eq \"active\") { break }\n\n                        Sleep -Seconds 5\n                    }\n                \n                    Write-Output (\"------------------------------\")\n                    Write-Output (\"Spot Request details:\")\n                    Write-Output (Get-EC2SpotInstanceRequest -SpotInstanceRequestId ($spotInstanceRequestObj.SpotInstanceRequestId))\n                    Write-Output (\"------------------------------\")\n\n                    $instanceId = (Get-EC2SpotInstanceRequest -SpotInstanceRequestId ($spotInstanceRequestObj.SpotInstanceRequestId)).InstanceId\n                }\n                catch [Amazon.EC2.AmazonEC2Exception] {\n                    Write-Output ($_.Exception.errorcode)\n                    Write-Output ($_.Exception.Message)\n                    Throw \"Couldn't launch spot instance\"\n                }\n            }\n\n            if ($odTags) { NewTags $instanceId $odTags }\n        }\n\n        if ($instanceId) {\n            if ($currentState -ne \"running\") { \n                Write-Output (\"------------------------------\")\n                Write-Output (\"Checking the EC2 Instance status:\")\n                Write-Output (\"------------------------------\")\n\n                Write-Output (\"$(Get-Date) | Instance state: $currentState\")\n\n                $timeout = (New-Timespan -Seconds 90)\n                $sw = [diagnostics.stopwatch]::StartNew()\n\n                while ($true) {\n                    $currentState = (Get-EC2Instance $instanceId).Instances.State.Name\n\n                    if ($currentState -eq \"running\") { break }\n\n                    Write-Output (\"$(Get-Date) | Waiting for Instance '$instanceId' to transition from state: $currentState\")\n\n                    if ($sw.elapsed -gt $timeout) {Throw \"Timed out waiting for desired state\"}\n\n                    Sleep -Seconds 5\n                }\n\n                Write-Output (\"$(Get-Date) | Instance state: $currentState\")\n            }\n\n\n            Write-Output (\"------------------------------\")\n            Write-Output (\"Instance details:\")\n            Write-Output ((Get-EC2Instance $instanceId).Instances)\n            Write-Output (\"------------------------------\")\n    \n            $privateIpAddress = (Get-EC2Instance $instanceId).Instances.PrivateIpAddress\n            $publicIpAddress = (Get-EC2Instance $instanceId).Instances.PublicIpAddress\n            \n            if($OctopusParameters) {\n                Set-OctopusVariable -name \"InstanceId\" -value $instanceId\n                Set-OctopusVariable -name \"PrivateIpAddress\" -value $privateIpAddress\n                Set-OctopusVariable -name \"PublicIpAddress\" -value $publicIpAddress\n            }\n        }\n    }\n } `\n (Get-Param 'odTags' -Required) `\n (Get-Param 'odImageId' -Required) `\n (Get-Param 'odInstanceType' -Required) `\n (Get-Param 'odSubnetId' -Required) `\n (Get-Param 'odSecurityGroupId' -Required) `\n (Get-Param 'odKeyName' -Required) `\n (Get-Param 'odRegion' -Required) `\n (Get-Param 'odUserData') `\n (Get-Param 'odSpotPrice') `\n (Get-Param 'odSpotProduct') `\n (Get-Param 'odAccessKey') `\n (Get-Param 'odSecretKey')",
+    "Octopus.Action.RunOnServer": "false"
+  },
+  "Parameters": [
+    {
+      "Id": "45aa8520-eb05-48a9-b4ef-30d11b5e6a73",
+      "Name": "odTags",
+      "Label": "Tags",
+      "HelpText": "The Tags to be applied to the new instance. These tags will determine if a new instance will be created, or if an instance matching the tags should be in a running state.",
+      "DefaultValue": "Name=#{Octopus.Project.Name}\nEnvironment=#{Octopus.Environment.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2411ffb3-c3fc-402a-9448-249415000c14",
+      "Name": "odImageId",
+      "Label": "ImageId",
+      "HelpText": "The Amazon Machine Image (AMI) Id. This can be the id of an image you've created yourself, or one of the AWS Community AMIs.",
+      "DefaultValue": "ami-xxxxxxxx",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "a2cc4774-b60c-4dad-9c44-074d0564b626",
+      "Name": "odInstanceType",
+      "Label": "InstanceType",
+      "HelpText": "The Instance Type (Model), e.g. t2.micro, m3.large, c4.large, etc.\nFurther reading: https://aws.amazon.com/ec2/instance-types/",
+      "DefaultValue": "t2.micro",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "dd2c238d-4758-4027-8901-b050e991bf83",
+      "Name": "odSubnetId",
+      "Label": "SubnetId",
+      "HelpText": "The Subnet Id you would like the Instance to launch in.",
+      "DefaultValue": "subnet-xxxxxxxx",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "349022a4-0ad3-46bd-b408-e456c5616577",
+      "Name": "odSecurityGroupId",
+      "Label": "SecurityGroupId",
+      "HelpText": "The Security Group Id you would like the Instance to launch with.",
+      "DefaultValue": "sg-xxxxxxxx",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "54508ead-07db-4f73-b8a9-8c3b8c91bdb1",
+      "Name": "odKeyName",
+      "Label": "KeyName",
+      "HelpText": "The name of the Key Pair that will be used to log into the new instance.",
+      "DefaultValue": "AutoDeployKeyNameExample",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "01097d0d-4ce5-4c38-afd4-527919a800f7",
+      "Name": "odRegion",
+      "Label": "Region",
+      "HelpText": "The AWS Region you would like the Instance to launch in, e.g. ap-southeast-2, us-west-2, eu-west-1, etc.\nFurther reading: https://docs.aws.amazon.com/general/latest/gr/rande.html#ec2_region",
+      "DefaultValue": "ap-southeast-2",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b4dfba68-93fe-496a-acd4-00e01d818312",
+      "Name": "odUserData",
+      "Label": "UserData (Optional)",
+      "HelpText": "The UserData is a script that will be executed on the initial startup of your EC2 Instance.\nFurther Reading: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/user-data.html",
+      "DefaultValue": "<powershell>tzutil.exe /s 'AUS Eastern Standard Time'</powershell>",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "5842e13b-af7a-4a18-bfa4-4891aded2ae9",
+      "Name": "odSpotPrice",
+      "Label": "SpotPrice (Optional)",
+      "HelpText": "The Spot Price is a variable hourly rate (often discounted), which is calculated based on the current demand for any particular Instance Type (Model).\nFurther Reading: https://aws.amazon.com/ec2/spot/pricing/",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "caa5f631-f0c5-4925-8a57-a80abb5e4300",
+      "Name": "odSpotProduct",
+      "Label": "SpotProduct (Optional)",
+      "HelpText": "The Spot Product is basically the Operating System you plan to utilise.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Linux/Unix|Linux/Unix\nSUSE Linux|SUSE Linux\nWindows|Windows"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "43206cff-be8c-4805-9045-2f6bf302e056",
+      "Name": "odAccessKey",
+      "Label": "AccessKey (Kind-of Optional)",
+      "HelpText": "An Access Key with permissions to create the desired EC2 instance.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"AWS\\_ACCESS\\_KEY\"\nFurther Reading:\nhttps://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b0d6b3e7-3c90-4f0e-b919-78ef04608cb3",
+      "Name": "odSecretKey",
+      "Label": "SecretKey (Kind-of Optional)",
+      "HelpText": "The Secret Key associated with the above Access Key.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"AWS\\_SECRET\\_KEY\"\nFurther Reading:\nhttps://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "tclydesdale",
+  "$Meta": {
+    "ExportedAt": "2018-01-29T12:56:55.311Z",
+    "OctopusVersion": "4.1.9",
+    "Type": "ActionTemplate"
+  },
+  "Category": "aws"
+}

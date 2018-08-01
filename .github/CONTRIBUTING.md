@@ -33,7 +33,7 @@ Here's a **checklist** to consider:
 * Is the `.json` filename consistent with the name of the template?
 * Do scripts in the template validate required arguments and fail by returning a non-zero exit code when things go wrong?
 * Do scripts in the template produce worthwhile status messages as they execute?
-* Are you happy to contribute your template under the terms of the [license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE)? If you produced the template while working for your employer please obtain written permission from them before submitting it here.
+* Are you happy to contribute your template under the terms of the [license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE.txt)? If you produced the template while working for your employer please obtain written permission from them before submitting it here.
 * Are the default values of parameters validly applicable in other user's environments? Don't use the default values as examples if the user will have to change them
 * For how to deal with parameters and testing take a look at the article [Making great Octopus PowerShell step templates](http://www.lavinski.me/making-great-octopus-powershell-step-templates/)
 * For another example of how to test your step template script body before submitting a PR take a look at this [gist](https://gist.github.com/JCapriotti/45639e06ba777ee974b1)
@@ -43,11 +43,12 @@ If you need help, feedback or a sanity check before investing time in a contribu
 Licensing
 ---------
 
-The entire library is covered by [this Apache 2.0 license](LICENSE). [This site](http://choosealicense.com/licenses/apache-2.0/) provides a good explanation of what this license provides for you as a contributor. By contributing to this library:
+The entire library is covered by [this Apache 2.0 license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE.txt). [This site](http://choosealicense.com/licenses/apache-2.0/) provides a good explanation of what this license provides for you as a contributor. By contributing to this library:
 
-* your contribution is automatically covered by [this Apache 2.0 license](LICENSE) without requiring a header in each file
-* your contribution is attributed to you (and your organisation) via commits and pull-requests
-* state changes are tracked automatically via commits and pull-requests
+* You will be asked to sign our [Contributor License Agreement (CLA)](https://en.wikipedia.org/wiki/Contributor_License_Agreement) which at the time of writing was [v1.0](https://gist.github.com/PaulStovell/568affdef31fda72d4302615ae9bcbe2). This basically allows us to accept your contribution for which you are claiming full ownership, and then relicense it under [this Apache 2.0 license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE.txt). We cannot accept your contribution without your consent, nor share it with anyone else.
+* Your contribution is automatically covered by [this Apache 2.0 license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE.txt) without requiring a header in each file.
+* Your contribution is attributed to you (and your organisation) via commits and pull-requests.
+* State changes are tracked automatically via commits and pull-requests.
 
 Contributing to the website
 ---------------------------

@@ -1,0 +1,88 @@
+{
+  "Id": "dc573fd6-92be-46fa-aab1-861adcd37d82",
+  "Name": "Octopus - Wait for Deployment Target registration",
+  "Description": "This step will poll Octopus Deploy until it detects that the expected Deployment Target has been registered.\n\nThe goal being that a deployment will be paused until the expected Deployment Target is available (eg [Transient Targets](https://octopus.com/docs/infrastructure/environments/elastic-and-transient-environments/deploying-to-transient-targets)). On subsequent deploys, the Deployment Target would quickly be identified as registered, and the deployment would continue as expected.\n\nWith a couple of extra step templates you can:\n- Create a new EC2 Instance (_AWS - Launch EC2 Instance_)\n- Include the new Deployment Target in subsequent deployment steps (_Health Check_)",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\nparam(\n    [string]$odEnv,\n    [string]$odName,\n    [string]$odRole,\n    [int]$odTimeout,\n    [string]$odUrl,\n    [string]$odApiKey,\n    [switch]$whatIf\n) \n\n$ErrorActionPreference = \"Stop\" \n\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue   \n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    if (!$result -or $result -eq $null) {\n        if ($Default) {\n            $result = $Default\n        } elseif ($Required) {\n            throw \"Missing parameter value $Name\"\n        }\n    }\n\n    return $result\n}\n\n& {\n    param(\n        [string]$odEnv,\n        [string]$odName,\n        [string]$odRole,\n        [int]$odTimeout,\n        [string]$odUrl,\n        [string]$odApiKey\n    )\n\n    # If Octopus Deploy's URL/API Key are not provided as params, attempt to retrieve them from Environment Variables\n    if (!$odUrl) {\n        if ([Environment]::GetEnvironmentVariable(\"OD_API_URL\", \"Machine\")) {\n            $odUrl = [Environment]::GetEnvironmentVariable(\"OD_API_URL\", \"Machine\")\n        }\n    }\n    \n    if (!$odUrl) { throw \"Octopus Deploy API URL was not available/provided.\" }\n\n    if (!$odApiKey) {\n        if ([Environment]::GetEnvironmentVariable(\"OD_API_KEY\", \"Machine\")) {\n            $odApiKey = [Environment]::GetEnvironmentVariable(\"OD_API_KEY\", \"Machine\")\n        }\n    } \n    \n    if (!$odApiKey) { throw \"Octopus Deploy API key was not available/provided.\" }\n\n    $header = @{ \"X-Octopus-ApiKey\" = $odApiKey }\n    $environments = (Invoke-WebRequest \"$odUrl/api/environments/all\" -Headers $header).content | ConvertFrom-Json\n    $environment = $environments | Where-Object { $_.Name -contains $odEnv }\n    if (@($environment).Count -eq 0) { throw \"Could not find environment with the name '$odEnv'\" }\n    \n    $timeout = new-timespan -Seconds $odTimeout\n    $sw = [diagnostics.stopwatch]::StartNew()\n            \n    Write-Output (\"------------------------------\")\n    Write-Output (\"Checking the Deployment Target's registration status:\")\n    Write-Output (\"------------------------------\")\n\n    while ($true)\n    {\n        if ($sw.elapsed -gt $timeout) { throw \"Timed out waiting for the Deployment Target to register\" }\n        \n        $machines = ((Invoke-WebRequest ($odUrl + $environment.Links.Self + \"/machines\") -Headers $header).content | ConvertFrom-Json).items\n        if ($odName) { $machines = $machines | Where-Object { $_.Name -like \"*$odName*\" } }\n        if ($odRole) { $machines = $machines | Where-Object { $_.Roles -like \"*$odRole*\" } }\n        if (@($machines).Count -gt 0) { break }\n\n        Write-Output (\"$(Get-Date) | Waiting for Deployment Target to register with the name '$odName' and role '$odRole'\")\n\n        Sleep -Seconds 5\n    }\n    \n    Write-Output (\"$(Get-Date) | Deployment Target registered with the name '$odName' and role '$odRole'!\")\n } `\n (Get-Param 'odEnv' -Required) `\n (Get-Param 'odName' -Required) `\n (Get-Param 'odRole') `\n (Get-Param 'odTimeout' -Required) `\n (Get-Param 'odUrl') `\n (Get-Param 'odApiKey')"
+  },
+  "Parameters": [
+    {
+      "Id": "46d497f7-f297-4329-a5a3-a32e32dfb85b",
+      "Name": "odEnv",
+      "Label": "Environment",
+      "HelpText": "The Environment you expect the Deployment Target to be registered in.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "28e05635-b343-4a00-a42e-55f5244ddd47",
+      "Name": "odName",
+      "Label": "Expected Display Name",
+      "HelpText": "The Display Name of the expected Deployment Target.\nNote: _Partial matches for the supplied Display Name is enabled (eg \"Machine\" would match a Target called \"Machine01\")_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2df65d31-6a0e-47cb-bcc3-7b5320a23aee",
+      "Name": "odRole",
+      "Label": "Expected Role (Optional)",
+      "HelpText": "The Role of the expected Deployment Target.\nNote: _Partial matches for the supplied Role is enabled (eg \"Database\" would match a Target with the Role \"Database01\")_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ff029a44-af95-4580-95c1-889a06a83f4c",
+      "Name": "odTimeout",
+      "Label": "Timeout",
+      "HelpText": "The amount of time to wait for the expected Deployment Target to be registered. (aka the Timeout)",
+      "DefaultValue": "600",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "9fe91ebb-7521-4a91-9284-8398a8e9ad87",
+      "Name": "odUrl",
+      "Label": "Octopus Deploy URL (Kind-of Optional)",
+      "HelpText": "The base URL of your Octopus Deploy installation.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"OD\\_API\\_URL\"",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "054a2fca-6f12-46b2-a2a3-32045a50ea6a",
+      "Name": "odApiKey",
+      "Label": "API Key (Kind-of Optional)",
+      "HelpText": "An API Key with permissions access the Octopus Deploy API.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"OD\\_API\\_KEY\"\nFurther Reading:\nhttps://octopus.com/docs/api-and-integration/api/how-to-create-an-api-key",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "tclydesdale",
+  "$Meta": {
+    "ExportedAt": "2018-01-29T13:12:20.072Z",
+    "OctopusVersion": "4.1.9",
+    "Type": "ActionTemplate"
+  },
+  "Category": "octopus"
+}

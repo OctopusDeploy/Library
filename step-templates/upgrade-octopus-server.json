@@ -3,19 +3,16 @@
   "Name": "Upgrade Octopus Server",
   "Description": "This step downloads the latest version of Octopus Server and upgrades an existing instance. Run this step on a tentacle that has privileges to install software and start/stop services on the target server.\n\n**Run this after a database backup step**\n\nTo Use:\n- Install a tentacle on the Octopus Server machine with privileges to install software and start/stop services\n- Add that tentacle to an environment and with a unique role\n- Setup a project for the upgrade process\n- Add a database backup step for your Octopus Server database\n- Add this step, selecting it to run on just the role previously configured\n- Create a release\n- Deploy that release whenever an upgrade is needed\n\nNB: The deployment will show as \"Timed Out\" when the server comes back online",
   "ActionType": "Octopus.Script",
-  "Version": 8,
+  "Version": 10,
   "CommunityActionTemplateId": null,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n$versions = Invoke-WebRequest https://octopusdeploy.com/download/upgrade/v3 -UseBasicParsing | ConvertFrom-Json\n$version = $versions[-1].Version\n$tempFile = [System.IO.Path]::GetTempFileName()\n$InstalledVersion = (get-item \"$InstallPath\\Octopus.Server.exe\").VersionInfo.fileversion\n\nif([version]$version -gt [version]$InstalledVersion) {\n        \n    Write-Host \"Downloading Octopus $version\"\n    try\n    {\n        (New-Object System.Net.WebClient).DownloadFile(\"https://download.octopusdeploy.com/octopus/Octopus.$version-x64.msi\", $tempFile)\n    }\n    catch\n    {\n        echo $_.Exception|format-list -force\n    }\n    \n    Write-Host \"Stopping Server\"\n    . \"$InstallPath\\Octopus.Server.exe\" service --stop --console --instance $InstanceName\n    \n    Write-Host \"Installing\"\n    msiexec /i $tempFile /quiet | Out-Null\n    \n    Write-Host \"Deleting installer\"\n    Remove-Item $tempFile\n    \n    Write-Host \"Starting Server\"\n    . \"$InstallPath\\Octopus.Server.exe\" service --start --console --instance $InstanceName\n}\nelse {\n    Write-host \"Octopus already updated to version: $version\"   \n}\n\n",
-    "Octopus.Action.Script.ScriptFileName": null,
-    "Octopus.Action.Package.FeedId": null,
-    "Octopus.Action.Package.PackageId": null
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\nFunction GetLatestVersionOrSpecificVersionOfOctopusServer() \n{\n    if([string]::IsNullOrEmpty($SpecificOctopusServerVersionToInstall))\n    {\n        Write-Host \"No specific version has been selected, getting latest version from octopusdeploy.com\"\n        $versions = Invoke-WebRequest https://octopusdeploy.com/download/upgrade/v3 -UseBasicParsing | ConvertFrom-Json\n        $version = $versions[-1].Version\n        return $version\n    }\n    else \n    {\n    \tWrite-Host \"Specific version has been selected\"\n        return $SpecificOctopusServerVersionToInstall\n    }\n}\n\nFunction GetCurrentlyInstalledVersionOfOctopusServer() \n{\n    $InstalledVersion = (get-item \"$InstallPath\\Octopus.Server.exe\").VersionInfo.fileversion\n    return $installedVersion\n}\n\nFunction DownloadOctopusServer([string] $versionNumber) \n{ \n    Write-Host \"Downloading Octopus Server version $versionNumber\"\n    $tempFile = [System.IO.Path]::GetTempFileName()\n  \ttry\n    {\n        (New-Object System.Net.WebClient).DownloadFile(\"https://download.octopusdeploy.com/octopus/Octopus.$versionNumber-x64.msi\", $tempFile)\n    }\n    catch\n    {\n        Write-Host \"Exception occurred\"\n        echo $_.Exception|format-list -force\n    }\n    Write-Host \"Download completed\"\n    return $tempFile\n}\n\nFunction StopOctopusServer() \n{\n    Write-Host \"Stopping Server\"\n    . \"$InstallPath\\Octopus.Server.exe\" service --stop --console --instance $InstanceName\n}\n\nFunction InstallOctopusServer([object] $tempFile)\n{\n    Write-Host \"Installing ...\"\n    msiexec /i $tempFile /quiet | Out-Null\n}\n\nFunction RemoveTempFile([object] $temporaryFile)\n{   \n    Write-Host \"Deleting downloaded installer\"\n    Remove-Item $temporaryFile\n}\n\nFunction StartOctopusServer()\n{\n    Write-Host \"Starting Octopus Server\"\n    . \"$InstallPath\\Octopus.Server.exe\" service --start --console --instance $InstanceName\n}\n\nFunction InstallSetVersionOnOctopusServer([string] $currentlyInstalledVersion, [string] $selectedVersionToInstall){\n\n      Write-Host \"Currently installed version: $currentlyInstalledVersion\"\n      Write-Host \"Selected version to install: $selectedVersionToInstall\" \n\n      $tempFile = DownloadOctopusServer $selectedVersionToInstall\n      StopOctopusServer\n      InstallOctopusServer $tempFile\n      RemoveTempFile $tempFile\n      StartOctopusServer\n}\n\nFunction StartInstallationOfOctopusServer () {\n\n  ## Get the current state of Octopus Server\n  $selectedVersionToInstall = GetLatestVersionOrSpecificVersionOfOctopusServer \n  $currentlyInstalledVersion = GetCurrentlyInstalledVersionOfOctopusServer\n\n\n  if([version]$selectedVersionToInstall -eq [version]$currentlyInstalledVersion)\n  {\n      Write-host \"Octopus Server has already been installed with version $currentlyInstalledVersion\"   \n  }\n  else  \n  {\n    InstallSetVersionOnOctopusServer $currentlyInstalledVersion $selectedVersionToInstall\n  }\n}\n\nStartInstallationOfOctopusServer"
   },
   "Parameters": [
-    {
+   {
       "Id": "41442ee8-d56a-4a03-8c4b-af4c02245d9e",
       "Name": "InstanceName",
       "Label": "Instance Name",
@@ -36,13 +33,26 @@
         "Octopus.ControlType": "SingleLineText"
       },
       "Links": {}
+    },
+    {
+      "Id": "098375bf-ff27-47c3-93ce-0191aade1b21",
+      "Name": "SpecificOctopusServerVersionToInstall",
+      "Label": "Version number of Octopus Server which is going to be installed",
+      "HelpText": "Selects a specific version of Octopus Server to install. This is especially handy for a downgrade. The version number must be valid though.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
     }
   ],
-  "LastModifiedBy": "McAndersDK",
-  "$Meta": {
-    "ExportedAt": "2017-09-04T14:01:35.028Z",
-    "OctopusVersion": "3.16.7",
-    "Type": "ActionTemplate"
-  },
-  "Category": "octopus"
+	"LastModifiedBy": "Verzada",
+	"Website": "/step-templates/4b3a1f09-1827-41bb-88a4-894c6317922b",
+	"Logo": "iVBORw0KGgoAAAANSUhEUgAAAMgAAADICAMAAACahl6sAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAC1QTFRFT6Tl////L5Pg8vj9Y67omsvwPJrisdfzfbzs5fL7y+T32Ov5isLucLXqvt31CJPHWwAABMJJREFUeNrs3deW4jAMAFDF3U75/89dlp0ZhiU4blJEjvQ8hYubLJsA00UCBCIQgQhEIAIRiEAEIhCBCEQgAhGIQAQiEIEIhD8kJm+t+QprfdKfB9HbYpx6CWfspj8HMi+gMgHL/AmQA8W3JTKH+ALFvzCeL0RbpyoCPE9IJeNOSQwh5Z3qd6yRGWQ2qi2cZQWxqj1WzQYSjeoJmJlAklOd4VlArOqPhQEkqBERToeMcfRJBkC0Uep8CfBpjz4JsHJ0zF3dkEWNje0kiB/sUC6eApndaIiCMyAa1PiwJ0AWhRGJHJJQHG2dC7h1rNbO1QOxSA7lNCkkKrQIpJCAB1GREILYIC1NAiwbpKFJgGWDNExcwGstfExcZBCHC6nOglshHtmhViLIig1RNBCN7qjtW8C0Z1UvJcC1Z9XmwMBzzvobmgAyEzgq91dtEEsBsQSQQAFZCSBAATEEEApHZbrVBIkkEIUPSVeB+KtALA0kXQUSrwKZBCIQBnk8Y4i5CsReBeKvkqLM+BCSDWJlrZFvGk9SRTHshkgjZCGAaArIxm3H3grhVzFlW2msfl1ca79UJ1bofYvsDHHlNdTZnlh5MghuPd5NdBDUNZHyCkfktIh03XzALGRPlBDPac7qgWjHZzWcmF5zmmkhidMQ6boKiDXcDTUEaylZqCGJ0Vjvu/fLJtHqhSANEvqb2OYqkOUqEHuVMbJcZdZCGiPhKhC4yjqiIjEE7XThMp8fAWII3mY3kUIQD+AMKQTzPiBhgQ63HlT/KSvgtoi0dq5mCPah1UIE0eh3sT0NhOByvKeAkFzi8PgQomumFhsyOxpIzZN4gLOj5plVwNpR0b2AuePWKBEHQu24pSsJA+LVCeHHQxZ1SiyDIdqok8IOhSSnTottHEQTdyt4ettAj4KkzA4dMikk2Dht2S5ptm1vswnPDxn0YyDZ5oDM3iToo2T5voWaYe+Q+vdjH80QyAzZhCgcDtLMI1Tmtz9w++XHgziHQHJJu/OZ3bs9Xn8gQ72NcP3dKqEfkp10F51xhoIi2I91R+LurXV/5q7pH+wx061CzO16oSQleMyr8fXvwMA0Pro8432DPD/ySx8XrHfSuDAM8n6UhnjQabaiXf5Bq/lREHvEeNtn1rJ08+C/uXkQZHeguxAPC3UvtcJYUogLzZX5hhZZvS6onG5lxXtzWGaygwb79vT/IXhdlNibwlKYOR6T8xjI7W8n+xV7T+GH4tMzWwR+lZhRkJYSsC0thpmCYqyngOz3rN2FLBZ2wZflBCggUHF0Vnp88JKienzIXLSEZCZqU7IKr/gQW9yx3pzV7Y9kvWZWTRRIqDmTtRUnU7b2lLcTYmoqHqnmiO1poER0SPkAeZMAZxaJx0Y3TCdAclsIqDz03ALcyxfTCZBsthoGXWmigGyVhWPLFJJfuuKQWycoEFdXbH4dJJoJxNR1eD/kshz6yn48cF8yW8sFoitflB1w6Q8n+/15Za7oA17/pYNmYgP5fmWm8L1NOHPWgK8kuFew1/JXtOA0yJCv7ah7X8ObUuT5kObU30+fDZm8+zqP+HTIpK0xQ796b5Kv2hSIQAQiEIEIRCACEYhABCIQgQhEIAIRiEAEIpBf8UeAAQAEjtYmlDTcCgAAAABJRU5ErkJggg==",
+	"$Meta": {
+		"ExportedAt": "2018-03-09T15:07:55.181Z",
+		"OctopusVersion": "2018.3.2",
+		"Type": "ActionTemplate"
+	},
+	"Category": "octopus"
 }

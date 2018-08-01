@@ -1,0 +1,134 @@
+{
+  "Id": "9271327d-6e8a-49d1-881a-3925c75aef56",
+  "Name": "AWS - Create a Route 53 Resource Record",
+  "Description": "This step will Update, Create or Delete a Resource Record from an Route 53 hosted Domain Name.\n\nWorks well with the \"_AWS - Launch EC2 Instance_\" Community Step Template.\n\n[AWS Tools for Windows PowerShell](http://aws.amazon.com/powershell/) must be installed on the Server/Target you plan on running this step template on.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\nparam(\n    [string]$odZoneId,\n    [string]$odAction,\n    [string]$odName,\n    [string]$odResourceAddress,\n    [string]$odType,\n    [string]$odTtl,\n    [string]$odWait,\n    [string]$odComment,\n    [string]$odAccessKey,\n    [string]$odSecretKey,\n    [switch]$whatIf\n) \n\n$ErrorActionPreference = \"Stop\" \n\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue   \n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    if (!$result -or $result -eq $null) {\n        if ($Default) {\n            $result = $Default\n        } elseif ($Required) {\n            throw \"Missing parameter value $Name\"\n        }\n    }\n\n    return $result\n}\n\n# More custom functions would go here\n\n& {\n    param(\n        [string]$odZoneId,\n        [string]$odAction,\n        [string]$odName,\n        [string]$odResourceAddress,\n        [string]$odType,\n        [string]$odTtl,\n        [string]$odWait,\n        [string]$odComment,\n        [string]$odAccessKey,\n        [string]$odSecretKey\n    )\n    \n    # If AWS key's are not provided as params, attempt to retrieve them from Environment Variables\n    if ($odAccessKey -or $odSecretKey) {\n        Set-AWSCredentials -AccessKey $odAccessKey -SecretKey $odSecretKey -StoreAs default\n    } elseif (([Environment]::GetEnvironmentVariable(\"AWS_ACCESS_KEY\", \"Machine\")) -or ([Environment]::GetEnvironmentVariable(\"AWS_SECRET_KEY\", \"Machine\"))) {\n        Set-AWSCredentials -AccessKey ([Environment]::GetEnvironmentVariable(\"AWS_ACCESS_KEY\", \"Machine\")) -SecretKey ([Environment]::GetEnvironmentVariable(\"AWS_SECRET_KEY\", \"Machine\")) -StoreAs default\n    } else {\n        throw \"AWS API credentials were not available/provided.\"\n    }\n\n    If($odAction -ne \"CREATE\" -and $odAction -ne \"DELETE\" -and $odAction -ne \"UPSERT\") { throw \"Invalid Action provided. Please use CREATE, DELETE or UPSERT.\" }\n\n    if ($odName -notmatch '.+?\\.$') { $odName += '.' }\n\n    $change = (New-Object Amazon.Route53.Model.Change)\n    $change.Action = $odAction\n    $change.ResourceRecordSet = (New-Object Amazon.Route53.Model.ResourceRecordSet)\n    $change.ResourceRecordSet.Name = $odName\n    $change.ResourceRecordSet.Type = $odType\n    $change.ResourceRecordSet.TTL = $odTtl\n    \n    if ($odResourceAddress -like '*,*') {\n        $($odResourceAddress -split ',') | Foreach-Object {\n            $change.ResourceRecordSet.ResourceRecords.Add(@{Value=$($_)})\n        }\n    } else {\n        $change.ResourceRecordSet.ResourceRecords.Add(@{Value=$odResourceAddress})\n    }\n\n    Write-Output (\"------------------------------\")\n    Write-Output (\"Checking if Resource Record Set Exists:\")\n    Write-Output (\"------------------------------\")\n\n    $resourceRecordSetObj = $(Get-R53ResourceRecordSet -HostedZoneId $odZoneId).ResourceRecordSets | Where {$_.Name -eq $odName}\n    $resourceRecordSetCount = ($resourceRecordSetObj | measure).Count\n\n    if ($odAction -eq \"DELETE\") {\n        if ($resourceRecordSetCount -gt 0) {\n            Write-Output (\"The record '$($odName)' exists, deleting...\")\n        } else {\n            Write-Output (\"Cannot Delete: The record '$($odName)' does not exist, skipping...\")\n            Exit\n        }\n    } elseif ($odAction -eq \"CREATE\") {\n        if ($resourceRecordSetCount -gt 0) {\n            Write-Output (\"Cannot Create: The record '$($odName)' already exists, skipping...\")\n            Exit\n        } else {\n            Write-Output (\"The record '$($odName)' does not exist, creating record...\")\n        }\n    } elseif ($odAction -eq \"UPSERT\") {\n        if ($resourceRecordSetCount -gt 0) {\n            Write-Output (\"The record '$($odName)' already exists, updating record...\")\n        } else {\n            Write-Output (\"The record '$($odName)' does not exist, creating record...\")\n        }\n    } else { throw \"OMG - Unexpected result\" }\n    \n    $params = @{\n        HostedZoneId=$odZoneId\n        ChangeBatch_Comment=$odComment\n        ChangeBatch_Change=$change\n    }\n\n    Write-Output (\"------------------------------\")\n    Write-Output (\"Listing DNS change/s to be made:\")\n    Write-Output (\"------------------------------\")\n\n    $($params.ChangeBatch_Change) | Foreach-Object {\n        $resourceRecords=\" | \"\n\n        $($_.ResourceRecordSet.ResourceRecords) | Foreach-Object {\n            $resourceRecords += $_.Value + \",\"\n        }\n\n        Write-Output ($($_.Action.Value) + \" | \" + $($_.ResourceRecordSet.Name) + \" | \" + $($_.ResourceRecordSet.Type) + $($resourceRecords -replace \".$\"))\n    }\n\n    \n\n    $timeout = new-timespan -Seconds 30\n    $sw = [diagnostics.stopwatch]::StartNew()\n    $attempt = 1\n\n    while ($true) {\n        try {\n            $result = Edit-R53ResourceRecordSet @params\n            break\n        }\n        catch [Amazon.Route53.AmazonRoute53Exception] {\n            Write-Output (\"$($_.Exception.errorcode)-$($_.Exception.Message)\")\n\n            if ($attempt -eq 3) {\n                throw $_.Exception.errorcode + '-' + $_.Exception.Message\n            }\n\n            if ($sw.elapsed -gt $timeout) {throw \"Timed out waiting for 'Edit-R53ResourceRecordSet' to succeed\"}\n\n            Write-Output (\"Attempt no.$($attempt) failed - Trying again in 5 seconds...\")\n            Sleep -Seconds 5\n\n            $attempt++\n        }\n    }\n\n\n    Write-Output (\"------------------------------\")\n    Write-Output (\"Checking the R53 Change status:\")\n    Write-Output (\"------------------------------\")\n\n    $timeout = new-timespan -Seconds 120\n    $sw = [diagnostics.stopwatch]::StartNew()\n\n    while ($true) {\n        $currentState = (Get-R53Change -Id $result.Id).Status\n\n        if ($currentState -eq \"INSYNC\") {break}\n        if ([bool]($odWait -eq $false)) {break}\n\n        Write-Output (\"$(Get-Date) | Waiting for R53 Change '$($result.Id)' to transition from state: $currentState\")\n\n        if ($sw.elapsed -gt $timeout) {throw \"Timed out waiting for desired state\"}\n\n        Sleep -Seconds 5\n    }\n    Write-Output (\"$(Get-Date) | R53 Change state: $currentState\")\n } `\n (Get-Param 'odZoneId' -Required) `\n (Get-Param 'odAction' -Required) `\n (Get-Param 'odName' -Required) `\n (Get-Param 'odResourceAddress' -Required) `\n (Get-Param 'odType' -Required) `\n (Get-Param 'odTtl' -Required) `\n (Get-Param 'odWait' -Required) `\n (Get-Param 'odComment') `\n (Get-Param 'odAccessKey') `\n (Get-Param 'odSecretKey')"
+  },
+  "Parameters": [
+    {
+      "Id": "6ec4f68e-02b7-4015-88aa-34a2a7dd8568",
+      "Name": "odZoneId",
+      "Label": "Hosted Zone ID",
+      "HelpText": "The Hosted Zone ID of the Domain Name you would like to work with.",
+      "DefaultValue": "Zxxxxxxxxxxxxx",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2e0fa53b-d85a-4afd-9fb8-a44ddd28b598",
+      "Name": "odAction",
+      "Label": "Action",
+      "HelpText": "The Action you would like to perform - Update, Create or Delete a Resource Record from an Route 53 hosted Domain Name.",
+      "DefaultValue": "UPSERT",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "UPSERT|Update a Resource Record if exists, or Create a new one\nCREATE|Create a Resource Record\nDELETE|Delete a Resource Record"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "843ef155-8583-417f-90dd-6e880ca175e2",
+      "Name": "odName",
+      "Label": "Name",
+      "HelpText": "The Name is the full Domain Name Address you would like to work with.\nFor example:\n- database01.example.com",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "956cb942-2d09-4bb4-b0a0-4c855d4f9b29",
+      "Name": "odResourceAddress",
+      "Label": "Resource Address",
+      "HelpText": "The Address (IP or Domain Name) of the Resource you would like the Resource Record to point to. For example:\n- 8.8.8.8 _(e.g. A Record)_\n- webserver01.example.com _(e.g. CNAME Record)_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "d2734830-3915-4759-9b06-5a174540c337",
+      "Name": "odType",
+      "Label": "Record Type",
+      "HelpText": "The Type of Resource Record you would like to work with. For example:\n- A _(e.g. 8.8.8.8)_\n- CNAME _(e.g. webserver01.example.com)_\n\nFurther Reading:\n[https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/ResourceRecordTypes.html](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/ResourceRecordTypes.html)",
+      "DefaultValue": "A",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "a62ded34-e6f4-4736-bea6-3c7294a5e6dd",
+      "Name": "odTtl",
+      "Label": "TTL (Time to Live)",
+      "HelpText": "The amount of time (in seconds) a Resource Record should be cached for.\n\nFurther Reading:\n[https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resource-record-sets-values-basic.html#rrsets-values-basic-ttl](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resource-record-sets-values-basic.html#rrsets-values-basic-ttl)",
+      "DefaultValue": "600",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "d14fbeaf-907b-4f5f-9efc-04a5ae2031f8",
+      "Name": "odWait",
+      "Label": "Wait for Sync",
+      "HelpText": "If the Step should wait for the Resource Record to sync to all Name Servers before proceeding to the next Step.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "d009432c-d746-42d1-b214-42ba78760d5b",
+      "Name": "odComment",
+      "Label": "Comment (Optional)",
+      "HelpText": "The Comment provided in this field is for auditing purposes, and is not visible in the AWS Route 53 Web Interface (it's only accessible via the API).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "078ab1ac-4560-4241-8127-29bb293622b5",
+      "Name": "odAccessKey",
+      "Label": "Access Key (Kind-of Optional)",
+      "HelpText": "An Access Key with permissions to create the desired EC2 instance.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"AWS\\_ACCESS\\_KEY\".\n\nFurther Reading:\n[https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html](https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "0e06989b-4f09-4652-8c92-398d078c3cb5",
+      "Name": "odSecretKey",
+      "Label": "Secret Key (Kind-of Optional)",
+      "HelpText": "The Secret Key associated with the above Access Key.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"AWS\\_SECRET\\_KEY\".\n\nFurther Reading:\n[https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html](https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "tclydesdale",
+  "$Meta": {
+    "ExportedAt": "2018-01-31T13:17:01.348Z",
+    "OctopusVersion": "4.1.9",
+    "Type": "ActionTemplate"
+  },
+  "Category": "aws"
+}

@@ -1,0 +1,69 @@
+{
+    "Id": "302a1282-c139-4e0f-9076-cd4b16d8b795",
+    "Name": "AWS - Change EC2 Instance State",
+    "Description": "This step can Start, Stop or Terminate an EC2 instance.\n\nWorks well with the \"_AWS - Launch EC2 Instance_\" Community Step Template.\n\n[AWS Tools for Windows PowerShell](http://aws.amazon.com/powershell/) must be installed on the Server/Target you plan on running this step template on.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Properties": {
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.RunOnServer": "false",
+      "Octopus.Action.Script.ScriptBody": "# Running outside octopus\nparam(\n    [string]$odInstanceId,\n    [string]$odState,\n    [string]$odAccessKey,\n    [string]$odSecretKey,\n    [switch]$whatIf\n) \n\n$ErrorActionPreference = \"Stop\" \n\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue   \n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    if (!$result -or $result -eq $null) {\n        if ($Default) {\n            $result = $Default\n        } elseif ($Required) {\n            throw \"Missing parameter value $Name\"\n        }\n    }\n\n    return $result\n}\n\n\n& {\n    param(\n        [string]$odInstanceId,\n        [string]$odState,\n        [string]$odAccessKey,\n        [string]$odSecretKey\n    )\n    \n    # If AWS key's are not provided as params, attempt to retrieve them from Environment Variables\n    if ($odAccessKey -or $odSecretKey) {\n        Set-AWSCredentials -AccessKey $odAccessKey -SecretKey $odSecretKey -StoreAs default\n    } elseif (([Environment]::GetEnvironmentVariable(\"AWS_ACCESS_KEY\", \"Machine\")) -or ([Environment]::GetEnvironmentVariable(\"AWS_SECRET_KEY\", \"Machine\"))) {\n        Set-AWSCredentials -AccessKey ([Environment]::GetEnvironmentVariable(\"AWS_ACCESS_KEY\", \"Machine\")) -SecretKey ([Environment]::GetEnvironmentVariable(\"AWS_SECRET_KEY\", \"Machine\")) -StoreAs default\n    } else {\n        throw \"AWS API credentials were not available/provided.\"\n    }\n\n    if ($odInstanceId) {\n        $instanceObj = (Get-EC2Instance $odInstanceId | select -ExpandProperty Instances)\n        $instanceCount = ($instanceObj | measure).Count\n\n        if ($instanceCount -eq 1) {\n            $instanceId = ($instanceObj).InstanceId\n            \n            Write-Output (\"------------------------------\")\n            Write-Output (\"Checking/Setting the EC2 Instance state:\")\n            Write-Output (\"------------------------------\")\n            \n            $currentState = (Get-EC2Instance $instanceId).Instances.State.Name\n\n            if ($odState -eq \"running\" -and $currentState -ne \"running\") {\n                $changeInstanceStateObj = (Start-EC2Instance -InstanceId $instanceId)\n            }\n            elseif ($odState -eq \"absent\" -and $currentState -ne \"terminated\") {\n                $changeInstanceStateObj = (Remove-EC2Instance -InstanceId $instanceId -Force)\n            }\n            elseif ($odState -eq \"stopped\" -and $currentState -ne \"stopped\") {\n                $changeInstanceStateObj = (Stop-EC2Instance -InstanceId $instanceId)\n            }\n\n            $timeout = new-timespan -Seconds 120\n            $sw = [diagnostics.stopwatch]::StartNew()\n\n            while ($true) {\n                $currentState = (Get-EC2Instance $instanceId).Instances.State.Name\n\n                if ($currentState -eq \"running\" -and $odState -eq \"running\") {\n                    break\n                }\n                elseif ($currentState -eq \"terminated\" -and $odState -eq \"absent\") {\n                    break\n                }\n                elseif ($currentState -eq \"stopped\" -and $odState -eq \"stopped\") {\n                    break\n                }\n\n                Write-Output (\"$(Get-Date) | Waiting for Instance '$instanceId' to transition from state: $currentState\")\n\n                if ($sw.elapsed -gt $timeout) { throw \"Timed out waiting for desired state\" }\n\n                Sleep -Seconds 5\n            }\n \n            Write-Output (\"------------------------------\")\n            Write-Output (\"$(Get-Date) | $($instanceId) state: $currentState\")\n            Write-Output (\"------------------------------\")\n        }\n        else\n        {\n            Write-Output (\"Instance '$instanceId' could not be found...?\")\n        }\n    }\n } `\n (Get-Param 'odInstanceId' -Required) `\n (Get-Param 'odState' -Required) `\n (Get-Param 'odAccessKey') `\n (Get-Param 'odSecretKey')"
+    },
+    "Parameters": [
+      {
+        "Id": "3eec5a11-9095-40f6-bebb-71ccb94c73db",
+        "Name": "odInstanceId",
+        "Label": "Instance ID",
+        "HelpText": "The EC2 Instance ID of the Instance you would like to add Tags to.",
+        "DefaultValue": "i-xxxxxxxxxxxxxxxxx",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        },
+        "Links": {}
+      },
+      {
+        "Id": "94b68517-858c-4232-bd1a-c760a22750a1",
+        "Name": "odState",
+        "Label": "Instance State",
+        "HelpText": "The State you would like the specified EC2 Instance to be in. For example \"Running\" (ie Start EC2 Instance).",
+        "DefaultValue": "running",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "running|Start EC2 Instance\nstopped|Stop EC2 Instance\nabsent|Terminate EC2 Instance"
+        },
+        "Links": {}
+      },
+      {
+        "Id": "e1c98924-6f3b-45fe-a4b8-16329a9a50ea",
+        "Name": "odAccessKey",
+        "Label": "Access Key (Kind-of Optional)",
+        "HelpText": "An Access Key with permissions to create the desired EC2 instance.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"AWS\\_ACCESS\\_KEY\".\n\nFurther Reading:\n[https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html](https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html)",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        },
+        "Links": {}
+      },
+      {
+        "Id": "45557d48-5f1a-4523-9f42-f4a53571d0ce",
+        "Name": "odSecretKey",
+        "Label": "Secret Key (Kind-of Optional)",
+        "HelpText": "The Secret Key associated with the above Access Key.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"AWS\\_SECRET\\_KEY\".\n\nFurther Reading:\n[https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html](https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html)",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        },
+        "Links": {}
+      }
+    ],
+    "LastModifiedBy": "tclydesdale",
+    "$Meta": {
+      "ExportedAt": "2018-01-30T13:25:57.198Z",
+      "OctopusVersion": "4.1.9",
+      "Type": "ActionTemplate"
+    },
+    "Category": "aws"
+  }
+  

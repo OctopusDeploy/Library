@@ -1,0 +1,100 @@
+{
+  "Id": "051ee152-1ef8-4937-a616-b56eb94dad25",
+  "Name": "AWS - Create a Security Group",
+  "Description": "This step will Create a Security Group within a Virtual Private Cloud (VPC).\n\nWorks well with the \"_AWS - Launch EC2 Instance_\" Community Step Template.\n\n[AWS Tools for Windows PowerShell](http://aws.amazon.com/powershell/) must be installed on the Server/Target you plan on running this step template on. If you would like to add comments to rules, then you will need at least version 3.3.42.0 installed.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\nparam(\n    [string]$odGroupName,\n    [string]$odGroupDescription,\n    [string]$odVpcId,\n    [string]$odRules,\n    [string]$odInstanceId,\n    [string]$odAccessKey,\n    [string]$odSecretKey,\n    [switch]$whatIf\n) \n\n$ErrorActionPreference = \"Stop\" \n\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue   \n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    if (!$result -or $result -eq $null) {\n        if ($Default) {\n            $result = $Default\n        } elseif ($Required) {\n            throw \"Missing parameter value $Name\"\n        }\n    }\n\n    return $result\n}\n\n& {\n    param(\n        [string]$odGroupName,\n        [string]$odGroupDescription,\n        [string]$odVpcId,\n        [string]$odRules,\n        [string]$odInstanceId,\n        [string]$odAccessKey,\n        [string]$odSecretKey\n    )\n    \n    # If AWS key's are not provided as params, attempt to retrieve them from Environment Variables\n    if ($odAccessKey -or $odSecretKey) {\n        Set-AWSCredentials -AccessKey $odAccessKey -SecretKey $odSecretKey -StoreAs default\n    } elseif (([Environment]::GetEnvironmentVariable(\"AWS_ACCESS_KEY\", \"Machine\")) -or ([Environment]::GetEnvironmentVariable(\"AWS_SECRET_KEY\", \"Machine\"))) {\n        Set-AWSCredentials -AccessKey ([Environment]::GetEnvironmentVariable(\"AWS_ACCESS_KEY\", \"Machine\")) -SecretKey ([Environment]::GetEnvironmentVariable(\"AWS_SECRET_KEY\", \"Machine\")) -StoreAs default\n    } else {\n        throw \"AWS API credentials were not available/provided.\"\n    }\n\n\n\n    Write-Output (\"------------------------------\")\n    Write-Output (\"Checking the Security Group:\")\n    Write-Output (\"------------------------------\")\n    \n    $filterArray = @()\n    $filterArray += @{ name=\"vpc-id\";value=$odVpcId }\n    $filterArray += @{ name=\"group-name\";value=$odGroupName }\n    $filterArray += @{ name=\"description\";value=$odGroupDescription }\n\n    $securityGroupObj = (Get-EC2SecurityGroup -Filter $filterArray)\n    $securityGroupCount = ($securityGroupObj | measure).Count\n    $securityGroupId = $null\n\n    if ($securityGroupCount -gt 1) {\n        throw \"More than one security group exists with the same vpcid/name/description - I don't know what to do!?\"\n    }\n    elseif ($securityGroupCount -eq 1) {\n        Write-Output (\"$(Get-Date) | Security group already exists...\")\n\n        $securityGroupId = ($securityGroupObj).GroupId\n    }\n    elseif ($securityGroupCount -eq 0) {\n        Write-Output (\"$(Get-Date) | Creating security group...\")\n\n        $securityGroupId = (New-EC2SecurityGroup -VpcId $odVpcId -GroupName $odGroupName -GroupDescription $odGroupDescription)\n\n        Write-Output (\"Security Group Created: $($securityGroupId)\")\n    }\n\n    if ($securityGroupId -and $OctopusParameters) {\n        Set-OctopusVariable -name \"GroupId\" -value $securityGroupId\n    }\n\n    if ($odRules) {\n        (ConvertFrom-StringData $odRules).GetEnumerator() | Foreach-Object {\n            $ruleSplit = $_.Value.Split(\"|\")\n        \n            $direction = $ruleSplit[0]\n            $ipProtocol = $ruleSplit[1]\n            $fromPort = $ruleSplit[2]\n            $toPort = $ruleSplit[3]\n            $ipRanges = $ruleSplit[4]\n\n            Write-Output (\"------------------------------\")\n            Write-Output (\"Creating new $($direction) rule for Security Group $($securityGroupId):\")\n            Write-Output (\"------------------------------\")\n\n            $failCount = 0\n            while ($true) {\n                try {\n                    if ($direction -eq \"Ingress\") {\n                        $check_ipPermissionObj = ($securityGroupObj | Select -ExpandProperty IpPermissions | ? {$_.IpProtocol -eq $ipProtocol -and $_.FromPort -eq $fromPort -and $_.ToPort -eq $toPort})\n                    }\n                    elseif ($direction -eq \"Egress\") {\n                        $check_ipPermissionObj = ($securityGroupObj | Select -ExpandProperty IpPermissionsEgress | ? {$_.IpProtocol -eq $ipProtocol -and $_.FromPort -eq $fromPort -and $_.ToPort -eq $toPort})\n                    }\n\n                    break\n                } \n                catch {\n                    $failCount++\n                }\n\n                if ($failCount -eq 3) { throw \"Could not register the task after three attempts!\" }\n            }\n\n\n\n            $check_ipRangesObj = ($check_ipPermissionObj | Select -ExpandProperty IpRanges | ? {$_ -eq $ipRanges})\n            $check_ipRangesObjCount = ($check_ipRangesObj | measure).Count\n\n            if ($check_ipRangesObjCount -gt 0) {\n                Write-Output (\"$(Get-Date) | Rule '$($_.Key)' already exists...\")\n            }\n            else {\n                Write-Output (\"$(Get-Date) | Creating new rule '$($_.Key)'...\")\n                \n                $ipPermissionObj = (New-Object \"Amazon.EC2.Model.IpPermission\")\n                $ipPermissionObj.IpProtocol = $ipProtocol\n                $ipPermissionObj.FromPort = $fromPort\n                $ipPermissionObj.ToPort = $toPort\n                \n\n                try {\n                    $ipRangesObj = (New-Object \"Amazon.EC2.Model.IpRange\")\n                    $ipRangesObj.CidrIp = $ipRanges\n                    $ipRangesObj.Description = $_.Key\n                    $ipPermissionObj.Ipv4Ranges = $ipRangesObj\n                }\n                catch {\n                    Write-Output (\"$(Get-Date) | Cannot create 'Amazon.EC2.Model.IpRange' object, possibly running an old version of the 'AWS Tools for Windows PowerShell'\")\n                    Write-Output (\"$(Get-Date) | Attempting to use the old method, but the old method does not allow rule comments/descriptions\")\n\n                    $ipRangesObj = (New-Object \"System.Collections.Generic.List[string]\")\n                    $ipRangesObj.Add($ipRanges)\n                    $ipPermissionObj.IpRanges = $ipRangesObj\n                }\n\n                Write-Output $ipPermissionObj\n\n                try {\n                    if ($direction -eq \"Ingress\") {\n                        Grant-EC2SecurityGroupIngress -GroupId $securityGroupId -IpPermission $ipPermissionObj\n                    }\n                    elseif ($direction -eq \"Egress\") {\n                        Grant-EC2SecurityGroupEgress -GroupId $securityGroupId -IpPermission $ipPermissionObj\n                    }\n                }\n                catch [Amazon.EC2.AmazonEC2Exception] {\n                    throw $_.Exception.errorcode + '-' + $_.Exception.Message\n                }\n\n                Write-Output (\"------------------------------\")\n                Write-Output (\"New $($direction) ruleset looks like:\")\n                Write-Output (\"------------------------------\")\n\n                $securityGroupObj = (Get-EC2SecurityGroup -Filter $filterArray)\n\n                if ($direction -eq \"Ingress\") {\n                    Write-Output $securityGroupObj | Select -ExpandProperty IpPermissions | ? {$_.IpProtocol -eq $ipProtocol -and $_.FromPort -eq $fromPort -and $_.ToPort -eq $toPort}\n                }\n                elseif ($direction -eq \"Egress\") {\n                    Write-Output $securityGroupObj | Select -ExpandProperty IpPermissionsEgress | ? {$_.IpProtocol -eq $ipProtocol -and $_.FromPort -eq $fromPort -and $_.ToPort -eq $toPort}\n                }\n            }\n        }\n    }\n\n\n\n\n    if ($odInstanceId) {\n        $filterArray = @()\n        $filterArray += @{ name=\"instance-id\";value=$odInstanceId }\n\n        $instanceObj = (Get-EC2Instance -Filter $filterArray | select -ExpandProperty Instances)\n        $instanceCount = ($instanceObj | measure).Count\n\n        if ($instanceCount -gt 1) {\n            throw \"More than one instance exists with the same instance id - I don't know what to do!?\"\n        }\n        elseif ($instanceCount -eq 1) {\n            Write-Output (\"$(Get-Date) | Found instance '$($odInstanceId)'!\")\n \n            $securityGroupArray = @()\n            $securityGroupArray += ($instanceObj.NetworkInterfaces | Where-Object {$(Get-EC2NetworkInterface -NetworkInterfaceId $($_.NetworkInterfaceId))} | Select -ExpandProperty Groups | Select GroupId | Select -Expand GroupId)\n\n            if ($securityGroupArray -contains $securityGroupId) {\n                Write-Output (\"$(Get-Date) | Security Group '$($securityGroupId)' is already associated with the Instance '$($odInstanceId)'...\")\n            }\n            else {\n                Write-Output (\"$(Get-Date) | Adding Security Group '$($securityGroupId)' to the Instance '$($odInstanceId)'!\")\n\n                $securityGroupArray += $securityGroupId\n                $instanceObj.NetworkInterfaces | Where-Object {$(Edit-EC2NetworkInterfaceAttribute -NetworkInterfaceId $($_.NetworkInterfaceId) -Groups $securityGroupArray)}\n            }\n        }\n\n        Write-Output (\"------------------------------\")\n        Write-Output (\"Security Groups for instance '$($odInstanceId)':\")\n        Write-Output (\"------------------------------\")\n        \n        $instanceObj = (Get-EC2Instance -Filter $filterArray | select -ExpandProperty Instances)\n        Write-Output $instanceObj.NetworkInterfaces | Where-Object {$(Get-EC2NetworkInterface -NetworkInterfaceId $($_.NetworkInterfaceId))} | Select -ExpandProperty Groups\n    }\n } `\n (Get-Param 'odGroupName' -Required) `\n (Get-Param 'odGroupDescription' -Required) `\n (Get-Param 'odVpcId' -Required) `\n (Get-Param 'odRules') `\n (Get-Param 'odInstanceId') `\n (Get-Param 'odAccessKey') `\n (Get-Param 'odSecretKey')"
+  },
+  "Parameters": [
+    {
+      "Id": "868cba60-5638-4078-aa56-b65bba16f9aa",
+      "Name": "odGroupName",
+      "Label": "Security Group Name",
+      "HelpText": "The Name you would like to assign to the new Security Group.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "55c75754-48ad-44ba-854f-7d937ace11b4",
+      "Name": "odGroupDescription",
+      "Label": "Security Group Description",
+      "HelpText": "The Description you would like to assign to the new Security Group.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "332e2d15-e8f0-4012-9eaa-a28011ab1ef3",
+      "Name": "odVpcId",
+      "Label": "Virtual Private Cloud (VPC) ID",
+      "HelpText": "The Virtual Private Cloud (VPC) ID of the VPC you would like the Security Group to be created in.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b8041ec7-6d50-4f8d-babe-9b6b3fef2ac5",
+      "Name": "odRules",
+      "Label": "Rules (Optional)",
+      "HelpText": "The Rules you would like to add to the Security Group. For example:\n- RDP=Ingress|tcp|3389|3389|52.64.52.64/32\n\nThe format being:\n- comment=direction|protocol|fromport|toport|iprange",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ae77469f-6cad-42a7-8fbc-592d2ee85c3d",
+      "Name": "odInstanceId",
+      "Label": "Instance ID (Optional)",
+      "HelpText": "The EC2 Instance ID of the Instance you would like to add the Security Group to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ee896a8c-beda-4609-a104-bdf6fd3799cd",
+      "Name": "odAccessKey",
+      "Label": "Access Key (Kind-of Optional)",
+      "HelpText": "An Access Key with permissions to create the desired EC2 instance.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"AWS\\_ACCESS\\_KEY\".\n\nFurther Reading:\n[https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html](https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "004f625b-6d07-4a12-8a80-ea74943fb283",
+      "Name": "odSecretKey",
+      "Label": "Secret Key (Kind-of Optional)",
+      "HelpText": "The Secret Key associated with the above Access Key.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"AWS\\_SECRET\\_KEY\".\n\nFurther Reading:\n[https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html](https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "tclydesdale",
+  "$Meta": {
+    "ExportedAt": "2018-02-01T14:11:31.262Z",
+    "OctopusVersion": "4.1.9",
+    "Type": "ActionTemplate"
+  },
+  "Category": "aws"
+}

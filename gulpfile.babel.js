@@ -101,6 +101,8 @@ gulp.task('tests', ['lint:step-templates'], () => {
 function humanize(categoryId){
 
   switch(categoryId){
+    case 'amazon-chime': return 'Amazon Chime';
+    case 'ansible': return 'Ansible';
     case 'aspnet': return 'ASP.NET';
     case 'aws': return 'AWS';
     case 'azureFunctions': return 'Azure Functions';
@@ -120,6 +122,7 @@ function humanize(categoryId){
     case 'iis': return 'IIS';
     case 'jira': return 'JIRA';
     case 'json': return 'JSON';
+    case 'launchdarkly': return 'LaunchDarkly';
     case 'linux': return 'Linux';
     case 'microsoft-teams': return 'Microsoft Teams';
     case 'netscaler': return 'NetScaler';
@@ -135,6 +138,7 @@ function humanize(categoryId){
     case 'ssl': return 'SSL';
     case 'statuspage': return 'StatusPage';
     case 'teamcity': return 'TeamCity';
+    case 'victorops': return 'VictorOps'
     case 'webdeploy': return 'Web Deploy';
     case 'xml': return 'XML';
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();

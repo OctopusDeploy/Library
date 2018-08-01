@@ -1,0 +1,79 @@
+{
+  "Id": "82500bb2-f442-44f3-a5a5-7ecb4165ee1f",
+  "Name": "AWS - Add Tags to EC2 Instance",
+  "Description": "This step will Add or Remove Tags from an EC2 instance.\n\nWorks well with the \"_AWS - Launch EC2 Instance_\" Community Step Template.\n\n[AWS Tools for Windows PowerShell](http://aws.amazon.com/powershell/) must be installed on the Server/Target you plan on running this step template on.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\nparam(\n    [string]$odInstanceId,\n    [string]$odAction,\n    [string]$odTags,\n    [string]$odAccessKey,\n    [string]$odSecretKey,\n    [switch]$whatIf\n) \n\n$ErrorActionPreference = \"Stop\" \n\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue   \n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    if (!$result -or $result -eq $null) {\n        if ($Default) {\n            $result = $Default\n        } elseif ($Required) {\n            throw \"Missing parameter value $Name\"\n        }\n    }\n\n    return $result\n}\n\n\n& {\n    param(\n        [string]$odInstanceId,\n        [string]$odAction,\n        [string]$odTags,\n        [string]$odAccessKey,\n        [string]$odSecretKey\n    ) \n    \n    # If AWS key's are not provided as params, attempt to retrieve them from Environment Variables\n    if ($odAccessKey -or $odSecretKey) {\n        Set-AWSCredentials -AccessKey $odAccessKey -SecretKey $odSecretKey -StoreAs default\n    } elseif (([Environment]::GetEnvironmentVariable(\"AWS_ACCESS_KEY\", \"Machine\")) -or ([Environment]::GetEnvironmentVariable(\"AWS_SECRET_KEY\", \"Machine\"))) {\n        Set-AWSCredentials -AccessKey ([Environment]::GetEnvironmentVariable(\"AWS_ACCESS_KEY\", \"Machine\")) -SecretKey ([Environment]::GetEnvironmentVariable(\"AWS_SECRET_KEY\", \"Machine\")) -StoreAs default\n    } else {\n        throw \"AWS API credentials were not available/provided.\"\n    }\n\n\n\n    Write-Output (\"------------------------------\")\n    Write-Output (\"Add/Remove Instance Tags:\")\n    Write-Output (\"------------------------------\")\n    \n    $filterArray = @()\n    $tagsHash = (ConvertFrom-StringData $odTags).GetEnumerator()\n    Foreach ($tag in $tagsHash) {\n        $tagObj = $(Get-EC2Instance -InstanceId $odInstanceId).Instances.Tags | ? {$_.Key -eq $tag.Key -and $_.Value -eq $tag.Value}\n        $tagObjCount = ($tagObj | measure).Count\n        if ($tagObjCount -gt 0) {\n            if ($odAction -eq \"New\") {\n                Write-Output (\"Cannot Add: The tag '$($tag.Key)=$($tag.Value)' already exists, skipping...\")\n            } elseif ($odAction -eq \"Remove\") {\n                Write-Output (\"The tag '$($tag.Key)=$($tag.Value)' exists, deleting...\")\n\n                try {\n                    Remove-EC2Tag -Tags @{key=$tag.Key} -resourceId $odInstanceId -Force\n                }\n                catch [Amazon.EC2.AmazonEC2Exception] {\n                    throw $_.Exception.errorcode + '-' + $_.Exception.Message\n                }\n            }\n        } else {\n            if ($odAction -eq \"New\") {\n                Write-Output (\"The combination of tag and value '$($tag.Key)=$($tag.Value)' does not exist, Creating/Updating tag...\")\n\n                try {\n                    New-EC2Tag -Tags @{key=$tag.Key;value=$tag.Value} -resourceId $odInstanceId\n                }\n                catch [Amazon.EC2.AmazonEC2Exception] {\n                    throw $_.Exception.errorcode + '-' + $_.Exception.Message\n                }\n            } elseif ($odAction -eq \"Remove\") {\n                Write-Output (\"Cannot Remove: The tag '$($tag.Key)=$($tag.Value)' does not exist, skipping...\")\n            }\n        }\n    }\n } `\n (Get-Param 'odInstanceId' -Required) `\n (Get-Param 'odAction' -Required) `\n (Get-Param 'odTags' -Required) `\n (Get-Param 'odAccessKey') `\n (Get-Param 'odSecretKey')",
+    "Octopus.Action.RunOnServer": "false"
+  },
+  "Parameters": [
+    {
+      "Id": "3670adeb-3e4f-4c55-829b-b39bb709d841",
+      "Name": "odInstanceId",
+      "Label": "Instance ID",
+      "HelpText": "The EC2 Instance ID of the Instance you would like to add Tags to.",
+      "DefaultValue": "i-xxxxxxxxxxxxxxxxx",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "918acd83-39ae-47d1-9682-12333e723cff",
+      "Name": "odAction",
+      "Label": "Action",
+      "HelpText": "The action you would like to perform - Add or Remove Tags from an EC2 Instance.",
+      "DefaultValue": "New",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "New|Add tag to an instance\nRemove|Remove tag from an instance"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "9b4d592a-712d-459e-af73-1db757a769d8",
+      "Name": "odTags",
+      "Label": "Tags",
+      "HelpText": "The Tags you would like to Add or Remove from an EC2 Instance, for example:\n\n- Name=MyProject\n- Environment=Prod\n- Version=1.3.3.7",
+      "DefaultValue": "Name=#{Octopus.Project.Name}\nEnvironment=#{Octopus.Environment.Name}\nVersion=#{Octopus.Release.Number}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ccd17285-bbb4-4dcb-84a8-330f45199afd",
+      "Name": "odAccessKey",
+      "Label": "Access Key (Kind-of Optional)",
+      "HelpText": "An Access Key with permissions to create the desired EC2 instance.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"AWS\\_ACCESS\\_KEY\".\n\nFurther Reading:\n[https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html](https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "6f058614-92a0-4696-bb56-b6342a8d5466",
+      "Name": "odSecretKey",
+      "Label": "Secret Key (Kind-of Optional)",
+      "HelpText": "The Secret Key associated with the above Access Key.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"AWS\\_SECRET\\_KEY\".\n\nFurther Reading:\n[https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html](https://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "tclydesdale",
+  "$Meta": {
+    "ExportedAt": "2018-01-30T12:44:07.356Z",
+    "OctopusVersion": "4.1.9",
+    "Type": "ActionTemplate"
+  },
+  "Category": "aws"
+}

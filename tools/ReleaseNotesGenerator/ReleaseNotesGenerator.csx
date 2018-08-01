@@ -1,3 +1,5 @@
+System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
+
 var octokit = Require<OctokitPack>();
 var client = octokit.Create("Octopus.Library.ReleaseNotesGenerator");
 
@@ -48,7 +50,7 @@ if(!isTeamCity)
 {
     Console.WriteLine(releaseNotes);
 }
-else 
+else
 {
     var cwd = Directory.GetCurrentDirectory();
     var releaseNotesFile = $"{cwd}\\Library_ReleaseNotes.txt";
