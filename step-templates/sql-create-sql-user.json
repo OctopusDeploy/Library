@@ -3,11 +3,11 @@
   "Name": "SQL - Create SQL User If Not Exists",
   "Description": "Create a SQL Login if the login doesn't already exist without using SMO.",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedLogin = $createSqlLogin.Replace(\"'\", \"''\")\n$escapedPassword = $createSqlPassword.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create user command on the server\"\n$command.CommandText = \"IF NOT EXISTS(SELECT 1 FROM sys.server_principals WHERE name = '$escapedLogin')\n\tCREATE LOGIN [$createSqlLogin] with Password='$escapedPassword', default_database=[$createSqlDefaultDatabase]\"            \n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createSqlLogin\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedLogin = $createSqlLogin.Replace(\"'\", \"''\")\nWrite-Host \"Running the if not exists then create user command on the server for $escapedLogin\"\n\nif ([string]::IsNullOrWhiteSpace($createSqlPassword) -eq $true) {\n\tWrite-Host \"The password sent in was empty, creating account as domain login\"\n    $command.CommandText = \"IF NOT EXISTS(SELECT 1 FROM sys.server_principals WHERE name = '$escapedLogin')\n\tCREATE LOGIN [$createSqlLogin] FROM WINDOWS, default_database=[$createSqlDefaultDatabase]\"            \n}\nelse {\n\tWrite-Host \"A password was sent in, creating account as SQL Login\"\n\t$escapedPassword = $createSqlPassword.Replace(\"'\", \"''\")\n\t$command.CommandText = \"IF NOT EXISTS(SELECT 1 FROM sys.server_principals WHERE name = '$escapedLogin')\n\tCREATE LOGIN [$createSqlLogin] with Password='$escapedPassword', default_database=[$createSqlDefaultDatabase]\"   \n}\n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createSqlLogin\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
   },
   "Parameters": [
     {
@@ -26,7 +26,9 @@
       "Label": "SQL Login",
       "HelpText": "The user who has permissions to create the user\n\nLeave blank for integrated security",
       "DefaultValue": "",
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Id": "0bf48c89-31a2-4462-9be3-3f80e816f0de",
@@ -52,7 +54,7 @@
       "Id": "b73a9fb0-1b09-473c-956b-07198e5028cc",
       "Name": "createSqlPassword",
       "Label": "Password",
-      "HelpText": "The password of the user being created",
+      "HelpText": "The password of the user being created.  Leave this blank if you want to use windows authentication.",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "Sensitive"
@@ -69,7 +71,7 @@
       }
     }
   ],
-  "LastModifiedOn": "2018-07-11T20:39:04.366Z",
+  "LastModifiedOn": "2018-08-07T20:39:04.366Z",
   "LastModifiedBy": "OctopusBob",
   "$Meta": {
     "ExportedAt": "2018-07-11T20:39:04.366Z",
