@@ -5,7 +5,7 @@
   "ActionType": "Octopus.Script",
   "Version": 7,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$svcName = $OctopusParameters['ServiceName']\n$svcTimeout = $OctopusParameters['ServiceStopTimeout']\n\nfunction Stop-ServiceWithTimeout ([string] $name, [int] $timeoutSeconds) {\n    $timespan = New-Object -TypeName System.Timespan -ArgumentList 0,0,$timeoutSeconds\n    $svc = Get-Service -Name $name\n    if ($svc -eq $null) { return $false }\n    if ($svc.Status -eq [ServiceProcess.ServiceControllerStatus]::Stopped) { return $true }\n    $svc.Stop()\n    try {\n        $svc.WaitForStatus([ServiceProcess.ServiceControllerStatus]::Stopped, $timespan)\n    }\n    catch [ServiceProcess.TimeoutException] {\n        Write-Verbose \"Timeout stopping service $($svc.Name)\"\n        return $false\n    }\n    return $true\n}\n\nWrite-Host \"Checking for service \" + $svcName\n$svcpid = (get-wmiobject Win32_Service | where{$_.Name -eq $svcName}).ProcessId\nWrite-Host \"Found PID \" + $svcpid \n\nStop-ServiceWithTimeout -name $svcName -timeoutSeconds $svcTimeout\n\n$service = Get-Service -name $svcName | Select -Property Status\nif($service.Status -ne \"Stopped\"){\tStart-Sleep -seconds 5 }\n\n#Check-Service process \nif($svcpid){\n    #still exists?\n    $p = get-process -id $svcpid -ErrorAction SilentlyContinue\n    Write-Host \"Rechecking PID\"\n    if($p){\n        Write-Host \"Killing Service\"\n        Stop-Process $p.Id -force\n    }\n}",
+    "Octopus.Action.Script.ScriptBody": "$svcName = $OctopusParameters['ServiceName']\n$svcTimeout = $OctopusParameters['ServiceStopTimeout']\n\nfunction Stop-ServiceWithTimeout ([string] $name, [int] $timeoutSeconds) {\n    $timespan = New-Object -TypeName System.Timespan -ArgumentList 0,0,$timeoutSeconds\n    $svc = Get-Service -Name $name\n    if ($svc -eq $null) { return $false }\n    if ($svc.Status -eq [ServiceProcess.ServiceControllerStatus]::Stopped) { return $true }\n    $svc.Stop()\n    try {\n        Write-Host \"Stopping Service\" $svcTimeout \"Timeout\"\n        $svc.WaitForStatus([ServiceProcess.ServiceControllerStatus]::Stopped, $timespan)\n    }\n    catch [ServiceProcess.TimeoutException] {\n        Write-Host \"Timeout stopping service $($svc.Name)\"\n        return $false\n    }\n    Write-Host \"Service Sucessfully stopped\"\n    return $true\n}\n\nWrite-Host \"Checking service\"\n\n$svcpid = (get-wmiobject Win32_Service | where{$_.Name -eq $svcName}).ProcessId\nWrite-Host \"Found PID \" + $svcpid \n\nStop-ServiceWithTimeout -name $svcName -timeoutSeconds $svcTimeout\n\nWrite-Host \"Rechecking service\"\n$svcpid = (get-wmiobject Win32_Service | where{$_.Name -eq $svcName}).ProcessId\nWrite-Host \"Found PID \" + $svcpid \n\n$service = Get-Service -name $svcName | Select -Property Status\nif($service.Status -ne \"Stopped\"){\tStart-Sleep -seconds 5 }\n\n#Check-Service process \nif($svcpid){\n    #still exists?\n    $p = get-process -id $svcpid -ErrorAction SilentlyContinue\n    if($p){\n        Write-Host \"Killing Service\"\n        #Stop-Process $p.Id -force\n    }\n}",
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline"
   },
@@ -31,10 +31,10 @@
       }
     }
   ],
-  "LastModifiedOn": "2018-08-22T04:58:49.638+00:00",
+  "LastModifiedOn": "2018-08-22T08:08:05.638+00:00",
   "LastModifiedBy": "benjimac93",  
   "$Meta": {
-    "ExportedAt": "2018-08-22T04:58:49.752Z",
+    "ExportedAt": "2018-08-22T08:08:05.752Z",
     "OctopusVersion": "2018.7.10",
     "Type": "ActionTemplate"
   },
