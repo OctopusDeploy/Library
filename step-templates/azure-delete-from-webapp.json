@@ -1,0 +1,82 @@
+{
+  "Id": "7a3caa63-8312-4e6e-aeb9-674022e5da2f",
+  "Name": "Azure Web App - Delete Files",
+  "Description": "Provides the ability to delete files and folders from an Azure Web App through the kudu API.",
+  "Category": "azure",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "Write-Host \"Resource Group Name: $($ResourceGroupName)\"\nWrite-Host \"Web App Name: $($WebAppName)\"\nWrite-Host \"Slot Name: $($SlotName)\"\n\nfunction Get-AzureRmWebAppPublishingCredentials($ResourceGroupName, $WebAppName, $SlotName = $null){\t\n\t\n\tif ([string]::IsNullOrWhiteSpace($SlotName)) {\n\t\t$resourceType = \"Microsoft.Web/sites/config\"\n\t\t$resourceName = \"$WebAppName/publishingcredentials\"\n\t} else {\n\t\t$resourceType = \"Microsoft.Web/sites/slots/config\"\n\t\t$resourceName = \"$WebAppName/$SlotName/publishingcredentials\"\n\t}\n\n\t$publishingCredentials = Invoke-AzureRmResourceAction -ResourceGroupName $ResourceGroupName -ResourceType $resourceType -ResourceName $resourceName -Action list -ApiVersion 2015-08-01 -Force\n    \n    return $publishingCredentials\n\n}\n\nfunction Get-KuduApiAuthorisationHeaderValue($ResourceGroupName, $WebAppName, $SlotName = $null) {\n\n    $publishingCredentials = Get-AzureRmWebAppPublishingCredentials $ResourceGroupName $WebAppName $SlotName\n\n    return (\"Basic {0}\" -f [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes((\"{0}:{1}\" -f $publishingCredentials.Properties.PublishingUserName, $publishingCredentials.Properties.PublishingPassword))))\n\n}\n\nfunction Delete-PathFromWebApp($ResourceGroupName, $WebAppName, $SlotName = $null, $kuduPath) {\n\t\n    $kuduApiAuthorisationToken = Get-KuduApiAuthorisationHeaderValue $ResourceGroupName $WebAppName $SlotName\n    \n    Write-Host \"Kudu Auth Token\":\n    Write-Host $kuduApiAuthorisationToken\n    \n    if ([string]::IsNullOrWhiteSpace($SlotName)) {\n        $kuduApiUrl = \"https://$WebAppName.scm.azurewebsites.net/api/vfs\"\n    } else {\n        $kuduApiUrl = \"https://$WebAppName`-$SlotName.scm.azurewebsites.net/api/vfs\"\n    }\n    \n    Write-Host \"API Url: $($kuduApiUrl)\"\n    Write-Host \"File Path: $($kuduPath)\"\n    \n    Invoke-RestMethod -Uri \"$kuduApiUrl/site/wwwroot/$kuduPath\" `\n                      -Headers @{\"Authorization\"=$kuduApiAuthorisationToken;\"If-Match\"=\"*\"} `\n                      -Method DELETE \n}\n\nfunction Delete-FilesAndFoldersFromWebApp($ResourceGroupName, $WebAppName, $SlotName, $FilesList, $RetryAttempts = 3) {\n\n    $list = $FilesList.Split([Environment]::NewLine)\n\n    foreach($item in $list) {\n        if(![string]::IsNullOrWhiteSpace($item)) {\n\n            $retryCount = $RetryAttempts\n            $retry = $true\n\n            while ($retryCount -gt 0 -and $retry) {\n                try {\n                    $retryCount = $retryCount -1\n\n                    Delete-PathFromWebApp $ResourceGroupName $WebAppName $SlotName $item\n\n                    $retry = $false\n                } catch {\n                    $retry = $true\n                    if($retryCount -eq 0) {\n                        throw (\"Exceeded retry attempts \" + $RetryAttempts + \" for \" + $item)\n                    }\n                }\n            }\n        }\n    }\n}\n\nDelete-FilesAndFoldersFromWebApp $ResourceGroupName $WebAppName $SlotName $FilesList $RetryAttempts",
+    "Octopus.Action.Azure.AccountId": "#{AzureAccount}"
+  },
+  "Parameters": [
+    {
+      "Id": "a575296c-babf-4c73-9023-d5a4c9cc84bf",
+      "Name": "FilesList",
+      "Label": "List of Files & Folders to Delete",
+      "HelpText": "List each file/folder on a new line.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "7643ed88-ed04-46d2-ae74-1d65b94f03f9",
+      "Name": "AzureAccount",
+      "Label": "Azure Account",
+      "HelpText": "Must exactly match the name of a configured Azure account.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ac5e4147-8b41-4aa5-82d0-ad5cf5e23499",
+      "Name": "ResourceGroupName",
+      "Label": "Resource Group Name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6a833494-e3e6-4b8d-8639-c03f37d6d347",
+      "Name": "WebAppName",
+      "Label": "Web App Name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0186edda-110a-4cb7-a270-bdc92e55ea1e",
+      "Name": "SlotName",
+      "Label": "Slot Name",
+      "HelpText": "Optional. If you want to target a specific slot, enter it's name.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ffeb3047-63d5-4ce7-9c90-81f117106a93",
+      "Name": "RetryAttempts",
+      "Label": "Retry Attempts",
+      "HelpText": "Number of delete attempts before failing. This should be set higher than 1, as the Azure Kudu API often fails on the first request.",
+      "DefaultValue": "3",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "matt-byrne",
+  "$Meta": {
+    "ExportedAt": "2018-08-17T02:46:48.536Z",
+    "OctopusVersion": "2018.6.14",
+    "Type": "ActionTemplate"
+  }
+}
