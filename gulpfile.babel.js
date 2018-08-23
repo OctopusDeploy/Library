@@ -141,6 +141,7 @@ function humanize(categoryId){
     case 'victorops': return 'VictorOps'
     case 'webdeploy': return 'Web Deploy';
     case 'xml': return 'XML';
+    case 'xunit': return 'xUnit';
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
   }
 }
