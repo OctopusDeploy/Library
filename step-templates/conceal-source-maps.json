@@ -3,18 +3,18 @@
   "Name": "Conceal Source Maps",
   "Description": "This step moves source maps to the specified location and patches reference in the source code",
   "ActionType": "Octopus.Script",
-  "Version": 8,
+  "Version": 10,
   "CommunityActionTemplateId": null,
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "function Find-InstallLocations {\n    $result = @()\n    $OctopusParameters.Keys | foreach {\n        if ($_.EndsWith(\"].Output.Package.InstallationDirectoryPath\")) {\n            $result += $OctopusParameters[$_]\n        }\n    }\n    return $result\n}\n \nfunction Find-InstallLocation($stepName) {\n    $result = $OctopusParameters.Keys | where {\n        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\n    } | select -first 1\n \n    if ($result) {\n        return $OctopusParameters[$result]\n    }\n \n    throw \"No install location found for step: $stepName\"\n}\n \nfunction Find-SingleInstallLocation {\n    $all = @(Find-InstallLocations)\n    if ($all.Length -eq 1) {\n        return $all[0]\n    }\n    if ($all.Length -eq 0) {\n        throw \"No package steps found\"\n    }\n    throw \"Multiple package steps have run; please specify a single step\"\n}\n\nfunction Test-LastExit($cmd) {\n    if ($LastExitCode -ne 0) {\n        Write-Host \"##octopus[stderr-error]\"\n        write-error \"$cmd failed with exit code: $LastExitCode\"\n    }\n}\n\n$stepName = $OctopusParameters[\"WebDeployPackageStepName\"]\n\n$stepPath = \"\"\nif (-not [string]::IsNullOrEmpty($stepName)) {\n    Write-Host \"Finding path to package step: $stepName\"\n    $stepPath = Find-InstallLocation $stepName\n} else {\n    $stepPath = Find-SingleInstallLocation\n}\nWrite-Host \"Package was installed to: $stepPath\"\n\n$WorkingDir = $stepPath + \"/\" + $OctopusParameters[\"WorkingDir\"];\n$PublicUrl = $OctopusParameters[\"PublicUrl\"];\n$SourceMapMask = $OctopusParameters[\"SourceMapMask\"];\n$TargetPath = $OctopusParameters[\"TargetPath\"];\n\n$PublicUrl = $OctopusParameters[\"PublicUrl\"];\n$PublicPathLastChar = $PublicUrl.Substring( $PublicUrl.Length - 1);\nif ( $PublicPathLastChar -ne \"/\" ) {\n    $PublicUrl += \"/\";\n}\n\nforeach( $sourceMap in Get-ChildItem -Path $WorkingDir -File $SourceMapMask ) {\n    $sourceMapWithPath = $WorkingDir + \"/\" + $sourceMap.Name;\n    $outputFileWithPath = $WorkingDir + \"/\" + $sourceMap.Name.Replace( \".map\", \"\" );\n\n    Move-Item $sourceMapWithPath -Destination $TargetPath;\n    \n    $text = (Get-Content -Path $outputFileWithPath -ReadCount 0) -join \"`n\";\n    $text -replace \"sourceMappingURL=\", \"sourceMappingURL=$PublicUrl\" | Set-Content -Path $outputFileWithPath;\n}",
+    "Octopus.Action.Script.ScriptBody": "function Find-InstallLocations {\n    $result = @()\n    $OctopusParameters.Keys | foreach {\n        if ($_.EndsWith(\"].Output.Package.InstallationDirectoryPath\")) {\n            $result += $OctopusParameters[$_]\n        }\n    }\n    return $result\n}\n \nfunction Find-InstallLocation($stepName) {\n    $result = $OctopusParameters.Keys | where {\n        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\n    } | select -first 1\n \n    if ($result) {\n        return $OctopusParameters[$result]\n    }\n \n    throw \"No install location found for step: $stepName\"\n}\n \nfunction Find-SingleInstallLocation {\n    $all = @(Find-InstallLocations)\n    if ($all.Length -eq 1) {\n        return $all[0]\n    }\n    if ($all.Length -eq 0) {\n        throw \"No package steps found\"\n    }\n    throw \"Multiple package steps have run; please specify a single step\"\n}\n\nfunction Test-LastExit($cmd) {\n    if ($LastExitCode -ne 0) {\n        Write-Host \"##octopus[stderr-error]\"\n        write-error \"$cmd failed with exit code: $LastExitCode\"\n    }\n}\n\n$stepName = $OctopusParameters[\"CsmWebDeployPackageStepName\"]\n\n$stepPath = \"\"\nif (-not [string]::IsNullOrEmpty($stepName)) {\n    Write-Host \"Finding path to package step: $stepName\"\n    $stepPath = Find-InstallLocation $stepName\n} else {\n    $stepPath = Find-SingleInstallLocation\n}\nWrite-Host \"Package was installed to: $stepPath\"\n\n$WorkingDir = $stepPath + \"/\" + $OctopusParameters[\"CsmWorkingDir\"];\n$PublicUrl = $OctopusParameters[\"CsmPublicUrl\"];\n$SourceMapMask = $OctopusParameters[\"CsmSourceMapMask\"];\n$TargetPath = $OctopusParameters[\"CsmTargetPath\"];\n\n$PublicUrl = $OctopusParameters[\"CsmPublicUrl\"];\n$PublicPathLastChar = $PublicUrl.Substring( $PublicUrl.Length - 1);\nif ( $PublicPathLastChar -ne \"/\" ) {\n    $PublicUrl += \"/\";\n}\n\nforeach( $sourceMap in Get-ChildItem -Path $WorkingDir -File $SourceMapMask ) {\n    $sourceMapWithPath = $WorkingDir + \"/\" + $sourceMap.Name;\n    $outputFileWithPath = $WorkingDir + \"/\" + $sourceMap.Name.Replace( \".map\", \"\" );\n\n    Move-Item $sourceMapWithPath -Destination $TargetPath;\n    \n    $text = (Get-Content -Path $outputFileWithPath -ReadCount 0) -join \"`n\";\n    $text -replace \"sourceMappingURL=\", \"sourceMappingURL=$PublicUrl\" | Set-Content -Path $outputFileWithPath;\n}",
     "Octopus.Action.Package.DownloadOnTentacle": "False"
   },
   "Parameters": [
     {
       "Id": "90f37d66-bbbf-4d64-b6b2-5e8543e0572d",
-      "Name": "WorkingDir",
+      "Name": "CsmWorkingDir",
       "Label": "Working directory",
       "HelpText": "Relative path to the folder with output files and source maps",
       "DefaultValue": "",
@@ -25,7 +25,7 @@
     },
     {
       "Id": "0b0dd41f-4067-4859-a9b9-c6af2d510ed8",
-      "Name": "SourceMapMask",
+      "Name": "CsmSourceMapMask",
       "Label": "Source map file mask",
       "HelpText": null,
       "DefaultValue": "*.map",
@@ -36,7 +36,7 @@
     },
     {
       "Id": "1333e256-9497-437c-9f13-c2036130cafb",
-      "Name": "TargetPath",
+      "Name": "CsmTargetPath",
       "Label": "Target path",
       "HelpText": "Path where source maps should be moved to",
       "DefaultValue": "",
@@ -47,7 +47,7 @@
     },
     {
       "Id": "175b1fb4-4308-4978-986e-735867f8c186",
-      "Name": "PublicUrl",
+      "Name": "CsmPublicUrl",
       "Label": "URL of exposed target directory",
       "HelpText": "This will be prefixed to the source map references in output files",
       "DefaultValue": "",
@@ -57,10 +57,8 @@
       "Links": {}
     }
   ],
-  "LastModifiedOn": "2018-09-19T12:22:00.000+00:00",
-  "LastModifiedBy": "uoziod",
   "$Meta": {
-    "ExportedAt": "2018-09-19T12:16:07.211Z",
+    "ExportedAt": "2018-09-19T13:13:00.646Z",
     "OctopusVersion": "2018.3.5",
     "Type": "ActionTemplate"
   }
