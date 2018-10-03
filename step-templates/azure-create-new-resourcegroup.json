@@ -3,12 +3,12 @@
   "Name": "Create Azure Resources - RG",
   "Description": "The New-AzureRmResourceGroup cmdlet creates an Azure resource group",
   "ActionType": "Octopus.AzurePowerShell",
-  "Version": 27,
+  "Version": 28,
   "CommunityActionTemplateId": null,
   "Properties": {
-    "Octopus.Action.Azure.AccountId": "#{AzureAccount}",
+    "Octopus.Action.Azure.AccountId": "#{CreateResourceGroup.AzureAccount}",
     "Octopus.Action.Script.ScriptSource": "Inline",
-    "Octopus.Action.Script.ScriptBody": "param([string]$ResourceGroupName,\n    [string]$Location )\n    \n\n\n$ErrorActionPreference = \"Stop\" \n    \n###############################################\n##Step1: Helper Functions\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue   \n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    if ($result -eq $null) {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        } else {\n            $result = $Default\n        }\n    }\n\n    return $result\n}\n\n###############################################\nfunction New-ResourceGroup { \nparam([string]$ResourceGroupName, \n[string]$Location)\n \n    Write-Output '###############################################'\n    Write-Output '##Step1: Create Resource Group '\n    $AzureResourceGroup = Get-AzureRmResourceGroup -Name $ResourceGroupName -ErrorAction SilentlyContinue\n    if ( $null -eq $AzureResourceGroup)\n    {\n        Write-Output \"Resource Group $ResourceGroupName does not exist, creating one ...\"\n        $AzureResourceGroup =New-AzureRmResourceGroup -Name $ResourceGroupName -Location $Location\n    } \n    else{\n        Write-Output \"Resource Group $ResourceGroupName already exists ...\"\n    }\n\n    Write-Output '###############################################'\n    Write-Output '##Step2: Validate Resource Group '\n\n    if ($null -eq $AzureResourceGroup ){\n        Throw \"Failed to create resource group $AzureResourceGroupName\"\n    }\n}\n\n& {\n    param(\n        [string]$ResourceGroupName,\n        [string]$Location\n    ) \n\n    Write-Output \"Variables:\"\n    Write-Output \"ResourceGroupName: $ResourceGroupName\"\n    Write-Output \"Location: $Location\"\n      \n    $resourceGroupParams = @{\n        ResourceGroupName=$ResourceGroupName\n        Location=$Location\n    }\n    \n    ###############################################\n    New-ResourceGroup @resourceGroupParams\n    Write-Output \"Resource Group verified/created\"\n    ###############################################\n\n } `\n (Get-Param 'ResourceGroupName' -Required) `\n (Get-Param 'Location' -Required) \n ",
+    "Octopus.Action.Script.ScriptBody": "$ResourceGroupName =$OctopusParameters[\"CreateResourceGroup.ResourceGroupName\"]\n$Location =$OctopusParameters[\"CreateResourceGroup.Location\"]\n \n Write-Output \"Variables:\"\n Write-Output \"ResourceGroupName: $ResourceGroupName\"\n Write-Output \"Location: $Location\"\n\nWrite-Output '###############################################'\nWrite-Output '##Step1: Create Resource Group '\n$AzureResourceGroup = Get-AzureRmResourceGroup -Name $ResourceGroupName -ErrorAction SilentlyContinue\nif ( $null -eq $AzureResourceGroup)\n{\nWrite-Output \"Resource Group $ResourceGroupName does not exist, creating one ...\"\n$AzureResourceGroup =New-AzureRmResourceGroup -Name $ResourceGroupName -Location $Location\n} \nelse{\nWrite-Output \"Resource Group $ResourceGroupName already exists ...\"\n}\n\nWrite-Output '###############################################'\nWrite-Output '##Step2: Validate Resource Group '\n\nif ($null -eq $AzureResourceGroup ){\nThrow \"Failed to create resource group $AzureResourceGroupName\"\n}\n",
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Package.FeedId": null,
     "Octopus.Action.Script.ScriptFileName": null,
@@ -17,7 +17,7 @@
   "Parameters": [
     {
       "Id": "a5398248-3866-4e86-bfcd-6f6091199839",
-      "Name": "ResourceGroupName",
+      "Name": "CreateResourceGroup.ResourceGroupName",
       "Label": "ResourceGroupName",
       "HelpText": "Required: Specifies a name for the resource group. This parameter is required. The resource name must be unique in the subscription.You can use -Name or its alias, -ResourceGroupName.If a resource group with that name already exists, the command prompts you for confirmation before replacing the existing resource group. To suppress the confirmation prompt, use the Force parameter.",
       "DefaultValue": null,
@@ -28,7 +28,7 @@
     },
     {
       "Id": "ddbea94f-8053-4da7-aaea-c71e31be38a5",
-      "Name": "Location",
+      "Name": "CreateResourceGroup.Location",
       "Label": "Location",
       "HelpText": "Required: Specifies the location of the resource group. This parameter is required. Enter an Azure data center location, such as \"West US\" or \"Southeast Asia\".You can place a resource group in any location. The resource group does not have to be in the same location your Azure subscription or the same location as its resources. Resource groups can contain resources from different locations. To determine which location support each resource type, use the Get-AzureRmResourceProvider with the ProviderNamespace parameter cmdlet.",
       "DefaultValue": null,
@@ -38,19 +38,8 @@
       "Links": {}
     },
     {
-      "Id": "c2ce713e-e157-4f4a-b28d-c7aa6186ede4",
-      "Name": "Tag",
-      "Label": "Tag",
-      "HelpText": "Optional: Applies the specified tags to the new resource group. Enter new tags or predefined tags that you created by using the New-AzureRmTag cmdlet.A \"tag\" is a name-value pair that you can apply to resources and resource groups. Use tags to categorize your resources, such as by department or cost center, or to track notes or comments about the resources. After you assign tags to resources, you can use the Tag parameters of Find-AzureRmResource and Find-AzureRmResourceGroup to search for resources and groups by tag name or name and value.Every tag must have a name and an optional value. To specify a new tag, FY2015=$null Department=\"IT\" one in each line. To get your predefined tags, use the Get-AzureRmTag cmdlet.",
-      "DefaultValue": null,
-      "DisplaySettings": {
-        "Octopus.ControlType": "MultiLineText"
-      },
-      "Links": {}
-    },
-    {
       "Id": "18d18732-972c-446a-a6da-912866332c02",
-      "Name": "AzureAccount",
+      "Name": "CreateResourceGroup.AzureAccount",
       "Label": "AzureAccount",
       "HelpText": "Enter the SPN used to connect to Azure",
       "DefaultValue": null,
@@ -60,11 +49,11 @@
       "Links": {}
     }
   ],
-  "LastModifiedOn": "2018-01-08T11:00:00.085+00:00",
-  "LastModifiedBy": "IanMoroney",
+  "LastModifiedOn": "2018-10-03T13:00:00.000+01:00",
+  "LastModifiedBy": "Jens-H-Eriksen",
   "$Meta": {
-    "ExportedAt": "2018-01-05T13:57:27.868Z",
-    "OctopusVersion": "3.16.2",
+    "ExportedAt": "2018-10-03T11:37:04.316Z",
+    "OctopusVersion": "2018.8.6",
     "Type": "ActionTemplate"
   },
   "Category": "azure"
