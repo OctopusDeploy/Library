@@ -9,7 +9,7 @@
 * Do scripts in the template produce worthwhile status messages as they execute?
 * Are you happy to contribute your template under the terms of the [license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE)? If you produced the template while working for your employer please obtain written permission from them before submitting it here.
 * Are the default values of parameters validly applicable in other user's environments? Don't use the default values as examples if the user will have to change them
-* For how to deal with parameters and testing take a look at the article [Making great Octopus PowerShell step templates](http://www.lavinski.me/making-great-octopus-powershell-step-templates/)
+* For how to deal with parameters and testing take a look at the article [Making great Octopus PowerShell step templates](https://www.daniellittle.xyz/making-great-octopus-powershell-step-templates/)
 * For another example of how to test your step template script body before submitting a PR take a look at this [gist](https://gist.github.com/JCapriotti/45639e06ba777ee974b1)
 
 _Before submitting your PR, please delete everything above the line below._
