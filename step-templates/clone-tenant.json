@@ -1,0 +1,62 @@
+{
+  "Id": "3b0f8df0-93b8-44eb-86dd-264d1283ae70",
+  "Name": "Clone Tenant",
+  "Description": "Clone an Octopus [tenant](https://octopus.com/docs/deployment-patterns/multi-tenant-deployments). The project connections and tenant tags will be cloned and the non-sensitive variables can optionally be cloned.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$apiKey = $CloneTenantStep_ApiKey\n$tenantToClone = $CloneTenantStep_TenantIdToClone\n$tenantName = $CloneTenantStep_TenantName\n$octopusBaseUrl = $OctopusParameters['Octopus.Web.BaseUrl'].Trim('/')\n$cloneVariables = $CloneTenantStep_CloneVariables\n\n$ErrorActionPreference = 'Stop'\n\nif ([string]::IsNullOrWhiteSpace($apiKey)) {\n    throw \"The step parameter 'Octopus API Key' was not found. This step requires an API Key to function, please provide one and try again.\"\n}\n\nfunction Invoke-OctopusApi {\n    param(\n        [Parameter(Position = 0, Mandatory)]$Uri,\n        [ValidateSet(\"Get\", \"Post\", \"Put\", \"Delete\")]$Method = 'Get',\n        $Body\n    )\n    $requestParameters = @{\n        Uri = ('{0}/{1}' -f $octopusBaseUrl, $Uri.TrimStart('/'))\n        Method = $Method\n        Headers = @{ \"X-Octopus-ApiKey\" = $apiKey }\n        UseBasicParsing = $true\n    }\n    if ($null -ne $Body) { $requestParameters.Add('Body', ($Body | ConvertTo-Json -Depth 10)) }\n    Write-Verbose \"$($Method.ToUpperInvariant()) $($requestParameters.Uri)\"   \n    \n\n    return Invoke-WebRequest @requestParameters | % Content | ConvertFrom-Json\n}\n\n$tenant = Invoke-OctopusApi \"api/tenants/$tenantToClone\"\n\n$tenant.Id = $null\n$tenant.Name = $tenantName\n\n$newTenant = Invoke-OctopusApi \"/api/tenants\" -Method Post -Body $tenant\n\nif ($cloneVariables -eq $true) {\n    $variables = Invoke-OctopusApi $tenant.Links.Variables\n    $variables.TenantId = $newTenant.Id\n    $variables.TenantName = $tenantName\n\n    $newVars = Invoke-OctopusApi $newTenant.Links.Variables -Method Put -Body $variables\n}"
+  },
+  "Parameters": [
+    {
+      "Id": "ea2614f0-bd41-4011-b263-7d2b12af5977",
+      "Name": "CloneTenantStep_ApiKey",
+      "Label": "Octopus API Key",
+      "HelpText": "The Octopus API Key to use for the API requests",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "b29e27fb-362e-45e2-a244-6d590875fb68",
+      "Name": "CloneTenantStep_TenantIdToClone",
+      "Label": "Id of Tenant to Clone",
+      "HelpText": "The Id of the tenant to clone. This will be in the format of *Tenants-1*",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b9b3a6c7-6c83-4a79-9a94-febc6c5818d3",
+      "Name": "CloneTenantStep_TenantName",
+      "Label": "New Tenant Name",
+      "HelpText": "The name of the tenant to create. *Note this must be unique*",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "be821ad4-b195-4b11-81c2-f432ff05b86d",
+      "Name": "CloneTenantStep_CloneVariables",
+      "Label": "Clone Variables?",
+      "HelpText": "Flag indicating whether the source tenant's variables should be cloned to the new tenant. *Note this does not copy sensitive variables*",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2018-11-06T20:47:54.584Z",
+    "OctopusVersion": "2018.9.1",
+    "Type": "ActionTemplate"
+  },
+  "Category": "octopus",
+  "LastModifiedBy": "ryanrousseau"
+}
