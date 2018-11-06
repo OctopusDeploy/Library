@@ -3,11 +3,11 @@
   "Name": "Execute xUnit Tests",
   "Description": "Run xUnit tests with dotnet and vstest and some filters.",
   "ActionType": "Octopus.Script",
-  "Version": 1,  
+  "Version": 2,  
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "Write-Output \"Running xUnit tests with dotnet and vstest...\"\n$dirPath = $PackageDirectoryPath\n$testFiles = $TestPackages\n$testFilter = $TestCaseFilter\n$parallel = $Parallel\n\nIf(-Not $dirPath){\n    Write-Output \"Directory with tests is missing!\"\n    exit 1\n}\n\nIf(-Not $testFiles){\n    Write-Output \"Test Package(s) missing!\"\n    exit 1\n}\n\nWrite-Output \"Execute test package(s): $testFiles\"\nWrite-Output \"With following filter(s): $testFilter\"\nWrite-Output \"From Package Directory: $dirPath\"\n\ncd $dirPath\n\nIf($testFilter){\n\t$runxUnit = \"dotnet vstest $testFiles --testcasefilter:'($testFilter)'\"\n    Write-Output \"Run xUnit with filter $testFilter\"\n    } Else {\n    $runxUnit = \"dotnet vstest $testFiles\"    \n    }\n\nif($parallel){\n\t$runxUnit = $runxUnit + \" --parallel\"\n\tWrite-Output \"Run tests in parallel.\"\n}\n\nWrite-Output \"Run xUnit with command: $runxUnit\"\n\niex $runxUnit\n\n$xunitExit = $lastExitCode\n\nexit $xunitExit"
+    "Octopus.Action.Script.ScriptBody": "Write-Output \"Running xUnit tests with dotnet and vstest...\"\n$dotNetVer = dotnet --version\nWrite-Output \"DotNet version: $dotNetVer\"\n$dirPath = $PackageDirectoryPath\n$testFiles = $TestPackages\n$testFilter = $TestCaseFilter\n$xUnitAdditionalParams = $XUnitAdditionalParameters\n\nIf(-Not $dirPath){\n    Write-Output \"Directory with tests is missing!\"\n    exit 1\n}\n\nIf(-Not $testFiles){\n    Write-Output \"Test Package(s) missing!\"\n    exit 1\n}\n\nWrite-Output \"Execute test package(s): $testFiles\"\nWrite-Output \"With following filter(s): $testFilter\"\nWrite-Output \"From Package Directory: $dirPath\"\n\ncd $dirPath\n\nIf($testFilter){\n\t$runxUnit = \"dotnet vstest $testFiles --testcasefilter:'($testFilter)'\"\n    Write-Output \"Run xUnit with filter $testFilter\"\n    } Else {\n    $runxUnit = \"dotnet vstest $testFiles\"    \n    }\n\nif($xUnitAdditionalParams){\n\t$runxUnit = $runxUnit + \" \" + $xUnitAdditionalParams\n\tWrite-Output \"Run xUnit with Additional Params $xUnitAdditionalParams\"\n}\n\nWrite-Output \"Run xUnit with command: $runxUnit\"\n\niex $runxUnit\n\n$xunitExit = $lastExitCode\n\nexit $xunitExit"
   },
   "Parameters": [
     {
@@ -44,23 +44,23 @@
       "Links": {}
     },
     {
-      "Id": "773034cf-84df-42d2-9651-db7336c0aa5b",
-      "Name": "Parallel",
-      "Label": "Run in parallel",
-      "HelpText": "Execute tests in parallel. By default, all available cores on the machine are available for use.",
-      "DefaultValue": "true",
+      "Id": "74312a1f-f6ba-4518-a475-f308b545f398",
+      "Name": "XUnitAdditionalParameters",
+      "Label": "xUnit Additional Parameters",
+      "HelpText": "Pass any additional parameters you like here, they will be added to dotNet vstest command",
+      "DefaultValue": "",
       "DisplaySettings": {
-        "Octopus.ControlType": "Checkbox"
+        "Octopus.ControlType": "SingleLineText"
       },
       "Links": {}
     }
   ],
   "$Meta": {
-    "ExportedAt": "2018-08-23T16:40:43.258Z",
+    "ExportedAt": "2018-10-25T10:33:18.672Z",
     "OctopusVersion": "2018.3.4",
     "Type": "ActionTemplate"
   },
-  "LastModifiedOn": "2018-08-23T12:44:19.041+00:00",
+  "LastModifiedOn": "2018-10-24T12:44:19.041+00:00",
   "LastModifiedBy": "yakuramori",
   "Category": "xunit"
 }
