@@ -3,28 +3,41 @@
   "Name": "Stop Service With Kill",
   "Description": "This steps stops the specified service and in case it does not respond or times out, the service will be killed.",
   "ActionType": "Octopus.Script",
-  "Version": 6,
+  "Version": 8,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$svcName = $OctopusParameters['ServiceName']\n\nWrite-Host \"Checking for service \" + $svcName\n$svcpid = (get-wmiobject Win32_Service | where{$_.Name -eq $svcName}).ProcessId\nWrite-Host \"Found PID \" + $svcpid \n\nStop-Service $svcName\nStart-Sleep -seconds 10\n\n$service = Get-Service -name $svcName | Select -Property Status\nif($service.Status -ne \"Stopped\"){\tStart-Sleep -seconds 5 }\n\n#Check-Service process \nif($svcpid){\n    #still exists?\n    $p = get-process -id $svcpid -ErrorAction SilentlyContinue\n    Write-Host \"Rechecking PID\"\n    if($p){\n        Write-Host \"Killing Service\"\n        Stop-Process $p.Id -force\n    }\n}\n",
-    "Octopus.Action.Script.Syntax": "PowerShell"
+    "Octopus.Action.Script.ScriptBody": "$svcName = $OctopusParameters['ServiceName']\n$svcTimeout = $OctopusParameters['ServiceStopTimeout']\n\nfunction Stop-ServiceWithTimeout ([string] $name, [int] $timeoutSeconds) {\n    $timespan = New-Object -TypeName System.Timespan -ArgumentList 0,0,$timeoutSeconds\n\n    If ($svc = Get-Service $svcName -ErrorAction SilentlyContinue) {\n        if ($svc -eq $null) { return $true }\n        if ($svc.Status -eq [ServiceProcess.ServiceControllerStatus]::Stopped) { return $true }\n        $svc.Stop()\n        try {\n            Write-Host \"Stopping Service\" $svcTimeout \"Timeout\"\n            $svc.WaitForStatus([ServiceProcess.ServiceControllerStatus]::Stopped, $timespan)\n        }\n        catch [ServiceProcess.TimeoutException] {\n            Write-Host \"Timeout stopping service $($svc.Name)\"\n            return $false\n        }\n        Write-Host \"Service Sucessfully stopped\"\n        return $true\n\n    } Else {\n        Write-Host \"Service does not exist, this is acceptable. Probably the first time deploying to this target\"\n        Exit\n    }\n}\n\nWrite-Host \"Checking service\"\n\n$svcpid = (get-wmiobject Win32_Service | where{$_.Name -eq $svcName}).ProcessId\nWrite-Host \"Found PID \" + $svcpid \n\nStop-ServiceWithTimeout -name $svcName -timeoutSeconds $svcTimeout\n\nWrite-Host \"Rechecking service\"\n$svcpid = (get-wmiobject Win32_Service | where{$_.Name -eq $svcName}).ProcessId\nWrite-Host \"Found PID \" + $svcpid \n\n$service = Get-Service -name $svcName | Select -Property Status\nif($service.Status -ne \"Stopped\"){\tStart-Sleep -seconds 5 }\n\n#Check-Service process \nif($svcpid){\n    #still exists?\n    $p = get-process -id $svcpid -ErrorAction SilentlyContinue\n    if($p){\n        Write-Host \"Killing Service\"\n        Stop-Process $p.Id -force\n    }\n}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
   },
-  "SensitiveProperties": {},
   "Parameters": [
     {
+      "Id": "7ad7cec6-c5c8-40a9-8657-793f88ea1c0f",
       "Name": "ServiceName",
       "Label": "Service Name",
       "HelpText": "Name of the service to stop",
-      "DefaultValue": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2ece0f23-76b7-490d-808f-64e5612ac0eb",
+      "Name": "ServiceStopTimeout",
+      "Label": "Service Stop Timeout",
+      "HelpText": "Amount of time in seconds to wait before killing the Process",
+      "DefaultValue": "10",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
     }
   ],
-  "LastModifiedOn": "2014-08-13T09:35:49.638+00:00",
-  "LastModifiedBy": "jzi96",
+  "LastModifiedOn": "2018-11-05T03:59:57.028Z",
+  "LastModifiedBy": "benjimac93",    
   "$Meta": {
-    "ExportedAt": "2015-02-11T07:42:27.538+00:00",
-    "OctopusVersion": "2.6.1.796",
+    "ExportedAt": "2018-11-05T03:59:57.028Z",
+    "OctopusVersion": "2018.8.12",
     "Type": "ActionTemplate"
   },
   "Category": "windows"

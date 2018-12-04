@@ -1,0 +1,53 @@
+{
+  "Id": "feacd1dd-715b-4176-af87-73a417daeb75",
+  "Name": "Windows Service - Check status",
+  "Description": "check Windows service status on target machine or remote host(s).\n\n_for the remote host(s): the 'OctopusDeploy Tentacle' service installed on target machine (or main tentacle) must have the grants for remote query_\n",
+  "ActionType": "Octopus.Script",
+  "Version": 20,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "###----------------------------###\n###                            ###\n###check Windows service status###\n###                            ###\n###----------------------------###\n\n$servicename=$OctopusParameters['servicenamewin']\n$desiredstate=$OctopusParameters['servicewinstatus']\n$hostslist=$OctopusParameters['winhostlist']\n\n###hosts list comma-separated or single host\n$hostl=$hostslist.Split(\",\")\n$hostl\n\nforeach($h in $hostl){\n    Write-Output \"Running on $h\"\n    #check the status of the service on remote host\n    $remotestatus=invoke-command -computername $h {(Get-Service -Name $servicename).Status}\n    $status=$remotestatus.Value\n    if($status){\n        try{\n            if($status -like $desiredstate){\n                Write-Output \"The service $servicename is correctly $desiredstate on $h\"\n            }\n            else{\n                Write-Error \"The service $servicename is NOT $desiredstate. Currently state is $status\"\n            \n            }\n        }\n        catch{\n            Write-Error \"Is not possible to determinate the status for service $servicename\"\n        }\n\n    }\n    else{\n        Write-Error \"Error on retrieving the status. Invalid service name or host $h\"\n    }\n}\n\n###@author:fedele_mattia"
+  },
+  "Parameters": [
+    {
+      "Id": "01a19172-fb06-40e2-8bb1-bcd6b9fe360b",
+      "Name": "servicenamewin",
+      "Label": "Windows Service Name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3e9bc02a-ea38-4336-8e81-0252a0a91ff4",
+      "Name": "servicewinstatus",
+      "Label": "Desired state",
+      "HelpText": null,
+      "DefaultValue": "Running",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Running|Running\nStopped|Stopped"
+      }
+    },
+    {
+      "Id": "828944cb-ff12-47f7-bf4b-fb6d1799235d",
+      "Name": "winhostlist",
+      "Label": "Comuputer",
+      "HelpText": "Host or Hosts list **comma-separated**:\n- _machine123_\n- _machine123,machine124,machine125_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "fedelemattia",
+  "$Meta": {
+    "ExportedAt": "2018-09-27T08:29:15.090Z",
+    "OctopusVersion": "2018.6.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "Windows"
+}

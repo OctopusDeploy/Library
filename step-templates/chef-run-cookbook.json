@@ -1,0 +1,45 @@
+{
+  "Id": "877815ea-0cfb-4dfa-80a3-983140f8cf52",
+  "Name": "Chef - Run Cookbook",
+  "Description": "Runs a chef cookbook using chef-client.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "LastModifiedOn": "2018-10-16T14:31:14.894Z",
+  "LastModifiedBy": "margani",
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Package.DownloadOnTentacle": "False",
+    "Octopus.Action.Script.ScriptParameters": "-CookBookFolder #{CookBookDir}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$cookBookFolder = $OctopusParameters[\"CookBookDir\"]\n$overrideRunList = $OctopusParameters[\"OverrideRunList\"]\n\nif (-not $cookBookFolder -or -not $overrideRunList) {\n\tthrow \"The parameters are mandatory.\"\n}\n\n$ClientPath = Join-Path $cookBookFolder \"client.rb\"\n$WorkingPath = Join-Path $cookBookFolder \"temp\"\n$DatabagPath = Join-Path $WorkingPath \"data_bags\"\n$EnvironmentPath = Join-Path $WorkingPath \"environments\"\n$CookbooksPath = Join-Path $WorkingPath \"cookbooks\"\n$FileCachePath = Join-Path $WorkingPath \"cache\"\n\n$ClientContent = @\"\ndata_bag_path \"$($DatabagPath -replace '\\\\','/')\"\nenvironment_path \"$($EnvironmentPath -replace '\\\\','/')\"\ncookbook_path \"$($CookbooksPath -replace '\\\\','/')\"\nfile_cache_path \"$($FileCachePath -replace '\\\\','/')\"\nssl_verify_mode :verify_peer\n\"@\n\n[System.IO.File]::WriteAllText($ClientPath, $ClientContent)\n\n@($DatabagPath, $EnvironmentPath, $CookbooksPath, $FileCachePath) | %{\n\tif (!(Test-Path $_) ){ \n\t\tmkdir -p $_\n\t}\n}\n\nPush-Location $cookBookFolder\nRemove-Item *.lock\n&berks vendor $CookbooksPath\n&chef-client -z -c $ClientPath -o $overrideRunList\nPop-Location"
+  },
+  "Parameters": [
+    {
+      "Id": "dc6cfaed-3df0-4245-88a3-d59f14a64399",
+      "Name": "CookBookDir",
+      "Label": "Cookbook directory",
+      "HelpText": "The directory of the cookbook which has Berksfile",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6782c7cf-7562-48ff-93a2-fbeb99f0a088",
+      "Name": "OverrideRunList",
+      "Label": "Override run list",
+      "HelpText": "The list of cookbook/recipes which you want to run and override",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2018-10-16T14:31:14.894Z",
+    "OctopusVersion": "2018.6.2",
+    "Type": "ActionTemplate"
+  },
+  "Category": "chef"
+}

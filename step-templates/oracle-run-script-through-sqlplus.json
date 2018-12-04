@@ -1,0 +1,64 @@
+{
+  "Id": "c7cd3ab4-5dfb-4f8d-957e-1940ed30359c",
+  "Name": "Run Oracle SQLPlus Script",
+  "Description": "This step will run a script file on an Oracle database using SQLPlus.  This script assumes you have SQLPlus installed and a TNS entry for the database you wish to connect to.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$scriptFile = $OctopusParameters[\"Oracle.ScriptFile.Location\"]\n$server = $OctopusParameters[\"Oracle.Server.Name\"]\n$user = $OctopusParameters[\"Oracle.User.Name\"]\n$password = $OctopusParameters[\"Oracle.User.Password\"]\n\nWrite-Host \"Script File: $exportPath\"\nWrite-Host \"Oracle Server: $server\"\nWrite-Host \"Oracle Username: $user\"\nWrite-Host \"Oracle Password not shown\"\n\nIf ((Test-Path $scriptFile) -eq $true){\n  Write-Host \"Script file found, running on the database\"\n  \n  $maskedConnectionString = \"$user/*****@$server/$deploymentSchema\"\n  $unmaskedConnectionString = \"$user/$password@$server\"\n  Write-Host \"Running the script against: $maskedConnectionString\"\n  \n  Write-Host \"Adding to the top of the script file WHENEVER SQLERROR EXIT SQL.SQLCODE\"\n  $scriptToHandleErrors = \"WHENEVER SQLERROR EXIT SQL.SQLCODE\n  \"\n  \n  $old = Get-Content $scriptFile\n  Set-Content -Path $scriptFile -Value $scriptToHandleErrors\n  Add-Content -Path $scriptFile -Value $old\n\n  echo exit | sqlplus $unmaskedConnectionString @$scriptFile\n}\nelse {\n\tWrite-Highlight \"No script file was found.  If the script file should be there please verify the location and try again.\"\n}"
+  },
+  "Parameters": [
+    {
+      "Id": "2aa011b3-ab2b-4de9-a09c-abb20cbbd55e",
+      "Name": "Oracle.ScriptFile.Location",
+      "Label": "Script File To Run",
+      "HelpText": "The script file to run on the Oracle server",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "36161c93-a70d-472d-a31a-d8cba42ee087",
+      "Name": "Oracle.Server.Name",
+      "Label": "TNS Name",
+      "HelpText": "The TNS entry in tnsnames.ora containing the necessary connection information.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1e1cc9f3-486e-4df2-bb9c-e7dd7d1918f7",
+      "Name": "Oracle.User.Name",
+      "Label": "Oracle Username",
+      "HelpText": "The user who has permissions to run the script file on the server",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "bbf4eb93-fbda-4740-b782-88480183d77c",
+      "Name": "Oracle.User.Password",
+      "Label": "Oracle User Password",
+      "HelpText": "The password of the user who will run the script",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "LastModifiedOn": "2018-11-12T14:34Z",
+  "LastModifiedBy": "octopusbob",
+  "$Meta": {
+    "ExportedAt": "2018-11-12T20:12:11.956Z",
+    "OctopusVersion": "2018.9.5",
+    "Type": "ActionTemplate"
+  },
+  "Category": "oracle"
+}
