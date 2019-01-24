@@ -1,0 +1,85 @@
+{
+  "Id": "684b2249-a274-4518-ba73-e254eed037ac",
+  "Name": "IIS - Set HTTP Redirect on Site or Application",
+  "Description": "Configure a redirect for an IIS Site or Web Application",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Set temporary location for PowerShell modules\n$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName\n$env:PSModulePath = \"$LocalModules;$env:PSModulePath\"\n$iisPath = \"IIS:\\Sites\\$iisSiteName\"\n\n# Convert checkbox variables into true Boolean object types\n$enableRedirect = [System.Convert]::ToBoolean($enableRedirect)\n$exactDestination = [System.Convert]::ToBoolean($exactDestination)\n\nfunction Get-ModuleInstalled\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName\n    )\n\n    # Get list of installed modules\n    $installedModules = Get-Module -ListAvailable\n\n    # Check to see if the module is installed\n    if ($null -ne ($installedModules | Where-Object {$_.Name -eq $PowerShellModuleName}))\n    {\n        # It is installed\n        return $true\n    }\n    else\n    {\n        # Module not installed\n        return $false\n    }\n}\n\nfunction Install-TemporaryPowerShellModule\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName,\n        $LocalModulesPath\n    )\n\n    # Save the module in the temporary location\n    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force\n}\n\n# Check to see if WebAdministration module installed\nif (!(Get-ModuleInstalled -PowerShellModuleName \"WebAdministration\"))\n{\n    # Temporarily install module\n    Write-Output \"Tempoarily installing PowerShell module WebAdministration.\"\n\n    Install-TemporaryPowerShellModule -PowerShellModuleName \"WebAdministration\" -LocalModulesPath $LocalModules\n}\n\n# Import the WebAdministartion module\nImport-Module -Name \"WebAdministration\"\n\n# Verify the site exists\nif ($null -eq (Get-WebSite -Name $iisSiteName))\n{\n    # Throw error\n    throw \"Site $iisSiteName not found!\"\n}\n\n# Check to see if the an application was specified\nif (!([string]::IsNullOrEmpty($iisApplicationName)))\n{\n    # Verify the appliation exists\n    if ($null -eq (Get-WebApplication -Site $iisSiteName -Name $iisApplicationName))\n    {\n        # Throw error\n        throw \"Web application $iisApplicationName not found on site $iisSiteName!\"\n    }\n\n    # Append application name to iis path\n    $iisPath += \"\\$iisApplicationName\"\n}\n\n# Set redirect on application\nSet-WebConfiguration system.webserver/httpRedirect -PSPath $iisPath -Value @{enabled=\"$enableRedirect\";destination=\"$redirectUrl\";exactDestination=\"$exactDestination\";httpResponseStatus=\"$httpResponseStatus\"}\n"
+  },
+  "Parameters": [
+    {
+      "Id": "aba6b325-6d4e-4ebf-8c68-17b345db261d",
+      "Name": "iisSiteName",
+      "Label": "IIS Site Name",
+      "HelpText": "Name of the site to configure",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "97526f94-11ac-4050-b9b2-0af0a83e4095",
+      "Name": "iisApplicationName",
+      "Label": "IIS Web Application Name",
+      "HelpText": "Name of the Web Application on the IIS Site to configure the redirect on.  Leave blank if setting the redirect at the Site level.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "89af1c5d-17ee-476b-ada6-49ad5b0b3dc9",
+      "Name": "redirectUrl",
+      "Label": "Redirect URL",
+      "HelpText": "URL that the redirect points to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d76bd7c1-6075-4d14-b841-8c098e223bfd",
+      "Name": "enableRedirect",
+      "Label": "Enable Redirect",
+      "HelpText": "Boolean value for whether to enable or disable the redirect.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "4b8f8b38-d449-40c7-b2c9-050f10645ae4",
+      "Name": "exactDesintation",
+      "Label": "Exact Destination",
+      "HelpText": "Boolean value to redirect all requests to exact destination (instead of relative to destination)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "25ab7952-c2ff-43f8-9b96-14ad24fac282",
+      "Name": "httpResponseStatus",
+      "Label": "Status Code",
+      "HelpText": "Web Response code sent to the client when redirecting.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Found|Found\nPermanent|Permanent\nTemporary|Temporary\nPermRedirect|Permanent Redirect\n"
+      }
+    }
+  ],
+  "LastModifiedOn": "2019-01-23T17:34:26.109Z",
+  "LastModifiedBy": "twerthi", 
+  "$Meta": {
+    "ExportedAt": "2019-01-23T17:34:26.109Z",
+    "OctopusVersion": "2018.12.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}
