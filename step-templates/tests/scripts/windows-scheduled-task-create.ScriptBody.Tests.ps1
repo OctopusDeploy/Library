@@ -34,7 +34,8 @@ Describe "Create-ScheduledTask" {
                                  -RunWithElevatedPermissions "" `
                                  -Days          "" `
                                  -Interval      "" `
-                                 -Duration      "";
+                                 -Duration      "" `
+                                 -StartNewTaskNow "";
             Assert-MockCalled Invoke-CommandLine -Times 1 -ParameterFilter {
                 $expectedCmd  = "C:\Windows\System32\schtasks.exe"
                 $expectedArgs = @( "/Create", "/RU", "", "/SC", "", "/TN", "`"`"", "/TR", "''", "/F" )
@@ -60,7 +61,8 @@ Describe "Create-ScheduledTask" {
                                  -RunWithElevatedPermissions "myRunWithElevatedPermissions" `
                                  -Days          "myDays" `
                                  -Interval      "myInterval" `
-                                 -Duration      "myDuration";
+                                 -Duration      "myDuration"`
+                                 -StartNewTaskNow "myStartNewTaskNow";
             Assert-MockCalled Invoke-CommandLine -Times 1 -ParameterFilter {
                 $expectedCmd  = "C:\Windows\System32\schtasks.exe"
                 $expectedArgs = @( "/Create", "/RU", "myRunAsUser", "/RP", "myRunAsPassword", "/SC", "mySchedule", "/D", "myDays", "/TN", "`"myTaskname`"", "/TR", "`"'myTaskRun' 'myArguments'`"", "/ST", "myStartTime", "/DU", "myDuration", "/SD", "myStartDate", "/F", "/RL", "HIGHEST" )
@@ -86,7 +88,8 @@ Describe "Create-ScheduledTask" {
                                  -RunWithElevatedPermissions "" `
                                  -Days          "" `
                                  -Interval      "" `
-                                 -Duration      "";
+                                 -Duration      "" `
+                                 -StartNewTaskNow "";
             Assert-MockCalled Invoke-CommandLine -Times 1 -ParameterFilter {
                 $expectedCmd  = "C:\Windows\System32\schtasks.exe"
                 $expectedArgs = @( "/Create", "/RU", "", "/SC", "", "/TN", "`"`"", "/TR", "'myTaskRun'", "/F" )
@@ -112,7 +115,8 @@ Describe "Create-ScheduledTask" {
                                  -RunWithElevatedPermissions "" `
                                  -Days          "" `
                                  -Interval      "" `
-                                 -Duration      "";
+                                 -Duration      "" `
+                                 -StartNewTaskNow "";
             Assert-MockCalled Invoke-CommandLine -Times 1 -ParameterFilter {
                 $expectedCmd  = "C:\Windows\System32\schtasks.exe"
                 $expectedArgs = @( "/Create", "/RU", "", "/SC", "", "/TN", "`"`"", "/TR", "`"'myTaskRun' 'myArguments'`"", "/F" )
@@ -138,7 +142,8 @@ Describe "Create-ScheduledTask" {
                                  -RunWithElevatedPermissions "" `
                                  -Days          "" `
                                  -Interval      "" `
-                                 -Duration      "";
+                                 -Duration      "" `
+                                 -StartNewTaskNow "";
             Assert-MockCalled Invoke-CommandLine -Times 1 -ParameterFilter {
                 $expectedCmd  = "C:\Windows\System32\schtasks.exe"
                 $expectedArgs = @( "/Create", "/RU", "", "/SC", "WEEKLY", "/TN", "`"`"", "/TR", "''", "/D", "MON,TUE,WED,THU,FRI", "/F" )
