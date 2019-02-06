@@ -13,14 +13,14 @@
     "Octopus.Action.AwsAccount.UseInstanceRole": "False",
     "Octopus.Action.AwsAccount.Variable": "#{AwsAccount}",
     "Octopus.Action.Aws.Region": "#{AwsRegion}",
-    "Octopus.Action.Script.ScriptBody": "$DeployTag = $DeployPrefix + $OctopusParameters[\"Octopus.Environment.Name\"]\n\n#{each action in Octopus.Action}\n    #{each package in action.Package}\n        Write-Output \"Package #{package.PackageId} at version #{package.PackageVersion}\"\n\n        $Image = Get-ECRImageBatch -ImageId @{ imageTag=\"#{package.PackageVersion}\" } -RepositoryName \"#{package.PackageId}\"\n        $ImageDeploy = Get-ECRImageBatch -ImageId @{ imageTag=$DeployTag } -RepositoryName \"#{package.PackageId}\"\n\n        if($Image.Images[0].ImageId.ImageDigest -ne $ImageDeploy.Images[0].ImageId.ImageDigest) {\n            Write-Output \"Setting tag $DeployTag on image $($Image.Images[0].ImageId.ImageDigest)\"\n            $Manifest = $Image.Images[0].ImageManifest\n            Write-ECRImage -RepositoryName \"#{package.PackageId}\" -ImageManifest $Manifest -ImageTag $DeployTag\n        }\n\t#{/each}\n#{/each}\n"
+    "Octopus.Action.Script.ScriptBody": "$DeployTag = $AwsDeployPrefix + $OctopusParameters[\"Octopus.Environment.Name\"]\n\n#{each action in Octopus.Action}\n    #{each package in action.Package}\n        Write-Output \"Package #{package.PackageId} at version #{package.PackageVersion}\"\n\n        $Image = Get-ECRImageBatch -ImageId @{ imageTag=\"#{package.PackageVersion}\" } -RepositoryName \"#{package.PackageId}\"\n        $ImageDeploy = Get-ECRImageBatch -ImageId @{ imageTag=$DeployTag } -RepositoryName \"#{package.PackageId}\"\n\n        if($Image.Images[0].ImageId.ImageDigest -ne $ImageDeploy.Images[0].ImageId.ImageDigest) {\n            Write-Output \"Setting tag $DeployTag on image $($Image.Images[0].ImageId.ImageDigest)\"\n            $Manifest = $Image.Images[0].ImageManifest\n            Write-ECRImage -RepositoryName \"#{package.PackageId}\" -ImageManifest $Manifest -ImageTag $DeployTag\n        }\n\t#{/each}\n#{/each}\n"
   },
   "Parameters": [
     {
       "Id": "3bed9fa6-9d8e-452e-957a-25af1bb6fa58",
       "Name": "AwsAccount",
       "Label": "Account",
-      "HelpText": null,
+      "HelpText": "AWS Account to connect using",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "AmazonWebServicesAccount"
@@ -30,7 +30,7 @@
       "Id": "2c64b94b-deb7-4e4b-b977-ec24f3b86951",
       "Name": "AwsRegion",
       "Label": "Region",
-      "HelpText": null,
+      "HelpText": "AWS Region that is used",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -38,9 +38,9 @@
     },
     {
       "Id": "fa47f4c7-b67a-4ee7-8c8f-a890acae795a",
-      "Name": "DeployPrefix",
+      "Name": "AwsDeployPrefix",
       "Label": "Deployment Prefix",
-      "HelpText": null,
+      "HelpText": "Prefix for the image tags. The Octopus environment is then appended to this.",
       "DefaultValue": "deploy-",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
