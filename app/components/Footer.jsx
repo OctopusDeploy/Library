@@ -13,7 +13,7 @@ export default class Footer extends React.Component {
             <p>The Octopus Deploy Library is a way for users of Octopus Deploy to share useful code.</p>
             <p>
               Need help? Feel free to contact the team via our
-              <a href="https://help.octopus.com/"
+              <a href="https://help.octopusdeploy.com/"
                   target="_blank"
               > support forum</a>.
             </p>
