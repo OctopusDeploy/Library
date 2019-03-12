@@ -50,7 +50,7 @@ export default class TemplateBody extends React.Component {
         <h3>{header}</h3>
         <div className="tutorial">
           <div dangerouslySetInnerHTML={{ __html: description }}/>
-          <a className="faint"
+          <a className="showHideScript"
               onClick={this.toggleTemplateBody.bind(this)}
           >
             {this.state.showTemplateBody ? 'Hide' : 'Show '} script
