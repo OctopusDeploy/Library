@@ -1,0 +1,97 @@
+{
+  "Id": "c691729f-685a-4339-bba9-716633b221ae",
+  "Name": "JIRA - Update Version Number",
+  "Description": "Update version to Jira tickets based on release number being deployed",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "#require version 3.0\n\nparam (\n    [System.Uri]$Uri,\n    [string]$Jql,\n    [string]$Version,\n    [string]$User,\n    [string]$Password,\n    [string]$ProjectKey    \n)\n\n$ErrorActionPreference = \"Stop\"\n$AllProtocols = [System.Net.SecurityProtocolType]'Tls,Tls11,Tls12'\n[Net.ServicePointManager]::SecurityProtocol = $AllProtocols\n\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue    \n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    if ($result -eq $null) {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        } else {\n            $result = $Default\n        }\n    }\n\n    return $result\n}\n\nfunction Jira-QueryApi\n{\n    Param (\n        [Uri]$Query,\n        [string]$Username,\n        [string]$Password\n    );\n\n    Write-Host \"Querying JIRA API $($Query.AbsoluteUri)\"\n\n    # Prepare the Basic Authorization header - PSCredential doesn't seem to work\n    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes((\"{0}:{1}\" -f $Username,$Password)))\n    $headers = @{Authorization=(\"Basic {0}\" -f $base64AuthInfo)}\n\n    # Execute the query\n    Invoke-RestMethod -Uri $Query -Headers $headers\n}\n\nfunction Jira-ExecuteApi\n{\n    Param (\n        [Uri]$Query,\n        [string]$Body,\n        [string]$Username,\n        [string]$Password\n    );\n\n    Write-Host \"Updating ticket : $($Query.AbsoluteUri)\"\n\n    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes((\"{0}:{1}\" -f $Username,$Password)))\n    $headers = @{Authorization=(\"Basic {0}\" -f $base64AuthInfo)}\n    Invoke-RestMethod -Uri $Query -Headers $headers -UseBasicParsing -Body $Body -Method Put -ContentType \"application/json\"\n}\n\nfunction Jira-CreateVersion\n{\n    Param (\n        [Uri]$Query,\n        [string]$Body,\n        [string]$Username,\n        [string]$Password\n    );\n\n    Write-Host \"Creating a version $($Query.AbsoluteUri)\"\n\n    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes((\"{0}:{1}\" -f $Username,$Password)))\n    $headers = @{Authorization=(\"Basic {0}\" -f $base64AuthInfo)}\n    Invoke-RestMethod -Uri $Query -Headers $headers -UseBasicParsing -Body $Body -Method Post -ContentType \"application/json\"\n}\n\nfunction Jira-GetVersions\n{\n    Param (\n        [Uri]$VersionsUri,\n        [string]$Username,\n        [string]$Password\n    );\n\n    $versions = Jira-QueryApi -Query $VersionsUri -Username $Username -Password $Password    \n    $versions\n}\n\nfunction Jira-PostUpdate\n{\n    Param (\n        [Uri]$IssueUri,\n        [string]$Username,\n        [string]$Password,\n        [string]$Body\n    );\n\n    Jira-ExecuteApi -Query $IssueUri -Body $body -Username $Username -Password $Password\n}\n\nfunction Jira-UpdateTicket\n{\n    Param (\n    \t[Uri]$BaseUri,\n        [Uri]$IssueUri,\n        [string]$Username,\n        [string]$Password,\n        [string]$Version,\n        [string]$ProjectKey,\n        [System.Uri]$GetVersionsAPIURL,\n        [System.Uri]$CreateVersionAPIURL          \n    );\n\n    $query = $IssueUri.AbsoluteUri\n    $uri = [System.Uri] $query\n\t\n    $versionuri = $GetVersionsAPIURL\n    $createversionuri = $CreateVersionAPIURL\n       \n    $versions = Jira-GetVersions -VersionsUri $versionuri -Username $Username -Password $Password\n               \n    $match = $versions | Where name -eq $Version | Select -First 1   \n    \n    If ($match -ne $null)\n    {                      \n\t\t$body = \"{ \"\"update\"\" : { \"\"fixVersions\"\" : [ {\"\"add\"\" : {\"\"name\"\" : \"\"$Version\"\"} } ] } }\"\n        Jira-PostUpdate -IssueUri $uri -Body $body -Username $Username -Password $Password      \n    }    \n    else\n    {\n    \t$body = \"{ \"\"name\"\": \"\"$Version\"\",\t\"\"project\"\": \"\"$ProjectKey\"\"}\"\n     \tJira-CreateVersion -Query $createversionuri -Body $body -Username $Username -Password $Password\n        \n        $body = \"{ \"\"update\"\" : { \"\"fixVersions\"\" : [ {\"\"add\"\" : {\"\"name\"\" : \"\"$Version\"\"} } ] } }\"\n        Jira-PostUpdate -IssueUri $uri -Body $body -Username $Username -Password $Password  \n    }\n}\n\nfunction Jira-UpdateTickets\n{\n    Param (\n        [Uri]$BaseUri,\n        [string]$Username,\n        [string]$Password,\n        [string]$Jql,\n        [string]$Version,\n        [string]$ProjectKey,\n        [System.Uri]$GetVersionsAPIURL,\n        [System.Uri]$CreateVersionAPIURL        \n    );\n\n    $api = New-Object -TypeName System.Uri -ArgumentList $BaseUri, (\"/rest/api/2/search?jql=\" + $Jql)\n    $json = Jira-QueryApi -Query $api -Username $Username -Password $Password\n\n    If ($json.total -eq 0)\n    {\n        Write-Output \"No issues were found that matched your query : $Jql\"\n    }\n    Else\n    {\n        ForEach ($issue in $json.issues)\n        {\n            Jira-UpdateTicket -BaseUri $BaseUri -IssueUri $issue.self -Version $Version -Username $Username -Password $Password -ProjectKey $ProjectKey -GetVersionsAPIURL $GetVersionsAPIURL -CreateVersionAPIURL $CreateVersionAPIURL\n        }\n    }\n}\n\n& {\n    param(\n        [System.Uri]$Uri,\n        [string]$Jql,\n        [string]$Version,\n        [string]$User,\n        [string]$Password,\n        [string]$ProjectKey,\n        [System.Uri]$GetVersionsAPIURL,\n        [System.Uri]$CreateVersionAPIURL\n    )\n\n    Write-Host \"JIRA - Update Version Number\"\n    Write-Host \" Updating Fix Versions to : $Version\"\n\n    try     {\n        Jira-UpdateTickets -BaseUri $Uri -Jql $Jql -Version $Version -Username $User -Password $Password -ProjectKey $ProjectKey -GetVersionsAPIURL $GetVersionsAPIURL -CreateVersionAPIURL $CreateVersionAPIURL\n    } catch {\n        Write-Host -ForegroundColor Red \"An error occurred while attempting to update Fix Versions in JIRA issues\"\n        Write-Host -ForegroundColor Red $_.Exception | Format-List -Force\n    }\n} `\n(Get-Param \"Jira.Version.Url\" -Required) `\n(Get-Param \"Jira.Version.Query\" -Required) `\n(Get-Param \"Jira.Version.Name\" -Required) `\n(Get-Param \"Jira.Version.Username\" -Required) `\n(Get-Param \"Jira.Version.Password\" -Required) `\n(Get-Param \"Jira.Version.ProjectKey\" -Required) `\n(Get-Param \"Jira.Version.GetVersionsAPIURL\" -Required) `\n(Get-Param \"Jira.Version.CreateVersionAPIURL\" -Required)\n"
+  },
+  "Parameters": [
+    {
+      "Id": "4f231879-328a-4ea0-986c-aa6a2abf8e40",
+      "Name": "Jira.Version.Url",
+      "Label": "JIRA URL",
+      "HelpText": "The base URL of the JIRA Server (e.g. https://company.atlassian.net)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b16ac5da-e984-4f46-8cbd-793401be3a9b",
+      "Name": "Jira.Version.Username",
+      "Label": "Username",
+      "HelpText": "The username of the account that will be used to update Jira ticket. The account should have sufficient permissions in JIRA to update ticket.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "056b87ba-930c-4607-81e4-557503daa237",
+      "Name": "Jira.Version.Password",
+      "Label": "Password",
+      "HelpText": "The password of the account.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "458dcb98-1843-41c7-bf22-c451a18aa693",
+      "Name": "Jira.Version.Name",
+      "Label": "Version",
+      "HelpText": "The version that needs to updated to Fix Versions field in Jira ticket. If the version is not found, a new version will be created under respective project",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d7f0fddd-9518-4070-9c78-166b2dc67197",
+      "Name": "Jira.Version.Query",
+      "Label": "JQL",
+      "HelpText": "The JIRA query that should be used to select issues that will be updated with Fix Versions (e.g. status = Completed AND Status = \"Ready for Test Deploy\")",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "30334b2e-db2f-4a3e-878b-511686a58c9f",
+      "Name": "Jira.Version.ProjectKey",
+      "Label": "Project Key",
+      "HelpText": "The project where version to be created",
+      "DefaultValue": "",
+      "DisplaySettings": {}
+    },
+    {
+      "Id": "d858e2de-4dcc-4b1f-bd56-f0cb4d11b347",
+      "Name": "Jira.Version.GetVersionsAPIURL",
+      "Label": "Get Versions API URL",
+      "HelpText": "API URL to get all the versions from a particular project.",
+      "DefaultValue": "",
+      "DisplaySettings": {}
+    },
+    {
+      "Id": "9747a96d-788e-45c7-816c-ee1bf91a6665",
+      "Name": "Jira.Version.CreateVersionAPIURL",
+      "Label": "Create Version API URL",
+      "HelpText": "API URL to create version on a particular project.",
+      "DefaultValue": "",
+      "DisplaySettings": {}
+    }
+  ],
+    "LastModifiedOn": "2019-03-26T19:05:07.140Z",
+	"LastModifiedBy": "vasant-horapeti",
+  "$Meta": {
+    "ExportedAt": "2019-03-26T19:05:07.140Z",
+    "OctopusVersion": "2018.10.2",
+    "Type": "ActionTemplate"
+  }
+}
