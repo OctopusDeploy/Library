@@ -1,0 +1,116 @@
+{
+  "Id": "9aa25d78-a90a-425e-a25d-b1e9f1bf08be",
+  "Name": "Testery - Create Test Run",
+  "Description": "Run tests in the Testery platform. For more information, visit https://testery.io/.",
+  "ActionType": "Octopus.Script",
+  "Version": 21,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "echo \"Performing test run in Testery...\"\necho \"  Git Owner: ${TesteryGitOwner}\"\necho \"  Git Repo: ${TesteryGitRepo}\"\necho \"  Git Ref: ${TesteryGitReference}\"\necho \"  Testery User: ${TesteryApiUser}\"\necho \"  Testery API URL: ${TesteryApiUrl}\"\necho \"  Testery Feature Path: ${TesteryFeaturePath}\"\necho \"  Testery Environment: ${TesteryEnvironment}\"\n\n# Parameters\n$baseUrl = $TesteryApiUrl\n\n# Authenticate\n$pair = \"${TesteryApiUser}:${TesteryApiPassword}\"\n$bytes = [System.Text.Encoding]::ASCII.GetBytes($pair)\n$base64 = [System.Convert]::ToBase64String($bytes)\n$basicAuthValue = \"Basic $base64\"\n\n$jsonHeaders = @{ \n  Authorization = $basicAuthValue;\n  \"accept\"=\"application/json\";\n}\n    \n# Create a test run.\n$request = \"{`\"owner`\":`\"${TesteryGitOwner}`\",`\"repository`\":`\"${TesteryGitRepo}`\",`\"ref`\":`\"${TesteryGitReference}`\",`\"project`\":`\"${TesteryProjectName}`\",`\"environment`\":`\"${TesteryEnvironment}`\",`\"buildId`\":`\"${TesteryBuildId}`\"}\"\necho $request\n$testRun = Invoke-WebRequest `\n\t-UseBasicParsing `\n\t-Uri \"${baseUrl}/test-run-requests-build\" `\n\t-Method \"POST\" `\n\t-Headers $jsonHeaders `\n\t-ContentType \"application/json\" `\n\t-Body ${request} | ConvertFrom-Json\n\n$testRunId = $testRun.id\n\necho \"Started test run: ${testRunId}\"\n$status = $testRun.status\nwrite-output \"Status: ${status}\";\n\n# Wait for results.\n$testRun = Invoke-WebRequest -Headers $jsonHeaders -UseBasicParsing \"${baseUrl}/test-run-results/${testRunId}\" | ConvertFrom-Json\n\nwhile(!(($testRun.status -eq \"PASS\") -or ($testRun.status -eq \"FAIL\"))) \n{\n\tsleep 5\n\twrite-output \"Polling ${baseUrl}/test-run-results/${testRunId}\"\n\t$testRun = Invoke-WebRequest -Headers $jsonHeaders -UseBasicParsing \"${baseUrl}/test-run-results/${testRunId}\" | ConvertFrom-Json\n\twrite-output $testRun.status\n}\n\nwrite-output \"Test run complete.\""
+  },
+  "Parameters": [
+    {
+      "Id": "9dabee3c-67ad-4648-97a5-0b900bdc7e35",
+      "Name": "TesteryApiUrl",
+      "Label": "Testery API URL",
+      "HelpText": null,
+      "DefaultValue": "https://api.dev.testery.io/api",
+      "DisplaySettings": {}
+    },
+    {
+      "Id": "c96fb499-d651-4c08-b2ce-7e180bd38514",
+      "Name": "TesteryApiUser",
+      "Label": "Testery API User",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8092ec9b-1d4a-45b9-85a1-9f7dcf895b29",
+      "Name": "TesteryApiPassword",
+      "Label": "Testery API Password",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "5571493d-e508-4178-bf9f-dfdb42449903",
+      "Name": "TesteryGitOwner",
+      "Label": "Git Organization",
+      "HelpText": "The organization for the Git repository that stores the tests.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "af859f05-7183-42d9-8a84-2e3cbf613069",
+      "Name": "TesteryGitRepo",
+      "Label": "Git Repository",
+      "HelpText": "The repository that stores the tests.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8ea41e40-0fff-4125-9222-69887771b34c",
+      "Name": "TesteryGitReference",
+      "Label": "Git Refererence",
+      "HelpText": "This is the git reference to the tests you want to run. For example, you can specify a commit hash or a branch like \"master\" or \"release/#.#.#\". It's a common pattern to reference a project variable here (e.g. #{CommitHash}).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "94fa0e0b-511f-4a99-a46a-84853c0ec94c",
+      "Name": "TesteryFeaturePath",
+      "Label": "Testery Feature Path",
+      "HelpText": "Path to the directory in git that has the feature files.",
+      "DefaultValue": "",
+      "DisplaySettings": {}
+    },
+    {
+      "Id": "1689c2a5-97fc-4215-b9d6-47bdd23447bd",
+      "Name": "TesteryProjectName",
+      "Label": "",
+      "HelpText": "The project name for this build.",
+      "DefaultValue": "",
+      "DisplaySettings": {}
+    },
+    {
+      "Id": "7188d11b-a118-4a74-8d17-2719ff34174f",
+      "Name": "TesteryBuildId",
+      "Label": "Build ID",
+      "HelpText": "Your build id for this build.",
+      "DefaultValue": "",
+      "DisplaySettings": {}
+    },
+    {
+      "Id": "3c6c2989-282d-4922-9e2b-085217bc5964",
+      "Name": "TesteryEnvironment",
+      "Label": "Testery Environment",
+      "HelpText": "The environment (defined in Testery) where the tests should be run. It can be convenient to have these line up with tenant names.",
+      "DefaultValue": "#{Octopus.Deployment.Tenant.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "SpaceId": "Spaces-1",
+  "LastModifiedBy": "harbertc",
+  "$Meta": {
+    "ExportedAt": "2019-04-17T14:55:22.438Z",
+    "OctopusVersion": "2019.2.8",
+    "Type": "ActionTemplate"
+  }
+  "Category": "other"
+}
