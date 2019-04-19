@@ -3,15 +3,15 @@
   "Name": "IIS Website - Add Release Number to Response Header",
   "Description": "Adds the Octopus Deploy Release number to the IIS response header. When you browse your site you can look at the response header to verify the build number that is running.",
   "ActionType": "Octopus.Script",
-  "Version": 9,
+  "Version": 10,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "Write-Host \"Adding release number to response header\"\n\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.Web.Administration\") | Out-Null\n$iis = new-object Microsoft.Web.Administration.ServerManager\n$config = $iis.GetWebConfiguration($OctopusParameters['WebsiteName'])\n$httpProtocolSection = $config.GetSection(\"system.webServer/httpProtocol\")\n$customHeadersCollection = $httpProtocolSection.GetCollection(\"customHeaders\")\n\n$update = $true\n\nforeach($path in $customHeadersCollection.GetCollection()) { \n    if ($path.GetAttributeValue(\"name\") -eq $OctopusParameters['FieldName']) {\n        write-host \"Release number is already in the response header, skipping\"\n        $update = $false\n        break\n    }\n}\n\nif ($update)\n{\n    $fieldName = $OctopusParameters['FieldName']\n    $releaseNumber = $OctopusParameters['Octopus.Release.Number']\n    \n    Write-Host \"Adding release number $releaseNumber to custom header $fieldName\"\n    \n    $addElement = $customHeadersCollection.CreateElement(\"add\")\n    $addElement[\"name\"] = $fieldName\n    $addElement[\"value\"] = $releaseNumber\n    $customHeadersCollection.Add($addElement)\n    \n    $iis.CommitChanges() | Write-Host\n}",
+    "Octopus.Action.Script.ScriptBody": "Write-Host \"Adding release number to response header\"\n\nfunction Get-IISServerManager\n{\n    [CmdletBinding()]\n    [OutputType([System.Object])]\n    param ()\n\n    $iisInstallPath = (Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\INetStp' -Name InstallPath).InstallPath\n    if (-not $iisInstallPath)\n    {\n        throw ('IIS installation path not found')\n    }\n    $assyPath = Join-Path -Path $iisInstallPath -ChildPath 'Microsoft.Web.Administration.dll' -Resolve -ErrorAction:SilentlyContinue\n    if (-not $assyPath)\n    {\n        throw 'IIS version of Microsoft.Web.Administration.dll not found'\n    }\n    $assy = [System.Reflection.Assembly]::LoadFrom($assyPath)\n    return [System.Activator]::CreateInstance($assy.FullName, 'Microsoft.Web.Administration.ServerManager').Unwrap()\n}\n\n$iis = Get-IISServerManager\n$config = $iis.GetWebConfiguration($OctopusParameters['headerWebsiteName'])\n$httpProtocolSection = $config.GetSection(\"system.webServer/httpProtocol\")\n$customHeadersCollection = $httpProtocolSection.GetCollection(\"customHeaders\")\n\n$update = $true\n\nforeach($path in $customHeadersCollection.GetCollection()) { \n    if ($path.GetAttributeValue(\"name\") -eq $OctopusParameters['headerFieldName']) {\n        write-host \"Release number is already in the response header, skipping\"\n        $update = $false\n        break\n    }\n}\n\nif ($update)\n{\n    $fieldName = $OctopusParameters['headerFieldName']\n    $releaseNumber = $OctopusParameters['Octopus.Release.Number']\n    \n    Write-Host \"Adding release number $releaseNumber to custom header $fieldName\"\n    \n    $addElement = $customHeadersCollection.CreateElement(\"add\")\n    $addElement[\"name\"] = $fieldName\n    $addElement[\"value\"] = $releaseNumber\n    $customHeadersCollection.Add($addElement)\n    \n    $iis.CommitChanges() | Write-Host\n}",
     "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
   "Parameters": [
     {
-      "Name": "FieldName",
+      "Name": "headerFieldName",
       "Label": "Field name",
       "HelpText": "The name of the custom header field with the release information.",
       "DefaultValue": "Release",
@@ -20,7 +20,7 @@
       }
     },
     {
-      "Name": "WebsiteName",
+      "Name": "headerWebsiteName",
       "Label": "Website name",
       "HelpText": "The name of the website in IIS.",
       "DefaultValue": null,
@@ -29,11 +29,11 @@
       }
     }
   ],
-  "LastModifiedOn": "2015-08-31T12:05:18.511+00:00",
-  "LastModifiedBy": "gormac",
+  "LastModifiedOn": "2019-03-19T16:25:56.946Z",
+  "LastModifiedBy": "geeeyetee",
   "$Meta": {
-    "ExportedAt": "2015-08-31T12:05:21.070+00:00",
-    "OctopusVersion": "2.6.4.951",
+    "ExportedAt": "2019-03-19T16:25:56.946Z",
+    "OctopusVersion": "2019.1.9",
     "Type": "ActionTemplate"
   },
   "Category": "iis"

@@ -1,0 +1,57 @@
+{
+  "Id": "9894aeda-bf06-4be2-8789-b570c9050d34",
+  "Name": "Tag all used ECR images",
+  "Description": "This will apply a tag to all AWS Elastic Container Registry images/packages from the ECR feed that are used in the deployment. That way the lifecycle policies in ECR can be configured to not delete images that are in-use by deployments in various environments.",
+  "ActionType": "Octopus.AwsRunScript",
+  "Version": 12,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "False",
+    "Octopus.Action.AwsAccount.Variable": "#{AwsAccount}",
+    "Octopus.Action.Aws.Region": "#{AwsRegion}",
+    "Octopus.Action.Script.ScriptBody": "$DeployTag = $AwsDeployPrefix + $OctopusParameters[\"Octopus.Environment.Name\"]\n\n#{each action in Octopus.Action}\n    #{each package in action.Package}\n        Write-Output \"Package #{package.PackageId} at version #{package.PackageVersion}\"\n\n        $Image = Get-ECRImageBatch -ImageId @{ imageTag=\"#{package.PackageVersion}\" } -RepositoryName \"#{package.PackageId}\"\n        $ImageDeploy = Get-ECRImageBatch -ImageId @{ imageTag=$DeployTag } -RepositoryName \"#{package.PackageId}\"\n\n        if($Image.Images[0].ImageId.ImageDigest -ne $ImageDeploy.Images[0].ImageId.ImageDigest) {\n            Write-Output \"Setting tag $DeployTag on image $($Image.Images[0].ImageId.ImageDigest)\"\n            $Manifest = $Image.Images[0].ImageManifest\n            Write-ECRImage -RepositoryName \"#{package.PackageId}\" -ImageManifest $Manifest -ImageTag $DeployTag\n        }\n\t#{/each}\n#{/each}\n"
+  },
+  "Parameters": [
+    {
+      "Id": "3bed9fa6-9d8e-452e-957a-25af1bb6fa58",
+      "Name": "AwsAccount",
+      "Label": "Account",
+      "HelpText": "AWS Account to connect using",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AmazonWebServicesAccount"
+      }
+    },
+    {
+      "Id": "2c64b94b-deb7-4e4b-b977-ec24f3b86951",
+      "Name": "AwsRegion",
+      "Label": "Region",
+      "HelpText": "AWS Region that is used",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "fa47f4c7-b67a-4ee7-8c8f-a890acae795a",
+      "Name": "AwsDeployPrefix",
+      "Label": "Deployment Prefix",
+      "HelpText": "Prefix for the image tags. The Octopus environment is then appended to this.",
+      "DefaultValue": "deploy-",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "hakanl",
+  "$Meta": {
+    "ExportedAt": "2019-02-06T15:41:19.708Z",
+    "OctopusVersion": "2018.11.2",
+    "Type": "ActionTemplate"
+  },
+  "Category": "aws"
+}
