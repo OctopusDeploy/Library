@@ -110,6 +110,7 @@ function humanize(categoryId){
     case 'entityframework': return 'Entity Framework';
     case 'event-tracing': return 'Event Tracing for Windows';
     case 'filesystem': return 'File System';
+    case 'flyway': return 'Flyway';
     case 'github': return 'GitHub';
     case 'ghostinspector': return 'Ghost Inspector';
     case 'hipchat': return 'HipChat';
@@ -125,6 +126,7 @@ function humanize(categoryId){
     case 'ravendb': return 'RavenDB';
     case 'rabbitmq': return 'RabbitMQ';
     case 'readyroll': return 'ReadyRoll';
+    case 'redgate': return 'Redgate';
     case 'sharepoint': return 'SharePoint';
     case 'solarwinds': return 'SolarWinds';
     case 'sql': return 'SQL Server';
