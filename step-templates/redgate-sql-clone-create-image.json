@@ -1,0 +1,135 @@
+{
+  "Id": "4ff62eff-f615-453e-9a14-ca7bf67cb586",
+  "Name": "Redgate - SQL Clone, Create Image",
+  "Description": "Creates a database image with [Redgate SQL Clone](https://www.red-gate.com/products/dba/sql-clone/index).\n\nRequires SQL Clone.\n\n*Version date: 16th May 2019*",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = 'Stop'\n\n# The code for this step template is largely a copy/paste job from the\n# Azure DevOps Services step template which is maintained by Redgate:\n# https://github.com/red-gate/SqlCloneVSTSExtension/blob/master/ImageTask/SQLCloneImageTask.ps1\n# The code was copied and adapted on 16th May 2019.\n\nWrite-Verbose \"cloneServer is $cloneServer\"\nWrite-Verbose \"cloneUser is $cloneUser\"\nWrite-Verbose \"clonePassword is $clonePassword\"\nWrite-Verbose \"sourceType is $sourceType\"\nWrite-Verbose \"imageName is $imageName\"\nWrite-Verbose \"imageLocation is $imageLocation\"\nWrite-Verbose \"sourceInstance is $sourceInstance\"\nWrite-Verbose \"sourceDatabase is $sourceDatabase\"\nWrite-Verbose \"sourceFileNames is $sourceFileNames\"\nWrite-Verbose \"sourceFilePassword is $sourceFilePassword\"\nWrite-Verbose \"modificationScriptFiles is $modificationScriptFiles\"\n\nWrite-Debug \"Entering script SQLCloneImageTask.ps1\"\n\n# This line is broken: Import-Module \"$PSScriptRoot\\Modules\\RedGate.SQLClone.PowerShell.dll\"\n\nif($cloneUser){\n    $password = ConvertTo-SecureString -String $clonePassword -AsPlainText -Force\n    $credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $cloneUser,$password\n\n}\nConnect-SqlClone -ServerUrl $cloneServer -Credential $credential\nWrite-Output \"Connected to SQL Clone server\"\n\n    try\n    {\n        $cloneImageLocation = Get-SqlCloneImageLocation $imageLocation\n        Write-Output \"Found image location\"\n    }\n    catch\n    {\n        $imageLocations = Get-SqlCloneImageLocation\n        $imageLocationNames = \"`n\"\n        Foreach ($cImageLocation in $imageLocations)\n        {\n            $imageLocationNames += $cImageLocation.Path + \"`n\"\n        }\n        $message = 'SQL Clone image location \"' + $imageLocation + '\"  has not been added to SQL Clone, available locations:' + $imageLocationNames\n        write-error $message\n        exit 1\n    }\n\n    $sqlServerParts = $sourceInstance.Split('\\', [System.StringSplitOptions]::RemoveEmptyEntries)\n    if ($sqlServerParts.Count -ge 3)\n    {\n        write-error 'SQL Server instance ' + $sourceInstance + ' has not been recognised, if specifying a named instance please use \"machine\\instance\"'\n        exit 1\n    }\n    $cloneSqlServerHost = $sqlServerParts[0]\n    $instanceName = ''\n    if ($sqlServerParts.Count -ge 2)\n    {\n        $instanceName = $sqlServerParts[1]\n    }\n    \n    try\n    {\n        $instance = Get-SqlCloneSqlServerInstance -MachineName $cloneSqlServerHost -InstanceName $instanceName\n        Write-Output \"Found SQL Server instance\"\n    }\n    catch\n    {\n        $instances = Get-SqlCloneSqlServerInstance\n        $instanceNames = \"`n\"\n        Foreach ($cInstance in $instances)\n        {\n            $instanceNames += $cInstance.Name + \"`n\"\n        }\n        $message = 'SQL Server instance \"' + $sourceInstance + '\"  has not been added to SQL Clone, available instances:' + $instanceNames\n        write-error $message\n        exit 1\n    }\n\n    $modificationScripts = @()\n    if($modificationScriptFiles){\n        $modificationFiles = $modificationScriptFiles.Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)\n            \n        Foreach ($modificationScriptFile in $modificationFiles)\n        {\n            if ($modificationScriptFile -Like \"*.sql\")\n            {\n                $modificationScripts += New-SqlCloneSqlScript -Path $modificationScriptFile\n            }\n\n            if ($modificationScriptFile -Like \"*.dmsmaskset\")\n            {\n                $modificationScripts += New-SqlCloneMask -Path $modificationScriptFile\n            }\n        }\n    }\n    \n    if ($sourceType -eq 'database')\n    {\n        Write-Output \"Source type = database\"\n        Write-Output \"Creating image\"\n        $NewImage = New-SqlCloneImage -Name $imageName -SqlServerInstance $instance -DatabaseName $sourceDatabase -Destination $cloneImageLocation -Modifications $modificationScripts | Wait-SqlCloneOperation    \n        Write-Output \"Finished creating image\"\n    }\n    else\n    {\n        Write-Output \"Source type = backup\"\n        $backupFiles = $sourceFileNames.Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)\n        Write-Output \"Creating image from backup\"\n        if($sourceFilePassword)\n        {\n            $NewImage = New-SqlCloneImage -Name $imageName -SqlServerInstance $instance -BackupFileName $backupFiles -BackupPassword $sourceFilePassword -Destination $cloneImageLocation -Modifications $modificationScripts | Wait-SqlCloneOperation\n        }\n        else\n        {\n            $NewImage = New-SqlCloneImage -Name $imageName -SqlServerInstance $instance -BackupFileName $backupFiles -Destination $cloneImageLocation -Modifications $modificationScripts | Wait-SqlCloneOperation\n        }\n        Write-Output \"Finished creating image from backup\"        \n    }\n\n    \n\nWrite-Debug \"Leaving script SQLCloneImageTask.ps1\"\n"
+  },
+  "Parameters": [
+    {
+      "Id": "8c140a4c-65a2-4341-a604-73d14775b3a0",
+      "Name": "cloneServer",
+      "Label": "SQL Clone Server (required)",
+      "HelpText": "The URL for your SQL Clone server (e.g. http://sql-clone.example.com:14145)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e5ac1d04-b8a5-440e-ba69-a5d66a53abba",
+      "Name": "cloneUser",
+      "Label": "SQL Clone User (optional)",
+      "HelpText": "User account to access SQL Clone. (If left blank Octopus tentacle account will be used.)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5f6288f2-57c9-4a11-91f2-b0c2e3cb9ccd",
+      "Name": "clonePassword",
+      "Label": "SQL Clone Password (optional)",
+      "HelpText": "User account to access SQL Clone. (If left blank Octopus tentacle account will be used.)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "ee5286d3-f233-410c-92ab-36743f8743e7",
+      "Name": "imageName",
+      "Label": "Image Name (required)",
+      "HelpText": "The name of your database image.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0edb1e1f-0c27-428b-9ff0-7c76faf1369e",
+      "Name": "imageLocation",
+      "Label": "Image Location (required)",
+      "HelpText": "Images need to have a UNC (network share) path destination in order to be shared with other machines. For example: \\\\servername\\fileshare\\images",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "aa803a9d-ab55-4e36-969c-3b0e3637d36e",
+      "Name": "sourceInstance",
+      "Label": "Source SQL Server Instance (required)",
+      "HelpText": "For example: MYSERVER\\MYINSTANCE",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "39c29a4a-f483-4b96-bf08-238bb677835d",
+      "Name": "sourceType",
+      "Label": "Image Source Type (required)",
+      "HelpText": "Images can be created from a backup file (.bak or .sqb) or from a SQL Server database.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "database|SQL Server Database\nbackup|Backup file(s)"
+      }
+    },
+    {
+      "Id": "5e9f4d95-4776-4a0e-8245-05d645bd0997",
+      "Name": "sourceDatabase",
+      "Label": "Source Database (required if Source Type is SQL Server Database)",
+      "HelpText": "The database from which to create the image.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "62da0567-35f5-4c3f-ac9e-61b75a399053",
+      "Name": "sourceFileNames",
+      "Label": "Source File Names (required if Source Type is Backup File(s))",
+      "HelpText": "For striped and/or differential backups, separate multiple file paths with ;",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ab892024-c4b5-46c2-9434-2ad150e3e014",
+      "Name": "sourceFilePassword",
+      "Label": "Source File Password (optional)",
+      "HelpText": "Source backup file password.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "a758e9de-05c6-4879-8541-d7f73215fe87",
+      "Name": "modificationScriptFiles",
+      "Label": "Modification Script Files (optional)",
+      "HelpText": "SQL scripts and/or Data Masker masking set files (Data Masker must be installed on the clone agent machine), separate multiple file paths with ;",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2019-05-16T11:37:47.360Z",
+  "LastModifiedBy": "alex-yates",
+  "$Meta": {
+    "ExportedAt": "2019-05-16T11:37:47.360Z",
+    "OctopusVersion": "2019.2.7",
+    "Type": "ActionTemplate"
+  },
+  "Category": "redgate"
+}
