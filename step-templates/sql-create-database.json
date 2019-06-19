@@ -3,11 +3,11 @@
   "Name": "SQL - Create Database If Not Exists",
   "Description": "Creates a database if the database does not exist without using SMO.",
   "ActionType": "Octopus.Script",
-  "Version": 1,  
+  "Version": 2,  
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedDatabaseName = $createDatabaseName.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create for $createDatabaseName\"\n$command.CommandText = \"IF NOT EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')\n        create database [$createDatabaseName]\"            \n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createDatabaseName\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n$command.CommandTimeout = $createCommandTimeout\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedDatabaseName = $createDatabaseName.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create for $createDatabaseName\"\n$command.CommandText = \"IF NOT EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')\n        create database [$createDatabaseName]\"            \n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createDatabaseName\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
   },
   "Parameters": [
     {
@@ -49,13 +49,23 @@
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
+    },
+    {
+      "Id": "e56f7e39-09da-4bf2-84a6-703fa840746c",
+      "Name": "createCommandTimeout",
+      "Label": "Command timeout",
+      "HelpText": "Number of seconds before throwing a timeout error.",
+      "DefaultValue": "30",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2018-07-11T20:39:04.366Z",
+  "LastModifiedOn": "2019-06-17T17:24:39.877Z",
   "LastModifiedBy": "OctopusBob",
   "$Meta": {
-    "ExportedAt": "2018-07-11T20:39:04.366Z",
-    "OctopusVersion": "2018.6.10",
+    "ExportedAt": "2019-06-17T17:24:39.877Z",
+    "OctopusVersion": "2019.5.10",
     "Type": "ActionTemplate"
   },
   "Category": "sql"
