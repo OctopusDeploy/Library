@@ -1,18 +1,16 @@
 'use strict';
 
 import gulp from 'gulp';
-import gutil from 'gulp-util';
+import log from "fancy-log";
 import gulpLoadPlugins from 'gulp-load-plugins';
 import browserSync from 'browser-sync';
 import LiveServer from 'gulp-live-server';
 import sass from 'gulp-sass';
 import concat from 'gulp-concat';
-import replace from 'gulp-replace';
 import header from 'gulp-header';
 import footer from 'gulp-footer';
 import del from 'del';
 import source from 'vinyl-source-stream';
-import merge from 'merge-stream';
 import buffer from 'vinyl-buffer';
 import babelify from 'babelify';
 import reactify from 'reactify';
@@ -30,7 +28,6 @@ import jasmine from 'gulp-jasmine';
 import jasmineReporters from 'jasmine-reporters';
 import jasmineTerminalReporter from 'jasmine-terminal-reporter';
 import eventStream from 'event-stream';
-import {Converter} from 'csvtojson';
 import fs from 'fs';
 import jsonlint from 'gulp-jsonlint';
 
@@ -57,10 +54,10 @@ const vendorStyles = [
 ];
 
 gulp.task('clean', () => {
-  del.sync([`${publishDir}`, `${buildDir}`, `${clientDir}/data/*.json`]);
+  return del([`${publishDir}`, `${buildDir}`, `${clientDir}/data/*.json`]);
 });
 
-function lint(files, options) {
+function lint(files, options = {}) {
   return () => {
     return gulp.src(files)
       .pipe(reload({stream: true, once: true}))
@@ -80,7 +77,7 @@ gulp.task('lint:step-templates', () => {
     .pipe(jsonlint.reporter());
 });
 
-gulp.task('tests', ['lint:step-templates'], () => {
+gulp.task('tests', gulp.series('lint:step-templates', () => {
   return gulp.src('./spec/*-tests.js')
   // gulp-jasmine works on filepaths so you can't have any plugins before it
     .pipe(jasmine({
@@ -95,8 +92,7 @@ gulp.task('tests', ['lint:step-templates'], () => {
     .on('error', function(){
       process.exit(1);
     });
-});
-
+}));
 
 function humanize(categoryId){
 
@@ -179,24 +175,24 @@ function provideMissingData() {
 
       if (!template.Logo) {
         var logo = fs.readFileSync('./step-templates/logos/' + categoryId + '.png');
-        template.Logo = new Buffer(logo).toString('base64');
+        template.Logo =  Buffer.from(logo).toString('base64');
       }
 
-      file.contents = new Buffer(JSON.stringify(template));
+      file.contents = Buffer.from(JSON.stringify(template));
 
       cb(null, file);
   });
 }
 
 
-gulp.task('step-templates', ['tests'], () => {
+gulp.task('step-templates', gulp.series('tests', () => {
   return gulp.src('./step-templates/*.json')
     .pipe(provideMissingData())
     .pipe(concat('step-templates.json', {newLine: ','}))
     .pipe(header('{"items": ['))
     .pipe(footer(']}'))
     .pipe(argv.production ? gulp.dest(`${publishDir}/app/services`) : gulp.dest(`${buildDir}/app/services`));
-});
+}));
 
 gulp.task('styles:vendor', () => {
   return gulp.src(vendorStyles, {base: 'node_modules/'})
@@ -207,7 +203,7 @@ gulp.task('styles:client', () => {
   return gulp.src(`${clientDir}/content/styles/main.scss`)
     .pipe(sass().on('error', sass.logError))
     .pipe($.if(argv.production, sourcemaps.init({loadMaps: true})))
-    .pipe($.if(argv.production, cssnano())).on('error', gutil.log)
+    .pipe($.if(argv.production, cssnano())).on('error', log.error)
     .pipe($.if(argv.production, rename({suffix: '.min'})))
     .pipe($.if(argv.production, rev()))
     .pipe($.if(argv.production, sourcemaps.write('.')))
@@ -229,7 +225,7 @@ gulp.task('copy:configs', () => {
     .pipe(argv.production ? gulp.dest(`${publishDir}`) : gulp.dest(`${buildDir}`));
 });
 
-gulp.task('scripts', ['lint:client'], () => {
+gulp.task('scripts', gulp.series('lint:client', () => {
   return browserify({
     entries: `./${clientDir}/Browser.jsx`,
     extensions: ['.jsx', '.js'],
@@ -242,14 +238,14 @@ gulp.task('scripts', ['lint:client'], () => {
     .pipe(source('app.js'))
     .pipe(buffer())
     .pipe($.if(argv.production, sourcemaps.init({loadMaps: true})))
-    .pipe($.if(argv.production, uglify())).on('error', gutil.log)
+    .pipe($.if(argv.production, uglify())).on('error', log.error)
     .pipe($.if(argv.production, rename({suffix: '.min'})))
     .pipe($.if(argv.production, rev()))
     .pipe($.if(argv.production, sourcemaps.write('.')))
     .pipe(argv.production ? gulp.dest(`${publishDir}/public/scripts`) : gulp.dest(`${buildDir}/public/scripts`));
-});
+}));
 
-gulp.task('build:client', ['step-templates', 'copy:app', 'scripts', 'styles:client', 'styles:vendor', 'images'], () => {
+gulp.task('build:client', gulp.series('step-templates', 'copy:app', 'scripts', 'styles:client', 'styles:vendor', 'images', () => {
   let vendorSources = gulp.src(vendorStyles, {base: 'node_modules/'});
 
 let sources = argv.production
@@ -260,30 +256,30 @@ return gulp.src(`${serverDir}/views/index.jade`)
   .pipe(inject(vendorSources, {relative: false, name: 'vendor', ignorePath: 'node_modules', addPrefix: 'styles/vendor'}))
   .pipe(inject(sources, {relative: false, ignorePath: `${argv.production ? `${publishDir}` : `${buildDir}`}/public`}))
   .pipe(argv.production ? gulp.dest(`${publishDir}/views`) : gulp.dest(`${buildDir}/views`));
-});
+}));
 
-gulp.task('build:server', ['lint:server'], () => {
+gulp.task('build:server', gulp.series('lint:server', () => {
   return gulp.src([`./${serverDir}/server.js`])
-    .pipe($.babel())
-    .pipe(argv.production ? gulp.dest(`${publishDir}`) : gulp.dest(`${buildDir}`));
-});
+  .pipe($.babel())
+  .pipe(argv.production ? gulp.dest(`${publishDir}`) : gulp.dest(`${buildDir}`));
+}));
 
-gulp.task('build', ['build:server', 'build:client', 'copy:configs']);
+gulp.task('build', gulp.parallel('build:server', 'build:client', 'copy:configs'));
 
-gulp.task('watch', ['clean', 'build'], () => {
+gulp.task('watch', gulp.series('clean', 'build', () => {
   let server = LiveServer(`${buildDir}/server.js`);
-server.start();
+  server.start();
 
-browserSync.init(null, {
-  proxy: 'http://localhost:9000'
-});
+  browserSync.init(null, {
+    proxy: 'http://localhost:9000'
+  });
 
-gulp.watch(`${clientDir}/**/*.jade`, ['build:client']);
-gulp.watch(`${clientDir}/**/*.jsx`, ['scripts', 'copy:app']);
-gulp.watch(`${clientDir}/content/styles/**/*.scss`, ['styles:client']);
-gulp.watch('step-templates/*.json', ['step-templates']);
+  gulp.watch(`${clientDir}/**/*.jade`, gulp.series('build:client'));
+  gulp.watch(`${clientDir}/**/*.jsx`, gulp.series('scripts', 'copy:app'));
+  gulp.watch(`${clientDir}/content/styles/**/*.scss`, gulp.series('styles:client'));
+  gulp.watch('step-templates/*.json', gulp.series('step-templates'));
 
-gulp.watch(`${buildDir}/**/*.*`).on('change', reload);
-});
+  gulp.watch(`${buildDir}/**/*.*`).on('change', reload);
+}));
 
-gulp.task('default', ['clean', 'build']);
+gulp.task('default', gulp.series('clean', 'build'));
