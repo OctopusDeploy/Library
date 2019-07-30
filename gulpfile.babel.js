@@ -139,6 +139,7 @@ function humanize(categoryId){
     case 'ssl': return 'SSL';
     case 'statuspage': return 'StatusPage';
     case 'teamcity': return 'TeamCity';
+    case 'testery': return 'Testery';
     case 'victorops': return 'VictorOps'
     case 'webdeploy': return 'Web Deploy';
     case 'xml': return 'XML';
