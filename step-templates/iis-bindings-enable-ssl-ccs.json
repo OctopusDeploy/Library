@@ -1,0 +1,51 @@
+{
+  "Name": "IIS - Add CCS HTTPS bindings based on HTTP bindings",
+  "Description": "Add IIS Centralized Certificate Store (CCS) SSL bindings to a website based on HTTP bindings (binds to same IP and hostname but different port and protocol).\n\nThis is used to enable CCS on IIS websites created with the normal Octopus IIS website creation step.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$WebSiteName = $OctopusParameters['IisCcsWebSiteName'];\n[bool]$SNI = $false;\nif (-not [bool]::TryParse($OctopusParameters['IisCcsSNI'], [ref]$SNI)) {\n    $SNI = $true;\n}\n$SslFlags = [int]($SNI)+2;\n$PortMap = [System.Collections.Generic.Dictionary[int,int]]::new();\nforeach ($mapping in [regex]::Matches($OctopusParameters['IisCcsPortMap'],\"([0-9]+):([0-9]+)\")) {\n    $PortMap.Add([int]$mapping.Groups[1].Value, [int]$mapping.Groups[2].Value);\n}\n$httpBindings = Get-WebBinding -Name $WebSiteName -Protocol http | Foreach-Object { $_.bindingInformation };\nif (-not $httpBindings) {\n    Write-Error \"The site $WebSiteName does not exist, or it has not HTTP binding\"\n}\nforeach ($binding in (Get-WebBinding -Name $WebSiteName -Protocol http | Foreach-Object { $_.bindingInformation })) {\n    $parts = $binding.Split(\":\");\n    $IPAddress = $parts[0];\n    $HostHeader = $parts[2];\n    [int]$Port = 0;\n    if ([string]::IsNullOrEmpty($HostHeader)) {\n        Write-Warning \"The binding $binding has no hostname, skipping\";\n    } elseif (-not $PortMap.TryGetValue([int]$parts[1], [ref]$Port)) {\n        Write-Warning \"There is no port mapping for the binding $binding, skipping\";\n    } else {\n        Write-Verbose \"Binding HTTP $binding to HTTPS $($IPAddress):$($Port):$($HostHeader)\";\n        $existingBinding = Get-WebBinding -Name $WebSiteName -Protocol https -IPAddress $IPAddress -Port $Port -HostHeader $HostHeader;\n        if ($existingBinding) {\n            if ($existingBinding.sslFlags -ne $SslFlags) {\n                Write-Host \"Change SSL flags of binding $($IPAddress):$($Port):$($HostHeader)\";\n                Set-WebBinding -Name $WebSiteName -IPAddress $IPAddress -Port $Port -HostHeader $HostHeader -PropertyName SslFlags -Value $SslFlags;\n            }\n        } else {\n            Write-Host \"Create HTTPS binding $($IPAddress):$($Port):$($HostHeader)\";\n            New-WebBinding -Name $WebSiteName -Protocol https -IPAddress $IPAddress -Port $Port -HostHeader $HostHeader -SslFlags $SslFlags;\n        }\n    }\n}"
+  },
+  "Parameters": [
+    {
+      "Id": "e17b143f-d26c-458b-be41-6afca9e2666f",
+      "Name": "IisCcsWebSiteName",
+      "Label": "Website Name",
+      "HelpText": "Name of the website, can be retrieved from a IIS website deployment step: `#{Octopus.Action[*].IISWebSite.WebSiteName}`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "de1633dd-5dcd-4d8f-8c69-d031a6b32434",
+      "Name": "IisCcsSNI",
+      "Label": "Enable SNI",
+      "HelpText": "Enable SNI for the binding(s), default is enabled.",
+      "DefaultValue": "true",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "e6faf04c-441b-4ef2-8ad6-2ce0b4dc93df",
+      "Name": "IisCcsPortMap",
+      "Label": "Port mapping",
+      "HelpText": "Mapping of HTTP to HTTPS ports as list of integer parts. Default is `80:443` (multiple mappings may be added, separated by spaces).",
+      "DefaultValue": "80:443",
+      "DisplaySettings": {}
+    }
+  ],
+  "LastModifiedBy": "avonwyss",
+  "$Meta": {
+    "ExportedAt": "2019-09-14T22:53:52.793Z",
+    "OctopusVersion": "2019.7.1",
+    "Type": "ActionTemplate"
+  },
+  "Id": "0f21bd9a-2dea-4432-a1a1-2dee302ca418",
+  "Category": "iis"
+}
