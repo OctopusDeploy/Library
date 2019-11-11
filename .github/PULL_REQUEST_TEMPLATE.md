@@ -22,7 +22,7 @@ _Before submitting your PR, please delete everything above the line below._
   - **NOTE** If you are modifying an existing step template, please make sure that you **do not** modify the `Id` property *(updating the `Id` will break the Library sync functionality in Octopus)*. 
 - [ ] `Version` should be incremented, otherwise the integration with Octopus won't update the step template correctly
 - [ ] Parameter names should not start with `$`
-- [ ] **To minimize the risk of step template parameters clashing with other variables in a project that uses the step template, ensure that you prefix your parameter names (e.g. an abbreviated name for the step template or the category of the step template**
+- [ ] **Step template parameter names (the ones declared in the JSON, not the script body) should be prefixed with a namespace so that they are less likely to clash with other user-defined variables in Octopus** (see [this issue](https://github.com/OctopusDeploy/Issues/issues/2126)). For example, use an abbreviated name of the step template or the category of the step template).
 - [ ] `LastModifiedBy` field must be present, and (_optionally_) updated with the correct author
 - [ ] If a new `Category` has been created:
    - [ ] An image with the name `{categoryname}.png` must be present under the `step-templates/logos` folder
