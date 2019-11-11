@@ -114,6 +114,7 @@ function humanize(categoryId){
     case 'filesystem': return 'File System';
     case 'flyway': return 'Flyway';
     case 'github': return 'GitHub';
+    case 'gitlab': return 'GitLab';
     case 'ghostinspector': return 'Ghost Inspector';
     case 'hipchat': return 'HipChat';
     case 'hockeyapp': return 'HockeyApp';
