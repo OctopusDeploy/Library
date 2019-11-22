@@ -1,0 +1,186 @@
+{
+  "Id": "c824aca5-0d7a-4a58-9e70-2465b964f456",
+  "Name": "Windows Scheduled Task (From Deployed Package) - Create",
+  "Description": "Inherited from \"Windows Scheduled Task\" step template and a helper template for Deploya Package. Create Windows scheduled task from deployaed package. If the task exists it will be torn down and re-added to ensure consistency. Package directory can be set as working directory. Also executable name can be renamed with environment name as prefix.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\";\nSet-StrictMode -Version \"Latest\";\n\n# use http://msdn.microsoft.com/en-us/library/windows/desktop/bb736357(v=vs.85).aspx for API reference\n# #{Octopus.Environment.Name}\nFunction Create-ScheduledTask($TaskName,$RunAsUser,$RunAsPassword,$TaskRun,$Arguments,$Schedule,$StartTime,$StartDate,$RunWithElevatedPermissions,$Days,$Interval,$Duration, $Modifier, $UsePackageInstallationDirectoryAsWorkingDirectory,$WorkingDirectory)\n{\n\n    # SCHTASKS /Create [/S system [/U username [/P [password]]]]\n    #     [/RU username [/RP password]] /SC schedule [/MO modifier] [/D day]\n    #     [/M months] [/I idletime] /TN taskname /TR taskrun [/ST starttime]\n    #     [/RI interval] [ {/ET endtime | /DU duration} [/K] [/XML xmlfile] [/V1]]\n    #     [/SD startdate] [/ED enddate] [/IT | /NP] [/Z] [/F] [/HRESULT] [/?]\n\n    # note - /RL and /DELAY appear in the \"Parameter list\" for \"SCHTASKS /Create /?\" but not in the syntax above\n\n    $argumentList = @();\n    $argumentList += @( \"/Create\" );\n\n    $argumentList += @( \"/RU\", \"`\"$RunAsUser`\"\" );\n\n    if( -not (StringIsNullOrWhiteSpace($RunAsPassword)))\n    {\n        $argumentList += @( \"/RP\", $RunAsPassword );\n    }\n\n    $argumentList += @( \"/SC\", $Schedule );\n\n    if( -not (StringIsNullOrWhiteSpace($Interval)) )\n    {\n\t\t$argumentList += @( \"/RI\", $Interval );\n    }\n\n    if( -not (StringIsNullOrWhiteSpace($Modifier)))\n\t{\n        switch -Regex ($Schedule)\n        {\n            \"MINUTE|HOURLY|DAILY|WEEKLY|MONTHLY|ONEVENT\" {\n                $argumentList += @( \"/MO\", $Modifier );\n            }\n            \"ONCE|ONSTART|ONLOGON|ONIDLE\" {\n                $argumentList += @( \"/MO\" );\n            }\n        }\n\t}\n\n    if( -not (StringIsNullOrWhiteSpace($Days)))\n    {\n        if ($Schedule -ne \"WEEKDAYS\"){\n\t\t\t$argumentList += @( \"/D\", $Days );\n        } else {\n            $argumentList += @( \"/D\", \"MON,TUE,WED,THU,FRI\" );\n        }\n    }\n\n    $argumentList += @( \"/TN\", \"`\"$TaskName`\"\" );\n\n    if( $Arguments )\n    {\n        $argumentList += @( \"/TR\", \"`\"'$TaskRun' $Arguments`\"\" );\n    }\n    else\n    {\n        $argumentList += @( \"/TR\", \"`\"'$TaskRun'`\"\" );\n    }\n\n    if( -not (StringIsNullOrWhiteSpace($StartTime)) )\n    {\n        $argumentList += @( \"/ST\", $StartTime );\n    }\n\n    if( -not (StringIsNullOrWhiteSpace($Duration)) )\n    {\n        $argumentList += @( \"/DU\", $Duration );\n    }\n\n    if( -not (StringIsNullOrWhiteSpace($StartDate)) )\n    {\n        $argumentList += @( \"/SD\", $StartDate );\n    }\n\n    $argumentList += @( \"/F\" );\n\n    if( $RunWithElevatedPermissions )\n    {\n        $argumentList += @( \"/RL\", \"HIGHEST\" );\n    }\n\n    Invoke-CommandLine -FilePath     \"$($env:SystemRoot)\\System32\\schtasks.exe\" `\n                       -ArgumentList $argumentList;\n\t\t\t\t\t   \n\tif($UsePackageInstallationDirectoryAsWorkingDirectory)\n\t{\n\t\t$Act1=New-ScheduledTaskAction -WorkingDirectory $WorkingDirectory -Execute $TaskRun;\n\t\tif( -not (StringIsNullOrWhiteSpace($RunAsPassword)))\n\t\t{\n\t\t\tSet-ScheduledTask $TaskName -Action $Act1 -User $RunAsUser -Password $RunAsPassword\n\t\t}\n\t\telse\n\t\t{\n\t\t\tSet-ScheduledTask $TaskName -Action $Act1\n\t\t}\n\t\t\n\t}\n\n}\n\nFunction Delete-ScheduledTask($TaskName) {\n    # SCHTASKS /Delete [/S system [/U username [/P [password]]]]\n    #          /TN taskname [/F] [/HRESULT] [/?]\n    Invoke-CommandLine -FilePath     \"$($env:SystemRoot)\\System32\\schtasks.exe\" `\n                       -ArgumentList @( \"/Delete\", \"/S\", \"localhost\", \"/TN\", \"`\"$TaskName`\"\", \"/F\" );\n}\n\nFunction Stop-ScheduledTask($TaskName) {\n    # SCHTASKS /End [/S system [/U username [/P [password]]]]\n    #          /TN taskname [/HRESULT] [/?]\n    Invoke-CommandLine -FilePath     \"$($env:SystemRoot)\\System32\\schtasks.exe\" `\n                       -ArgumentList @( \"/End\", \"/S\", \"localhost\", \"/TN\", \"`\"$TaskName`\"\" );\n}\n\nFunction Start-ScheduledTask($TaskName) {\n    # SCHTASKS /Run [/S system [/U username [/P [password]]]] [/I]\n    #          /TN taskname [/HRESULT] [/?]\n    Invoke-CommandLine -FilePath     \"$($env:SystemRoot)\\System32\\schtasks.exe\" `\n                       -ArgumentList @( \"/Run\", \"/S\", \"localhost\", \"/TN\", \"`\"$TaskName`\"\" );\n}\n\nFunction Enable-ScheduledTask($TaskName) {\n    # SCHTASKS /Change [/S system [/U username [/P [password]]]] /TN taskname\n    #      { [/RU runasuser] [/RP runaspassword] [/TR taskrun] [/ST starttime]\n    #        [/RI interval] [ {/ET endtime | /DU duration} [/K] ]\n    #        [/SD startdate] [/ED enddate] [/ENABLE | /DISABLE] [/IT] [/Z] }\n    #        [/HRESULT] [/?]\n    Invoke-CommandLine -FilePath     \"$($env:SystemRoot)\\System32\\schtasks.exe\" `\n                       -ArgumentList @( \"/Change\", \"/S\", \"localhost\", \"/TN\", \"`\"$TaskName`\"\", \"/ENABLE\" );\n}\n\nFunction ScheduledTask-Exists($taskName) {\n   $schedule = new-object -com Schedule.Service\n   $schedule.connect()\n   $tasks = $schedule.getfolder(\"\\\").gettasks(0)\n   foreach ($task in ($tasks | select Name)) {\n      #echo \"TASK: $($task.name)\"\n      if($task.Name -eq $taskName) {\n         #write-output \"$task already exists\"\n         return $true\n      }\n   }\n   return $false\n}\n\nFunction StringIsNullOrWhitespace([string] $string)\n{\n    if ($string -ne $null) { $string = $string.Trim() }\n    return [string]::IsNullOrEmpty($string)\n}\n\nfunction Invoke-CommandLine\n{\n    param\n    (\n        [Parameter(Mandatory=$true)]\n        [string] $FilePath,\n        [Parameter(Mandatory=$false)]\n        [string[]] $ArgumentList = @( ),\n        [Parameter(Mandatory=$false)]\n        [string[]] $SuccessCodes = @( 0 )\n    )\n    write-host ($FilePath + \" \" + ($ArgumentList -join \" \"));\n    $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -Wait -NoNewWindow -PassThru;\n    if( $SuccessCodes -notcontains $process.ExitCode )\n    {\n        throw new-object System.InvalidOperationException(\"process terminated with exit code '$($process.ExitCode)'.\");\n    }\n}\n\nfunction Invoke-OctopusStep\n{\n    param\n    (\n        [Parameter(Mandatory=$true)]\n        [hashtable] $OctopusParameters\n    )\n\n    $taskName = $OctopusParameters['TaskName']\n    $runAsUser = $OctopusParameters['RunAsUser']\n    $runAsPassword = $OctopusParameters['RunAsPassword']\n\t$packageInstallationDirectory = $OctopusParameters['Octopus.Action[Deploy Package].Output.Package.InstallationDirectoryPath'];\n\t\n    \n    $command = $OctopusParameters['Command']\n\t\n\t\n\t\n\tif( $OctopusParameters.ContainsKey(\"UsePackageInstallationDirectoryPath\") )\n    {\n        $usePackageInstallationDirectoryPath = [boolean]::Parse($OctopusParameters['UsePackageInstallationDirectoryPath'])\n    }\n    else\n    {\n        $usePackageInstallationDirectoryPath = $false;\n    }\n\t\n\t\n\tif($usePackageInstallationDirectoryPath)\n\t{\n\t\t$newCommand = @();\n\t\t$newCommand =(\"{0}/{1}\" -f $packageInstallationDirectory,$OctopusParameters['Command']);\n\t\t$command = $newCommand;\n\t}\n\t\n\tif( $OctopusParameters.ContainsKey(\"UseEnvironmentNameAsExecutablePrefix\") )\n    {\n        $useEnvironmentNameAsExecutablePrefix = [boolean]::Parse($OctopusParameters['UseEnvironmentNameAsExecutablePrefix'])\n    }\n    else\n    {\n        $useEnvironmentNameAsExecutablePrefix = $false;\n    }\n\t\n\tif($useEnvironmentNameAsExecutablePrefix)\n\t{\n\t    Write-Output \"Enviroment name $OctopusParameters['Octopus.Environment.Name'] will be used as prefix\"\n\t\t\n\t\t$filepath = Get-ChildItem $command\n\t\t$fileNameWithEnvPrefix = $OctopusParameters['Octopus.Environment.Name']+$filepath.Name\n\t\tRename-Item $command $fileNameWithEnvPrefix\n\t\t$commandPath = Split-Path -Path $command\n\t\t \n\t\t$newCommand = @();\n\t\t$newCommand =(\"{0}/{1}\" -f $commandPath,$fileNameWithEnvPrefix);\n\t\t$command = $newCommand;\n\t\t$taskName = $fileNameWithEnvPrefix\n\t\tWrite-Output \"Task name updated as $taskName\"\n\t}\n\t\n\t\n\tif( $OctopusParameters.ContainsKey(\"UsePackageInstallationDirectoryAsWorkingDirectory\") )\n    {\n        $usePackageInstallationDirectoryAsWorkingDirectory = [boolean]::Parse($OctopusParameters['UsePackageInstallationDirectoryAsWorkingDirectory']);\n    }\n    else\n    {\n        $usePackageInstallationDirectoryAsWorkingDirectory = $false;\n    }\n\t\n\t\n\t\n    $arguments = $OctopusParameters['Arguments']\n    $schedule = $OctopusParameters['Schedule']\n    $startTime = $OctopusParameters['StartTime']\n    $startDate = $OctopusParameters['StartDate']\n\t\n\t\t\n    if( $OctopusParameters.ContainsKey(\"RunWithElevatedPermissions\") )\n    {\n        $runWithElevatedPermissions = [boolean]::Parse($OctopusParameters['RunWithElevatedPermissions'])\n    }\n    else\n    {\n        $runWithElevatedPermissions = $false;\n    }\n\n    $days = $OctopusParameters['Days']\n    $interval = $OctopusParameters['Interval']\n    $duration = $OctopusParameters['Duration']\n    $Modifier = $OctopusParameters['Modifier']\n\n    if((ScheduledTask-Exists($taskName))){\n        Write-Output \"$taskName already exists, Tearing down...\"\n        Write-Output \"Stopping $taskName...\"\n        Stop-ScheduledTask($taskName)\n        Write-Output \"Successfully Stopped $taskName\"\n        Write-Output \"Deleting $taskName...\"\n        Delete-ScheduledTask($taskName)\n        Write-Output \"Successfully Deleted $taskName\"\n    }\n    Write-Output \"Creating Scheduled Task - $taskName\"\n\n    Create-ScheduledTask $taskName $runAsUser $runAsPassword $command $arguments $schedule $startTime $startDate $runWithElevatedPermissions $days $interval $duration $Modifier $usePackageInstallationDirectoryAsWorkingDirectory $packageInstallationDirectory\n    Write-Output \"Successfully Created $taskName\"\n    Enable-ScheduledTask($taskName)\n    Write-Output \"$taskName enabled\"\n\n    if( $OctopusParameters.ContainsKey(\"StartNewTaskNow\") )\n    {\n        $startNewTaskNow = [boolean]::Parse($OctopusParameters['StartNewTaskNow'])\n    }\n    else\n    {\n        $startNewTaskNow = $false;\n    }\n\n    if( $startNewTaskNow ) {\n      Start-ScheduledTask($taskName)\n    }\n}\n\n\n# only execute the step if it's called from octopus deploy,\n# and skip it if we're runnning inside a Pester test\nif( Test-Path -Path \"Variable:OctopusParameters\" )\n{\n    Invoke-OctopusStep -OctopusParameters $OctopusParameters;\n}\n",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Id": "f84bba0c-dbff-4f89-b432-b920f4ff32fd",
+      "Name": "TaskName",
+      "Label": "Name",
+      "HelpText": "The name of the Scheduled Task",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c6da9760-e44c-4f38-a0b8-990744df1439",
+      "Name": "RunAsUser",
+      "Label": "User",
+      "HelpText": "The User that the task will run as",
+      "DefaultValue": "System",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c4bd89c4-deef-4a43-ab3d-add08dd7d42e",
+      "Name": "RunAsPassword",
+      "Label": "Password",
+      "HelpText": "Specifying a password allows the task to run when the user is not logged on to the server.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "250dde5d-4f64-49e5-9976-5a6d1c659e17",
+      "Name": "UsePackageInstallationDirectoryPath",
+      "Label": "Use Package Installation Directory",
+      "HelpText": "If exe file is in a new deployed package use this option to create dynamic Scheduler Tasks",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "97d05f77-6b38-40eb-a145-f2cddbdab065",
+      "Name": "UsePackageInstallationDirectoryAsWorkingDirectory",
+      "Label": "Use Package Installation Directory as Working Directory",
+      "HelpText": null,
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "904bb830-cdf6-44d9-a1fa-653c8c121129",
+      "Name": "UseEnvironmentNameAsExecutablePrefix",
+      "Label": "Use Environment Name As Executable Prefix",
+      "HelpText": "Change executable name with environment prefix \nUsefull if a deployment target has multiple deployment environment.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "8e1e6173-68c1-4f8b-9099-47a274dfd333",
+      "Name": "Command",
+      "Label": "Action",
+      "HelpText": "The Action that the task executes. Usually a path to the executable",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "95542163-6093-4d52-b12e-102370a32719",
+      "Name": "Arguments",
+      "Label": "Arguments",
+      "HelpText": "A value that specifies any arguments to be passed to run the task.",
+      "DefaultValue": "",
+      "DisplaySettings": {}
+    },
+    {
+      "Id": "144cf080-0e92-4a3d-bdc4-f442891f7962",
+      "Name": "Schedule",
+      "Label": "Schedule",
+      "HelpText": "When the Task is triggered",
+      "DefaultValue": "DAILY",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "MINUTE|Every Minute\nHOURLY|Hourly\nDAILY|Daily\nWEEKLY|Weekly\nWEEKDAYS|Weekdays\nONCE|One off\nONSTART|On Start\nONLOGON|On Logon\nONIDLE|On Idle\nMONTHLY|Monthly"
+      }
+    },
+    {
+      "Id": "df5a6001-86ce-4b89-8aa2-662b1cffb093",
+      "Name": "StartTime",
+      "Label": "Start Time",
+      "HelpText": "The Time the task will run. Use the format HH:mm:ss",
+      "DefaultValue": "12:00",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "00e3f78a-7dd3-4a63-b0ba-342cbd213d43",
+      "Name": "StartDate",
+      "Label": "Start Date",
+      "HelpText": "The date the task will start running. use the format MM/dd/yyyy",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "72019456-9091-4286-8a90-52fa0392b552",
+      "Name": "Modifier",
+      "Label": "Modifier",
+      "HelpText": "A value that specifies how often the task runs within its schedule type. For ONCE, ONSTART, ONLOGON and ONIDLE any value can be used since it will be ignored (They do not use modifiers with MO).",
+      "DefaultValue": "",
+      "DisplaySettings": {}
+    },
+    {
+      "Id": "b29af23c-8f76-4973-903d-1308cffacbc2",
+      "Name": "Interval",
+      "Label": "Interval",
+      "HelpText": "A value that specifies the repetition interval in minutes.",
+      "DefaultValue": "",
+      "DisplaySettings": {}
+    },
+    {
+      "Id": "e6a802a9-5217-4fef-b43b-d4687f4820ef",
+      "Name": "Duration",
+      "Label": "Duration",
+      "HelpText": "A value that specifies the duration to run the task. The time format is HH:mm (24-hour time).",
+      "DefaultValue": "",
+      "DisplaySettings": {}
+    },
+    {
+      "Id": "69613d6b-6efa-4998-9cea-5810f3d78f46",
+      "Name": "RunWithElevatedPermissions",
+      "Label": "RunWithElevatedPermissions",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "94d23540-930f-48e8-84fa-e9cb4b214a1a",
+      "Name": "Days",
+      "Label": "Days",
+      "HelpText": "A value that specifies the day of the week to run the task. Valid values are: MON, TUE, WED, THU, FRI, SAT, SUN and for MONTHLY schedules 1 - 31 (days of the month). The wildcard character (*) specifies all days.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText",
+        "Octopus.SelectOptions": ""
+      }
+    },
+    {
+      "Id": "2e4b1b8c-0cb3-45f5-a680-efa2891427dd",
+      "Name": "StartNewTaskNow",
+      "Label": "StartNewTaskNow",
+      "HelpText": null,
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "SpaceId": "Spaces-1",
+  "$Meta": {
+    "ExportedAt": "2019-11-22T11:23:00.906Z",
+    "OctopusVersion": "2019.6.0",
+    "Type": "ActionTemplate"
+  }
+}
