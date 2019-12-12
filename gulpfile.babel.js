@@ -118,6 +118,7 @@ function humanize(categoryId){
     case 'ghostinspector': return 'Ghost Inspector';
     case 'hipchat': return 'HipChat';
     case 'hockeyapp': return 'HockeyApp';
+    case 'hosts-file': return ' Hosts File';
     case 'http': return 'HTTP';
     case 'iis': return 'IIS';
     case 'jira': return 'JIRA';
