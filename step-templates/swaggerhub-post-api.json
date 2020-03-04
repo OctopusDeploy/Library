@@ -1,10 +1,10 @@
 {
     "Id": "0f60f13c-bc00-4035-a0ba-5aeef6a2c1e5",
+    "Author": "waxtell",
     "Name": "SwaggerHub Post Api",
     "Description": "Post your Swagger/OAS to SwaggerHub",
     "ActionType": "Octopus.Script",
-    "Version": 15,
-    "CommunityActionTemplateId": null,
+    "Version": 1,
     "Packages": [],
     "Properties": {
       "Octopus.Action.Script.ScriptBody": "function Coalesce($a, $b) { \n    if ($null -ne $a) { \n        $a \n    } else { \n        $b \n    } \n}\n\nfunction Validate([string]$parameterValue, [string[]]$validInput, $parameterName) {\n    Write-Host \"${parameterName}: $parameterValue\"\n\n    if (!$parameterValue) {\n        throw \"Parameter $parameterName is required!\"\n    }\n    \n    if ($validInput) {\n        if (! $validInput -contains $parameterValue) {\n            throw \"'$input' is not a valid value for '$parameterName'\"\n        }\n    }\n}\n\n$apiKey = $OctopusParameters['shpApiKey']\n$owner = $OctopusParameters['shpOwner']\n$apiName = $OctopusParameters['shpApi']\n$definition = $OctopusParameters['shpDefinition']\n$contentType = Coalesce $OctopusParameters['shpContentType'] \"application/json\"\n$oas = Coalesce $OctopusParameters['shpOas'] \"2.0\"\n$isPrivate = (Coalesce $OctopusParameters['shpIsPrivate'] \"False\").ToLower()\n$force = (Coalesce $OctopusParameters['shpForce'] \"False\").ToLower()\n$version = $OctopusParameters['shpVersion']\n\n[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12\n\nValidate $apiKey -parameterName \"Api Key\"\nValidate $owner -parameterName \"Owner\"\nValidate $apiName -parameterName \"Api Name\"\nValidate $definition -parameterName \"Definition\"\n\ntry {\n    Write-Host \"Updating $($apiName)...\"\n\n    $headers = @{ \n        'Authorization' = $apiKey \n        'Accept' = 'application/json'\n    }    \n    \n    $query = \"https://api.swaggerhub.com/apis/$($owner)/$($apiName)?isPrivate=$($isPrivate.ToLower())&oas=$($oas)&force=$($force.ToLower())\"\n\n    if($version) {\n        $query = $query+\"&version=$($version)\"\n    }\n    \n    $specification = $definition\n    \n    # If $definition contains a file path, load the content of the provided value\n    if((Test-Path $definition -ErrorAction SilentlyContinue)[0]) {\n        $specification = get-content $definition\n    }\n\n    Invoke-RestMethod $query -Headers $headers -ContentType $contentType -Method Post -Body $specification\n\n    Write-Host \"SwaggerHub post successful\"\n} catch {\n    Write-Host $_.Exception.Message\n    Write-Host \"SwaggerHub post failed!\"\n    Write-Host \"  HttpStatus: $($_.Exception.Response.StatusCode.value__)\" \n\n    exit 1\n}\n",
@@ -106,12 +106,11 @@
         }
       }
     ],
-    "SpaceId": "Spaces-1",
     "LastModifiedBy": "waxtell",    
     "$Meta": {
       "ExportedAt": "2020-01-29T17:02:59.155Z",
       "OctopusVersion": "2019.12.0",
       "Type": "ActionTemplate"
     },
-    "Category": "swaggerhub"
+    "Category": "SwaggerHub"
   }
