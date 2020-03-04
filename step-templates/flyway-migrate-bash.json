@@ -1,0 +1,158 @@
+{
+    "Id": "3d3009fe-456f-4321-8c28-159ca9d011d8",
+    "Name": "Flyway Migrate - Bash",
+    "Description": "Deploy a database using",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [
+      {
+        "Id": "c689ba0b-3aa6-4610-bc1a-c0daf1fdcb64",
+        "Name": "FlywayPackage",
+        "PackageId": "#{FlyWayPackageId}",
+        "FeedId": "#{FlyWayFeedId}",
+        "AcquisitionLocation": "Server",
+        "Properties": {
+          "Extract": "True",
+          "SelectionMode": "immediate"
+        }
+      }
+    ],
+    "Properties": {
+      "Octopus.Action.Script.ScriptBody": "# Get all of the Parameter values assigned to local variables\nrelativePath=$(get_octopusvariable \"RelativePath\")\nlocations=$(get_octopusvariable \"locations\")\ntargetUrl=$(get_octopusvariable \"targetUrl\")\ntargetUser=$(get_octopusvariable \"targetUser\")\ntargetPassword=$(get_octopusvariable \"targetPassword\")\nrunDriftCheck=$(get_octopusvariable \"runDriftCheck\")\ncomparePath=$(get_octopusvariable \"comparePath\")\nshadowUrl=$(get_octopusvariable \"shadowUrl\")\nshadowUser=$(get_octopusvariable \"shadowUser\")\nshadowPassword=$(get_octopusvariable \"shadowPassword\")\nflywayPackageId=$(get_octopusvariable \"FlyWayPackageId\")\nflywayFeedId=$(get_octopusvariable \"FlyWayFeedId\")\n\n# Convert runDriftCheck from string to boolean\nif [[ \"$runDriftCheck\" == \"True\" ]]\nthen\n\trunDriftCheck=true\nelse\n\trunDriftCheck=false\nfi\n\n# Declaring the path to the NuGet package\npackagePath=$(get_octopusvariable \"Octopus.Action.Package[FlywayPackage].ExtractedPath\")\n\n# Delcaring path to FlyWay\nflywayPath=$packagePath\n\nif [[ ! -z \"$relativePath\" ]]\nthen\n    $flywayPath=$packagePath$relativePath\nfi\n\nflywayCmd=$flywayPath\"/flyway\"\n\nif [[ ! -z \"$locations\" ]]\nthen\n    locationsPath=$packagePath$locations\nelse\n    locationsPath=$flywayPath\"/sql\"\nfi\n\n# Logging for troubleshooting\necho \"*******************************************\"\necho \"Logging variables:\"\necho \" - - - - - - - - - - - - - - - - - - - - -\"\necho \"FlywayPackageStep: $FlyWayPackageStep\"\necho \"FlywayPath: $flywayPath\"\necho \"LocationsPath: $locationsPath\"\necho \"Target DB -url: $targetUrl\"\necho \"Target DB -user: $targetUser\"\necho \"Run drift-check?: $runDriftCheck\"\necho \"Compare tool path: $comparePath\"\necho \"Shadow DB -url: $shadowUrl\"\necho \"Shadow DB -user: $shadowUser\"\n\nif [[ \"$runDriftCheck\" == true ]]\nthen\n    # Can't do drift check without a shadow DB\n    if [[ -z \"$shadowUrl\" ]]\n    then\n        echo \"Cannot run drift check because Shadow DB not provided.\"\n        runDriftCheck=false\n    fi\n    # Can't do drift check without a comparison tool\n    if [[ -z \"$comparePath\" ]]\n    then\n        echo \"Cannot run drift check as path to comparison tool not provided.\"\n        runDriftCheck=false\n    fi\nfi\n\n\n# Drift check preperation\ndbPlatform=\"Unknown\"\ntargetDbVersion=0\ntargetDbPath=\"Unknown\"\n\nif [[ $runDriftCheck == true ]]\nthen\n    # Determining name and version of target database\n    echo \"*******************************************\"\n    echo \"Determining name and version of target database:\"\n    echo \" - - - - - - - - - - - - - - - - - - - - -\"\n    \n    # Saving target DB info\n    arguments=\"info -locations=filesystem:$locationsPath -url=$targetUrl -user=$targetUser -password=$targetPassword\"\n    echo \"Determining version of target database:\"\n    echo \"Executing the following: $flywayCmd ${arguments//$targetPassword/********}\"\n    targetDbInfo=$flywayCmd $arguments\n    echo \"Target DB info:\"\n    echo \"$targetDbInfo\"\n\n    # Get the current schema version\n    $targetDbVersion=$(echo \"$targetDbInfo\" | grep \"Schema version\" | cut -d' ' -f 3-)\n\n    echo \"Target database is at version $targetDbVersion\"\n\n    # Finding connection string for target DB\n    echo \"Target database connection string $targetUrl\"\n    \n    if [[ $targetUrl == *sqlserver* ]] \n    then\n        $dbPlatform=\"SQLServer\"       \n    fi\n    \n    if [[ $targetUrl == *mysql* ]]\n    then\n        $dbPlatform=\"MySQL\"       \n    fi\n    \n    if [[ $targetUrl == *oracle* ]]\n    then\n        $dbPlatform=\"Oracle\"       \n    fi    \n    \n    echo \"Database platform $dbPlatform detected.\"\nfi\n\nif [[ $dbPlatform == \"Unknown\" ]] && [[ $runDriftCheck == true ]]\nthen\n    echo \"Cannot run drift check!\"\n    echo \"Drift check only supported for SQL Server, Oracle or MySQL.\"\n    echo \"Cannot determine from FlyWay info if your database platform is supported.\"\n    $runDriftCheck = false\nfi\n\nif [[ $runDriftCheck == true ]]\nthen\n    # Building a shadow DB for drift check\n    echo \"*******************************************\"\n    echo \"Building a shadow DB for drift check:\"\n    echo \" - - - - - - - - - - - - - - - - - - - - -\"\n    #   In a future version it would be cool to build the shadow DB ourselves\n    #   and to clean up afterwards. For now, however, asking the user to provide \n    #   a shadow DB for us removes the requirement to work out how to build a fresh\n    #   DB on 3 different DB platforms. It also means we don't need to worry about\n    #   credentials etc\n    #   $shadowDbPath = $targetDbPath + \"_SHADOW\"\n    \n    echo \"Cleaning shadow database\"\n    arguments=(\"clean\" \"-url=$shadowUrl\" \"-user=$shadowUser\" \"-password=$shadowPassword\")\n    echo \"Executing the following: $flywayCmd ${arguments//$shadowPassword/********}\"\n    bash $flywayCmd $arguments\n    \n    echo \"Migrating shadow database up to current target version\"\n    arguments=(\"migrate\" \"-locations=filesystem:$locationsPath\" \"-url=$shadowUrl\" \"-user=$shadowUser\" \"-password=$shadowPassword\" \"-target=$targetDbVersion\")\n    echo \"Executing the following: $flywayCmd ${arguments//$shadowPassword/********}\"\n    bash $flywayCmd $arguments\n\n    # Using comparison tool to check for drift\n    echo \"*******************************************\"\n    echo \"Using comparison tool to check for drift:\"\n    echo \" - - - - - - - - - - - - - - - - - - - - -\"\n    \n    function getServer (){\n    \tlocal connectionString=${1}\n        \n        # Split the connectiuon string name\n        IFS='/' read -ra connectionStringArray <<< \"$connectionString\"\n        \n        \n        return ${connectionStringArray[3]}\n    }\n\n    function getDbName (){\n    \tlocal connectionString=${1}\n        # Note: For MySQL this may return key values as well. e.g:\n        # <database>?<key1>=<value1>&<key2>=<value2>...\n        # Should fix this!!!!\n        echo \"Warning: Function getDbName() does not handle MySQL connection strings fully!\"\n        \n        # Split the connectiuon string name\n        IFS='/' read -ra connectionStringArray <<< \"$connectionString\"\n        \n        return ${connectionStringArray[4]}\n    }\n\n    # SQL Server\n    if [[ $dbPlatform == \"SQLServer\" ]]\n    then\n        # Details for target DB\n        targetServer=$(getServer $targetUrl)\n        targetDb=$(getDbName $targetUrl)\n        \n        # Details for shadow DB\n        shadowServer=$(getServer $shadowUrl)\n        shadowDb=$(getDbName $shadowUrl)\n        \n        # Drift report name and location\n        currentdate=$(date  '+%Y-%m-%d %T')\n        reportName=\"FlySQLDriftReport_$targetDb_$currentdate.\"\n        reportPath=$flywayPath\"/driftreport\"\n        \n        mkdir $reportPath\n        \n        arguments=\"/s1=$targetServer /db1=$targetDb /u1=$targetUser /p1=$targetPassword /s2=$shadowServer /db2=$shadowDb /u2=$shadowUser /p2=$shadowPassword /assertidentical /r=$reportPath\\reportName.html /rt=Simple\"\n\n        echo \"Executing the following command: $comparePath ${arguments//$targetPassword/********}\"\n        $comparePath $arguments \n        \n        if [[ $? -ne 0 ]]\n        then\n            echo \"Drift check failed. For details see report here: $reportPath\"\n            exit 1\n        else\n            echo \"Drift check passed.\"\n        fi\n    fi\n    \n    # Oracle\n    if [[ $dbPlatform == \"Oracle\" ]]\n    then\n        \n        # \"Target\" and \"Source\" names are very confusing.\n        # Consistently in this PS script I have used target\n        # to refer to the database we intend to deploy to.\n        # At this point we need to use that database as\n        # the source in order to create a roll-back\n        # script should the drift-check fail.\n        # Hence the terms source and target are used\n        # for opposite purposes when using Schema Compare\n        # for Oracle command line tool.\n        \n        # Details for target DB\n        targetTns=$(getServer $targetUrl)\n        targetSchema=$(getDbName $targetUrl)\n        commandsource=\"$targetUser/$targetPassword@$targetTns{$targetSchema}\"\n        \n        # Details for shadow DB\n        shadowServer=$(getServer $shadowUrl)\n        shadowDb=$(getDbName $shadowUrl)\n        target=\"$sourceUser/$sourcePassword@$sourceTns{$sourceSchema}\"\n        \n        # Drift report name and location\n        currentdate=$(date  '+%Y-%m-%d %T')\n        reportName=\"FlySQLDriftReport_$targetSchema_$currentdate.\"\n        reportPath=$flywayPath\"/driftReport\"\n        \n        mkdir $reportPath\n        \n        arguments=\"/source=$source /target=$target /r=$reportPath\\reportName.html /rt=Simple\"\n\n        echo \"Executing the following command:  $comparePath $arguments\"\n        bash $comparePath $arguments \n        if [[ $? -ne 0 ]]\n        then\n            echo \"Drift check failed. For details see report here: $reportPath\"\n            exit 1\n        else\n            echo \"Drift check passed.\"Throw\n        fi\n        \n    fi\n    # MySQL\n    if [[ $dbPlatform == \"MySQL\" ]]\n\tthen\n        # Details for target DB\n        targetServerPort=$(getServer $targetUrl)\n        \n        IFS='/' read -ra targetServerArray <<< \"$targetServerPort\"\n        \n        targetServer=${targetServerArray[0]}\n        targetPort=${targetServerArray[1]}\n        targetDb=$(getDbName $targetUrl)\n\n        # Details for shadow DB        \n        shadowServerPort=$(getServer $targetUrl)\n        shadowServer=${targetServerArray[0]}\n        shadowPort=${targetServerArray[1]}\n        shadowDb=$(getDbName $shadowUrl)\n\n        # Drift report name and location        \n        currentdate=$(date  '+%Y-%m-%d %T')\n        reportName=\"FlySQLDriftReport_$targetDb_$currentdate\"\n        reportPath=$flywayPath\"/driftReport\"\n        \n        mkdir $reportPath \n        \n        arguments=\"-verbose -server1=$shadowServer -port1=$shadowPort -database1=$shadowDb -username1=$shadowUser -password1=$shadowPassword -server2=$targetServer -database2=$targetDb -port2=$targetPort -username2=$targetUser -password2=$targetPassword -assertIdentical -report=$reportPath\\$reportName.html -reportType=Simple -scriptfile=$reportPath\\undoDrift.sql\"\n\n        echo \"Executing the following command: & $comparePath ${arguments//$targetPassword/********}\"\n        bash $comparePath $arguments \n        if [[ $? -ne 0 ]]\n        then\n            echo \"Drift check failed. For details see report here: $reportPath\"\n            exit 1\n        else\n            echo \"Drift check passed.\"Throw\n        fi\n    fi\nfi\n\n# Executing deployment\necho \"*******************************************\"\necho \"Executing deployment:\"\necho \" - - - - - - - - - - - - - - - - - - - - -\"\n    arguments=\"migrate -locations=filesystem:$locationsPath -url=$targetUrl -user=$targetUser -password=\"$targetPassword\"\"\necho \"Executing the following command:  $flywayCmd ${arguments//$targetPassword/********}\"\n\nbash $flywayCmd $arguments",
+      "Octopus.Action.Script.Syntax": "Bash",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.SubstituteInFiles.Enabled": "True",
+      "Octopus.Action.EnabledFeatures": "Octopus.Features.SubstituteInFiles",
+      "Octopus.Action.SubstituteInFiles.TargetFiles": "#{Octopus.Action.Package[FlywayPackage].ExtractedPath}/sql/*.sql"
+    },
+    "Parameters": [
+      {
+        "Id": "9c802c3d-4b2c-46d0-93a5-f8b55ec331c2",
+        "Name": "RelativePath",
+        "Label": "Relative path to flyway.cmd (optional)",
+        "HelpText": "If your FlyWay project is not in the root of your NuGet package specify the relative path here.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "3630e99d-2855-4a8e-9ec2-e72cd9a753a0",
+        "Name": "locations",
+        "Label": "-locations (relative path, optional)",
+        "HelpText": "Comma-separated list of locations to scan recursively for migrations. The location type is determined by its prefix.\nUnprefixed locations or locations starting with classpath: point to a package on the classpath and may contain both sql and java-based migrations.\nLocations starting with filesystem: point to a directory on the filesystem and may only contain sql migrations.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "eee3d0b8-5f7c-4f4a-9e77-d418a428c42a",
+        "Name": "targetUrl",
+        "Label": "Target -url (required)",
+        "HelpText": "The url of the target database in the format specified in the default flyway.conf file.\n\nE.g.\nSQL Server: jdbc:jtds:sqlserver://host:port/database\nOracle: jdbc:oracle:thin:@//host:port/service\nMySQL: jdbc:mysql://host:port/database",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "8225bcf9-dec6-46d3-bca6-e2b51c935755",
+        "Name": "targetUser",
+        "Label": "Target -user (required)",
+        "HelpText": "The username to connect to the target database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "6d0152d9-ebe4-4504-a7e6-34cc99af8288",
+        "Name": "targetPassword",
+        "Label": "Target -password (required)",
+        "HelpText": "The password to connect to the target database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "78462057-ced4-458d-ac57-f4f3a0b5d7a6",
+        "Name": "runDriftCheck",
+        "Label": "Run pre-deploy drift check",
+        "HelpText": "Check for drift with Redgate comparison tool.\n\n_Requirements_\n\nRequires that a Redgate command line comparison tool is installed on the target machine.\n\nFor SQL Server: SQL Compare\n\nhttp://www.red-gate.com/products/sql-development/sql-compare/\n\nFor Oracle: Schema Compare for Oracle\n\nhttp://www.red-gate.com/products/oracle-development/schema-compare-for-oracle/\n\nFor MySQL: MySQL Compare\n\nhttps://www.red-gate.com/products/mysql/mysql-compare/\n\nAll tools include a free trial licence for a limited period of time.\n\n_Limitations_\n\nSQL Server, Oracle and MySQL only",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "e15c2077-8658-4e24-9f9d-c2cf386ea8ee",
+        "Name": "comparePath",
+        "Label": "Path to Redgate comparison tool (required for drift-check)",
+        "HelpText": "Checking for drift requires a database comparison tool. This template uses the Redgate tooling.\n\nPlease provide the path to a Redgate command line tool. The default paths are\n\nSQL Compare (SQL Server):\n\nC:\\Program Files (x86)\\Red Gate\\SQL Automation Pack 1\\SC\\SQLCompare.exe\n\nSchema Compare for Oracle:\n\nC:\\Program Files\\Red Gate\\Schema Compare for Oracle 3\\SCO.exe\n\nMySQL Compare:\n\nC:\\Program Files (x86)\\Red Gate\\MySQL Compare 1\\MC.exe",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "ad924633-c031-4dfd-8b55-0a32c434d777",
+        "Name": "shadowUrl",
+        "Label": "Shadow -url (required for drift-check)",
+        "HelpText": "The url of the target database in the format specified in the default flyway.conf file.\n\nE.g.\nSQL Server: jdbc:jtds:sqlserver://host:port/database\nOracle: jdbc:oracle:thin:@//host:port/service\nMySQL: jdbc:mysql://host:port/database",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "12943c41-51c1-4904-b077-c8aea750690c",
+        "Name": "shadowUser",
+        "Label": "Shadow -user (required for drift-check)",
+        "HelpText": "The username to connect to the shadow database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "dbe4c707-f7b2-4c38-bad5-4e790cacfe6e",
+        "Name": "shadowPassword",
+        "Label": "Shadow -password (required for drift-check)",
+        "HelpText": "The password to connect to the shadow database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "3f8478c2-555f-4b5c-9782-8db4c374ba53",
+        "Name": "FlyWayPackageId",
+        "Label": "Flyway package Id",
+        "HelpText": "The package Id that contains the Flyway project.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "f1760f75-afc5-46bd-a2c8-82afeb1af009",
+        "Name": "FlyWayFeedId",
+        "Label": "Feed Id",
+        "HelpText": "The Id of the feed where the Flyway Package will be retrieved from",
+        "DefaultValue": "feeds-builtin",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "LastModifiedBy": "twerthi",
+    "$Meta": {
+      "ExportedAt": "2020-02-28T23:09:55.135Z",
+      "OctopusVersion": "2019.13.7",
+      "Type": "ActionTemplate"
+    },
+    "Category": "flyway"
+  }
