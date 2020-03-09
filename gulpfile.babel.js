@@ -130,7 +130,7 @@ function humanize(categoryId){
     case 'newrelic': return 'New Relic';
     case 'nunit': return 'NUnit';
     case 'pagerduty': return 'PagerDuty';
-    case 'postgres': return 'PostgreSQL';
+    case 'postgresql': return 'PostgreSQL';
     case 'pulumi': return 'Pulumi';
     case 'ravendb': return 'RavenDB';
     case 'rabbitmq': return 'RabbitMQ';
