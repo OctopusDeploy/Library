@@ -126,10 +126,12 @@ function humanize(categoryId){
     case 'launchdarkly': return 'LaunchDarkly';
     case 'linux': return 'Linux';
     case 'microsoft-teams': return 'Microsoft Teams';
+    case 'mysql': return 'MySQL';
     case 'netscaler': return 'NetScaler';
     case 'newrelic': return 'New Relic';
     case 'nunit': return 'NUnit';
     case 'pagerduty': return 'PagerDuty';
+    case 'postgresql': return 'PostgreSQL';
     case 'pulumi': return 'Pulumi';
     case 'ravendb': return 'RavenDB';
     case 'rabbitmq': return 'RabbitMQ';
