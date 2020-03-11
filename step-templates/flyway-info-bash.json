@@ -1,0 +1,158 @@
+{
+    "Id": "a7ffdbc8-7876-4c5d-8856-5c17ee3df443",
+    "Name": "Flyway Info from a referenced package - Bash",
+    "Description": "Display migration state using Flyway from a referenced package.  Variable substitution for the SQL folder is built into the template",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "Author": "twerthi",
+    "Packages": [
+      {
+        "Id": "c689ba0b-3aa6-4610-bc1a-c0daf1fdcb64",
+        "Name": "FlywayPackage",
+        "PackageId": "#{FlyWayPackageId}",
+        "FeedId": "#{FlyWayFeedId}",
+        "AcquisitionLocation": "Server",
+        "Properties": {
+          "Extract": "True",
+          "SelectionMode": "immediate"
+        }
+      }
+    ],
+    "Properties": {
+      "Octopus.Action.Script.ScriptBody": "# Get all of the Parameter values assigned to local variables\nrelativePath=$(get_octopusvariable \"RelativePath\")\nlocations=$(get_octopusvariable \"locations\")\ntargetUrl=$(get_octopusvariable \"targetUrl\")\ntargetUser=$(get_octopusvariable \"targetUser\")\ntargetPassword=$(get_octopusvariable \"targetPassword\")\nflywayPackageId=$(get_octopusvariable \"FlyWayPackageId\")\nflywayFeedId=$(get_octopusvariable \"FlyWayFeedId\")\n\n# Declaring the path to the NuGet package\npackagePath=$(get_octopusvariable \"Octopus.Action.Package[FlywayPackage].ExtractedPath\")\n\n# Delcaring path to FlyWay\nflywayPath=$packagePath\n\nif [[ ! -z \"$relativePath\" ]]\nthen\n    $flywayPath=$packagePath$relativePath\nfi\n\nflywayCmd=$flywayPath\"/flyway\"\n\nif [[ ! -z \"$locations\" ]]\nthen\n    locationsPath=$packagePath$locations\nelse\n    locationsPath=$flywayPath\"/sql\"\nfi\n\n# Logging for troubleshooting\necho \"*******************************************\"\necho \"Logging variables:\"\necho \" - - - - - - - - - - - - - - - - - - - - -\"\necho \"FlywayPackageStep: $FlyWayPackageStep\"\necho \"FlywayPath: $flywayPath\"\necho \"LocationsPath: $locationsPath\"\necho \"Target DB -url: $targetUrl\"\necho \"Target DB -user: $targetUser\"\n\n# Executing deployment\necho \"*******************************************\"\necho \"Comparing scripts folder to schema:\"\necho \" - - - - - - - - - - - - - - - - - - - - -\"\n    arguments=\"info -locations=filesystem:$locationsPath -url=$targetUrl -user=$targetUser -password=\"$targetPassword\"\"\necho \"Executing the following command:  $flywayCmd ${arguments//$targetPassword/********}\"\n\nbash $flywayCmd $arguments",
+      "Octopus.Action.Script.Syntax": "Bash",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.SubstituteInFiles.Enabled": "True",
+      "Octopus.Action.EnabledFeatures": "Octopus.Features.SubstituteInFiles",
+      "Octopus.Action.SubstituteInFiles.TargetFiles": "#{Octopus.Action.Package[FlywayPackage].ExtractedPath}/sql/*.sql"
+    },
+    "Parameters": [
+      {
+        "Id": "1a88edf0-a7d5-4b49-9320-eeeff36e8d4f",
+        "Name": "RelativePath",
+        "Label": "Relative path to flyway.cmd (optional)",
+        "HelpText": "If your FlyWay project is not in the root of your NuGet package specify the relative path here.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "fde5fadb-570b-4086-8a84-14030ca05f21",
+        "Name": "locations",
+        "Label": "-locations (relative path, optional)",
+        "HelpText": "Comma-separated list of locations to scan recursively for migrations. The location type is determined by its prefix.\nUnprefixed locations or locations starting with classpath: point to a package on the classpath and may contain both sql and java-based migrations.\nLocations starting with filesystem: point to a directory on the filesystem and may only contain sql migrations.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "6dc461fe-6a00-4621-8447-9d4dca858c39",
+        "Name": "targetUrl",
+        "Label": "Target -url (required)",
+        "HelpText": "The url of the target database in the format specified in the default flyway.conf file.\n\nE.g.\nSQL Server: jdbc:jtds:sqlserver://host:port/database\nOracle: jdbc:oracle:thin:@//host:port/service\nMySQL: jdbc:mysql://host:port/database",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "2018b280-eedc-4987-bfc9-e38d82de1a51",
+        "Name": "targetUser",
+        "Label": "Target -user (required)",
+        "HelpText": "The username to connect to the target database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "d9ce910d-7b02-4dcc-a2b3-b2e6188f5d8f",
+        "Name": "targetPassword",
+        "Label": "Target -password (required)",
+        "HelpText": "The password to connect to the target database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "98de9e8c-f29b-44f2-8ca8-ce2d55a58b25",
+        "Name": "runDriftCheck",
+        "Label": "Run pre-deploy drift check",
+        "HelpText": "Check for drift with Redgate comparison tool.\n\n_Requirements_\n\nRequires that a Redgate command line comparison tool is installed on the target machine.\n\nFor SQL Server: SQL Compare\n\nhttp://www.red-gate.com/products/sql-development/sql-compare/\n\nFor Oracle: Schema Compare for Oracle\n\nhttp://www.red-gate.com/products/oracle-development/schema-compare-for-oracle/\n\nFor MySQL: MySQL Compare\n\nhttps://www.red-gate.com/products/mysql/mysql-compare/\n\nAll tools include a free trial licence for a limited period of time.\n\n_Limitations_\n\nSQL Server, Oracle and MySQL only",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "6faf7e70-49d0-4f5d-a3ea-ec997ad27fa0",
+        "Name": "comparePath",
+        "Label": "Path to Redgate comparison tool (required for drift-check)",
+        "HelpText": "Checking for drift requires a database comparison tool. This template uses the Redgate tooling.\n\nPlease provide the path to a Redgate command line tool. The default paths are\n\nSQL Compare (SQL Server):\n\nC:\\Program Files (x86)\\Red Gate\\SQL Automation Pack 1\\SC\\SQLCompare.exe\n\nSchema Compare for Oracle:\n\nC:\\Program Files\\Red Gate\\Schema Compare for Oracle 3\\SCO.exe\n\nMySQL Compare:\n\nC:\\Program Files (x86)\\Red Gate\\MySQL Compare 1\\MC.exe",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "4591dcc4-7889-41a0-bd47-85a89bf4d16c",
+        "Name": "shadowUrl",
+        "Label": "Shadow -url (required for drift-check)",
+        "HelpText": "The url of the target database in the format specified in the default flyway.conf file.\n\nE.g.\nSQL Server: jdbc:jtds:sqlserver://host:port/database\nOracle: jdbc:oracle:thin:@//host:port/service\nMySQL: jdbc:mysql://host:port/database",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "540e6120-8955-45a8-96e6-f3bd36ce0bd8",
+        "Name": "shadowUser",
+        "Label": "Shadow -user (required for drift-check)",
+        "HelpText": "The username to connect to the shadow database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "9af8f3f2-d36a-43e7-aa99-065c279d5561",
+        "Name": "shadowPassword",
+        "Label": "Shadow -password (required for drift-check)",
+        "HelpText": "The password to connect to the shadow database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "7a3d1982-ecc1-492c-af92-fabc0feea7a1",
+        "Name": "FlyWayPackageId",
+        "Label": "Flyway package Id",
+        "HelpText": "The package Id that contains the Flyway project.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "1ebf7c69-bac8-4ac8-aad7-162c75cae75f",
+        "Name": "FlyWayFeedId",
+        "Label": "Feed Id",
+        "HelpText": "The Id of the feed where the Flyway Package will be retrieved from",
+        "DefaultValue": "feeds-builtin",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "LastModifiedBy": "twerthi",
+    "$Meta": {
+      "ExportedAt": "2020-03-11T16:56:47.731Z",
+      "OctopusVersion": "2019.13.7",
+      "Type": "ActionTemplate"
+    },
+    "Category": "flyway"
+  }
