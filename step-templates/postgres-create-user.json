@@ -1,0 +1,83 @@
+{
+    "Id": "6e676055-fb63-450f-9d98-ac99c4a68023",
+    "Name": "Postgres- Create User If Not Exists",
+    "Description": "Creates a new user account on a Postgres database server",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "Author": "twerthi",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Define functions\nfunction Get-ModuleInstalled\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName\n    )\n\n    # Check to see if the module is installed\n    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))\n    {\n        # It is installed\n        return $true\n    }\n    else\n    {\n        # Module not installed\n        return $false\n    }\n}\n\nfunction Install-PowerShellModule\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName,\n        $LocalModulesPath\n    )\n\n\t# Check to see if the package provider has been installed\n    if ((Get-NugetPackageProviderNotInstalled) -ne $false)\n    {\n    \t# Display that we need the nuget package provider\n        Write-Host \"Nuget package provider not found, installing ...\"\n        \n        # Install Nuget package provider\n        Install-PackageProvider -Name Nuget -Force\n    }\n\n\t# Save the module in the temporary location\n    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force\n}\n\nfunction Get-NugetPackageProviderNotInstalled\n{\n\t# See if the nuget package provider has been installed\n    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))\n}\n\nfunction Get-UserExists\n{\n\t# Define parameters\n    param ($Hostname,\n    $Username)\n    \n\t# Execute query\n    return Invoke-SqlQuery \"SELECT * FROM pg_roles WHERE rolname = '$Username';\"\n}\n\n# Define PowerShell Modules path\n$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName\n$env:PSModulePath = \"$LocalModules;$env:PSModulePath\"\n$PowerShellModuleName = \"SimplySql\"\n\n# Set secure protocols\n[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12\n\n# Check to see if SimplySql module is installed\nif ((Get-ModuleInstalled -PowerShellModuleName $PowerShellModuleName) -ne $true)\n{\n    # Tell user what we're doing\n    Write-Output \"PowerShell module $PowerShellModuleName is not installed, downloading temporary copy ...\"\n\n    # Install temporary copy\n    Install-PowerShellModule -PowerShellModuleName $PowerShellModuleName -LocalModulesPath $LocalModules\n}\n\n# Display\nWrite-Output \"Importing module $PowerShellModuleName ...\"\n\n# Import the module\nImport-Module -Name $PowerShellModuleName\n\n# Create credential object for the connection\n$SecurePassword = ConvertTo-SecureString $createLoginPasswordWithAddUserRights -AsPlainText -Force\n$ServerCredential = New-Object System.Management.Automation.PSCredential ($createLoginWithAddUserRights, $SecurePassword)\n\ntry\n{\n\t# Connect to MySQL\n    Open-PostGreConnection -Server $createPosgresSQLServerName -Credential $ServerCredential -Port $createPostgreSQLServerPort\n\n    # See if database exists\n    $userExists = Get-UserExists -Username $createNewUsername\n\n    if ($userExists -eq $null)\n    {\n        # Create database\n        Write-Output \"Creating user $templateNewUsername ...\"\n        $executionResults = Invoke-SqlUpdate \"CREATE ROLE $createNewUsername WITH LOGIN PASSWORD '$createNewUserPassword';\"\n\n        # See if it was created\n        $userExists = Get-UserExists -Username $createNewUsername\n            \n        # Check array\n        if ($userExists -ne $null)\n        {\n            # Success\n            Write-Output \"$createNewUsername created successfully!\"\n        }\n        else\n        {\n            # Failed\n            Write-Error \"$createNewUsername was not created!\"\n        }\n    }\n    else\n    {\n    \t# Display message\n        Write-Output \"User $createNewUsername already exists.\"\n    }\n}\nfinally\n{\n    Close-SqlConnection\n}"
+    },
+    "Parameters": [
+      {
+        "Id": "3ff05fe1-7873-443e-ae6b-f52c7d994664",
+        "Name": "createPosgresSQLServerName",
+        "Label": "Host name of the Postgres server",
+        "HelpText": "Name of the Postgres server",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "7db491c2-441a-455e-849d-dbb6b61b24e2",
+        "Name": "createPostgreSQLServerPort",
+        "Label": "Port",
+        "HelpText": "Port number the Postgres server listens on.",
+        "DefaultValue": "5432",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0e3cb957-541d-436c-b3b5-047ddda28ec8",
+        "Name": "createLoginWithAddUserRights",
+        "Label": "Login name",
+        "HelpText": "Login name of a user with rights to create user accounts.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "b9029a8c-e4bd-4993-a163-1f95dfbaf01d",
+        "Name": "createLoginPasswordWithAddUserRights",
+        "Label": "Login Password",
+        "HelpText": "Password for Login name.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "43b9e471-e792-49e1-a761-a8fa95679a24",
+        "Name": "createNewUsername",
+        "Label": "New user name",
+        "HelpText": "Name of the new user account to create.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "aeda6f0b-d9e9-4f66-8c61-84cf42c26f27",
+        "Name": "createNewUserPassword",
+        "Label": "New user password",
+        "HelpText": "Password for the new user account.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      }
+    ],
+    "LastModifiedBy": "twerthi",
+    "$Meta": {
+      "ExportedAt": "2020-03-09T23:20:40.039Z",
+      "OctopusVersion": "2019.13.7",
+      "Type": "ActionTemplate"
+    },
+    "Category": "postgres"
+  }
