@@ -125,6 +125,7 @@ function humanize(categoryId){
     case 'json': return 'JSON';
     case 'launchdarkly': return 'LaunchDarkly';
     case 'linux': return 'Linux';
+    case 'mariadb': return 'MariaDB'
     case 'microsoft-teams': return 'Microsoft Teams';
     case 'mysql': return 'MySQL';
     case 'netscaler': return 'NetScaler';
