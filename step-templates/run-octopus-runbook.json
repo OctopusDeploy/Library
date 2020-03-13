@@ -1,0 +1,113 @@
+{
+    "Id": "0444b0b3-088e-4689-b755-112d1360ffe3",
+    "Name": "Run Octopus Deploy Runbook",
+    "Description": "This step will kick off a runbook.  Right now it has two limitations. \n\n1) The runbook will start right away.  \n2) It can pass values for prompted variables to the runbook.  But those variables have to be text or sensitive variables.  Variable types such as AWS or Azure accounts will not work.\n\n",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "Author": "octopusbob",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\nfunction FindMatchingItemByName ($endPoint, $nameToLookFor, $itemType, $header, $pullFirstItem)\n{\t\t    \n\t$fullUrl = \"$($endPoint)?partialName=$nameToLookFor&skip=0&take=10000\"   \n    Write-Host \"Attempting to find $itemType $nameToLookFor by hitting $fullUrl\"\n    $itemList = Invoke-RestMethod $fullUrl -Headers $header\n    $foundItem = $null\n\n    foreach ($item in $itemList.Items)\n    {\n        if ($item.Name -eq $nameToLookFor -or $pullFirstItem)\n        {\n            Write-Host \"$itemType matching $nameToLookFor found\"\n            $foundItem = $item\n            break\n        }\n    }\n\n    if ($foundItem -eq $null)\n    {\n        Write-Highlight \"$itemType $nameToLookFor not found, exiting with error\"\n        exit 1\n    }\n    \n    return $foundItem\n}\n\n$runbookRunName = $OctopusParameters[\"Run.Runbook.Name\"]\n$runbookBaseUrl = $OctopusParameters[\"Run.Runbook.Base.Url\"]\n$runbookApiKey = $OctopusParameters[\"Run.Runbook.Api.Key\"]\n$runbookSpaceId = $OctopusParameters[\"Octopus.Space.Id\"]\n$runbookEnvironmentName = $OctopusParameters[\"Run.Runbook.Environment.Name\"]\n$runbookTenantName = $OctopusParameters[\"Run.Runbook.Tenant.Name\"]\n$runbookWaitForFinish = $OctopusParameters[\"Run.Runbook.Waitforfinish\"]\n$runbookUseGuidedFailure = $OctopusParameters[\"Run.Runbook.UseGuidedFailure\"]\n$runbookUsePublishedSnapshot = $OctopusParameters[\"Run.Runbook.UsePublishedSnapShot\"]\n$runbookPromptedVariables = $OctopusParameters[\"Run.Runbook.PromptedVariables\"]\n\n$runbookWaitForFinish = ([string]::IsNullOrWhiteSpace($runbookWaitForFinish) -eq $false)\n$runbookUseGuidedFailure = ([string]::IsNullOrWhiteSpace($runbookUseGuidedFailure) -eq $false)\n$runbookUsePublishedSnapshot = ([string]::IsNullOrWhiteSpace($runbookUsePublishedSnapshot) -eq $false)\n\nWrite-Host \"Runbook Name $runbookRunName\"\nWrite-Host \"Runbook Base Url: $runbookBaseUrl\"\nWrite-Host \"Runbook Space Id: $runbookSpaceId\"\nWrite-Host \"Runbook Environment Name: $runbookEnvironmentName\"\nWrite-Host \"Runbook Tenant Name: $runbookTenantName\"\nWrite-Host \"Wait for Finish: $runbookWaitForFinish\"\nWrite-Host \"Use Guided Failure: $runbookUseGuidedFailure\"\n \n$header = New-Object \"System.Collections.Generic.Dictionary[[String],[String]]\"\n$header.Add(\"X-Octopus-ApiKey\", $runbookApiKey)\n\n$environmentToUse = FindMatchingItemByName \"$runbookBaseUrl/api/$runbookSpaceId/environments\" $runbookEnvironmentName \"Environment\" $header $false\n$environmentIdToUse = $environmentToUse.Id\n\n$tenantIdToUse = $null\nif ([string]::IsNullOrWhiteSpace($runbookTenantName) -eq $false)\n{\n\t$tenantToUse = FindMatchingItemByName \"$runbookBaseUrl/api/$runbookSpaceId/tenants\" $runbookTenantName \"Tenant\" $header $false\n    $tenantIdToUse = $tenantToUse.Id\n}\n\n$runbookToRun = FindMatchingItemByName \"$runbookBaseUrl/api/$runbookSpaceId/runbooks\" $runbookRunName \"Runbook\" $header $false\n$runbookIdToRun = $runbookToRun.Id\n$runbookSnapShotIdToUse = $runbookToRun.PublishedRunbookSnapshotId\n\nif ($runbookSnapShotIdToUse -eq $null -and $runbookUsePublishedSnapshot -eq $true)\n{\n    Write-Highlight \"Use Published Snapshot was set yet the runbook doesn't have a published snapshot.  Exiting\"\n    Exit 1\n}\n\nif ($runbookUsePublishedSnapshot -eq $false)\n{\n\t$snapShotToUse = FindMatchingItemByName \"$runbookBaseUrl/api/$runbookSpaceId/runbooks/$runbookIdToRun/runbookSnapshots\" \"\" \"Snapshot\" $header $true\n    $runbookSnapShotIdToUse = $snapShotToUse.Id        \n}\n\n$runbookFormValues = @{}\nif ([string]::IsNullOrWhiteSpace($runbookPromptedVariables) -eq $false)\n{\n\t$runBookPreviewUrl = \"$runbookBaseUrl/api/$runbookSpaceId/runbooks/$runbookIdToRun/runbookRuns/preview/$environmentIdToUse\"\n    Write-Host \"Prompted variables were supplied, hitting the preview endpoint $runbookPreviewUrl\"\n\t$runBookPreview = Invoke-RestMethod $runbookPreviewUrl -Headers $header    \n    \n    $promptedValueList = @(($runbookPromptedVariables -Split \"`n\").Trim())\n    Write-Host $promptedValueList.Length\n    \n    foreach($element in $runbookPreview.Form.Elements)\n    {\n    \t$nameToSearchFor = $element.Control.Name\n        $uniqueName = $element.Name\n        $isRequired = $element.Control.Required\n        \n        $promptedVariablefound = $false\n        \n        Write-Host \"Looking for the prompted variable value for $nameToSearchFor\"\n    \tforeach ($promptedValue in $promptedValueList)\n        {\n        \t$splitValue = $promptedValue -Split \"::\"\n            Write-Host \"Comparing $nameToSearchFor with provided prompted variable $($promptedValue[0])\"\n            if ($splitValue.Length -gt 1)\n            {\n            \tif ($nameToSearchFor -eq $splitValue[0])\n                {\n                \tWrite-Host \"Found the prompted variable value $nameToSearchFor\"\n                \t$runbookFormValues[$uniqueName] = $splitValue[1]\n                    $promptedVariableFound = $true\n                    break\n                }\n            }\n        }\n        \n        if ($promptedVariableFound -eq $false -and $isRequired -eq $true)\n        {\n        \tWrite-Highlight \"Unable to find a value for the required prompted variable $nameToSearchFor, exiting\"\n            Exit 1\n        }\n    }\n}\n\n$runbookBody = @{\n    RunbookId = $runbookIdToRun;\n    RunbookSnapShotId = $runbookSnapShotIdToUse;\n    FrozenRunbookProcessId = $null;\n    EnvironmentId = $environmentIdToUse;\n    TenantId = $tenantIdToUse;\n    SkipActions = @();\n    QueueTime = $null;\n    QueueTimeExpiry = $null;\n    FormValues = $runbookFormValues;\n    ForcePackageDownload = $false;\n    ForcePackageRedeployment = $true;\n    UseGuidedFailure = $runbookUseGuidedFailure;\n    SpecificMachineIds = @();\n    ExcludedMachineIds = @()\n}\n\n$runbookBodyAsJson = $runbookBody | ConvertTo-Json\n$runbookPostUrl = \"$runbookBaseUrl/api/$runbookSpaceId/runbookRuns\"\nWrite-Host \"Kicking off runbook run by posting to $runbookPostUrl\"\n\n$runBookResponse = Invoke-RestMethod $runbookPostUrl -Method POST -Headers $header -Body $runbookBodyAsJson\n$runbookServerTaskId = $runBookResponse.TaskId\n$runbookRunId = $runbookResponse.Id\n\nWrite-Highlight \"Runbook was successfully invoked, you can access the launched runbook [here]($runbookBaseUrl/app#/$runbookSpaceId/projects/workers/operations/runbooks/$runbookIdToRun/snapshots/$runbookSnapShotIdToUse/runs/$runbookRunId)\"\nif ($runbookWaitForFinish -eq $true)\n{\n\tWrite-Highlight \"The setting to wait for completion was set, waiting until task has finished\"\n    $isRunning = $true\n    $taskStatusUrl = \"$runbookBaseUrl/api/tasks/$runbookServerTaskId\"\n    \n    While ($isRunning -eq $true)\n    {\n        Write-Host \"Waiting 5 seconds to check status\"\n        Start-Sleep -Seconds 5\n        $taskStatusResponse = Invoke-RestMethod $taskStatusUrl -Headers $header        \n\n        if ($taskStatusResponse.State -eq \"Success\" -or $taskStatusResponse.State -eq \"Failed\" -or $taskStatusResponse.State -eq \"Canceled\")\n        {\n            Write-Highlight \"The task has finished\"\n            $isRunning = $false\n        }\n        else\n        {\n            Write-Highlight \"The task has not finished\"\n        }\n    }\n}\n"
+    },
+    "Parameters": [
+      {
+        "Id": "e9e93cff-973a-4107-afa2-8efa30947979",
+        "Name": "Run.Runbook.Name",
+        "Label": "Runbook Name",
+        "HelpText": "The name of the runbook to run.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "d998db57-3574-4598-81f9-7dd145cab81a",
+        "Name": "Run.Runbook.Base.Url",
+        "Label": "Base Url",
+        "HelpText": "The base URL of your instance, IE https://samples.octopus.app",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "24884bf3-ca1d-4c17-8ee0-017339d6d87e",
+        "Name": "Run.Runbook.Api.Key",
+        "Label": "Api Key",
+        "HelpText": "The API key of a user who has permissions to run the runbook specified",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "07bd5b03-4151-4f32-8893-417bf22c4df2",
+        "Name": "Run.Runbook.Environment.Name",
+        "Label": "Environment Name",
+        "HelpText": "Name of environment to run the runbook in",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "bf4ae98a-4901-474a-8984-08b0258304ca",
+        "Name": "Run.Runbook.Tenant.Name",
+        "Label": "Tenant Name",
+        "HelpText": "(Optional) Name of Tenant to run the runbook for",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "9c49ba5c-337b-454a-8837-282353276aea",
+        "Name": "Run.Runbook.UsePublishedSnapShot",
+        "Label": "Use Published Snapshot",
+        "HelpText": "Indicates if the run should use the most recent published snapshot.  When not set it will use the most recent snapshot, regardless if it was published or not.",
+        "DefaultValue": "True",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "1a3e3ff6-456a-49e0-a0ce-83bfb30bfcaa",
+        "Name": "Run.Runbook.Waitforfinish",
+        "Label": "Wait for finish",
+        "HelpText": "Indicates if the process should be paused and wait for the runbook to finish",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "c36715c5-b583-43c4-b3e3-a74f44f2b2c4",
+        "Name": "Run.Runbook.UseGuidedFailure",
+        "Label": "Use Guided Failure",
+        "HelpText": "Should the runbook run use guided failure (not a good idea if you are waiting for this to finish)",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "c847668d-b4fa-4405-a15b-f03691147597",
+        "Name": "Run.Runbook.PromptedVariables",
+        "Label": "Prompted Variable Values",
+        "HelpText": "Values for any prompted variables for the runbook.  Each new line represents a new variable.  This will only work with string variable types, text and sensitive values.    \n\nUse the format **Name::Value**  IE:\n\n\nPromptedVariableName::My Super Awesome Value\n\nOtherPromptedVariable::Other Super Awesome Value",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "MultiLineText"
+        }
+      }
+    ],
+    "LastModifiedBy": "octopusbob",    
+    "$Meta": {
+      "ExportedAt": "2020-03-12T18:48:39.392Z",
+      "OctopusVersion": "2020.1.2",
+      "Type": "ActionTemplate"
+    },
+    "Category": "octopus"
+  }
