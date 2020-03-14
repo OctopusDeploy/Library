@@ -1,0 +1,99 @@
+{
+  "Id": "a7ffdbc8-7876-4c5d-8856-5c17ee3df443",
+  "Name": "Flyway Info from a referenced package - Bash",
+  "Description": "Display migration state using Flyway from a referenced package.  Variable substitution for the SQL folder is built into the template",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Author": "twerthi",
+  "Packages": [
+    {
+      "Id": "69db0748-ec8d-42a2-bf8f-84f6161ce571",
+      "Name": "FlyWayPackage",
+      "PackageId": null,
+      "FeedId": "feeds-builtin",
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "FlyWayPackage"
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Get all of the Parameter values assigned to local variables\nrelativePath=$(get_octopusvariable \"flywayRelativePath\")\nlocations=$(get_octopusvariable \"flywaylocations\")\ntargetUrl=$(get_octopusvariable \"flywaytargetUrl\")\ntargetUser=$(get_octopusvariable \"flywaytargetUser\")\ntargetPassword=$(get_octopusvariable \"flywaytargetPassword\")\n\n# Declaring the path to the NuGet package\npackagePath=$(get_octopusvariable \"Octopus.Action.Package[FlyWayPackage].ExtractedPath\")\n\n# Delcaring path to FlyWay\nflywayPath=$packagePath\n\nif [[ ! -z \"$relativePath\" ]]\nthen\n    $flywayPath=$packagePath$relativePath\nfi\n\nflywayCmd=$flywayPath\"/flyway\"\n\nif [[ ! -z \"$locations\" ]]\nthen\n    locationsPath=$packagePath$locations\nelse\n    locationsPath=$flywayPath\"/sql\"\nfi\n\n# Logging for troubleshooting\necho \"*******************************************\"\necho \"Logging variables:\"\necho \" - - - - - - - - - - - - - - - - - - - - -\"\necho \"FlywayPackageStep: $FlyWayPackageStep\"\necho \"FlywayPath: $flywayPath\"\necho \"LocationsPath: $locationsPath\"\necho \"Target DB -url: $targetUrl\"\necho \"Target DB -user: $targetUser\"\n\n# Executing deployment\necho \"*******************************************\"\necho \"Comparing scripts folder to schema:\"\necho \" - - - - - - - - - - - - - - - - - - - - -\"\n    arguments=\"info -locations=filesystem:$locationsPath -url=$targetUrl -user=$targetUser -password=\"$targetPassword\"\"\necho \"Executing the following command:  $flywayCmd ${arguments//$targetPassword/********}\"\n\nbash $flywayCmd $arguments",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.SubstituteInFiles.Enabled": "True",
+    "Octopus.Action.EnabledFeatures": "Octopus.Features.SubstituteInFiles",
+    "Octopus.Action.SubstituteInFiles.TargetFiles": "#{Octopus.Action.Package[FlywayPackage].ExtractedPath}/sql/*.sql"
+  },
+  "Parameters": [
+    {
+      "Id": "1a88edf0-a7d5-4b49-9320-eeeff36e8d4f",
+      "Name": "flywayRelativePath",
+      "Label": "Relative path to flyway.cmd (optional)",
+      "HelpText": "If your FlyWay project is not in the root of your NuGet package specify the relative path here.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "fde5fadb-570b-4086-8a84-14030ca05f21",
+      "Name": "flywaylocations",
+      "Label": "-locations (relative path, optional)",
+      "HelpText": "Comma-separated list of locations to scan recursively for migrations. The location type is determined by its prefix.\nUnprefixed locations or locations starting with classpath: point to a package on the classpath and may contain both sql and java-based migrations.\nLocations starting with filesystem: point to a directory on the filesystem and may only contain sql migrations.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6dc461fe-6a00-4621-8447-9d4dca858c39",
+      "Name": "flywaytargetUrl",
+      "Label": "Target -url (required)",
+      "HelpText": "The url of the target database in the format specified in the default flyway.conf file.\n\nE.g.\nSQL Server: jdbc:jtds:sqlserver://host:port/database\nOracle: jdbc:oracle:thin:@//host:port/service\nMySQL: jdbc:mysql://host:port/database",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2018b280-eedc-4987-bfc9-e38d82de1a51",
+      "Name": "flywaytargetUser",
+      "Label": "Target -user (required)",
+      "HelpText": "The username to connect to the target database.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d9ce910d-7b02-4dcc-a2b3-b2e6188f5d8f",
+      "Name": "flywaytargetPassword",
+      "Label": "Target -password (required)",
+      "HelpText": "The password to connect to the target database.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "7a3d1982-ecc1-492c-af92-fabc0feea7a1",
+      "Name": "FlyWayPackage",
+      "Label": "Flyway package",
+      "HelpText": "The package that contains the Flyway project.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    }
+  ],
+  "LastModifiedBy": "twerthi",
+  "$Meta": {
+    "ExportedAt": "2020-03-12T05:29:08.388Z",
+    "OctopusVersion": "2019.13.7",
+    "Type": "ActionTemplate"
+  },
+  "Category": "flyway"
+}
