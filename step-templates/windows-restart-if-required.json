@@ -1,0 +1,23 @@
+{
+    "Id": "cb0ca23c-524d-44a9-86e0-2ae05989d6a0",
+    "Name": "Check for Pending Restart and Restart if required",
+    "Description": "Checks if Server is pending a reboot, and reboots if it needs it.",
+    "ActionType": "Octopus.Script",
+    "Version": 0,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Sourced from https://github.com/adbertram/Random-PowerShell-Work/blob/master/Random%20Stuff/Test-PendingReboot.ps1\n# Script will run only on the server with the Tentacle installed\n\nfunction Test-RegistryKey($Key) {\n    if (Get-Item -Path $Key -ErrorAction Ignore) {\n        return $true\n    }\n    return $false\n}\n\nfunction Test-RegistryValue($Key, $Value) {\n    if (Get-ItemProperty -Path $Key -Name $Value -ErrorAction Ignore) {\n        return $true\n    }\n    return $false\n}\n\nfunction Test-RegistryValueNotNull($Key, $Value) {\n    if (($regVal = Get-ItemProperty -Path $Key -Name $Value -ErrorAction Ignore) -and $regVal.($Value)) {\n        return $true\n    }\n    return $false\n}\n\n$IsPendingReboot = $false\n\n# Testing Registry keys for Restarts\n# an exception is thrown when Get-ItemProperty or Get-ChildItem are passed a nonexistant key path\n$tests = @(\n    { Test-RegistryKey -Key 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\RebootPending' }\n    { Test-RegistryKey -Key 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\RebootInProgress' }\n    { Test-RegistryKey -Key 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired' }\n    { Test-RegistryKey -Key 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\PackagesPending' }\n    { Test-RegistryKey -Key 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\PostRebootReporting' }\n    { Test-RegistryValueNotNull -Key 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager' -Value 'PendingFileRenameOperations' }\n    { Test-RegistryValueNotNull -Key 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager' -Value 'PendingFileRenameOperations2' }\n    { \n\t\t(Test-RegistryKey -Key 'HKLM:\\SOFTWARE\\Microsoft\\Updates') -and\n\t\t(Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Updates' -Name 'UpdateExeVolatile' | Select-Object -ExpandProperty UpdateExeVolatile) -ne 0 \n\t}\n    { Test-RegistryValue -Key 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce' -Value 'DVDRebootSignal' }\n    { Test-RegistryKey -Key 'HKLM:\\SOFTWARE\\Microsoft\\ServerManager\\CurrentRebootAttemps' }\n    { Test-RegistryValue -Key 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Netlogon' -Value 'JoinDomain' }\n    { Test-RegistryValue -Key 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Netlogon' -Value 'AvoidSpnSet' }\n    {\n        (Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\ComputerName\\ActiveComputerName').ComputerName -ne\n        (Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\ComputerName\\ComputerName').ComputerName\n    }\n    {\n        if (Get-ChildItem -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Services\\Pending') {\n            $true\n        }\n    }\n)\n\nWrite-Debug \"Running tests to checking for reboot pending\"\nforeach ($test in $tests) {\n    if (& $test) {\n        Write-Debug \"Test found reboot pending: $test\"\n        $IsPendingReboot = $true\n        break\n    }\n}\n    \n\nif($IsPendingReboot -eq $true) {\n    Write-Host \"Restarting\"\n    Restart-Computer -Force\n}\nif($IsPendingReboot -eq $false) {\n    Write-Host \"No Restart required\"\n}\n"
+    },
+    "Parameters": [],
+    "LastModifiedOn": "2020-01-14T20:40:28.430+00:00",
+    "LastModifiedBy": "DevOpsDerek",
+    "$Meta": {
+      "ExportedAt": "2020-01-14T08:41:32.508Z",
+      "OctopusVersion": "2019.11.1",
+      "Type": "ActionTemplate"
+    },
+    "Category": "windows"
+  }
