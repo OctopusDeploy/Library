@@ -102,8 +102,9 @@ function humanize(categoryId){
     case 'apexsql': return 'ApexSQL';
     case 'aspnet': return 'ASP.NET';
     case 'aws': return 'AWS';
-    case 'azureFunctions': return 'Azure Functions';
     case 'azure-site-extensions': return 'Azure Site Extensions';
+    case 'azureFunctions': return 'Azure Functions';
+    case 'chef': return 'Chef';
     case 'clickonce': return 'ClickOnce';
     case 'dll': return 'dll';
     case 'dotnetcore': return '.NET Core';
@@ -113,9 +114,9 @@ function humanize(categoryId){
     case 'event-tracing': return 'Event Tracing for Windows';
     case 'filesystem': return 'File System';
     case 'flyway': return 'Flyway';
+    case 'ghostinspector': return 'Ghost Inspector';
     case 'github': return 'GitHub';
     case 'gitlab': return 'GitLab';
-    case 'ghostinspector': return 'Ghost Inspector';
     case 'hipchat': return 'HipChat';
     case 'hockeyapp': return 'HockeyApp';
     case 'hosts-file': return ' Hosts File';
@@ -124,6 +125,7 @@ function humanize(categoryId){
     case 'jira': return 'JIRA';
     case 'json': return 'JSON';
     case 'launchdarkly': return 'LaunchDarkly';
+    case 'lets-encrypt': return 'Lets Encrypt';
     case 'linux': return 'Linux';
     case 'mariadb': return 'MariaDB'
     case 'microsoft-teams': return 'Microsoft Teams';
@@ -134,8 +136,8 @@ function humanize(categoryId){
     case 'pagerduty': return 'PagerDuty';
     case 'postgresql': return 'PostgreSQL';
     case 'pulumi': return 'Pulumi';
-    case 'ravendb': return 'RavenDB';
     case 'rabbitmq': return 'RabbitMQ';
+    case 'ravendb': return 'RavenDB';
     case 'readyroll': return 'ReadyRoll';
     case 'redgate': return 'Redgate';
     case 'sharepoint': return 'SharePoint';
@@ -150,7 +152,6 @@ function humanize(categoryId){
     case 'webdeploy': return 'Web Deploy';
     case 'xml': return 'XML';
     case 'xunit': return 'xUnit';
-    case 'chef': return 'Chef';
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
   }
 }
@@ -291,3 +292,4 @@ gulp.task('watch', gulp.series('clean', 'build', () => {
 }));
 
 gulp.task('default', gulp.series('clean', 'build'));
+
