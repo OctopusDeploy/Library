@@ -124,6 +124,7 @@ function humanize(categoryId) {
     case 'iis': return 'IIS';
     case 'jira': return 'JIRA';
     case 'json': return 'JSON';
+    case 'k8s': return 'Kubernetes';
     case 'launchdarkly': return 'LaunchDarkly';
     case 'lets-encrypt': return 'Lets Encrypt';
     case 'linux': return 'Linux';
