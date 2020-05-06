@@ -141,6 +141,7 @@ function humanize(categoryId) {
     case 'ravendb': return 'RavenDB';
     case 'readyroll': return 'ReadyRoll';
     case 'redgate': return 'Redgate';
+    case 'roundhouse': return 'RoundhousE'
     case 'sharepoint': return 'SharePoint';
     case 'solarwinds': return 'SolarWinds';
     case 'sql': return 'SQL Server';
