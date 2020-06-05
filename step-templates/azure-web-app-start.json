@@ -1,0 +1,35 @@
+{
+  "Id": "b161f0da-483c-452e-b86c-6dd80a6d848e",
+  "Name": "Azure Web App - Start",
+  "Description": "Starts an azure web app.\n<hr />\n\n*<p>Note This template is designed to run against an azure web app octopus target </p>*\n*<p>Depends on Azure CLI and powershell to be installed on the running machine</p>*",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "OctopusUseBundledTooling": "True",
+    "Octopus.Action.Azure.AccountId": "#{_azureAcct}",
+    "Octopus.Action.Script.ScriptBody": "try\n{\n\taz --version\n}\n\ncatch\n{\n\tthrow \"az cli not installed\"\n}\n\n$webApp = $OctopusParameters[\"Octopus.Action.Azure.WebAppName\"]\n$resourceGroup = $OctopusParameters[\"Octopus.Action.Azure.ResourceGroupName\"]\n\n$appState = az webapp list --resource-group $resourceGroup --query \"[?name=='$webApp'].{state: state, hostName: defaultHostName}\" | ConvertFrom-Json\n\nif($appState.state -eq 'running')\n{\n\tWrite-Host \"Web App $webApp already running\"\n    return \n}\n\nWrite-Host \"Starting web app $webApp in resource group $resourceGroup\"\naz webapp start --name $webApp --resource-group $resourceGroup\n\nStart-Sleep -s 5\n\n$appState = az webapp list --resource-group $resourceGroup --query \"[?name=='$webApp'].{state: state, hostName: defaultHostName}\" | ConvertFrom-Json\n\nif($appState.state -ne \"running\")\n{\n\tThrow \"Webapp failed to start.  Check the app's activity/error log\"\n}\n"
+  },
+  "Parameters": [
+    {
+    "Id": "bcb5fe61-4f02-44af-85b9-8c9197567d50",
+    "Name": "_azureAcct",
+    "Label": "Azure Account",
+    "HelpText": "The azure account that has access to the web app",
+    "DefaultValue": "",
+    "DisplaySettings": {
+      "Octopus.ControlType": "AzureAccount"
+    }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-06-05T19:51:29.755Z",
+    "OctopusVersion": "2020.2.10",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "xtreampb",
+  "Category": "azure"
+}

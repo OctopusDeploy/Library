@@ -1,0 +1,44 @@
+{
+  "Id": "a73fd225-e890-4276-930c-c4a5bfddf1a6",
+  "Name": "Azure Web App - Restart",
+  "Description": "Restarts an azure web app.\n<hr />\n\n*<p>Note This template is designed to run against an azure web app octopus target </p>*\n*<p>Depends on Azure CLI and powershell to be installed on the running machine</p>*",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Azure.AccountId": "#{_azureAcct}",
+    "Octopus.Action.Script.ScriptBody": "try {az --version}\ncatch\n{\n    throw \"az CLI not installed\"\n}\n\n$webApp = $OctopusParameters[\"Octopus.Action.Azure.WebAppName\"]\n$resourceGroup = $OctopusParameters[\"Octopus.Action.Azure.ResourceGroupName\"]\n\nWrite-Host \"Checking webapp $webApp status in resource group $resourceGroup\"\n\n$appState = az webapp list --resource-group chrisplayground --query \"[?name=='$webApp'].{state: state, hostName: defaultHostName}\" | ConvertFrom-Json\nif($appState.state -eq \"stopped\")\n{\n    if($_startIfStopped -eq 'true')\n    {\n        Write-Host \"Webapp is not running. Starting...\" -NoNewline\n    \taz webapp start --name $webApp --resource-group $resourceGroup\n        Write-Host \"Done\"\n    }\n    else\n    {\n      Throw \"Webapp is not running.\"\n    }\n}\n\nWrite-Host \"Webapp running, restarting\"\n\nelse\n{\n\tWrite-Host \"Restarting $webApp in resource group $resourceGroup\"\n\taz webapp restart --name $webApp --resource-group $resourceGroup\n}\n\nStart-Sleep -s 5\n\n$appState = az webapp list --resource-group chrisplayground --query \"[?name=='$webApp'].{state: state, hostName: defaultHostName}\" | ConvertFrom-Json\n\nif($appState.state -ne \"running\")\n{\n\tThrow \"Webapp failed to start.  Check the app's activity/error log\"\n}\n\nwrite-host \"Webapp $webApp running. Check at: $($appState.hostName)\"\n"
+  },
+  "Parameters": [
+    {
+      "Id": "e732ddaa-a43b-4369-8813-065286069d65",
+      "Name": "_azureAcct",
+      "Label": "Azure Account",
+      "HelpText": "The azure account that has access to the web app",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "901ec60b-0ffd-4d08-be6f-fa9e8aec457a",
+      "Name": "_startIfStopped",
+      "Label": "Start if stopped",
+      "HelpText": "If the web app is stopped, start it",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-06-05T19:50:42.781Z",
+    "OctopusVersion": "2020.2.10",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "xtreampb",
+  "Category": "azure"
+}
