@@ -1,0 +1,24 @@
+{
+  "Id": "5fc03a6a-8713-4b95-8e5a-38eeb00d4248",
+  "Name": "Octopus - Log OctopusParameters",
+  "Description": "Writes the $OctopusParameters Dictionary to the Log.\nFor debugging purposes.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Author": "https://github.com/ByronScottJones",
+  "Properties": {
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "write-host \"# Copy this log section to a Powershell Editor or terminal. and run it.\"\r\nwrite-host \"# It will create an `$OctopusDeploy Dictionary Variable.\"\r\nwrite-host \" \"\r\n\r\nwrite-host \"function info { param([string] `$time) process {}}\"\r\nwrite-host \"`$OctopusParameters = @{}\"\r\nforeach($Key in ($OctopusParameters.Keys | sort-object)) {\r\n    $Value = $OctopusParameters[$Key]\r\n    \r\n    $Encode = $false\r\n    if( $Value -match \"\\(\" ) {$Encode = $true }\r\n    if( $Value -match '\\)' ) {$Encode = $true }\r\n    if( $Value -match '\\{' ) {$Encode = $true }\r\n    if( $Value -match '\\}' ) {$Encode = $true }\r\n    if( $Value -match '\\[' ) {$Encode = $true }\r\n    if( $Value -match '\\]' ) {$Encode = $true }\r\n    if( $Value -match '\\\"' ) {$Encode = $true }\r\n    if( $Value -match '\\`' ) {$Encode = $true }\r\n    if( $Value -match \"\\`'\" ) {$Encode = $true }\r\n    if( $Value -match '\\#' ) {$Encode = $true }\r\n    if( $Value -match '\\\\' ) {$Encode = $true }\r\n    if( $Value -match '\\/' ) {$Encode = $true }\r\n\r\n    if($Encode) {\r\n        $Base64Out = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($OctopusParameters[$Key]))\r\n        $Value = \"`$([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(`\"$Base64Out`\")))\"\r\n    }\r\n\r\n    write-host \"`$OctopusParameters.Add(`\"$Key`\", `\"$Value`\")\"\r\n\r\n    \r\n} #foreach Key\r\n\r\nwrite-host \"`$OctopusParameters | add-member -memberType ScriptMethod -Name ToClipboard -value {`$this.GetEnumerator() |sort -Property Name | format-table -AutoSize | out-string -width 512 | set-clipboard; };\"\r\nwrite-host \"`$OctopusParameters | add-member -memberType ScriptMethod -Name ToGridView  -value {`$this.GetEnumerator() |sort -Property Name | out-gridview; };\"\r\nwrite-host \"`$OctopusParameters | add-member -memberType ScriptMethod -Name ToScreen    -value {`$this.GetEnumerator() |sort -Property Name | format-table -AutoSize | out-string -width 512; };\"\r\n\r\nwrite-host \"CLS\"\r\nwrite-host \" \"\r\nwrite-host \"write-host `\"To display a gridview of the Octopus Parameters, run this command: ```$OctopusParameters.ToGridView()`\"\"\r\nwrite-host \"write-host `\"To list the Octopus Parameters, run this command: ```$OctopusParameters.ToScreen()`\"\"\r\nwrite-host \"write-host `\"To copy the Octopus Parameters to the clipboard, run this command: ```$OctopusParameters.ToClipboard()`\"\" \r\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [],
+  "LastModifiedOn": "2020-06-05T20:16:48.674+00:00",
+  "LastModifiedBy": "https://github.com/ByronScottJones",
+  "$Meta": {
+    "ExportedAt": "2020-06-05T20:53:50.888Z",
+    "OctopusVersion": "2.6.5.1010",
+    "Type": "ActionTemplate"
+  },
+  "Category": "octopus"
+}
