@@ -3,7 +3,7 @@
   "Name": "GitHub - Create Release",
   "Description": "Create a release for a Github Repository.",
   "ActionType": "Octopus.Script",
-  "Version": 4,
+  "Version": 5,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\n$formattedVersionNumber = [string]::Format(\"v{0}\", $versionNumber)\n$isDraft = [bool]::Parse($draft)\n$isPrerelease = [bool]::Parse($preRelease)\n\n$releaseData = @{\n    tag_name = $formattedVersionNumber;\n    target_commitish = $commitId;\n    name = $formattedVersionNumber;\n    body = $releaseNotes;\n    draft = $isDraft;\n    prerelease = $isPrerelease;\n}\n$json = (ConvertTo-Json $releaseData -Compress)\n$releaseParams = @{\n    Uri = \"https://api.github.com/repos/$gitHubUsername/$gitHubRepository/releases\";\n    Method = 'POST';\n    Headers = @{\n        Authorization = 'Basic ' + [Convert]::ToBase64String(\n            [Text.Encoding]::ASCII.GetBytes($gitHubApiKey + \":x-oauth-basic\")\n        );\n    }\n    ContentType = 'application/json; charset=utf-8';\n    Body = [System.Text.Encoding]::UTF8.GetBytes($json)\n}\n\nWrite-Host \"Creating release $formattedVersionNumber for $commitId.\"\n$result = Invoke-RestMethod @releaseParams\n\nWrite-Host \"Release successfully created.\"\n$result",
     "Octopus.Action.Script.Syntax": "PowerShell"
