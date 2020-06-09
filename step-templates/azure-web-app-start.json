@@ -9,7 +9,7 @@
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "OctopusUseBundledTooling": "True",
+    "OctopusUseBundledTooling": "False",
     "Octopus.Action.Azure.AccountId": "#{azWebApp.AzureAcct}",
     "Octopus.Action.Script.ScriptBody": "try\n{\n\taz --version\n}\n\ncatch\n{\n\tthrow \"az cli not installed\"\n}\n\n$webApp = $OctopusParameters[\"Octopus.Action.Azure.WebAppName\"]\n$resourceGroup = $OctopusParameters[\"Octopus.Action.Azure.ResourceGroupName\"]\n\n$appState = az webapp list --resource-group $resourceGroup --query \"[?name=='$webApp'].{state: state, hostName: defaultHostName}\" | ConvertFrom-Json\n\nif($appState.state -eq 'running')\n{\n\tWrite-Host \"Web App $webApp already running\"\n    return \n}\n\nWrite-Host \"Starting web app $webApp in resource group $resourceGroup\"\naz webapp start --name $webApp --resource-group $resourceGroup\n\nStart-Sleep -s 5\n\n$appState = az webapp list --resource-group $resourceGroup --query \"[?name=='$webApp'].{state: state, hostName: defaultHostName}\" | ConvertFrom-Json\n\nif($appState.state -ne \"running\")\n{\n\tThrow \"Webapp failed to start.  Check the app's activity/error log\"\n}\n"
   },
