@@ -113,6 +113,7 @@ function humanize(categoryId) {
     case 'entityframework': return 'Entity Framework';
     case 'event-tracing': return 'Event Tracing for Windows';
     case 'filesystem': return 'File System';
+    case 'firebase': return 'Firebase';
     case 'flyway': return 'Flyway';
     case 'ghostinspector': return 'Ghost Inspector';
     case 'github': return 'GitHub';
