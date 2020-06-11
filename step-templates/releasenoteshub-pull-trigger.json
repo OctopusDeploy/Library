@@ -1,6 +1,6 @@
 {
   "Id": "8acee70f-0b6d-43a8-ab16-b832b37e0422",
-  "Name": "ReleaseNotesHub  Trigger",
+  "Name": "ReleaseNotesHub Pull Trigger",
   "Description": "ReleaseNotesHub is a B2B\\B2C SaaS solution that automates the generation and publication of release notes. With RnHub the creation of Release Notes becomes another step within your CI/CD pipeline. RnHub can pull content from many systems including TFS, Azure Devops, GitHub, Jira and Asana. \n\nUse this step to trigger a pull from your Octopus Deploy process. Visit [here](https://support.releasenoteshub.com/article/show/111570-how-to-trigger-a-pull-from-octopus-deploy) for setup guide. \n\nhttps://www.releasenoteshub.com\n",
   "ActionType": "Octopus.Script",
   "Version": 1,
@@ -9,14 +9,14 @@
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "[system.version]$v \n\nif ( -not [string]::IsNullOrEmpty( $Version ) )\n{\n\t$v = New-Object System.Version($Version)\n}\nelse\n{\n\t$v = New-Object System.Version($OctopusParameters['Octopus.Release.Number'])\n}\n\n$headers = @{\n    \"Authorization\" = \"ApiKey $ApiKey\"\n}\n\n$body = @{\n    \"version\" = @{\"VersionMajor\" = $v.Major; \"VersionMinor\" = $v.Minor; \"VersionBuild\" = $v.Build; \"VersionRevision\" = $v.Revision};\n    \"createOnNotFound\" = $CreateOnNotFound;\n    \"merge\" = $Merge; \n    \"publish\" = $Publish     \n} | ConvertTo-Json\n\ntry {\n     Invoke-RestMethod -Method Post -Uri \"https://api.releasenoteshub.com/api/pull/PullVersion/$ProjectId\" -Headers $headers -Body $body -ContentType application/json-patch+json\n} catch {\n    Write-Host \"StatusCode:\" $_.Exception.Response.StatusCode.value__ \n    Write-Host \"StatusDescription:\" $_.Exception.Response.StatusDescription\n    throw $_.Exception\n}"
+    "Octopus.Action.Script.ScriptBody": "[system.version]$v \n\nif ( -not [string]::IsNullOrEmpty( $ReleaseNotesHub_Version ) )\n{\n\t$v = New-Object System.Version($ReleaseNotesHub_Version)\n}\nelse\n{\n\t$v = New-Object System.Version($OctopusParameters['Octopus.Release.Number'])\n}\n\n$headers = @{\n    \"Authorization\" = \"ApiKey $ReleaseNotesHub_ApiKey\"\n}\n\n$body = @{\n    \"version\" = @{\"VersionMajor\" = $v.Major; \"VersionMinor\" = $v.Minor; \"VersionBuild\" = $v.Build; \"VersionRevision\" = $v.Revision};\n    \"createOnNotFound\" = $ReleaseNotesHub_CreateOnNotFound;\n    \"merge\" = $ReleaseNotesHub_Merge; \n    \"publish\" = $ReleaseNotesHub_Publish     \n} | ConvertTo-Json\n\ntry {\n     Invoke-RestMethod -Method Post -Uri \"https://api.releasenoteshub.com/api/pull/PullVersion/$ReleaseNotesHub_ProjectId\" -Headers $headers -Body $body -ContentType application/json-patch+json\n} catch {\n    Write-Host \"StatusCode:\" $_.Exception.Response.StatusCode.value__ \n    Write-Host \"StatusDescription:\" $_.Exception.Response.StatusDescription\n    throw $_.Exception\n}"
   },
   "Parameters": [
     {
       "Id": "3341141f-ab5d-4204-9d84-b46cb0e1ba71",
-      "Name": "ApiKey",
+      "Name": "ReleaseNotesHub_ApiKey",
       "Label": "ApiKey",
-      "HelpText": "https://support.releasenoteshub.com/article/show/105050-how-do-i-get-an-api-key",
+      "HelpText": "The ApiKey can be copied from your ReleaseNotesHub Profile [page](https://support.releasenoteshub.com/article/show/105050-how-do-i-get-an-api-key).",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "Sensitive"
@@ -24,9 +24,9 @@
     },
     {
       "Id": "02e58f68-5a86-41cd-9b21-636d5eb162bf",
-      "Name": "Version",
+      "Name": "ReleaseNotesHub_Version",
       "Label": "Version",
-      "HelpText": "This is an optional parameter. If left blank, the Octopus Deploy system variable 'Octopus.Release.Number' will be used.",
+      "HelpText": "Version is an optional parameter. If left blank, the Octopus Deploy system variable 'Octopus.Release.Number' will be used.",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -34,9 +34,9 @@
     },
     {
       "Id": "0d3f067f-1432-4b3a-9c63-9a2eb9b6b522",
-      "Name": "ProjectId",
+      "Name": "ReleaseNotesHub_ProjectId",
       "Label": "RnHub Project Id",
-      "HelpText": "https://support.releasenoteshub.com/article/show/111560-how-to-get-project-id",
+      "HelpText": "The ReleaseNotesHub Project Id can be copied from your ReleaseNotesHub Project [page](https://support.releasenoteshub.com/article/show/111560-how-to-get-project-id).",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -44,9 +44,9 @@
     },
     {
       "Id": "8218468f-36f4-48d3-8e93-4a04745b6bac",
-      "Name": "Publish",
+      "Name": "ReleaseNotesHub_Publish",
       "Label": "Publish",
-      "HelpText": null,
+      "HelpText": "Select false to create your release notes in draft status, or select true to Publish.",
       "DefaultValue": "false",
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
@@ -54,9 +54,9 @@
     },
     {
       "Id": "6fa58ea9-b392-4f16-ab8c-07096e53a130",
-      "Name": "Merge",
+      "Name": "ReleaseNotesHub_Merge",
       "Label": "Merge",
-      "HelpText": "https://support.releasenoteshub.com/article/show/108944-what-is-a-merge-in-rnhub",
+      "HelpText": "Select true to consolidate all release notes produced for each release since the last RTM. Visit [here](https://support.releasenoteshub.com/article/show/108944-what-is-a-merge-in-rnhub) for more details.",
       "DefaultValue": "false",
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
@@ -64,9 +64,9 @@
     },
     {
       "Id": "49db9d3c-3734-4a56-8dce-364785d58a12",
-      "Name": "CreateOnNotFound",
+      "Name": "ReleaseNotesHub_CreateOnNotFound",
       "Label": "Create release if not found",
-      "HelpText": null,
+      "HelpText": "If CreateOnNotFound is set to true and a Release with the specified version cannot be found, a release will automatically be created.",
       "DefaultValue": "true",
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
@@ -74,7 +74,7 @@
     }
   ],
   "$Meta": {
-    "ExportedAt": "2020-06-08T23:25:48.885Z",
+    "ExportedAt": "2020-06-11T14:17:12.897Z",
     "OctopusVersion": "2020.2.11",
     "Type": "ActionTemplate"
   },
