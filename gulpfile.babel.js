@@ -155,6 +155,7 @@ function humanize(categoryId) {
     case 'webdeploy': return 'Web Deploy';
     case 'xml': return 'XML';
     case 'xunit': return 'xUnit';
+    case 'rnhub': return 'RnHub';	
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
   }
 }
