@@ -37,6 +37,8 @@ Here's a **checklist** to consider:
 * Are the default values of parameters validly applicable in other user's environments? Don't use the default values as examples if the user will have to change them
 * For how to deal with parameters and testing take a look at the article [Making great Octopus PowerShell step templates](https://www.daniellittle.xyz/making-great-octopus-powershell-step-templates/)
 * For another example of how to test your step template script body before submitting a PR take a look at this [gist](https://gist.github.com/JCapriotti/45639e06ba777ee974b1)
+* Does the step template require extra software to work?  If possible, include the download logic in the step template itself.  If that is not possible, add the instructions to the `Description` field in the step template.
+* Does the step template "just work?" In other words, after the initial scaffolding (installing a CLI for example), could anyone run the step template in a deployment and have it perform the desired action?  Or, would a person need to dig into the step template to find out how it works?  Does someone need to manually perform additional steps post-deployment to fully utilize the functionality?
 
 If you need help, feedback or a sanity check before investing time in a contribution, feel free to raise an issue on the tracker to discuss your idea first.
 
