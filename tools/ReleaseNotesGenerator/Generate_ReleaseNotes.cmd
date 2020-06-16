@@ -16,7 +16,8 @@ IF %ERRORLEVEL% NEQ 0 echo Failed to install scriptcs & goto end
 
 :run
 echo Running release notes generator script
-scriptcs -i ScriptCs.Octokit
+REM scriptcs -i ScriptCs.Octokit
+powershell -Command "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12;scriptcs -i ScriptCs.Octokit"
 scriptcs .\ReleaseNotesGenerator.csx -- "OctopusDeploy" "Library" "vNext" "Closed" %ISTEAMCITY%
 
 :end
