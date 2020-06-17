@@ -235,7 +235,7 @@ gulp.task('copy:app', () => {
 });
 
 gulp.task('copy:configs', () => {
-  return gulp.src(['./package.json', './web.config', './IISNode.yml'])
+  return gulp.src(['./package.json','./package-lock.json', './web.config', './IISNode.yml'])
     .pipe(argv.production ? gulp.dest(`${publishDir}`) : gulp.dest(`${buildDir}`));
 });
 
