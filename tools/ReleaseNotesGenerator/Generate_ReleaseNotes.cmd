@@ -15,8 +15,10 @@ scriptcs -v
 IF %ERRORLEVEL% NEQ 0 echo Failed to install scriptcs & goto end
 
 :run
-echo Running release notes generator script
+echo Installing ScriptCs.Octokit
 scriptcs -i ScriptCs.Octokit
+
+echo Running release notes generator script
 scriptcs .\ReleaseNotesGenerator.csx -- "OctopusDeploy" "Library" "vNext" "Closed" %ISTEAMCITY%
 
 :end
