@@ -1,0 +1,1453 @@
+process {
+    Id = "deploymentprocess-Projects-3941"
+    OwnerId = "Projects-3941"
+    IsFrozen = false
+    Version = 0
+    SpaceId = "Spaces-1"
+    Steps {
+        notify_#octopus-library_on_slack {
+            Id = "d00e519a-3dc6-44f2-a530-c3da76540ea9"
+            Name = "Notify #octopus-library on Slack"
+            Condition = "Always"
+            StartTrigger = "StartAfterPrevious"
+            PackageRequirement = "LetOctopusDecide"
+            Actions {
+                notify_#octopus-library_on_slack {
+                    Id = "d99a1b98-d67c-4634-8efa-03b9c3dfd309"
+                    Name = "Notify #octopus-library on Slack"
+                    ActionType = "Octopus.Script"
+                    Container {
+                    }
+                    IsDisabled = false
+                    IsRequired = false
+                    Environments = []
+                    ExcludedEnvironments = []
+                    Channels = []
+                    TenantTags = []
+                    Packages {
+                    }
+                    Condition = "Success"
+                    Properties {
+                        octopus.action.script.syntax {
+                            Key = "Octopus.Action.Script.Syntax"
+                            Value {
+                                Value = "PowerShell"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.scriptsource {
+                            Key = "Octopus.Action.Script.ScriptSource"
+                            Value {
+                                Value = "Inline"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.runonserver {
+                            Key = "Octopus.Action.RunOnServer"
+                            Value {
+                                Value = "true"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.scriptbody {
+                            Key = "Octopus.Action.Script.ScriptBody"
+                            Value {
+                                Value = "$payload = @{
+    channel = $OctopusParameters['ssn_Channel']
+    username = $OctopusParameters['ssn_Username'];
+    icon_url = $OctopusParameters['ssn_IconUrl'];
+    link_names = "true";
+    attachments = @(
+        @{
+            mrkdwn_in = $('pretext', 'text');
+            pretext = $OctopusParameters['ssn_Title'];
+            text = $OctopusParameters['ssn_Message'];
+            color = $OctopusParameters['ssn_Color'];
+        }
+    )
+}
+
+try {
+	[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+    Invoke-Restmethod -Method POST -Body ($payload | ConvertTo-Json -Depth 4) -Uri $OctopusParameters['ssn_HookUrl']
+} catch {
+    Write-Host "An error occurred while attempting to send Slack notification"
+    Write-Host $_.Exception
+    Write-Host $_
+    exit 0
+}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.version {
+                            Key = "Octopus.Action.Template.Version"
+                            Value {
+                                Value = "12"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.id {
+                            Key = "Octopus.Action.Template.Id"
+                            Value {
+                                Value = "ActionTemplates-404"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_iconurl {
+                            Key = "ssn_IconUrl"
+                            Value {
+                                Value = "http://octopusdeploy.com/content/resources/favicon.png"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_username {
+                            Key = "ssn_Username"
+                            Value {
+                                Value = "Octopus Deploy"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_hookurl {
+                            Key = "ssn_HookUrl"
+                            Value {
+                                Value = "#{SlackWebhook}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_channel {
+                            Key = "ssn_Channel"
+                            Value {
+                                Value = "#{SlackChannel}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_title {
+                            Key = "ssn_Title"
+                            Value {
+                                Value = "Deployment started"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_message {
+                            Key = "ssn_Message"
+                            Value {
+                                Value = "Release `#{Octopus.Release.Number}` to *#{Octopus.Environment.Name}*
+
+#{if Octopus.Release.Notes}
+*Release notes*
+```#{Octopus.Release.Notes}```
+#{/if}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_color {
+                            Key = "ssn_Color"
+                            Value {
+                                Value = "good"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                    }
+                }
+            }
+            Properties {
+            }
+        }
+        clear_staging_slot {
+            Id = "78709406-33c4-4876-a5a1-1ac7febddc6c"
+            Name = "Clear Staging slot"
+            Condition = "Always"
+            StartTrigger = "StartWithPrevious"
+            PackageRequirement = "LetOctopusDecide"
+            Actions {
+                clear_staging_slot {
+                    Id = "c37c83d7-6621-4c00-9dbd-b6f6863ecfc9"
+                    Name = "Clear Staging slot"
+                    ActionType = "Octopus.AzurePowerShell"
+                    Container {
+                    }
+                    IsDisabled = false
+                    IsRequired = false
+                    Environments = []
+                    ExcludedEnvironments = []
+                    Channels = []
+                    TenantTags = []
+                    Packages {
+                    }
+                    Condition = "Success"
+                    Properties {
+                        octopus.action.azure.accountid {
+                            Key = "Octopus.Action.Azure.AccountId"
+                            Value {
+                                Value = "azureserviceprincipal-octofront-service-principal"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.scriptsource {
+                            Key = "Octopus.Action.Script.ScriptSource"
+                            Value {
+                                Value = "Inline"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.scriptbody {
+                            Key = "Octopus.Action.Script.ScriptBody"
+                            Value {
+                                Value = "#Remove the staging slot if it exists
+Remove-AzureRmWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging -Force
+
+#Create the staging slot
+New-AzureRmWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                    }
+                }
+            }
+            Properties {
+            }
+        }
+        deploy_octopus.library_ {
+            Id = "a64350c7-3f1b-425b-a9c5-7927fa13f572"
+            Name = "Deploy Octopus.Library "
+            Condition = "Success"
+            StartTrigger = "StartAfterPrevious"
+            PackageRequirement = "LetOctopusDecide"
+            Actions {
+                deploy_octopus.library_ {
+                    Id = "dd7ee87c-e864-424e-b326-927b70c6c769"
+                    Name = "Deploy Octopus.Library "
+                    ActionType = "Octopus.AzureWebApp"
+                    Container {
+                    }
+                    IsDisabled = false
+                    IsRequired = false
+                    Environments = []
+                    ExcludedEnvironments = []
+                    Channels = []
+                    TenantTags = []
+                    Packages {
+                        item {
+                            Id = "b9a6b92d-f3fc-4e61-897c-7b27a1c5f6f6"
+                            Name = ""
+                            PackageId = "Octopus.Library"
+                            FeedId = "feeds-builtin"
+                            AcquisitionLocation = "Server"
+                            Properties {
+                            }
+                        }
+                    }
+                    Condition = "Success"
+                    Properties {
+                        octopus.action.package.feedid {
+                            Key = "Octopus.Action.Package.FeedId"
+                            Value {
+                                Value = "feeds-builtin"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.azure.usechecksum {
+                            Key = "Octopus.Action.Azure.UseChecksum"
+                            Value {
+                                Value = "False"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.package.packageid {
+                            Key = "Octopus.Action.Package.PackageId"
+                            Value {
+                                Value = "Octopus.Library"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.azure.removeadditionalfiles {
+                            Key = "Octopus.Action.Azure.RemoveAdditionalFiles"
+                            Value {
+                                Value = "True"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.azure.preserveappdata {
+                            Key = "Octopus.Action.Azure.PreserveAppData"
+                            Value {
+                                Value = "True"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.azure.deploymentslot {
+                            Key = "Octopus.Action.Azure.DeploymentSlot"
+                            Value {
+                                Value = "#{AzureSlotName}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.package.downloadontentacle {
+                            Key = "Octopus.Action.Package.DownloadOnTentacle"
+                            Value {
+                                Value = "False"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                    }
+                }
+            }
+            Properties {
+                octopus.action.targetroles {
+                    Key = "Octopus.Action.TargetRoles"
+                    Value {
+                        Value = "octopus-library"
+                        IsSensitive = false
+                        HasValue = true
+                    }
+                }
+            }
+        }
+        http_-_invoke_url {
+            Id = "acf54d2b-b20b-4e6e-bc1b-04923272dcdc"
+            Name = "HTTP - Invoke URL"
+            Condition = "Success"
+            StartTrigger = "StartAfterPrevious"
+            PackageRequirement = "LetOctopusDecide"
+            Actions {
+                http_-_invoke_url {
+                    Id = "aa357e0a-29a0-4e90-a3e3-bee81be02e0e"
+                    Name = "HTTP - Invoke URL"
+                    ActionType = "Octopus.Script"
+                    Container {
+                    }
+                    IsDisabled = false
+                    IsRequired = false
+                    Environments = []
+                    ExcludedEnvironments = []
+                    Channels = []
+                    TenantTags = []
+                    Packages {
+                    }
+                    Condition = "Success"
+                    Properties {
+                        octopus.action.script.scriptbody {
+                            Key = "Octopus.Action.Script.ScriptBody"
+                            Value {
+                                Value = "# Running outside octopus
+param(
+    [string]$url,
+    [switch]$whatIf
+) 
+
+$ErrorActionPreference = "Stop" 
+
+function Get-Param($Name, [switch]$Required, $Default) {
+    $result = $null
+
+    if ($OctopusParameters -ne $null) {
+        $result = $OctopusParameters[$Name]
+    }
+
+    if ($result -eq $null) {
+        $variable = Get-Variable $Name -EA SilentlyContinue   
+        if ($variable -ne $null) {
+            $result = $variable.Value
+        }
+    }
+
+    if ($result -eq $null -or $result -eq "") {
+        if ($Required) {
+            throw "Missing parameter value $Name"
+        } else {
+            $result = $Default
+        }
+    }
+
+    return $result
+}
+
+& {
+    param(
+        [string]$url
+    ) 
+
+    Write-Host "Invoke Url: $url"
+
+    try {
+    
+        Invoke-WebRequest -Uri $url -Method Get -UseBasicParsing
+
+    } catch {
+        Write-Host "There was a problem invoking Url"    
+    }
+
+ } `
+ (Get-Param 'url' -Required)"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.id {
+                            Key = "Octopus.Action.Template.Id"
+                            Value {
+                                Value = "ActionTemplates-102"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.syntax {
+                            Key = "Octopus.Action.Script.Syntax"
+                            Value {
+                                Value = "PowerShell"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.runonserver {
+                            Key = "Octopus.Action.RunOnServer"
+                            Value {
+                                Value = "true"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        url {
+                            Key = "url"
+                            Value {
+                                Value = "#{LibrarySiteWithSlotUrl}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.version {
+                            Key = "Octopus.Action.Template.Version"
+                            Value {
+                                Value = "2"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                    }
+                }
+            }
+            Properties {
+            }
+        }
+        notify_#octopus-library_of_manual_intervention {
+            Id = "be374cd6-519d-4e5d-bc75-272009509b54"
+            Name = "Notify #octopus-library of manual intervention"
+            Condition = "Success"
+            StartTrigger = "StartAfterPrevious"
+            PackageRequirement = "LetOctopusDecide"
+            Actions {
+                notify_#octopus-library_of_manual_intervention {
+                    Id = "2f1e5be6-ace3-4cf5-8912-23e9a819e829"
+                    Name = "Notify #octopus-library of manual intervention"
+                    ActionType = "Octopus.Script"
+                    Container {
+                    }
+                    IsDisabled = false
+                    IsRequired = false
+                    Environments = []
+                    ExcludedEnvironments = []
+                    Channels = []
+                    TenantTags = []
+                    Packages {
+                    }
+                    Condition = "Success"
+                    Properties {
+                        octopus.action.script.syntax {
+                            Key = "Octopus.Action.Script.Syntax"
+                            Value {
+                                Value = "PowerShell"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.scriptsource {
+                            Key = "Octopus.Action.Script.ScriptSource"
+                            Value {
+                                Value = "Inline"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.runonserver {
+                            Key = "Octopus.Action.RunOnServer"
+                            Value {
+                                Value = "true"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.scriptbody {
+                            Key = "Octopus.Action.Script.ScriptBody"
+                            Value {
+                                Value = "$payload = @{
+    channel = $OctopusParameters['ssn_Channel']
+    username = $OctopusParameters['ssn_Username'];
+    icon_url = $OctopusParameters['ssn_IconUrl'];
+    link_names = "true";
+    attachments = @(
+        @{
+            mrkdwn_in = $('pretext', 'text');
+            pretext = $OctopusParameters['ssn_Title'];
+            text = $OctopusParameters['ssn_Message'];
+            color = $OctopusParameters['ssn_Color'];
+        }
+    )
+}
+
+try {
+	[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+    Invoke-Restmethod -Method POST -Body ($payload | ConvertTo-Json -Depth 4) -Uri $OctopusParameters['ssn_HookUrl']
+} catch {
+    Write-Host "An error occurred while attempting to send Slack notification"
+    Write-Host $_.Exception
+    Write-Host $_
+    exit 0
+}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.version {
+                            Key = "Octopus.Action.Template.Version"
+                            Value {
+                                Value = "12"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.id {
+                            Key = "Octopus.Action.Template.Id"
+                            Value {
+                                Value = "ActionTemplates-404"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_iconurl {
+                            Key = "ssn_IconUrl"
+                            Value {
+                                Value = "http://octopusdeploy.com/content/resources/favicon.png"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_username {
+                            Key = "ssn_Username"
+                            Value {
+                                Value = "Octopus Deploy"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_color {
+                            Key = "ssn_Color"
+                            Value {
+                                Value = "good"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_hookurl {
+                            Key = "ssn_HookUrl"
+                            Value {
+                                Value = "#{SlackWebhook}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_channel {
+                            Key = "ssn_Channel"
+                            Value {
+                                Value = "#{SlackChannel}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_title {
+                            Key = "ssn_Title"
+                            Value {
+                                Value = "Confirm changes on Staging slot"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_message {
+                            Key = "ssn_Message"
+                            Value {
+                                Value = "Confirm the changes in this release on https://library-prod-webapp-staging.azurewebsites.net/
+
+#{if Octopus.Release.Notes}
+*Release notes*
+
+```
+#{Octopus.Release.Notes}
+```
+#{/if}
+
+<#{Octopus.Web.BaseUrl}#{Octopus.Web.DeploymentLink}|Action manual intervention>"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                    }
+                }
+            }
+            Properties {
+            }
+        }
+        confirm_changes_on_staging_slot {
+            Id = "eec1ac1f-bd55-4f90-847b-27aa379b004e"
+            Name = "Confirm changes on Staging slot"
+            Condition = "Success"
+            StartTrigger = "StartWithPrevious"
+            PackageRequirement = "LetOctopusDecide"
+            Actions {
+                confirm_changes_on_staging_slot {
+                    Id = "99ac092c-cdc7-4585-a04b-5230a8a8113e"
+                    Name = "Confirm changes on Staging slot"
+                    ActionType = "Octopus.Manual"
+                    Container {
+                    }
+                    IsDisabled = false
+                    IsRequired = false
+                    Environments = []
+                    ExcludedEnvironments = []
+                    Channels = []
+                    TenantTags = []
+                    Packages {
+                    }
+                    Condition = "Success"
+                    Properties {
+                        octopus.action.manual.instructions {
+                            Key = "Octopus.Action.Manual.Instructions"
+                            Value {
+                                Value = "Confirm the changes in this release on [Staging](https://library-prod-webapp-staging.azurewebsites.net/)
+
+### Release notes
+
+#{Octopus.Release.Notes}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                    }
+                }
+            }
+            Properties {
+            }
+        }
+        swap_staging_slot_to_production {
+            Id = "4a161785-34b7-4de8-a5d3-3b8fefd4b622"
+            Name = "Swap Staging slot to Production"
+            Condition = "Success"
+            StartTrigger = "StartAfterPrevious"
+            PackageRequirement = "LetOctopusDecide"
+            Actions {
+                swap_staging_slot_to_production {
+                    Id = "9b0568d4-229b-4aea-8260-8440cc4c6fdf"
+                    Name = "Swap Staging slot to Production"
+                    ActionType = "Octopus.AzurePowerShell"
+                    Container {
+                    }
+                    IsDisabled = false
+                    IsRequired = false
+                    Environments = []
+                    ExcludedEnvironments = []
+                    Channels = []
+                    TenantTags = []
+                    Packages {
+                    }
+                    Condition = "Success"
+                    Properties {
+                        octopus.action.azure.accountid {
+                            Key = "Octopus.Action.Azure.AccountId"
+                            Value {
+                                Value = "azureserviceprincipal-octofront-service-principal"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.scriptsource {
+                            Key = "Octopus.Action.Script.ScriptSource"
+                            Value {
+                                Value = "Inline"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.scriptbody {
+                            Key = "Octopus.Action.Script.ScriptBody"
+                            Value {
+                                Value = "Switch-AzureRmWebAppSlot -SourceSlotName Staging -DestinationSlotName Production -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                    }
+                }
+            }
+            Properties {
+            }
+        }
+        reinstall_let's_encrypt_extension {
+            Id = "988901c0-4542-4724-9adf-2961babd232f"
+            Name = "Reinstall Let's Encrypt extension"
+            Condition = "Success"
+            StartTrigger = "StartAfterPrevious"
+            PackageRequirement = "LetOctopusDecide"
+            Actions {
+                reinstall_let's_encrypt_extension {
+                    Id = "73d9e830-e7a5-4a95-9170-46508ab3b022"
+                    Name = "Reinstall Let's Encrypt extension"
+                    ActionType = "Octopus.AzureResourceGroup"
+                    Container {
+                    }
+                    IsDisabled = true
+                    IsRequired = false
+                    Environments = []
+                    ExcludedEnvironments = []
+                    Channels = []
+                    TenantTags = []
+                    Packages {
+                    }
+                    Condition = "Success"
+                    Properties {
+                        octopus.action.azure.resourcegroupname {
+                            Key = "Octopus.Action.Azure.ResourceGroupName"
+                            Value {
+                                Value = "#{AzSiteExt_ResourceGroupName}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.azure.templatesource {
+                            Key = "Octopus.Action.Azure.TemplateSource"
+                            Value {
+                                Value = "Inline"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.azure.resourcegrouptemplateparameters {
+                            Key = "Octopus.Action.Azure.ResourceGroupTemplateParameters"
+                            Value {
+                                Value = "{"siteName":{"value":"#{AzSiteExt_SiteName}"},"extensionName":{"value":"#{AzSiteExt_ExtensionName}"},"appServicePlanName":{"value":"#{AzSiteExt_AppServicePlanName}"}}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.azure.resourcegroupdeploymentmode {
+                            Key = "Octopus.Action.Azure.ResourceGroupDeploymentMode"
+                            Value {
+                                Value = "Incremental"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.azure.resourcegrouptemplate {
+                            Key = "Octopus.Action.Azure.ResourceGroupTemplate"
+                            Value {
+                                Value = "{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {        
+        "siteName": {
+            "type": "string",
+            "metadata": {
+                "description": "Web site name"
+            }
+        },
+        "appServicePlanName": {
+            "type": "string",
+            "metadata": {
+                "description": "App service plan name"
+            }
+        },
+        "extensionName": {
+            "type": "string",
+            "metadata": {
+                "description": "Extension name"
+            }
+        }  
+    },
+    "variables": {  
+        "extensionApi": "2015-06-01"
+    },
+    "resources": [
+        {
+            "apiVersion": "[variables('extensionApi')]",
+            "name": "[parameters('siteName')]",
+            "type": "Microsoft.Web/sites",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [],
+            "properties": {
+                "name": "[parameters('siteName')]",
+                "serverFarmId": "[parameters('appServicePlanName')]"
+            },
+            "resources": [
+                {
+                    "apiVersion": "[variables('extensionApi')]",
+                    "name": "[parameters('extensionName')]",
+                    "type": "siteextensions",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Web/Sites', parameters('siteName'))]"
+                    ],
+                    "properties": {}
+                }
+            ]
+        }
+    ]
+}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.azure.accountid {
+                            Key = "Octopus.Action.Azure.AccountId"
+                            Value {
+                                Value = "#{AzSiteExt_AzureAccountId}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.version {
+                            Key = "Octopus.Action.Template.Version"
+                            Value {
+                                Value = "12"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        azsiteext_resourcegroupname {
+                            Key = "AzSiteExt_ResourceGroupName"
+                            Value {
+                                Value = "#{AzureResourceGroupName}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        azsiteext_sitename {
+                            Key = "AzSiteExt_SiteName"
+                            Value {
+                                Value = "#{AzureSiteName}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.id {
+                            Key = "Octopus.Action.Template.Id"
+                            Value {
+                                Value = "ActionTemplates-401"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        azsiteext_extensionname {
+                            Key = "AzSiteExt_ExtensionName"
+                            Value {
+                                Value = "letsencrypt"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        azsiteext_appserviceplanname {
+                            Key = "AzSiteExt_AppServicePlanName"
+                            Value {
+                                Value = "#{AzureAppServicePlanName}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        azsiteext_azureaccountid {
+                            Key = "AzSiteExt_AzureAccountId"
+                            Value {
+                                Value = "#{AzureAccountId}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                    }
+                }
+            }
+            Properties {
+            }
+        }
+        http_-_invoke_url_-_production {
+            Id = "775288c1-77e5-4921-8222-1ffa17389cfe"
+            Name = "HTTP - Invoke URL - Production"
+            Condition = "Success"
+            StartTrigger = "StartWithPrevious"
+            PackageRequirement = "LetOctopusDecide"
+            Actions {
+                http_-_invoke_url_-_production {
+                    Id = "7f6e5b29-30bc-4dc4-9c8e-d92a002a8190"
+                    Name = "HTTP - Invoke URL - Production"
+                    ActionType = "Octopus.Script"
+                    Container {
+                    }
+                    IsDisabled = false
+                    IsRequired = false
+                    Environments = []
+                    ExcludedEnvironments = []
+                    Channels = []
+                    TenantTags = []
+                    Packages {
+                    }
+                    Condition = "Success"
+                    Properties {
+                        octopus.action.script.scriptbody {
+                            Key = "Octopus.Action.Script.ScriptBody"
+                            Value {
+                                Value = "# Running outside octopus
+param(
+    [string]$url,
+    [switch]$whatIf
+) 
+
+$ErrorActionPreference = "Stop" 
+
+function Get-Param($Name, [switch]$Required, $Default) {
+    $result = $null
+
+    if ($OctopusParameters -ne $null) {
+        $result = $OctopusParameters[$Name]
+    }
+
+    if ($result -eq $null) {
+        $variable = Get-Variable $Name -EA SilentlyContinue   
+        if ($variable -ne $null) {
+            $result = $variable.Value
+        }
+    }
+
+    if ($result -eq $null -or $result -eq "") {
+        if ($Required) {
+            throw "Missing parameter value $Name"
+        } else {
+            $result = $Default
+        }
+    }
+
+    return $result
+}
+
+& {
+    param(
+        [string]$url
+    ) 
+
+    Write-Host "Invoke Url: $url"
+
+    try {
+    
+        Invoke-WebRequest -Uri $url -Method Get -UseBasicParsing
+
+    } catch {
+        Write-Host "There was a problem invoking Url"    
+    }
+
+ } `
+ (Get-Param 'url' -Required)"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.id {
+                            Key = "Octopus.Action.Template.Id"
+                            Value {
+                                Value = "ActionTemplates-102"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.syntax {
+                            Key = "Octopus.Action.Script.Syntax"
+                            Value {
+                                Value = "PowerShell"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.runonserver {
+                            Key = "Octopus.Action.RunOnServer"
+                            Value {
+                                Value = "true"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        url {
+                            Key = "url"
+                            Value {
+                                Value = "#{LibrarySiteUrl}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.version {
+                            Key = "Octopus.Action.Template.Version"
+                            Value {
+                                Value = "2"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                    }
+                }
+            }
+            Properties {
+            }
+        }
+        github_-_create_release {
+            Id = "cdaf18c8-53ff-4a0f-b8fd-cbbb152b7c83"
+            Name = "GitHub - Create Release"
+            Condition = "Success"
+            StartTrigger = "StartAfterPrevious"
+            PackageRequirement = "LetOctopusDecide"
+            Actions {
+                github_-_create_release {
+                    Id = "22193d9d-d96c-4b40-8ad2-5630b9562e40"
+                    Name = "GitHub - Create Release"
+                    ActionType = "Octopus.Script"
+                    Container {
+                    }
+                    IsDisabled = false
+                    IsRequired = false
+                    Environments = []
+                    ExcludedEnvironments = []
+                    Channels = []
+                    TenantTags = []
+                    Packages {
+                    }
+                    Condition = "Success"
+                    Properties {
+                        githubapikey {
+                            Key = "gitHubApiKey"
+                            Value {
+                                Value = "#{GitHubApiKey}"
+                                IsSensitive = true
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.scriptbody {
+                            Key = "Octopus.Action.Script.ScriptBody"
+                            Value {
+                                Value = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$formattedVersionNumber = [string]::Format("v{0}", $versionNumber)
+$isDraft = [bool]::Parse($draft)
+$isPrerelease = [bool]::Parse($preRelease)
+
+$releaseData = @{
+    tag_name = $formattedVersionNumber;
+    target_commitish = $commitId;
+    name = $formattedVersionNumber;
+    body = $releaseNotes;
+    draft = $isDraft;
+    prerelease = $isPrerelease;
+}
+
+$releaseParams = @{
+    Uri = "https://api.github.com/repos/$gitHubUsername/$gitHubRepository/releases";
+    Method = 'POST';
+    Headers = @{
+        Authorization = 'Basic ' + [Convert]::ToBase64String(
+            [Text.Encoding]::ASCII.GetBytes($gitHubApiKey + ":x-oauth-basic")
+        );
+    }
+    ContentType = 'application/json';
+    Body = (ConvertTo-Json $releaseData -Compress)
+}
+
+Write-Host "Creating release $formattedVersionNumber for $commitId."
+$result = Invoke-RestMethod @releaseParams
+
+Write-Host "Release successfully created."
+$result"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.syntax {
+                            Key = "Octopus.Action.Script.Syntax"
+                            Value {
+                                Value = "PowerShell"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.version {
+                            Key = "Octopus.Action.Template.Version"
+                            Value {
+                                Value = "4"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.id {
+                            Key = "Octopus.Action.Template.Id"
+                            Value {
+                                Value = "ActionTemplates-61"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        versionnumber {
+                            Key = "versionNumber"
+                            Value {
+                                Value = "#{Octopus.Release.Number}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        commitid {
+                            Key = "commitId"
+                            Value {
+                                Value = "master"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        releasenotes {
+                            Key = "releaseNotes"
+                            Value {
+                                Value = "#{Octopus.Release.Notes}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        draft {
+                            Key = "draft"
+                            Value {
+                                Value = "false"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        prerelease {
+                            Key = "preRelease"
+                            Value {
+                                Value = "false"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        githubusername {
+                            Key = "gitHubUsername"
+                            Value {
+                                Value = "#{GitHubOwner}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        githubrepository {
+                            Key = "gitHubRepository"
+                            Value {
+                                Value = "#{GitHubRepository}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.runonserver {
+                            Key = "Octopus.Action.RunOnServer"
+                            Value {
+                                Value = "true"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                    }
+                }
+            }
+            Properties {
+            }
+        }
+        github_-_clean_vnext_milestone {
+            Id = "d0e4aa8e-ca71-4f66-9d40-8d85af746e7c"
+            Name = "GitHub - Clean vNext Milestone"
+            Condition = "Success"
+            StartTrigger = "StartWithPrevious"
+            PackageRequirement = "LetOctopusDecide"
+            Actions {
+                github_-_clean_vnext_milestone {
+                    Id = "b2a9a940-b46e-4a4f-93bf-0b37d98c2bcd"
+                    Name = "GitHub - Clean vNext Milestone"
+                    ActionType = "Octopus.Script"
+                    Container {
+                    }
+                    IsDisabled = false
+                    IsRequired = false
+                    Environments = []
+                    ExcludedEnvironments = []
+                    Channels = []
+                    TenantTags = []
+                    Packages {
+                    }
+                    Condition = "Success"
+                    Properties {
+                        octopus.action.runonserver {
+                            Key = "Octopus.Action.RunOnServer"
+                            Value {
+                                Value = "true"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.syntax {
+                            Key = "Octopus.Action.Script.Syntax"
+                            Value {
+                                Value = "PowerShell"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.scriptsource {
+                            Key = "Octopus.Action.Script.ScriptSource"
+                            Value {
+                                Value = "Inline"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.scriptbody {
+                            Key = "Octopus.Action.Script.ScriptBody"
+                            Value {
+                                Value = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$githubUri = "https://api.github.com"
+$githubHeaders = @{
+        Authorization = 'Basic ' + [Convert]::ToBase64String(
+            [Text.Encoding]::ASCII.GetBytes($GitHubApiKey + ":x-oauth-basic")
+        );
+}
+$issuesUri = "$githubUri/repos/$GitHubOwner/$GitHubRepository/issues"
+
+
+$issueRequest = @{
+    "state" = "closed";
+    "milestone" = "*"
+}
+$qs = [String]::Join("&", ($issueRequest.GetEnumerator() | % { "$($_.Name)=$($_.Value)" }))
+$closedIssuesRequest = @{
+    Uri = "$issuesUri`?$qs";
+    Method = 'GET';
+    Headers = $githubHeaders;
+    ContentType = 'application/json';
+}
+
+$closedIssues = Invoke-RestMethod @closedIssuesRequest
+$closedIssues | % {
+    $issueNumber = $_.number
+    Write-Host "Removing issue $issueNumber from milestone..."
+    $issueUpdate = @{
+        "milestone" = $null
+    }
+    $issueUpdateRequest = @{
+        Uri = "$issuesUri/$issueNumber";
+        Method = 'PATCH';
+        Headers = $githubHeaders;
+        ContentType = 'application/json';
+        Body = (ConvertTo-Json $issueUpdate -Compress)
+    }
+
+    try
+    {
+        $response = Invoke-RestMethod @issueUpdateRequest
+        Write-Host "Issue $issueNumber has been removed from milestone!"
+    } catch {
+        Write-Error $_.Exception.Message
+        break
+    }
+}
+"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                    }
+                }
+            }
+            Properties {
+            }
+        }
+        notify_#octopus-library_of_deployment_result {
+            Id = "cd64b6f2-34c0-4087-b4ef-d3389550616e"
+            Name = "Notify #octopus-library of deployment result"
+            Condition = "Always"
+            StartTrigger = "StartAfterPrevious"
+            PackageRequirement = "LetOctopusDecide"
+            Actions {
+                notify_#octopus-library_of_deployment_result {
+                    Id = "db0c39d1-956a-4b47-ac0a-ab025878038f"
+                    Name = "Notify #octopus-library of deployment result"
+                    ActionType = "Octopus.Script"
+                    Container {
+                    }
+                    IsDisabled = false
+                    IsRequired = false
+                    Environments = []
+                    ExcludedEnvironments = []
+                    Channels = []
+                    TenantTags = []
+                    Packages {
+                    }
+                    Condition = "Success"
+                    Properties {
+                        octopus.action.script.syntax {
+                            Key = "Octopus.Action.Script.Syntax"
+                            Value {
+                                Value = "PowerShell"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.scriptsource {
+                            Key = "Octopus.Action.Script.ScriptSource"
+                            Value {
+                                Value = "Inline"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.runonserver {
+                            Key = "Octopus.Action.RunOnServer"
+                            Value {
+                                Value = "true"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.script.scriptbody {
+                            Key = "Octopus.Action.Script.ScriptBody"
+                            Value {
+                                Value = "$payload = @{
+    channel = $OctopusParameters['ssn_Channel']
+    username = $OctopusParameters['ssn_Username'];
+    icon_url = $OctopusParameters['ssn_IconUrl'];
+    link_names = "true";
+    attachments = @(
+        @{
+            mrkdwn_in = $('pretext', 'text');
+            pretext = $OctopusParameters['ssn_Title'];
+            text = $OctopusParameters['ssn_Message'];
+            color = $OctopusParameters['ssn_Color'];
+        }
+    )
+}
+
+try {
+	[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+    Invoke-Restmethod -Method POST -Body ($payload | ConvertTo-Json -Depth 4) -Uri $OctopusParameters['ssn_HookUrl']
+} catch {
+    Write-Host "An error occurred while attempting to send Slack notification"
+    Write-Host $_.Exception
+    Write-Host $_
+    exit 0
+}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.version {
+                            Key = "Octopus.Action.Template.Version"
+                            Value {
+                                Value = "12"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        octopus.action.template.id {
+                            Key = "Octopus.Action.Template.Id"
+                            Value {
+                                Value = "ActionTemplates-404"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_iconurl {
+                            Key = "ssn_IconUrl"
+                            Value {
+                                Value = "http://octopusdeploy.com/content/resources/favicon.png"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_username {
+                            Key = "ssn_Username"
+                            Value {
+                                Value = "Octopus Deploy"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_color {
+                            Key = "ssn_Color"
+                            Value {
+                                Value = "#{if Octopus.Deployment.Error}danger#{/if}#{unless Octopus.Deployment.Error}good#{/unless}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_hookurl {
+                            Key = "ssn_HookUrl"
+                            Value {
+                                Value = "#{SlackWebhook}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_channel {
+                            Key = "ssn_Channel"
+                            Value {
+                                Value = "#{SlackChannel}"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_title {
+                            Key = "ssn_Title"
+                            Value {
+                                Value = "Deployment *#{if Octopus.Deployment.Error}failed#{/if}#{unless Octopus.Deployment.Error}succeeded#{/unless}*"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                        ssn_message {
+                            Key = "ssn_Message"
+                            Value {
+                                Value = "Release `#{Octopus.Release.Number}` to *#{Octopus.Environment.Name}*"
+                                IsSensitive = false
+                                HasValue = true
+                            }
+                        }
+                    }
+                }
+            }
+            Properties {
+            }
+        }
+    }
+    RelatedDocumentIds = ["ActionTemplates-404", "ActionTemplates-102", "ActionTemplates-401", "ActionTemplates-61"]
+}
