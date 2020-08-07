@@ -9,13 +9,13 @@
     "Properties": {
       "Octopus.Action.Script.ScriptSource": "Inline",
       "Octopus.Action.Script.Syntax": "PowerShell",
-      "Octopus.Action.Azure.AccountId": "#{installTentacle.AzureAccount}",
-      "Octopus.Action.Script.ScriptBody": "$nsgName = $OctopusParameters[\"installTentacle.azNsgName\"]\n$resourceGroup = $OctopusParameters[\"installTentacle.azRgName\"]\n$nsgRulePriority = $OctopusParameters[\"installTentacle.azNsgRulePriority\"]\n$vmName = $OctopusParameters[\"installTentacle.azVmName\"]\n$serverUri = $OctopusParameters[\"instrallTentacle.octoServerUrl\"]\n$apiKey = $OctopusParameters[\"installTentacle.octoApiKey\"]\n$rolesRaw = $OctopusParameters[\"installTentacle.octopusRoles\"]\n$enviroRaw = $OctopusParameters[\"installTentacle.octopusEnvironments\"]\n$octoThumb = $OctopusParameters[\"installTentacle.octoServerThumb\"]\n$comStyle = $OctopusParameters[\"installTentacle.tentacleType\"]\n$hostname = $OctopusParameters[\"installTentacle.tentacleHostName\"]\n\nWrite-Host \"Parsing Parameters\"\n\nif([string]::IsNullOrEmpty($rolesRaw))\n{\n\tthrow \"At least one role must be defined\"\n}\n\nif([string]::IsNullOrEmpty($enviroRaw))\n{\n\tthrow \"At least one environment must be defined\"\n}\n\n$roles = \"\"\n$rolesRaw -split \"`n\" | ForEach-Object { $roles += \"--role $_ \"}\n$roles = $roles.TrimEnd(' ')\n\n$environments = \"\"\n$enviroRaw -split \"`n\" | ForEach-Object { $environments += \"--environment $_ \"}\n$environments = $environments.TrimEnd(' ')\n\nWrite-Host \"Creating NSG Rule\"\naz network nsg rule create --name \"OctopusTentacle\" --nsg-name $nsgName --priority $nsgRulePriority --resource-group $resourceGroup --direction Inbound --destination-port-ranges 10933\n\n$remoteScript = @\"\n`$msiLocation = \"`$env:TEMP\\`$(new-guid).msi\"\n\nif(`$env:PROCESSOR_ARCHITECTURE -eq \"x86\") \n{\n    `$downloadPath = \"http://octopus.com/downloads/latest/OctopusTentacle\"\n}\nelse\n{\n    `$downloadPath = \"http://octopus.com/downloads/latest/OctopusTentacle64\"\n}\n\nInvoke-WebRequest -Uri `$downloadPath -OutFile `$msiLocation -UseBasicParsing\n\nStart-Process `$msiLocation /quiet -Wait\n\nRemove-Item `$msiLocation\n\n\"@\n\nWrite-Host \"Installing tentacle on remote machine\"\n\nSet-Content -Value $remoteScript -Path \".\\script.ps1\"\n\n$result = az vm run-command invoke --command-id RunPowerShellScript --name $vmName -g $resourceGroup --scripts \"@script.ps1\"\n\n$result\n\n$msg = (($result | convertfrom-json).value | where {$_.code -eq \"componentstatus/stderr/succeeded\"}).message\n\nif(![string]::IsNullOrEmpty($msg))\n{\n\tthrow $msg\n}\n\nif($comStyle -eq \"TentaclePassive\")\n{\n\tif([string]::IsNullOrEmpty($hostname))\n    {\n    \t$hostname = az vm show -d -g $resourceGroup -n $vmName --query publicIps -o tsv\n        $hostname = $hostname.Trim(\"`n\")\n    }\n    \n    $noListen = \"--noListen `\"false`\"\"\n    $comStyle += \" --publicHostName=`\"$hostname`\"\"\n}\nelse\n{\n\t$noListen = \"--noListen `\"true`\"\"\n}\n\nWrite-Verbose \"hostname: $hostname`nnoListen: $noListen\"\n\n$remoteScript = @\"\n\ncd \"C:\\Program Files\\Octopus Deploy\\Tentacle\"\n\n.\\Tentacle.exe create-instance --instance \"Tentacle\" --config \"C:\\Octopus\\Tentacle.config\" --console\n.\\Tentacle.exe new-certificate --instance \"Tentacle\" --if-blank --console\n.\\Tentacle.exe configure --instance \"Tentacle\" --reset-trust --console\n.\\Tentacle.exe configure --instance \"Tentacle\" --home \"C:\\Octopus\" --app \"C:\\Octopus\\Applications\" --port \"10933\" $noListen --console\n.\\Tentacle.exe configure --instance \"Tentacle\" --trust \"$octoThumb\" --console\nNew-NetFirewallRule -DisplayName \"Octopus Tentacle\" -Direction Inbound -LocalPort 10933 -Protocol TCP -Action Allow\n#\"netsh\" advfirewall firewall add rule \"name=Octopus Deploy Tentacle\" dir=in action=allow protocol=TCP localport=10933\n.\\Tentacle.exe register-with --instance \"Tentacle\" --server \"$serverUri\" --apiKey=$apiKey $roles $environments --comms-style $comStyle --force --console\n.\\Tentacle.exe service --instance \"Tentacle\" --install --start --console\n\n\"@\n\nWrite-Host \"Configuring tentacle on remote machine\"\n#write-verbose \"Register Cmd:`n.\\Tentacle.exe register-with --instance `\"Tentacle`\" --server `\"$serverUri`\" --apiKey=$apiKey $roles $environments --comms-style TentaclePassive --force --console\"\n\nSet-Content -Value $remoteScript -Path \".\\script.ps1\"\n\n$result = az vm run-command invoke --command-id RunPowerShellScript --name $vmName -g $resourceGroup --scripts \"@script.ps1\"\n\n$result\n\n$msg = (($result | convertfrom-json).value | where {$_.code -eq \"componentstatus/stderr/succeeded\"}).message\n\nif(![string]::IsNullOrEmpty($msg))\n{\n\tthrow $msg\n}\n"
+      "Octopus.Action.Azure.AccountId": "#{installWinTentacle.AzureAccount}",
+      "Octopus.Action.Script.ScriptBody": "$nsgName = $OctopusParameters[\"installWinTentacle.azNsgName\"]\n$resourceGroup = $OctopusParameters[\"installWinTentacle.azRgName\"]\n$nsgRulePriority = $OctopusParameters[\"installWinTentacle.azNsgRulePriority\"]\n$vmName = $OctopusParameters[\"installWinTentacle.azVmName\"]\n$serverUri = $OctopusParameters[\"instrallTentacle.octoServerUrl\"]\n$apiKey = $OctopusParameters[\"installWinTentacle.octoApiKey\"]\n$rolesRaw = $OctopusParameters[\"installWinTentacle.octopusRoles\"]\n$enviroRaw = $OctopusParameters[\"installWinTentacle.octopusEnvironments\"]\n$octoThumb = $OctopusParameters[\"installWinTentacle.octoServerThumb\"]\n$comStyle = $OctopusParameters[\"installWinTentacle.tentacleType\"]\n$hostname = $OctopusParameters[\"installWinTentacle.tentacleHostName\"]\n\nWrite-Host \"Parsing Parameters\"\n\nif([string]::IsNullOrEmpty($rolesRaw))\n{\n\tthrow \"At least one role must be defined\"\n}\n\nif([string]::IsNullOrEmpty($enviroRaw))\n{\n\tthrow \"At least one environment must be defined\"\n}\n\n$roles = \"\"\n$rolesRaw -split \"`n\" | ForEach-Object { $roles += \"--role $_ \"}\n$roles = $roles.TrimEnd(' ')\n\n$environments = \"\"\n$enviroRaw -split \"`n\" | ForEach-Object { $environments += \"--environment $_ \"}\n$environments = $environments.TrimEnd(' ')\n\nWrite-Host \"Creating NSG Rule\"\naz network nsg rule create --name \"OctopusTentacle\" --nsg-name $nsgName --priority $nsgRulePriority --resource-group $resourceGroup --direction Inbound --destination-port-ranges 10933\n\n$remoteScript = @\"\n`$msiLocation = \"`$env:TEMP\\`$(new-guid).msi\"\n\nif(`$env:PROCESSOR_ARCHITECTURE -eq \"x86\") \n{\n    `$downloadPath = \"http://octopus.com/downloads/latest/OctopusTentacle\"\n}\nelse\n{\n    `$downloadPath = \"http://octopus.com/downloads/latest/OctopusTentacle64\"\n}\n\nInvoke-WebRequest -Uri `$downloadPath -OutFile `$msiLocation -UseBasicParsing\n\nStart-Process `$msiLocation /quiet -Wait\n\nRemove-Item `$msiLocation\n\n\"@\n\nWrite-Host \"Installing tentacle on remote machine\"\n\nSet-Content -Value $remoteScript -Path \".\\script.ps1\"\n\n$result = az vm run-command invoke --command-id RunPowerShellScript --name $vmName -g $resourceGroup --scripts \"@script.ps1\"\n\n$result\n\n$msg = (($result | convertfrom-json).value | where {$_.code -eq \"componentstatus/stderr/succeeded\"}).message\n\nif(![string]::IsNullOrEmpty($msg))\n{\n\tthrow $msg\n}\n\nif($comStyle -eq \"TentaclePassive\")\n{\n\tif([string]::IsNullOrEmpty($hostname))\n    {\n    \t$hostname = az vm show -d -g $resourceGroup -n $vmName --query publicIps -o tsv\n        $hostname = $hostname.Trim(\"`n\")\n    }\n    \n    $noListen = \"--noListen `\"false`\"\"\n    $comStyle += \" --publicHostName=`\"$hostname`\"\"\n}\nelse\n{\n\t$noListen = \"--noListen `\"true`\"\"\n}\n\nWrite-Verbose \"hostname: $hostname`nnoListen: $noListen\"\n\n$remoteScript = @\"\n\ncd \"C:\\Program Files\\Octopus Deploy\\Tentacle\"\n\n.\\Tentacle.exe create-instance --instance \"Tentacle\" --config \"C:\\Octopus\\Tentacle.config\" --console\n.\\Tentacle.exe new-certificate --instance \"Tentacle\" --if-blank --console\n.\\Tentacle.exe configure --instance \"Tentacle\" --reset-trust --console\n.\\Tentacle.exe configure --instance \"Tentacle\" --home \"C:\\Octopus\" --app \"C:\\Octopus\\Applications\" --port \"10933\" $noListen --console\n.\\Tentacle.exe configure --instance \"Tentacle\" --trust \"$octoThumb\" --console\nNew-NetFirewallRule -DisplayName \"Octopus Tentacle\" -Direction Inbound -LocalPort 10933 -Protocol TCP -Action Allow\n#\"netsh\" advfirewall firewall add rule \"name=Octopus Deploy Tentacle\" dir=in action=allow protocol=TCP localport=10933\n.\\Tentacle.exe register-with --instance \"Tentacle\" --server \"$serverUri\" --apiKey=$apiKey $roles $environments --comms-style $comStyle --force --console\n.\\Tentacle.exe service --instance \"Tentacle\" --install --start --console\n\n\"@\n\nWrite-Host \"Configuring tentacle on remote machine\"\n#write-verbose \"Register Cmd:`n.\\Tentacle.exe register-with --instance `\"Tentacle`\" --server `\"$serverUri`\" --apiKey=$apiKey $roles $environments --comms-style TentaclePassive --force --console\"\n\nSet-Content -Value $remoteScript -Path \".\\script.ps1\"\n\n$result = az vm run-command invoke --command-id RunPowerShellScript --name $vmName -g $resourceGroup --scripts \"@script.ps1\"\n\n$result\n\n$msg = (($result | convertfrom-json).value | where {$_.code -eq \"componentstatus/stderr/succeeded\"}).message\n\nif(![string]::IsNullOrEmpty($msg))\n{\n\tthrow $msg\n}\n"
     },
     "Parameters": [
       {
         "Id": "dea51842-271f-48fa-901e-243488049f97",
-        "Name": "installTentacle.AzureAccount",
+        "Name": "installWinTentacle.AzureAccount",
         "Label": "Azure Account",
         "HelpText": "Azure account with permissions to the virtual machine in which to install the tentacle on",
         "DefaultValue": "",
@@ -25,7 +25,7 @@
       },
       {
         "Id": "6a97548c-3b97-4a19-8b9a-45aa58ac62d9",
-        "Name": "installTentacle.azRgName",
+        "Name": "installWinTentacle.azRgName",
         "Label": "Azure Resource Group",
         "HelpText": "The name of the resource group housing the NSG and VM",
         "DefaultValue": "",
@@ -35,7 +35,7 @@
       },
       {
         "Id": "d9efb017-65c0-4010-b09f-0a6a34fc009f",
-        "Name": "installTentacle.azNsgName",
+        "Name": "installWinTentacle.azNsgName",
         "Label": "NSG Name",
         "HelpText": "The name of the azure network security group to create ",
         "DefaultValue": "",
@@ -45,7 +45,7 @@
       },
       {
         "Id": "36c6d441-9fe8-4ea2-957a-2135aa9d1687",
-        "Name": "installTentacle.azNsgRulePriority",
+        "Name": "installWinTentacle.azNsgRulePriority",
         "Label": "Azure NSG Rule Priority",
         "HelpText": "the priority to assign to the NSG rule created for the octopus tentacle. Defaults to 400",
         "DefaultValue": "400",
@@ -55,7 +55,7 @@
       },
       {
         "Id": "e4358aec-2798-412a-bcd2-1c7e41a0728d",
-        "Name": "installTentacle.azVmName",
+        "Name": "installWinTentacle.azVmName",
         "Label": "VM Name",
         "HelpText": "The name of the virtual machine to target when ",
         "DefaultValue": "",
@@ -65,7 +65,7 @@
       },
       {
         "Id": "8dbe0a29-4e0f-43f8-8ef2-ae23a2884e85",
-        "Name": "installTentacle.octoServerThumb",
+        "Name": "installWinTentacle.octoServerThumb",
         "Label": "Server Thumbprint",
         "HelpText": "The Thumbprint of the octopus server",
         "DefaultValue": "",
@@ -75,7 +75,7 @@
       },
       {
         "Id": "a0859551-6c84-45d1-af2b-c57becb4e8ef",
-        "Name": "installTentacle.octoApiKey",
+        "Name": "installWinTentacle.octoApiKey",
         "Label": "API Key",
         "HelpText": "The API key used to configure the tentacle.",
         "DefaultValue": "",
@@ -85,7 +85,7 @@
       },
       {
         "Id": "dd07815d-bfb7-43b9-90f8-21ec5a2d2953",
-        "Name": "installTentacle.octopusRoles",
+        "Name": "installWinTentacle.octopusRoles",
         "Label": "Roles",
         "HelpText": "Roles to assign to this tentacle installation. Each role should be on it's own line",
         "DefaultValue": "",
@@ -95,7 +95,7 @@
       },
       {
         "Id": "d3ffb38e-7fcf-4547-be9a-6cd8e46f8e5e",
-        "Name": "installTentacle.octopusEnvironments",
+        "Name": "installWinTentacle.octopusEnvironments",
         "Label": "Environments",
         "HelpText": "Environments to assign this tentacle installation to. Each environment should be on its own line",
         "DefaultValue": "",
@@ -115,7 +115,7 @@
       },
       {
         "Id": "9bcd6bb5-2db3-453f-b4f6-6a78f3c39b59",
-        "Name": "installTentacle.tentacleType",
+        "Name": "installWinTentacle.tentacleType",
         "Label": "Tentacle Type",
         "HelpText": "Select between a listing or polling tentacle",
         "DefaultValue": "Listening",
@@ -126,7 +126,7 @@
       },
       {
         "Id": "6bb98570-fe3e-4ab7-adfb-79ef7ce5c2ce",
-        "Name": "installTentacle.tentacleHostName",
+        "Name": "installWinTentacle.tentacleHostName",
         "Label": "Tentacle Host Name",
         "HelpText": "The host name to register with.  Used for listening tentacles",
         "DefaultValue": "",
