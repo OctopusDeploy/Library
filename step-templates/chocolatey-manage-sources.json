@@ -1,0 +1,136 @@
+{
+  "Id": "131ba9b0-c95e-464f-a2ff-aacedbcd29a1",
+  "Name": "Chocolatey - Manage Sources",
+  "Description": "Allows managing Chocolatey Package sources.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12\n$chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"Machine\") + \"\\bin\"\nif(-not (Test-Path $chocolateyBin)) {\n    Write-Host \"Environment variable 'ChocolateyInstall' was not found in the system variables. Attempting to find it in the user variables...\"\n    $chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"User\") + \"\\bin\"\n}\n\n$choco = \"$chocolateyBin\\choco.exe\"\n\nif (-not (Test-Path $choco)) {\n    throw \"Chocolatey was not found at $chocolateyBin.\"\n}\n\n# Report the actual version here\n$chocoVersion = & $choco --version\nWrite-Host \"Running Chocolatey version $chocoVersion\"\n\n# You cannot use [version] with SemVer 2 versions\n# this allows pre-release versions to still work by stripping everything after the '-' as we could have\n# 0.10.15-beta-20200101. We are only interested in the major.minor.build version\n$chocoVersion = ($chocoVersion -split '-')[0].ToString()\n\n# default args\n$chocoArgs = @('source', $ChocolateySourceAction, '--yes')\n\n# we need a source name\nif ([string]::IsNullOrEmpty($ChocolateySourceName)) {\n    throw \"To manage a source you need to provide a source name.\"\n}\nelse {\n\t$chocoArgs += \"--name=\"\"'$ChocolateySourceName'\"\"\"\n}\n\n# we are adding a source - check all of the parameters\nif ($ChocolateySourceAction -eq 'add') {\n\tif ([string]::IsNullOrEmpty($ChocolateySourceLocation)) {\n\t\tthrow 'To add a source you need to provide a source location.'\n\t}\n    else {\n    \t$chocoArgs += \"--source=\"\"'$ChocolateySourceLocation'\"\"\"\n    }\n\n    # source priority\n    if (-not [string]::IsNullOrEmpty($ChocolateySourcePriority)) {\n    \tif ([version]$chocoVersion -ge [version]'0.9.9.9') {\n    \t\t$chocoArgs += \"--priority=\"\"'$ChocolateySourcePriority'\"\"\"\n        }\n        else {\n        \tWrite-Warning 'To use a source priority you must have Chocolatey version 0.9.9.9 or later. Ignoring source priority.'\n        }\n    }\n\n    # allow self service\n    if ($ChocolateySourceAllowSelfService) {\n    \t$edition = & $choco\n    \tif ($edition -like '*Business*' -and [version]$chocoVersion -ge [version]'0.10.4') {\n        \t$chocoArgs += '--allow-self-service'\n        }\n        else {\n        \tWrite-Warning 'To allow self service on a source you must have Chocolatey For Business version 0.10.4 or later. Ignoring allowing self service.'\n        }\n    }\n\n    # allow admin only\n    if ($ChocolateySourceEnableAdminOnly) {\n        # we are not going to check for the Business Edition but the chocolatey.extension version need to check we have the chocolatey.extension installed\n        $licensedExtension = & $choco list chocolatey.extension --exact --limit-output --local-only | ConvertFrom-Csv -Delimiter '|' -Header 'Name', 'Version'\n\n        # lets get the major.minor.build licensed extension version by stripping any pre-release\n        $licensedExtensionVersion = ($licensedExtension.Version -split '-')[0].ToString()\n        if ((-not [string]::IsNullOrEmpty($licensedExtensionVersion)) -and ([version]$chocoVersion -ge [version]'0.10.8' -and [version]$licensedExtensionVersion -ge [version]'1.12.2')) {\n        \t$chocoArgs += '--enable-admin-only'\n        }\n        else {\n        \tWrite-Warning 'To enable admin only on a source you must have Chocolatey For Business Licensed Extension (chocolatey.extension package) version 1.12.2 or later and Chocolatey version 0.10.8 or later. Ignoring admin only enablement.'\n        }\n\t}\n\n    # we need both a username and a password - if one is used without the other then throw\n    if (($ChocolateySourceUsername -and -not $ChocolateySourcePassword) -or ($ChocolateySourcePassword -and -not $ChocolateySourceUsername)) {\n    \tthrow 'If you are using an authenticated source you must provide both a username AND a password.'\n    }\n    elseif ($ChocolateySourceUsername -and $ChocolateySourcePassword) {\n\t\t$chocoArgs += @(\"--user=\"\"'$ChocolateySourceUsername'\"\"\", \"--password=\"\"'$ChocolateySourcePassword'\"\"\")\n    }\n\n    # check if we have a certificate path\n    if (-not [string]::IsNullOrEmpty($ChocolateySourceCertificatePath)) {\n    \tif (-not (Test-Path -Path $ChocolateySourceCertificatePath)) {\n        \tthrow \"The certificate at '$ChocolateySourceCertificatePath' does not exist. Please make sure the certificate exists on the target at the provided path.\"\n        }\n\n        $chocoArgs += \"--cert=\"\"'$ChocolateySourceCertificatePath'\"\"\"\n\n        # if we have a password it can only be used with a certificate path\n        if (-not [string]::IsNullOrEmpty($ChocolateySourceCertificatePassword)) {\n\t\t\t$chocoArgs += \"--certpassword=\"\"'$ChocolateySourceCertificatePassword'\"\"\"\n        }\n    }\n    elseif (-not [string]::IsNullOrEmpty($ChocolateySourceCertificatePassword)) {\n    \tWrite-Warning 'You have provided a client certificate password but no client certificate path. Ignoring client certificate password.'\n    }\n}\n\n# finally add any other parameters\nif (-not [string]::IsNullOrEmpty($ChocolateySourceOtherParameters)) {\n\t$chocoArgs += $ChocolateySourceOtherParameters -split ' '\n}\n\n# execute the command line\nWrite-Host \"Running the command: $choco $chocoArgs\"\n& $choco $chocoArgs",
+    "Octopus.Action.EnabledFeatures": ""
+  },
+  "Parameters": [
+    {
+      "Id": "86c495d0-0098-4af0-bf10-cde87bfbc348",
+      "Name": "ChocolateySourceName",
+      "Label": "(Required) Source Name",
+      "HelpText": "The name of the source to manage. Examples: \n\n* _production-repo_\n* _my-smb-share_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f2b13125-1328-48b5-b341-3c5a78869a8c",
+      "Name": "ChocolateySourceAction",
+      "Label": "(Required) Source Action",
+      "HelpText": "The action to perform on the source.\n\nNote that you can use the 'add' action to change a source configuration. So you may not need to remove it and add it again.",
+      "DefaultValue": "add",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "add|Add a source\nremove|Remove a source\nenable|Enable a source\ndisable|Disable a source"
+      }
+    },
+    {
+      "Id": "80507f89-d52e-43d7-b857-9697e9f837fa",
+      "Name": "ChocolateySourceLocation",
+      "Label": "(Required / Optional) Source Location",
+      "HelpText": "This can be a folder / file share or an http / https location. If it is a URL, it will be a location you can go to in a browser and it returns OData with something that says 'Packages' in the browser, similar to what you see when you go to https://chocolatey.org/api/v2/.\n\n**Required with 'add' action. Optional with all other actions.**\n\nExamples:\n\n* _c:\\local-packages_\n* _\\\\\\\\my-server\\packages_\n* _https://internalserver.local/packages/_ (note the trailing slash)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7580abfd-89ae-4bc0-af86-cbe58b9d8074",
+      "Name": "ChocolateySourcePriority",
+      "Label": "(Optional) Source Priority",
+      "HelpText": "The priority order of this source as compared to other sources, lower is better. Defaults to 0 (no priority). \n\nAll priorities above 0 will be evaluated first, then zero-based values will be evaluated in config file order.\n\n_Available in Chocolatey version 0.9.9.9 and later._",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8517408c-5812-448b-986a-7fabc970039f",
+      "Name": "ChocolateySourceAllowSelfService",
+      "Label": "(Optional) Allow Self Service Source",
+      "HelpText": "Should this source be allowed to be used with self-service? Defaults to false. \n\n_Available in Chocolatey For Business version 0.10.4 and later. Requires feature 'useBackgroundServiceWithSelfServiceSourcesOnly' to be enabled._",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "6e12a4e6-eae4-4ce9-b759-76f4a9b4b0c5",
+      "Name": "ChocolateySourceEnableAdminOnly",
+      "Label": "(Optional) Enable Admin Only Source",
+      "HelpText": "Should this source be visible to non-administrators?\n\n_Requires Chocolatey For Business Extension version 1.12.2 or later and Chocolatey version 0.10.8 or later._",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "b3e074ba-ba3a-43dc-8e23-7e92647cb246",
+      "Name": "ChocolateySourceUsername",
+      "Label": "(Optional) Source Authentication Username",
+      "HelpText": "Username to authenticate to the source with.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3af96a08-19ba-43a3-893d-6afe929eba0a",
+      "Name": "ChocolateySourcePassword",
+      "Label": "(Optional) Source Authentication Password",
+      "HelpText": "Password to authenticate to the source with.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "53457094-5867-4bde-95c0-7f7100e7b561",
+      "Name": "ChocolateySourceCertificatePath",
+      "Label": "(Optional) Source Certificate Path",
+      "HelpText": "Path to the PFX client certificate used for an x509 authenticated source.\n\n_NOTE: The certificate path must exist and be local to the computer this step is running on. So you will need to add additional steps to ensure the certificate is available at the path._\n\n_Available in Chocolatey from version 0.9.10._",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8e431f4f-8c24-4aa0-b7ba-2045d4efab3a",
+      "Name": "ChocolateySourceCertificatePassword",
+      "Label": "(Optional) Chocolatey Certificate Password",
+      "HelpText": "The client certificate's password to the source. Can only be used if a client certificate path has been provided.\n\n_Available in Chocolatey version 0.9.10 or later._",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "67ab1c30-a3e6-4ca8-a3a1-802702e34019",
+      "Name": "ChocolateySourceOtherParameters",
+      "Label": "(Optional) Other Parameters",
+      "HelpText": "Add additional Chocolatey parameters here, separated by spaces, and they will be prefixed to the end of the Chocolatey command being executed. ",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-08-13T13:35:57.400Z",
+    "OctopusVersion": "2020.3.2",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedOn": "2020-08-13T13:35:57.400Z",
+  "LastModifiedBy": "pauby",
+  "Category": "chocolatey"
+}
