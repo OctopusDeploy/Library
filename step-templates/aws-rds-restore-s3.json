@@ -3,13 +3,13 @@
     "Name": "AWS RDS SQL Server - Restore from S3 Bucket",
     "Description": "Will restore a database backup from an S3 bucket",
     "ActionType": "Octopus.Script",
-    "Version": 1,
+    "Version": 2,
     "CommunityActionTemplateId": null,
     "Packages": [],
     "Properties": {
       "Octopus.Action.Script.ScriptSource": "Inline",
       "Octopus.Action.Script.Syntax": "PowerShell",
-      "Octopus.Action.Script.ScriptBody": "Write-Host \"SqlLoginWhoHasRights $backupSqlLoginUserWhoHasCreateUserRights\"\nWrite-Host \"CreateSqlServer $backupSqlServer\"\nWrite-Host \"CreateDatabaseName $backupDatabaseName\"\nWrite-Host \"Backup S3 Bucket $backupS3Bucket\"\nWrite-Host \"Backup File Name $backupFileName\"\n\nif ([string]::IsNullOrWhiteSpace($backupSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$backupSqlServer;Database=msdb;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$backupSqlServer;Database=msdb;User ID=$backupSqlLoginUserWhoHasCreateUserRights;Password=$backupSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = New-Object System.Data.SqlClient.SqlCommand(\"dbo.rds_restore_database\", $sqlConnection)\n$command.CommandType = [System.Data.CommandType]'StoredProcedure'\n\n$backupDestParamValue = \"arn:aws:s3:::$backupS3Bucket/$backupFileName\"\n$command.Parameters.AddWithValue(\"s3_arn_to_restore_from\", $backupDestParamValue)\n$command.Parameters.AddWithValue(\"with_norecovery\", 0)\n$command.Parameters.AddWithValue(\"restore_db_name\", $backupDatabaseName)\n\n$taskStatusCommand = New-Object System.Data.SqlClient.SqlCommand(\"dbo.rds_task_status\", $sqlConnection)\n$taskStatusCommand.CommandType = [System.Data.CommandType]'StoredProcedure'\n$taskStatusCommand.Parameters.AddWithValue(\"db_name\", $backupDatabaseName)\n\n$taskStatusAdapter = New-Object System.Data.SqlClient.SqlDataAdapter $taskStatusCommand\n\nWrite-Host \"Opening the connection to $backupSqlServer\"\n$sqlConnection.Open()\n    \nWrite-Host \"Executing backup\"\n$command.ExecuteNonQuery()\n\nWrite-Host \"Closing the connection to $backupSqlServer\"\n$sqlConnection.Close()\n\nWrite-Host \"Getting status of backup\"\n$backupIsActive = $true\n\nWhile ($backupIsActive)\n{\n\tWrite-Host \"Opening the connection to $backupSqlServer\"\n\t$sqlConnection.Open()\n    \n    $taskStatusDataSet = New-Object System.Data.DataSet\n\t$taskStatusAdapter.Fill($taskStatusDataSet)\n    $taskStatus = $taskStatusDataSet.Tables[0].Rows[0][\"lifecycle\"]\n    $taskComplete = $taskStatusDataSet.Tables[0].Rows[0][\"% complete\"]\n    \n    Write-Host \"The task is $taskComplete% complete.\"\n    $backupIsActive = $taskStatus -eq \"CREATED\" -or $taskStatus -eq \"IN_PROGRESS\"\n    \n    Write-Host \"Closing the connection to $backupSqlServer\"\n\t$sqlConnection.Close()\n    \n    Start-Sleep -Seconds 5\n}"
+      "Octopus.Action.Script.ScriptBody": "Write-Host \"SqlLoginWhoHasRights $backupSqlLoginUserWhoHasCreateUserRights\"\nWrite-Host \"CreateSqlServer $backupSqlServer\"\nWrite-Host \"CreateDatabaseName $backupDatabaseName\"\nWrite-Host \"Backup S3 Bucket $backupS3Bucket\"\nWrite-Host \"Backup File Name $rdsSqlRestore\"\n\nif ([string]::IsNullOrWhiteSpace($backupSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$backupSqlServer;Database=msdb;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$backupSqlServer;Database=msdb;User ID=$backupSqlLoginUserWhoHasCreateUserRights;Password=$backupSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = New-Object System.Data.SqlClient.SqlCommand(\"dbo.rds_restore_database\", $sqlConnection)\n$command.CommandType = [System.Data.CommandType]'StoredProcedure'\n\n$backupDestParamValue = \"arn:aws:s3:::$backupS3Bucket/$backupFileName\"\n$command.Parameters.AddWithValue(\"s3_arn_to_restore_from\", $backupDestParamValue)\n$command.Parameters.AddWithValue(\"with_norecovery\", 0)\n$command.Parameters.AddWithValue(\"restore_db_name\", $backupDatabaseName)\n\n$taskStatusCommand = New-Object System.Data.SqlClient.SqlCommand(\"dbo.rds_task_status\", $sqlConnection)\n$taskStatusCommand.CommandType = [System.Data.CommandType]'StoredProcedure'\n$taskStatusCommand.Parameters.AddWithValue(\"db_name\", $backupDatabaseName)\n\n$taskStatusAdapter = New-Object System.Data.SqlClient.SqlDataAdapter $taskStatusCommand\n\nWrite-Host \"Opening the connection to $backupSqlServer\"\n$sqlConnection.Open()\n    \nWrite-Host \"Executing backup\"\n$command.ExecuteNonQuery()\n\nWrite-Host \"Closing the connection to $backupSqlServer\"\n$sqlConnection.Close()\n\nWrite-Host \"Getting status of backup\"\n$backupIsActive = $true\n\nWhile ($backupIsActive)\n{\n\tWrite-Host \"Opening the connection to $backupSqlServer\"\n\t$sqlConnection.Open()\n    \n    $taskStatusDataSet = New-Object System.Data.DataSet\n\t$taskStatusAdapter.Fill($taskStatusDataSet)\n    $taskStatus = $taskStatusDataSet.Tables[0].Rows[0][\"lifecycle\"]\n    $taskComplete = $taskStatusDataSet.Tables[0].Rows[0][\"% complete\"]\n    \n    Write-Host \"The task is $taskComplete% complete.\"\n    $backupIsActive = $taskStatus -eq \"CREATED\" -or $taskStatus -eq \"IN_PROGRESS\"\n    \n    Write-Host \"Closing the connection to $backupSqlServer\"\n\t$sqlConnection.Close()\n    \n    Start-Sleep -Seconds 5\n}"
     },
     "Parameters": [
       {
@@ -64,7 +64,7 @@
       },
       {
         "Id": "ea9d9eb8-9c0f-4c69-a6d4-4d00e43383af",
-        "Name": "backupFileName",
+        "Name": "rdsSqlRestore",
         "Label": "Backup File Name and Extension",
         "HelpText": "The name of the back up file (including the extension).",
         "DefaultValue": "",
@@ -74,7 +74,7 @@
       }
     ],
     "$Meta": {
-      "ExportedAt": "2020-08-14T12:33:58.558Z",
+      "ExportedAt": "2020-08-14T15:23:40.227Z",
       "OctopusVersion": "2020.4.0-ci0428",
       "Type": "ActionTemplate"
     },
