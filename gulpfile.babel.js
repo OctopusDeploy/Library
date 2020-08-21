@@ -145,6 +145,7 @@ function humanize(categoryId) {
     case 'redgate': return 'Redgate';
     case 'roundhouse': return 'RoundhousE'
     case 'sharepoint': return 'SharePoint';
+    case 'snowflake': return 'Snowflake';
     case 'solarwinds': return 'SolarWinds';
     case 'sql': return 'SQL Server';
     case 'ssl': return 'SSL';

@@ -1,0 +1,56 @@
+{
+  "Id": "718f6e95-e176-4f13-9512-a3a8f1bb10a0",
+  "Name": "Chocolatey - Manage Features",
+  "Description": "Allows enabling and disabling of Chocolatey features.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12\n$chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"Machine\") + \"\\bin\"\nif(-not (Test-Path $chocolateyBin)) {\n    Write-Host \"Environment variable 'ChocolateyInstall' was not found in the system variables. Attempting to find it in the user variables...\"\n    $chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"User\") + \"\\bin\"\n}\n\n$choco = \"$chocolateyBin\\choco.exe\"\n\nif (-not (Test-Path $choco)) {\n    throw \"Chocolatey was not found at $chocolateyBin.\"\n}\n\n# Report the actual version here\n$chocoVersion = & $choco --version\nWrite-Host \"Running Chocolatey version $chocoVersion\"\n\n# default args\n$chocoArgs = @('feature', $ChocolateyFeatureAction, '--yes')\n\n# we need a source name\nif ([string]::IsNullOrEmpty($ChocolateyFeatureName)) {\n    throw \"To manage a feature,  you need to provide a feature name.\"\n}\n\n# finally add any other parameters\nif (-not [string]::IsNullOrEmpty($ChocolateyFeatureOtherParameters)) {\n\t$chocoArgs += $ChocolateyFeatureOtherParameters -split ' '\n}\n\n$featureNames = $ChocolateyFeatureName -split ' '\nForEach ($name in $featureNames) {\n\t$cmdArgs = $chocoArgs + \"--name=\"\"'$name'\"\"\"\n\n    # execute the command line\n    Write-Host \"Running the command: $choco $cmdArgs\"\n    & $choco $cmdArgs\n}",
+    "Octopus.Action.EnabledFeatures": ""
+  },
+  "Parameters": [
+    {
+      "Id": "b0258989-3337-4e22-ab96-ba54e1a533f7",
+      "Name": "ChocolateyFeatureName",
+      "Label": "(Required) Feature Name",
+      "HelpText": "The feature name to manage. Multiple feature can be specified separated by a space. \n\nExamples:\n\n* _checksumFiles_\n* _autoUninstaller_ _allowGlobalConfirmation_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "31522ad7-f257-4deb-9973-7d4c7eb4fa16",
+      "Name": "ChocolateyFeatureAction",
+      "Label": "(Required) Feature Action",
+      "HelpText": "The action to perform on the feature name.",
+      "DefaultValue": "enable",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "enable|Enable the feature\ndisable|Disable the feature"
+      }
+    },
+    {
+      "Id": "218c539e-fe74-408a-9b6d-0b8654ae82dd",
+      "Name": "ChocolateyFeatureOtherParameters",
+      "Label": "(Optional) Other Chocolatey Parameters",
+      "HelpText": "Other parameters to pass to Chocolatey. You can pass multiple parameters separated by a space.\n\nExamples:\n\n* _--debug_\n* _--debug_ _--verbose_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-08-13T17:03:20.000Z",
+    "OctopusVersion": "2020.3.2",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedAt": "2020-08-13T17:03:20.000Z",
+  "LastModifiedBy": "pauby",
+  "Category": "chocolatey"
+}
