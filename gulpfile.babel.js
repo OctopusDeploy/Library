@@ -129,6 +129,7 @@ function humanize(categoryId) {
     case 'launchdarkly': return 'LaunchDarkly';
     case 'lets-encrypt': return 'Lets Encrypt';
     case 'linux': return 'Linux';
+    case 'liquibase': return 'Libuibase';
     case 'mabl': return 'mabl';
     case 'mariadb': return 'MariaDB'
     case 'microsoft-teams': return 'Microsoft Teams';
