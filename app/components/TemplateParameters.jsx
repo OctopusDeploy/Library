@@ -53,7 +53,7 @@ export default class TemplateParameters extends React.Component {
       <div>
         <h3>Parameters</h3>
         <p className="tutorial">
-            When steps based on the template are included in a project's deployment process, the parameters below can be set.
+          When steps based on the template are included in a project's deployment process, the parameters below can be set.
         </p>
         {parameterList}
       </div>
