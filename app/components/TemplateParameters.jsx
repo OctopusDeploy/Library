@@ -3,6 +3,7 @@
 import React from 'react';
 import marked from 'marked';
 import PropTypes from 'prop-types';
+import DOMPurify from 'dompurify';
 
 const displayName = 'octopus-library-template-parameters';
 
@@ -13,7 +14,8 @@ export default class TemplateParameters extends React.Component {
   }
 
   rawMarkup(text) {
-    let markup = marked((text || ''), {sanitize: true});
+    let purifiedText = DOMPurify.sanitize(text);
+    let markup = marked(purifiedText || '');
     return { __html: markup };
   }
 
