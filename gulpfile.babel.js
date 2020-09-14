@@ -269,7 +269,7 @@ gulp.task('build:client', gulp.series('step-templates', 'copy:app', 'scripts', '
     ? gulp.src([`${publishDir}/public/**/*.js`, `${publishDir}/public/**/*.css*`, `!${publishDir}/public/**/vendor{,/**}`], { read: false })
     : gulp.src([`${buildDir}/public/**/*.js`, `${buildDir}/public/**/*.css*`, `!${buildDir}/public/**/vendor{,/**}`], { read: false });
 
-  return gulp.src(`${serverDir}/views/index.jade`)
+  return gulp.src(`${serverDir}/views/index.pug`)
     .pipe(inject(vendorSources, { relative: false, name: 'vendor', ignorePath: 'node_modules', addPrefix: 'styles/vendor' }))
     .pipe(inject(sources, { relative: false, ignorePath: `${argv.production ? `${publishDir}` : `${buildDir}`}/public` }))
     .pipe(argv.production ? gulp.dest(`${publishDir}/views`) : gulp.dest(`${buildDir}/views`));
