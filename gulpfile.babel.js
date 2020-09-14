@@ -16,7 +16,8 @@ import babelify from 'babelify';
 import reactify from 'reactify';
 import browserify from 'browserify';
 import uglify from 'gulp-uglify';
-import cssnano from 'gulp-cssnano';
+import postcss from 'gulp-postcss';
+import cssnano from 'cssnano';
 import rename from 'gulp-rename';
 import sourcemaps from 'gulp-sourcemaps';
 import inject from 'gulp-inject';
@@ -159,7 +160,7 @@ function humanize(categoryId) {
     case 'webdeploy': return 'Web Deploy';
     case 'xml': return 'XML';
     case 'xunit': return 'xUnit';
-    case 'rnhub': return 'RnHub';	
+    case 'rnhub': return 'RnHub';
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
   }
 }
@@ -217,10 +218,13 @@ gulp.task('styles:vendor', () => {
 });
 
 gulp.task('styles:client', () => {
+  let postCssPlugins = [
+    cssnano
+  ]
   return gulp.src(`${clientDir}/content/styles/main.scss`)
     .pipe(sass().on('error', sass.logError))
     .pipe($.if(argv.production, sourcemaps.init({ loadMaps: true })))
-    .pipe($.if(argv.production, cssnano())).on('error', log.error)
+    .pipe($.if(argv.production, postcss(postCssPlugins))).on('error', log.error)
     .pipe($.if(argv.production, rename({ suffix: '.min' })))
     .pipe($.if(argv.production, rev()))
     .pipe($.if(argv.production, sourcemaps.write('.')))
