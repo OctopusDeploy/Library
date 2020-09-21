@@ -7,8 +7,7 @@ import browserSync from 'browser-sync';
 import LiveServer from 'gulp-live-server';
 import sass from 'gulp-sass';
 import concat from 'gulp-concat';
-import header from 'gulp-header';
-import footer from 'gulp-footer';
+import insert from 'gulp-insert';
 import del from 'del';
 import source from 'vinyl-source-stream';
 import buffer from 'vinyl-buffer';
@@ -207,8 +206,7 @@ gulp.task('step-templates', gulp.series('tests', () => {
   return gulp.src('./step-templates/*.json')
     .pipe(provideMissingData())
     .pipe(concat('step-templates.json', { newLine: ',' }))
-    .pipe(header('{"items": ['))
-    .pipe(footer(']}'))
+    .pipe(insert.wrap('{"items": [', ']}'))
     .pipe(argv.production ? gulp.dest(`${publishDir}/app/services`) : gulp.dest(`${buildDir}/app/services`));
 }));
 
@@ -304,4 +302,3 @@ gulp.task('watch', gulp.series('clean', 'build', () => {
 }));
 
 gulp.task('default', gulp.series('clean', 'build'));
-
