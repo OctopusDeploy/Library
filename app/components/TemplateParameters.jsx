@@ -3,7 +3,7 @@
 import React from 'react';
 import marked from 'marked';
 import PropTypes from 'prop-types';
-import DOMPurify from 'dompurify';
+import DOMPurify from 'isomorphic-dompurify';
 
 const displayName = 'octopus-library-template-parameters';
 
