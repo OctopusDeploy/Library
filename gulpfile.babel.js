@@ -107,6 +107,7 @@ function humanize(categoryId) {
     case 'chef': return 'Chef';
     case 'clickonce': return 'ClickOnce';
     case 'dll': return 'dll';
+    case 'dlm': return 'dlm';
     case 'dotnetcore': return '.NET Core';
     case 'edgecast': return 'EdgeCast';
     case 'elmah': return 'ELMAH';
