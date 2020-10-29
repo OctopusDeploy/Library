@@ -1,16 +1,16 @@
 {
   "Id": "9c85f96e-09d3-4814-948a-aef8708740b5",
   "Name": "Testery - Report Deployment",
-  "Description": "Created from step 'Testery - Report Deployment' in project 'Sample Deploy'",
+  "Description": "Reports a deployment to Testery, enabling you to do post-deployment validation and testing. See https://testery.io for more info.",
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 3,
   "CommunityActionTemplateId": null,
   "Packages": [],
   "Properties": {
     "Octopus.Action.RunOnServer": "true",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "try {$pipCmd = get-command pip} catch {}\nif (!($pipCmd)) {\n\tFail-Step \"This step template requires Python 3.6 or greater and pip to be installed. Python is available at https://www.python.org/downloads/\"\n}\n\npip install testery --upgrade\n\necho \"Reporting deployment info to Testery...\"\ntestery create-deploy --commit \"${TesteryGitReference}\" --token \"${TesteryToken}\" --project \"${TesteryProjectName}\" --environment \"${TesteryEnvironment}\" --build-id \"${TesteryBuildId}\"\n"
+    "Octopus.Action.Script.ScriptBody": "try {$pipCmd = get-command pip} catch {}\nif (!($pipCmd)) {\n\tFail-Step \"This step template requires Python 3.6 or greater and pip to be installed. Python is available at https://www.python.org/downloads/\"\n}\n\npip -q install testery --upgrade\n\nwrite-output \"Fail on failure: ${TesteryFailOnFailure}\"\n\n\nif (${TesteryFailOnFailure}) {\n  write-output \"Fail on failure option selected.\"\n  $failOnFailureSwitch=\"--fail-on-failure\"\n} else {\n  write-output \"Fail on failure option not selected.\"\n  $failOnFailureSwitch=\"\"\n}\n\nif (${TesteryWaitForResults}) {\n  $waitForResultsSwitch=\"--wait-for-results\"\n} else {\n  $waitForResultsSwitch=\"\"\n}\n\necho \"Reporting deployment info to Testery...\"\ntestery create-deploy --commit \"${TesteryGitReference}\" --token \"${TesteryToken}\" --project \"${TesteryProjectName}\" --environment \"${TesteryEnvironment}\" --build-id \"${TesteryBuildId}\" \"${failOnFailureSwitch}\" \"${waitForResultsSwitch}\"\n"
   },
   "Parameters": [
     {
@@ -54,11 +54,31 @@
       "HelpText": "The build ID from your CI/CD. If you have uploaded any test artifacts from your CI/CD, this build id should match the build id used when uploading artifacts.",
       "DefaultValue": "",
       "DisplaySettings": {}
+    },
+    {
+      "Id": "09ed4f34-d381-4f85-8869-c52264694b7c",
+      "Name": "TesteryFailOnFailure",
+      "Label": "Testery Fail On Failure",
+      "HelpText": "When checked, the Octopus deployment will fail if any of the test runs associated with the deployment fail. When unchecked, the Octopus deployment will continue even if there are test failures.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "2266652a-258d-447f-aebf-14e9575d6b9d",
+      "Name": "TesteryWaitForResults",
+      "Label": "Testery Wait For Results",
+      "HelpText": "When checked, Octopus Deploy will wait for the any test runs associated with the deployment to complete before proceeding. This is useful for making sure deployments don't run on environments/tenants with an active test run.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
     }
   ],
   "$Meta": {
-    "ExportedAt": "2020-09-29T12:37:12.701Z",
-    "OctopusVersion": "2020.4.2",
+    "ExportedAt": "2020-10-29T16:37:27.511Z",
+    "OctopusVersion": "2020.5.0-rc0003",
     "Type": "ActionTemplate"
   },
   "LastModifiedBy": "harbertc",
