@@ -1,0 +1,124 @@
+{
+    "Id": "e3614dd6-3a78-4220-97f0-b0e44415e58c",
+    "Name": "Lets Encrypt - Self-Hosted HTTP Challenge",
+    "Description": "Request (or renew) an X.509 SSL Certificate from the [Let's Encrypt Certificate Authority](https://letsencrypt.org/) using the Self-hosted HTTP Challenge Listener provided by the [Posh-ACME](https://github.com/rmbolger/Posh-ACME/) PowerShell Module.\n\n---\n#### Please Note\n\nIt's generally a better idea to use one of the Posh-ACME [DNS providers](https://github.com/rmbolger/Posh-ACME/wiki/List-of-Supported-DNS-Providers) for Let's Encrypt.\n\nThere are a number of Octopus Step templates in the [Community Library](https://library.octopus.com/listing/letsencrypt) that support DNS providers.\n\n---\n\n#### Features\n\n- ACME v2 protocol support which allows generating wildcard certificates (*.example.com).\n- [Self-hosted HTTP Challenge](https://github.com/rmbolger/Posh-ACME/wiki/How-To-Self-Host-HTTP-Challenges) Challenge for TLD, CNAME, and Wildcard domains. \n- _Optionally_ Publishes/Updates SSL Certificates in the [Octopus Deploy Certificate Store](https://octopus.com/docs/deployment-examples/certificates).\n- _Optionally_ import SSL Certificate into the local machine store. \n- _Optionally_ Export PFX (PKCS#12) SSL Certificate to a supplied file path.\n- Verified to work on Windows and Linux deployment targets\n\n#### Pre-requisites\n\n- There are specific requirements when [running on Windows](https://github.com/rmbolger/Posh-ACME/wiki/How-To-Self-Host-HTTP-Challenges#windows-only-prerequisites).\n- HTTP Challenge Listener must be available on Port 80.\n- When updating the Octopus Certificate Store, access to the Octopus Server from where the script template runs e.g. deployment target or worker is required.",
+    "ActionType": "Octopus.Script",
+    "Version": 4,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+       "Octopus.Action.Script.ScriptSource": "Inline",
+       "Octopus.Action.Script.Syntax": "PowerShell",
+       "Octopus.Action.Script.ScriptBody": "# TLS 1.2\nWrite-Host \"Enabling TLS 1.2 for script execution\"\n[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12\n\n# Required Modules\nWrite-Host \"Checking for required modules.\"\n$required_posh_acme_version = 3.12.0\n$module_check = Get-Module -ListAvailable -Name Posh-Acme | Where-Object { $_.Version -ge $required_posh_acme_version }\n\nif (-not ($module_check)) {\n    Write-Host \"Installing Posh-ACME.\"\n    Install-Module -Name Posh-ACME -MinimumVersion 3.12.0 -Scope CurrentUser -Force\n}\n\nWrite-Host \"Importing Posh-ACME\"\nImport-Module Posh-ACME\n\n# Variables\n$LE_SelfHosted_CertificateDomain = $OctopusParameters[\"LE_SelfHosted_CertificateDomain\"]\n$LE_SelfHosted_Contact = $OctopusParameters[\"LE_SelfHosted_ContactEmailAddress\"]\n$LE_SelfHosted_PfxPass = $OctopusParameters[\"LE_SelfHosted_PfxPass\"]\n$LE_SelfHosted_Use_Staging = $OctopusParameters[\"LE_SelfHosted_Use_Staging\"]\n$LE_SelfHosted_HttpListenerTimeout = $OctopusParameters[\"LE_SelfHosted_HttpListenerTimeout\"]\n$LE_Self_Hosted_UpdateOctopusCertificateStore = $OctopusParameters[\"LE_Self_Hosted_UpdateOctopusCertificateStore\"]\n$LE_SelfHosted_Octopus_APIKey = $OctopusParameters[\"LE_SelfHosted_Octopus_APIKey\"]\n$LE_SelfHosted_ReplaceIfExpiresInDays = $OctopusParameters[\"LE_SelfHosted_ReplaceIfExpiresInDays\"]\n$LE_SelfHosted_Install = $OctopusParameters[\"LE_SelfHosted_Install\"]\n$LE_SelfHosted_ExportFilePath = $OctopusParameters[\"LE_SelfHosted_ExportFilePath\"]\n$LE_SelfHosted_Export = -not [System.String]::IsNullOrWhiteSpace($LE_SelfHosted_ExportFilePath)\n$LE_SelfHosted_TempFileLocation=[System.IO.Path]::GetTempFileName()\n\n# Consts\n$LE_SelfHosted_Certificate_Name = \"Lets Encrypt - $LE_SelfHosted_CertificateDomain\"\n$LE_SelfHosted_Fake_Issuer = \"Fake LE Intermediate X1\"\n$LE_SelfHosted_Issuer = \"Let's Encrypt Authority X3\"\n\n# Helper(s)\nfunction Get-WebRequestErrorBody {\n    param (\n        $RequestError\n    )\n\n    # Powershell < 6 you can read the Exception\n    if ($PSVersionTable.PSVersion.Major -lt 6) {\n        if ($RequestError.Exception.Response) {\n            $reader = New-Object System.IO.StreamReader($RequestError.Exception.Response.GetResponseStream())\n            $reader.BaseStream.Position = 0\n            $reader.DiscardBufferedData()\n            $response = $reader.ReadToEnd()\n            return $response | ConvertFrom-Json\n        }\n    }\n    else {\n        return $RequestError.ErrorDetails.Message\n    }\n}\n\nfunction Clean-TempFiles {\n\tif(Test-Path -Path $LE_SelfHosted_TempFileLocation) {\n\t\tWrite-Debug \"Removing temporary file...\"\n\t\tRemove-Item $LE_SelfHosted_TempFileLocation -Force\n\t}\n}\n\nfunction Exit-Failure {\n  \tClean-TempFiles\n\tExit 1\n}\n\nfunction Exit-Success {\n  \tClean-TempFiles\n\tExit 0\n}\n\n# Functions\nfunction Get-LetsEncryptCertificate {\n    Write-Debug \"Entering: Get-LetsEncryptCertificate\"\n\n    if ($LE_SelfHosted_Use_Staging -eq $True) {\n        Write-Host \"Using Lets Encrypt Server: Staging\"\n        Set-PAServer LE_STAGE;\n    }\n    else {\n        Write-Host \"Using Lets Encrypt Server: Production\"\n        Set-PAServer LE_PROD;\n    }\n\n    $le_account = Get-PAAccount\n    if ($le_account) {\n        Write-Host \"Removing existing PA-Account...\"\n        Remove-PAAccount $le_account.Id -Force\n    }\n    \n    Write-Host \"Assigning new PA-Account...\"\n    $le_account = New-PAAccount -Contact $LE_SelfHosted_Contact -AcceptTOS -Force\n    \n    Write-Host \"Requesting new order for $LE_SelfHosted_CertificateDomain...\"\n    $order = New-PAOrder -Domain $LE_SelfHosted_CertificateDomain -PfxPass $LE_SelfHosted_PfxPass -Force\n    \n    try {\n    \tWrite-Host \"Invoking Self-Hosted HttpChallengeListener with timeout of $LE_SelfHosted_HttpListenerTimeout seconds...\"\n    \tInvoke-HttpChallengeListener -Verbose -ListenerTimeout $LE_SelfHosted_HttpListenerTimeout\n        \t\n        Write-Host \"Getting validated certificate...\"\n        $cert = New-PACertificate $LE_SelfHosted_CertificateDomain\n        \n        if ($LE_SelfHosted_Install -eq $True) {\n        \tif (-not $IsWindows -and 'Desktop' -ne $PSEdition) {\n              Write-Host \"Installing certificate currently only works on Windows\"\n          \t}\n            else {\n              Write-Host \"Installing certificate to local store...\"\n              $cert | Install-PACertificate\n            }\n    \t}\n        \n        # Linux showed weird $null issues using the .PfxFullChain path\n        if(Test-Path -Path $LE_SelfHosted_TempFileLocation) {\n        \tWrite-Debug \"Creating temp copy of certificate to: $LE_SelfHosted_TempFileLocation\"\n        \t$bytes = [System.IO.File]::ReadAllBytes($cert.PfxFullChain)\n            New-Item -Path $LE_SelfHosted_TempFileLocation -ItemType \"file\" -Force\n            [System.IO.File]::WriteAllBytes($LE_SelfHosted_TempFileLocation, $bytes)\n        }\n        \n        if($LE_SelfHosted_Export -eq $True) {\n        \tWrite-Host \"Exporting certificate to: $LE_SelfHosted_ExportFilePath\"\n        \t$bytes = [System.IO.File]::ReadAllBytes($LE_SelfHosted_TempFileLocation)\n            New-Item -Path $LE_SelfHosted_ExportFilePath -ItemType \"file\" -Force\n            [System.IO.File]::WriteAllBytes($LE_SelfHosted_ExportFilePath, $bytes)\n    \t}\n\n        return $cert\n    }\n    catch {\n        Write-Host \"Failed to Create Certificate. Error Message: $($_.Exception.Message). See Debug output for details.\"\n        Write-Debug (Get-WebRequestErrorBody -RequestError $_)\n        Exit-Failure\n    }\n}\n\nfunction Get-OctopusCertificates {\n    Write-Debug \"Entering: Get-OctopusCertificates\"\n\n    $octopus_uri = $OctopusParameters[\"Octopus.Web.ServerUri\"]\n    $octopus_space_id = $OctopusParameters[\"Octopus.Space.Id\"]\n    $octopus_headers = @{ \"X-Octopus-ApiKey\" = $LE_SelfHosted_Octopus_APIKey }\n    $octopus_certificates_uri = \"$octopus_uri/api/$octopus_space_id/certificates?search=$LE_SelfHosted_CertificateDomain\"\n\n    try {\n        # Get a list of certificates that match our domain search criteria.\n        $certificates_search = Invoke-WebRequest -Uri $octopus_certificates_uri -Method Get -Headers $octopus_headers -UseBasicParsing -ErrorAction Stop | ConvertFrom-Json | Select-Object -ExpandProperty Items\n\n        # We don't want to confuse Production and Staging Lets Encrypt Certificates.\n        $issuer = $LE_SelfHosted_Issuer\n        if ($LE_SelfHosted_Use_Staging -eq $True) {\n            $issuer = $LE_SelfHosted_Fake_Issuer\n        }\n\n        return $certificates_search | Where-Object {\n            $_.SubjectCommonName -eq $LE_SelfHosted_CertificateDomain -and\n            $_.IssuerCommonName -eq $issuer -and\n            $null -eq $_.ReplacedBy -and\n            $null -eq $_.Archived\n        }\n    }\n    catch {\n        Write-Host \"Could not retrieve certificates from Octopus Deploy. Error: $($_.Exception.Message). See Debug output for details.\"\n        Write-Debug (Get-WebRequestErrorBody -RequestError $_)\n        Exit-Failure\n    }\n}\n\nfunction Publish-OctopusCertificate {\n    param (\n        [string] $JsonBody\n    )\n\n    Write-Debug \"Entering: Publish-OctopusCertificate\"\n\n    if (-not ($JsonBody)) {\n        Write-Host \"Existing Certificate Id and a replace Certificate are required.\"\n        Exit-Failure\n    }\n\n    $octopus_uri = $OctopusParameters[\"Octopus.Web.ServerUri\"]\n    $octopus_space_id = $OctopusParameters[\"Octopus.Space.Id\"]\n    $octopus_headers = @{ \"X-Octopus-ApiKey\" = $LE_SelfHosted_Octopus_APIKey }\n    $octopus_certificates_uri = \"$octopus_uri/api/$octopus_space_id/certificates\"\n\tWrite-Verbose \"Preparing to publish to: $octopus_certificates_uri\"\n    \n    try {\n        Invoke-WebRequest -Uri $octopus_certificates_uri -Method Post -Headers $octopus_headers -Body $JsonBody -UseBasicParsing\n        Write-Host \"Published $LE_SelfHosted_CertificateDomain certificate to the Octopus Deploy Certificate Store.\"\n    }\n    catch {\n        Write-Host \"Failed to publish $LE_SelfHosted_CertificateDomain certificate. Error: $($_.Exception.Message). See Debug output for details.\"\n        Write-Debug (Get-WebRequestErrorBody -RequestError $_)\n        Exit-Failure\n    }\n}\n\nfunction Update-OctopusCertificate {\n    param (\n        [string]$Certificate_Id,\n        [string]$JsonBody\n    )\n\n    Write-Debug \"Entering: Update-OctopusCertificate\"\n\n    if (-not ($Certificate_Id -and $JsonBody)) {\n        Write-Host \"Existing Certificate Id and a replace Certificate are required.\"\n        Exit-Failure\n    }\n\n    $octopus_uri = $OctopusParameters[\"Octopus.Web.ServerUri\"]\n    $octopus_space_id = $OctopusParameters[\"Octopus.Space.Id\"]\n    $octopus_headers = @{ \"X-Octopus-ApiKey\" = $LE_SelfHosted_Octopus_APIKey }\n    $octopus_certificates_uri = \"$octopus_uri/api/$octopus_space_id/certificates/$Certificate_Id/replace\"\n\n    try {\n        Invoke-WebRequest -Uri $octopus_certificates_uri -Method Post -Headers $octopus_headers -Body $JsonBody -UseBasicParsing\n        Write-Host \"Replaced $LE_SelfHosted_CertificateDomain certificate in the Octopus Deploy Certificate Store.\"\n    }\n    catch {\n        Write-Error \"Failed to replace $LE_SelfHosted_CertificateDomain certificate. Error: $($_.Exception.Message). See Debug output for details.\"\n        Write-Debug (Get-WebRequestErrorBody -RequestError $_)\n        Exit-Failure\n    }\n}\n\nfunction Get-NewCertificatePFXAsJson {\n    param (\n        $Certificate\n    )\n\n    Write-Debug \"Entering: Get-NewCertificatePFXAsJson\"\n\n    if (-not ($Certificate)) {\n        Write-Host \"Certificate is required.\"\n        Exit-Failure\n    }\n\n    [Byte[]]$certificate_buffer = [System.IO.File]::ReadAllBytes($LE_SelfHosted_TempFileLocation)\n    $certificate_base64 = [convert]::ToBase64String($certificate_buffer)\n\n    $certificate_body = @{\n        Name = \"$LE_SelfHosted_CertificateDomain\";\n        Notes            = \"\";\n        CertificateData  = @{\n            HasValue = $true;\n            NewValue = $certificate_base64;\n        };\n        Password         = @{\n            HasValue = $true;\n            NewValue = $LE_SelfHosted_PfxPass;\n        };\n    }\n\n    return $certificate_body | ConvertTo-Json\n}\n\nfunction Get-ReplaceCertificatePFXAsJson {\n    param (\n        $Certificate\n    )\n\n    Write-Debug \"Entering: Get-ReplaceCertificatePFXAsJson\"\n\n    if (-not ($Certificate)) {\n        Write-Host \"Certificate is required.\"\n        Exit-Failure\n    }\n\n    [Byte[]]$certificate_buffer = [System.IO.File]::ReadAllBytes($LE_SelfHosted_TempFileLocation)\n    $certificate_base64 = [convert]::ToBase64String($certificate_buffer)\n\n    $certificate_body = @{\n        CertificateData = $certificate_base64;\n        Password        = $LE_SelfHosted_PfxPass;\n    }\n\n    return $certificate_body | ConvertTo-Json\n}\n\n# Main Execution starts here\n\nWrite-Debug \"Running MAIN function...\"\n\nif ($LE_Self_Hosted_UpdateOctopusCertificateStore -eq $True) {\n  Write-Host \"Checking for existing Lets Encrypt Certificates in the Octopus Deploy Certificates Store...\"\n  $certificates = Get-OctopusCertificates\n\n  # Check for PFX & PEM\n  if ($certificates) {\n\n      # Handle behavior between Powershell 5 and Powershell 6+\n      $certificate_count = 1\n      if ($certificates.Count -ge 1) {\n          $certificate_count = $certificates.Count\n      }\n\n      Write-Host \"Found $certificate_count for $LE_SelfHosted_CertificateDomain.\"\n      Write-Host \"Checking to see if any expire within $LE_SelfHosted_ReplaceIfExpiresInDays days.\"\n\n      # Check Expiry Dates\n      $expiring_certificates = $certificates | Where-Object { [DateTime]$_.NotAfter -lt (Get-Date).AddDays($LE_SelfHosted_ReplaceIfExpiresInDays) }\n\n      if ($expiring_certificates) {\n          Write-Host \"Found certificates that expire with $LE_SelfHosted_ReplaceIfExpiresInDays days. Requesting new certificates for $LE_SelfHosted_CertificateDomain from Lets Encrypt\"\n          $le_certificate = Get-LetsEncryptCertificate\n\n          # PFX\n          $existing_certificate = $certificates | Where-Object { $_.CertificateDataFormat -eq \"Pkcs12\" } | Select-Object -First 1\n          $certificate_as_json = Get-ReplaceCertificatePFXAsJson -Certificate $le_certificate\n          Update-OctopusCertificate -Certificate_Id $existing_certificate.Id -JsonBody $certificate_as_json\n      }\n      else {\n          Write-Host \"Nothing to do here...\"\n      }\n\n\tWrite-Host \"Completed running...\"\n    Exit-Success\n  }\n}\n\nWrite-Host \"Requesting New Certificate for $LE_SelfHosted_CertificateDomain from Lets Encrypt\"\n\n$le_certificate = Get-LetsEncryptCertificate\n\nif($LE_Self_Hosted_UpdateOctopusCertificateStore -eq $True) {\n  Write-Host \"Publishing new LetsEncrypt - $LE_SelfHosted_CertificateDomain (PFX) to Octopus Certificate Store\"\n  $certificate_as_json = Get-NewCertificatePFXAsJson -Certificate $le_certificate\n  Publish-OctopusCertificate -JsonBody $certificate_as_json\n} \nelse {\n  Write-Host \"Certificate generated...\"\n  $le_certificate | fl\n}\n\nWrite-Host \"Completed running...\"\nExit-Success"
+    },
+    "Parameters": [
+       {
+          "Id": "3d7e44e3-8a29-4458-b3ba-c09817566492",
+          "Name": "LE_SelfHosted_CertificateDomain",
+          "Label": "Certificate Domain",
+          "HelpText": "Domain (TLD, CNAME, or Wildcard) to create a certificate for.",
+          "DefaultValue": "",
+          "DisplaySettings": {
+             "Octopus.ControlType": "SingleLineText"
+          }
+       },
+       {
+          "Id": "7f882a93-511d-4c8c-a946-832d69739773",
+          "Name": "LE_SelfHosted_ContactEmailAddress",
+          "Label": "Contact Email Address",
+          "HelpText": "The Email address used when requesting the SSL certificate. _Default: `#{Octopus.Deployment.CreatedBy.EmailAddress}`_.",
+          "DefaultValue": "#{Octopus.Deployment.CreatedBy.EmailAddress}",
+          "DisplaySettings": {
+             "Octopus.ControlType": "SingleLineText"
+          }
+       },
+       {
+          "Id": "c91935f5-64cb-48c3-940b-981fcbfb942a",
+          "Name": "LE_SelfHosted_PfxPass",
+          "Label": "PFX Password",
+          "HelpText": "The password to use when converting to/from PFX.",
+          "DefaultValue": "",
+          "DisplaySettings": {
+             "Octopus.ControlType": "Sensitive"
+          }
+       },
+       {
+          "Id": "dd75b10a-17ca-4859-ae8d-adf0de74dbce",
+          "Name": "LE_SelfHosted_Use_Staging",
+          "Label": "Use Lets Encrypt Staging",
+          "HelpText": "Should the Certificate be generated using the Lets Encrypt Staging infrastructure? _Default: `False`_.",
+          "DefaultValue": "False",
+          "DisplaySettings": {
+             "Octopus.ControlType": "Checkbox"
+          }
+       },
+       {
+          "Id": "9a5d53f9-c5e5-4c83-9769-43b987ba04b0",
+          "Name": "LE_SelfHosted_HttpListenerTimeout",
+          "Label": "Http Listener Timeout",
+          "HelpText": "Self-Hosted Http Listener Timeout in Seconds. _Default: 120 seconds_.",
+          "DefaultValue": "120",
+          "DisplaySettings": {
+             "Octopus.ControlType": "SingleLineText"
+          }
+       },
+       {
+          "Id": "7d8c49b8-684e-49d3-95aa-353c6e087843",
+          "Name": "LE_Self_Hosted_UpdateOctopusCertificateStore",
+          "Label": "Update Octopus Certificate Store?",
+          "HelpText": "Should any generated certificate be updated in the [Octopus Deploy Certificate Store](https://octopus.com/docs/deployment-examples/certificates) _Default: `True`_.",
+          "DefaultValue": "True",
+          "DisplaySettings": {
+             "Octopus.ControlType": "Checkbox"
+          }
+       },
+       {
+          "Id": "83e2d3cf-66a6-47b4-bae8-e207a6918048",
+          "Name": "LE_SelfHosted_Octopus_APIKey",
+          "Label": "Octopus Deploy API key",
+          "HelpText": "An Octopus Deploy API key with access to change Certificates in the Certificate Store. \n\n**Note:** Required if `LE_Self_Hosted_UpdateOctopusCertificateStore` is set to `True`.",
+          "DefaultValue": "",
+          "DisplaySettings": {
+             "Octopus.ControlType": "Sensitive"
+          }
+       },
+       {
+          "Id": "95ff51cc-2390-4b5d-89b0-bd62e83bb4f8",
+          "Name": "LE_SelfHosted_ReplaceIfExpiresInDays",
+          "Label": "Replace expiring certificate before N days",
+          "HelpText": "Replace the certificate if it expiries within N days. _Default: 30 days_.\n\n**Note:** Required if `LE_Self_Hosted_UpdateOctopusCertificateStore` is set to `True`.",
+          "DefaultValue": "30",
+          "DisplaySettings": {
+             "Octopus.ControlType": "SingleLineText"
+          }
+       },
+       {
+          "Id": "d429561f-cf00-41f6-9956-e994f623696a",
+          "Name": "LE_SelfHosted_Install",
+          "Label": "Install Certificate?",
+          "HelpText": "Installs the certificate in the local store. _Default: `False`_.",
+          "DefaultValue": "False",
+          "DisplaySettings": {
+             "Octopus.ControlType": "Checkbox"
+          }
+       },
+       {
+          "Id": "f8abcf14-c9a1-4e15-87dc-95004f2216e6",
+          "Name": "LE_SelfHosted_ExportFilePath",
+          "Label": "PFX Export Filepath",
+          "HelpText": "Exports the full certificate chain as PKCS#12 archive (.PFX used by Windows and IIS) e.g. C:\\Temp\\octopus.com.pfx",
+          "DefaultValue": "",
+          "DisplaySettings": {
+             "Octopus.ControlType": "SingleLineText"
+          }
+       }
+    ],
+    "LastModifiedAt": "2020-08-12T15:52:48.772Z",
+    "LastModifiedBy": "harrisonmeister",
+    "$Meta": {
+       "ExportedAt": "2020-08-12T15:52:48.772Z",
+       "OctopusVersion": "2020.3.2",
+       "Type": "ActionTemplate"
+    },
+    "Category": "lets-encrypt"
+ }

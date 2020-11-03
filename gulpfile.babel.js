@@ -7,8 +7,7 @@ import browserSync from 'browser-sync';
 import LiveServer from 'gulp-live-server';
 import sass from 'gulp-sass';
 import concat from 'gulp-concat';
-import header from 'gulp-header';
-import footer from 'gulp-footer';
+import insert from 'gulp-insert';
 import del from 'del';
 import source from 'vinyl-source-stream';
 import buffer from 'vinyl-buffer';
@@ -16,7 +15,8 @@ import babelify from 'babelify';
 import reactify from 'reactify';
 import browserify from 'browserify';
 import uglify from 'gulp-uglify';
-import cssnano from 'gulp-cssnano';
+import postcss from 'gulp-postcss';
+import cssnano from 'cssnano';
 import rename from 'gulp-rename';
 import sourcemaps from 'gulp-sourcemaps';
 import inject from 'gulp-inject';
@@ -107,6 +107,7 @@ function humanize(categoryId) {
     case 'chef': return 'Chef';
     case 'clickonce': return 'ClickOnce';
     case 'dll': return 'dll';
+    case 'dlm': return 'dlm';
     case 'dotnetcore': return '.NET Core';
     case 'edgecast': return 'EdgeCast';
     case 'elmah': return 'ELMAH';
@@ -129,6 +130,7 @@ function humanize(categoryId) {
     case 'launchdarkly': return 'LaunchDarkly';
     case 'lets-encrypt': return 'Lets Encrypt';
     case 'linux': return 'Linux';
+    case 'liquibase': return 'Liquibase';
     case 'mabl': return 'mabl';
     case 'mariadb': return 'MariaDB'
     case 'microsoft-teams': return 'Microsoft Teams';
@@ -145,6 +147,7 @@ function humanize(categoryId) {
     case 'redgate': return 'Redgate';
     case 'roundhouse': return 'RoundhousE'
     case 'sharepoint': return 'SharePoint';
+    case 'snowflake': return 'Snowflake';
     case 'solarwinds': return 'SolarWinds';
     case 'sql': return 'SQL Server';
     case 'ssl': return 'SSL';
@@ -157,7 +160,7 @@ function humanize(categoryId) {
     case 'webdeploy': return 'Web Deploy';
     case 'xml': return 'XML';
     case 'xunit': return 'xUnit';
-    case 'rnhub': return 'RnHub';	
+    case 'rnhub': return 'RnHub';
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
   }
 }
@@ -204,8 +207,7 @@ gulp.task('step-templates', gulp.series('tests', () => {
   return gulp.src('./step-templates/*.json')
     .pipe(provideMissingData())
     .pipe(concat('step-templates.json', { newLine: ',' }))
-    .pipe(header('{"items": ['))
-    .pipe(footer(']}'))
+    .pipe(insert.wrap('{"items": [', ']}'))
     .pipe(argv.production ? gulp.dest(`${publishDir}/app/services`) : gulp.dest(`${buildDir}/app/services`));
 }));
 
@@ -215,10 +217,13 @@ gulp.task('styles:vendor', () => {
 });
 
 gulp.task('styles:client', () => {
+  let postCssPlugins = [
+    cssnano
+  ]
   return gulp.src(`${clientDir}/content/styles/main.scss`)
     .pipe(sass().on('error', sass.logError))
     .pipe($.if(argv.production, sourcemaps.init({ loadMaps: true })))
-    .pipe($.if(argv.production, cssnano())).on('error', log.error)
+    .pipe($.if(argv.production, postcss(postCssPlugins))).on('error', log.error)
     .pipe($.if(argv.production, rename({ suffix: '.min' })))
     .pipe($.if(argv.production, rev()))
     .pipe($.if(argv.production, sourcemaps.write('.')))
@@ -267,7 +272,7 @@ gulp.task('build:client', gulp.series('step-templates', 'copy:app', 'scripts', '
     ? gulp.src([`${publishDir}/public/**/*.js`, `${publishDir}/public/**/*.css*`, `!${publishDir}/public/**/vendor{,/**}`], { read: false })
     : gulp.src([`${buildDir}/public/**/*.js`, `${buildDir}/public/**/*.css*`, `!${buildDir}/public/**/vendor{,/**}`], { read: false });
 
-  return gulp.src(`${serverDir}/views/index.jade`)
+  return gulp.src(`${serverDir}/views/index.pug`)
     .pipe(inject(vendorSources, { relative: false, name: 'vendor', ignorePath: 'node_modules', addPrefix: 'styles/vendor' }))
     .pipe(inject(sources, { relative: false, ignorePath: `${argv.production ? `${publishDir}` : `${buildDir}`}/public` }))
     .pipe(argv.production ? gulp.dest(`${publishDir}/views`) : gulp.dest(`${buildDir}/views`));
@@ -298,4 +303,3 @@ gulp.task('watch', gulp.series('clean', 'build', () => {
 }));
 
 gulp.task('default', gulp.series('clean', 'build'));
-
