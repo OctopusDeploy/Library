@@ -3,13 +3,13 @@
     "Name": "Register EPPlus DLL in the GAC",
     "Description": "This script registers EPPlus dll to the GAC",
     "ActionType": "Octopus.Script",
-    "Version": 1,
+    "Version": 2,
     "CommunityActionTemplateId": null,
     "Packages": [],
     "Properties": {
       "Octopus.Action.Script.ScriptSource": "Inline",
       "Octopus.Action.Script.Syntax": "PowerShell",
-      "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::Load(\"System.EnterpriseServices, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a\")\n\nfunction Expand-ZIPFile($file, $destination)\n{\n    $shell = new-object -com shell.application\n    $zip = $shell.NameSpace($file)\n    foreach($item in $zip.items())\n    {\n        $shell.Namespace($destination).copyhere($item)\n    }\n}\n\n$TempFolder = \"\\TempNupkg\"\n$ExpandedFolder = \"\\expanded\"\n\n$FileDestinationPath = $RegisteringDllFolderPath + \"\\\" + $DllName \n$FileSourcePath = $RegisteringDllFolderPath + $TempFolder + $ExpandedFolder + $DllPathInExpanded + \"\\\" + $DllName\n\n$TempPath = $RegisteringDllFolderPath + $TempFolder\n$NupkgPath = $RegisteringDllFolderPath + $TempFolder + \"\\temp.zip\"\n$ExpandedTempPath = $RegisteringDllFolderPath + $TempFolder + $ExpandedFolder\n\n$DllUrl = \"https://www.nuget.org/api/v2/package/\"+ $PackageName +\"/\" + $PackageVersion\n\nif (!(Test-Path $ExpandedTempPath -PathType Container)) {\n    New-Item -ItemType Directory -Force -Path $ExpandedTempPath\n}\n\nWrite-Host \"Dowloading package ...\"\nInvoke-WebRequest -Uri $DllUrl -OutFile $NupkgPath\n\nWrite-Host \"Expanding Archive ...\"\nExpand-ZIPFile –File $NupkgPath –Destination $ExpandedTempPath\n\nWrite-Host \"Copying to destination folder ...\"\nCopy-Item $FileSourcePath -Destination $FileDestinationPath\n\nRemove-Item -Recurse -Force $TempPath\nWrite-Host \"Deleteing temp folders ...\"\n\nWrite-Host \"Library Found\"\n\n#Note that you should be running PowerShell as an Administrator\nWrite-Host \"Installing to GAC ...\"\n$publish = New-Object System.EnterpriseServices.Internal.Publish\n$publish.GacInstall($fileDestinationPath)\nWrite-Host \"Installed to GAC\""
+      "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::Load(\"System.EnterpriseServices, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a\")\n\nfunction Expand-ZIPFile($file, $destination)\n{\n    $shell = new-object -com shell.application\n    $zip = $shell.NameSpace($file)\n    foreach($item in $zip.items())\n    {\n        $shell.Namespace($destination).copyhere($item)\n    }\n}\n\n$TempFolder = \"\\TempNupkg\"\n$ExpandedFolder = \"\\expanded\"\n\n$FileDestinationPath = $RegisteringDllFolderPath + \"\\\" + $DllName \n$FileSourcePath = $RegisteringDllFolderPath + $TempFolder + $ExpandedFolder + $DllPathInExpanded + \"\\\" + $DllName\n\n$TempPath = $RegisteringDllFolderPath + $TempFolder\n$NupkgPath = $RegisteringDllFolderPath + $TempFolder + \"\\temp.zip\"\n$ExpandedTempPath = $RegisteringDllFolderPath + $TempFolder + $ExpandedFolder\n\n$DllUrl = \"https://www.nuget.org/api/v2/package/\"+ $PackageName +\"/\" + $PackageVersion\n\nif (!(Test-Path $ExpandedTempPath -PathType Container)) {\n    New-Item -ItemType Directory -Force -Path $ExpandedTempPath\n}\n\nWrite-Host \"Allow SecurityProtocol TLS, TLS 1.1 and TLS 1.2 ...\"\n[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12\nWrite-Host \"Dowloading package ...\"\nInvoke-WebRequest -Uri $DllUrl -OutFile $NupkgPath\n\nWrite-Host \"Expanding Archive ...\"\nExpand-ZIPFile –File $NupkgPath –Destination $ExpandedTempPath\n\nWrite-Host \"Copying to destination folder ...\"\nCopy-Item $FileSourcePath -Destination $FileDestinationPath\n\nRemove-Item -Recurse -Force $TempPath\nWrite-Host \"Deleteing temp folders ...\"\n\nWrite-Host \"Library Found\"\n\n#Note that you should be running PowerShell as an Administrator\nWrite-Host \"Installing to GAC ...\"\n$publish = New-Object System.EnterpriseServices.Internal.Publish\n$publish.GacInstall($fileDestinationPath)\nWrite-Host \"Installed to GAC\""
     },
     "Parameters": [
       {
@@ -63,10 +63,10 @@
         }
       }
     ],
-    "LastModifiedBy": "suxstellino",
+    "LastModifiedBy": "fabiozanella",
     "$Meta": {
-        "ExportedAt": "2019-04-18T14:08:10.232Z",
-        "OctopusVersion": "2018.10.5",
+        "ExportedAt": "2020-11-03T09:07:40.202Z",
+        "OctopusVersion": "2020.4.5",
         "Type": "ActionTemplate"
       },
     "Category": "dll"    
