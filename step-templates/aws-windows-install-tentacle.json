@@ -1,0 +1,159 @@
+{
+    "Id": "234ed1c6-a5fa-47ee-8669-a187d8787057",
+    "Name": "AWS Win - Install Octopus Tentacle",
+    "Description": "This step template will install the latest tentacle on an AWS hosted, Windows virtual machine. This will also open the firewall for inbound traffic on port 10933 on the Security Group.\n<hr />\n*Note: Expects the AWS CLI and Powershell to be installed on the worker running this task*",
+    "ActionType": "Octopus.AwsRunScript",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Azure.AccountId": "#{awsInstallWinTentacle.AWSAccount}",
+      "Octopus.Action.Script.ScriptBody": "$sgName = $OctopusParameters[\"awsInstallWinTentacle.awsSGName\"]\n$instanceId = $OctopusParameters[\"awsInstallWinTentacle.awsVmInstanceId\"]\n$serverUri = $OctopusParameters[\"awsInstallWinTentacle.octoServerUrl\"]\n$apiKey = $OctopusParameters[\"awsInstallWinTentacle.octoApiKey\"]\n$rolesRaw = $OctopusParameters[\"awsInstallWinTentacle.octopusRoles\"]\n$enviroRaw = $OctopusParameters[\"awsInstallWinTentacle.octopusEnvironments\"]\n$octoThumb = $OctopusParameters[\"awsInstallWinTentacle.octoServerThumb\"]\n$comStyle = $OctopusParameters[\"awsInstallWinTentacle.tentacleType\"]\n$hostname = $OctopusParameters[\"awsInstallWinTentacle.tentacleHostName\"]\n$tentacleName = $OctopusParameters[\"awsInstallWinTentacle.tentacleName\"]\n$portNumber = $OctopusParameters[\"awsInstallWinTentacle.portNumber\"]\n\nWrite-Host \"Parsing Parameters\"\n\nif([string]::IsNullOrEmpty($sgName))\n{\n\tthrow \"Security Group name must be provided\"\n}\n\nif([string]::IsNullOrEmpty($instanceId))\n{\n\tthrow \"Instance Id must be provided\"\n}\n\nif([string]::IsNullOrEmpty($apiKey))\n{\n\tthrow \"apiKey must be provided\"\n}\n\nif([string]::IsNullOrEmpty($rolesRaw))\n{\n\tthrow \"At least one role must be defined\"\n}\n\nif([string]::IsNullOrEmpty($enviroRaw))\n{\n\tthrow \"At least one environment must be defined\"\n}\n\nif([string]::IsNullOrEmpty($octoThumb))\n{\n\tthrow \"octo thumbprint must be provided\"\n}\n\n$roles = \"\"\n$rolesRaw -split \"`n\" | ForEach-Object { $roles += \"--role $_ \"}\n$roles = $roles.TrimEnd(' ')\n\n$environments = \"\"\n$enviroRaw -split \"`n\" | ForEach-Object { $environments += \"--env $_ \"}\n$environments = $environments.TrimEnd(' ')\n\nif($comStyle -eq \"TentaclePassive\")\n{\n\tif([string]::IsNullOrEmpty($hostname))\n    {\n    \t$hostname = aws ec2 describe-instances --filters \"Name=instance-id,Values=$instanceId\" --query \"Reservations[].Instances[].NetworkInterfaces[].Association.PublicIp\" --output=text\n        $hostname = $hostname.Trim(\"`n\")\n    }\n\n    $noListen = \"--port $portNumber --noListen 'false'\"\n    $comStyle += \" --publicHostName='$hostname'\"\n    $openFirewall = 'true'\n}\nelse\n{\n\t$noListen = \"--noListen 'true'\"\n    $openFirewall = 'false'\n}\n\nif([string]::IsNullOrEmpty($tentacleName))\n{\n\t$tentacleName = $hostname\n}\n\nif($openFirewall -eq 'true')\n{\n\tWrite-Host \"Checking SG...\" -NoNewline\n    $sgCheck = aws ec2 describe-security-groups --group-names $sgName --output json --filters Name=ip-permission.from-port,Values=$portNumber Name=ip-permission.cidr,Values='0.0.0.0/0' | convertfrom-json\n\n    if($sgCheck.SecurityGroups.count -eq 0)\n    {\n\t\tWrite-Host \"Creating SG Rule\"\n    \taws ec2 authorize-security-group-ingress --group-name $sgName --ip-permissions IpProtocol=tcp,ToPort=$portNumber,FromPort=$portNumber,IpRanges='[{CidrIp=0.0.0.0/0,Description=\"OctopusListeningTentacle\"}]'\n\t}\n    else\n    {\n    \tWrite-Host \"Found Existing SG Rule\"\n    }\n}\n$remoteGuid = (new-guid).guid\nWrite-Verbose \"hostname: $hostname`nnoListen: $noListen\"\n\n$remoteScript = @\"\n{ \"commands\": [\n\"if('$env:PROCESSOR_ARCHITECTURE' -eq \\\"x86\\\") {Invoke-WebRequest -Uri 'http://octopus.com/downloads/latest/OctopusTentacle' -OutFile `$env:TEMP/$remoteGuid.msi -UseBasicParsing} else { Invoke-WebRequest -Uri 'http://octopus.com/downloads/latest/OctopusTentacle64' -OutFile `$env:TEMP/$remoteGuid.msi -UseBasicParsing}\",\n\"Start-Process `$env:TEMP/$remoteGuid.msi /quiet -Wait\",\n\"Remove-Item \\\"`$env:TEMP/$remoteGuid.msi\\\"\",\n\"cd 'C:/Program Files/Octopus Deploy/Tentacle'\",\n\".\\\\Tentacle.exe create-instance --instance 'Tentacle' --config 'C:/Octopus/Tentacle.config' --console\",\n\".\\\\Tentacle.exe new-certificate --instance 'Tentacle' --if-blank --console\",\n\".\\\\Tentacle.exe configure --instance 'Tentacle' --reset-trust --console\",\n\".\\\\Tentacle.exe configure --instance 'Tentacle' --home 'C:/Octopus/' --app 'C:/Octopus/Applications' $noListen --console\",\n\".\\\\Tentacle.exe configure --instance 'Tentacle' --trust '$octoThumb' --console\",\n\"if('$openFirewall' -eq 'true'){New-NetFirewallRule -DisplayName 'Octopus Tentacle' -Direction Inbound -LocalPort $portNumber -Protocol TCP -Action Allow}\",\n\".\\\\Tentacle.exe register-with --instance 'Tentacle' --server '$serverUri' --apiKey=$apiKey $roles $environments --comms-style $comStyle --force --console\",\n\".\\\\Tentacle.exe service --instance 'Tentacle' --install --start --console\"\n]}\n\"@\n\nWrite-Host \"Installing tentacle on remote machine\"\n$guid = (new-guid).guid\nSet-Content -Value $remoteScript.Replace('`r','') -Path \"$env:Temp/$guid.json\"\n\nwrite-verbose $remoteScript\n\nwrite-verbose \"aws ssm send-command --document-name AWS-RunPowerShellScript --instance-ids $instanceId --parameters file://$env:Temp/$guid.json\"\ntry {\n\t$cmdResponse = aws ssm send-command --document-name \"AWS-RunPowerShellScript\" --instance-ids \"$instanceId\" --parameters \"file://$env:Temp/$guid.json\" --query \"Command\" --output json | convertfrom-json\n    $cmdId = $cmdResponse.CommandId\n    $errorResponse = aws ssm get-command-invocation --command-id \"$cmdId\" --instance-id \"$instanceId\" --output json | convertfrom-json\n\n    while($errorResponse.Status -eq 'InProgress')\n    {\n    \twrite-verbose \"`nStatus: $($errorResponse.Status)\"\n    \t$errorResponse = aws ssm get-command-invocation --command-id \"$cmdId\" --instance-id \"$instanceId\" --output json | convertfrom-json\n    }\n\n    write-verbose \"`nErrorResponse: $errorResponse`n\"\n\n    if(![string]::IsNullOrEmpty($errorResponse.StandardErrorContent))\n    {\n    \tthrow $errorResponse.StandardErrorContent\n    }\n}\nfinally {\n\tremove-item \"$env:Temp\\$guid.json\"\n}\n",
+      "Octopus.Action.Aws.AssumeRole": "False",
+      "Octopus.Action.AwsAccount.UseInstanceRole": "False",
+      "Octopus.Action.AwsAccount.Variable": "#{awsInstallWinTentacle.AWSAccount}",
+      "Octopus.Action.Aws.Region": "#{awsInstallWinTentacle.awsRegion}"
+    },
+    "Parameters": [
+      {
+        "Id": "dea51842-271f-48fa-901e-243488049f97",
+        "Name": "awsInstallWinTentacle.AWSAccount",
+        "Label": "AWS Account",
+        "HelpText": "AWS account with permissions to the virtual machine in which to install the tentacle on",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "AmazonWebServicesAccount"
+        }
+      },
+      {
+        "Id": "6a97548c-3b97-4a19-8b9a-45aa58ac62d9",
+        "Name": "awsInstallWinTentacle.awsRegion",
+        "Label": "AWS Region",
+        "HelpText": "The name of the aws region. I.E. `us-east-1`",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "d9efb017-65c0-4010-b09f-0a6a34fc009f",
+        "Name": "awsInstallWinTentacle.awsSGName",
+        "Label": "Security Group Name",
+        "HelpText": "The name of the AWS security group to create an exception in",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "e4358aec-2798-412a-bcd2-1c7e41a0728d",
+        "Name": "awsInstallWinTentacle.awsVmInstanceId",
+        "Label": "VM Instance ID",
+        "HelpText": "The instance ID of the virtual machine to target when ",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "8dbe0a29-4e0f-43f8-8ef2-ae23a2884e85",
+        "Name": "awsInstallWinTentacle.octoServerThumb",
+        "Label": "Server Thumbprint",
+        "HelpText": "The Thumbprint of the octopus server",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "a0859551-6c84-45d1-af2b-c57becb4e8ef",
+        "Name": "awsInstallWinTentacle.octoApiKey",
+        "Label": "Octo User API Key",
+        "HelpText": "The API key used to configure the tentacle.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "dd07815d-bfb7-43b9-90f8-21ec5a2d2953",
+        "Name": "awsInstallWinTentacle.octopusRoles",
+        "Label": "Roles",
+        "HelpText": "Roles to assign to this tentacle installation. <br />\n*Note: Each role should be on it's own line*",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "MultiLineText"
+        }
+      },
+      {
+        "Id": "d3ffb38e-7fcf-4547-be9a-6cd8e46f8e5e",
+        "Name": "awsInstallWinTentacle.octopusEnvironments",
+        "Label": "Environments",
+        "HelpText": "Environments to assign this tentacle installation to.<br />\n*Note: Each environment should be on its own line*",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "MultiLineText"
+        }
+      },
+      {
+        "Id": "15150827-7bd3-4146-a798-66344851f602",
+        "Name": "instrallTentacle.octoServerUrl",
+        "Label": "Octo Server Url",
+        "HelpText": "The server url to register the tentacle with.  Defaults to the base url",
+        "DefaultValue": "#{Octopus.Web.BaseUrl}",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "9bcd6bb5-2db3-453f-b4f6-6a78f3c39b59",
+        "Name": "awsInstallWinTentacle.tentacleType",
+        "Label": "Tentacle Type",
+        "HelpText": "Select between a listening or polling tentacle",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "TentaclePassive|Listening\nTentacleActive|Polling"
+        }
+      },
+      {
+        "Id": "6bb98570-fe3e-4ab7-adfb-79ef7ce5c2ce",
+        "Name": "awsInstallWinTentacle.tentacleHostName",
+        "Label": "Tentacle Host Name",
+        "HelpText": "The host name to register the listening tentacles with. Octopus deploy server uses this value to reach out to the vm.<br />\n*Note: Leave blank to automatically use assigned public IP address.*",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "386d9f39-9e90-4215-b739-53a1af5bd105",
+        "Name": "awsInstallWinTentacle.tentacleName",
+        "Label": "Tentacle Name",
+        "HelpText": "The name of the tentacle to use in the infrastructure area of octopus deploy.  Will use the host name if not provided",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "2dc806d8-bba5-44a7-b21d-4b3f041f4d49",
+        "Name": "awsInstallWinTentacle.portNumber",
+        "Label": "Port Number",
+        "HelpText": "Port number used when installing and registering the tentacle. This is also the port opened on the firewall",
+        "DefaultValue": "10933",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2020-09-10T16:47:02.016Z",
+      "OctopusVersion": "2020.2.10",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "xtreampb",
+    "Category": "aws"
+  }
