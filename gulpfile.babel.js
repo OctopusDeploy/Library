@@ -134,6 +134,7 @@ function humanize(categoryId) {
     case 'mabl': return 'mabl';
     case 'mariadb': return 'MariaDB'
     case 'microsoft-teams': return 'Microsoft Teams';
+    case 'mongodb': return 'MongoDB';
     case 'mysql': return 'MySQL';
     case 'netscaler': return 'NetScaler';
     case 'newrelic': return 'New Relic';
