@@ -154,6 +154,7 @@ function humanize(categoryId) {
     case 'ssl': return 'SSL';
     case 'statuspage': return 'StatusPage';
     case 'swaggerhub': return 'SwaggerHub';
+    case 'statuscake': return 'StatusCake';
     case 'teamcity': return 'TeamCity';
     case 'testery': return 'Testery';
     case 'twilio': return 'Twilio';
