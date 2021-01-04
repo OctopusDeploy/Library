@@ -140,6 +140,7 @@ function humanize(categoryId){
     case 'sql': return 'SQL Server';
     case 'ssl': return 'SSL';
     case 'statuspage': return 'StatusPage';
+    case 'statuscake': return 'StatusCake';
     case 'teamcity': return 'TeamCity';
     case 'testery': return 'Testery';
     case 'victorops': return 'VictorOps'
