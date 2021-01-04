@@ -1,0 +1,83 @@
+{
+  "Id": "0a1208c7-4a12-4da1-a60d-2b3197b377c4",
+  "Name": "Postgres - Create Database If Not Exists",
+  "Description": "Creates a Postgres database if it doesn't already exist.",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "Author": "twerthi",
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Define functions\nfunction Get-ModuleInstalled\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName\n    )\n\n    # Check to see if the module is installed\n    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))\n    {\n        # It is installed\n        return $true\n    }\n    else\n    {\n        # Module not installed\n        return $false\n    }\n}\n\nfunction Install-PowerShellModule\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName,\n        $LocalModulesPath\n    )\n\n\t# Check to see if the package provider has been installed\n    if ((Get-NugetPackageProviderNotInstalled) -ne $false)\n    {\n    \t# Display that we need the nuget package provider\n        Write-Host \"Nuget package provider not found, installing ...\"\n        \n        # Install Nuget package provider\n        Install-PackageProvider -Name Nuget -Force\n    }\n\n\t# Save the module in the temporary location\n    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force\n}\n\nfunction Get-NugetPackageProviderNotInstalled\n{\n\t# See if the nuget package provider has been installed\n    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))\n}\n\nfunction Get-DatabaseExists\n{\n\t# Define parameters\n    param ($DatabaseName)\n    \n\t# Execute query\n    return Invoke-SqlQuery \"SELECT datname FROM pg_catalog.pg_database where datname = '$DatabaseName';\"\n}\n\n# Define PowerShell Modules path\n$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName\n$env:PSModulePath = \"$LocalModules;$env:PSModulePath\"\n$PowerShellModuleName = \"SimplySql\"\n\n# Set secure protocols\n[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12\n\n# Check to see if SimplySql module is installed\nif ((Get-ModuleInstalled -PowerShellModuleName $PowerShellModuleName) -ne $true)\n{\n    # Tell user what we're doing\n    Write-Output \"PowerShell module $PowerShellModuleName is not installed, downloading temporary copy ...\"\n\n    # Install temporary copy\n    Install-PowerShellModule -PowerShellModuleName $PowerShellModuleName -LocalModulesPath $LocalModules\n}\n\n# Display\nWrite-Output \"Importing module $PowerShellModuleName ...\"\n\n# Check to see if it was downloaded\nif ((Test-Path -Path \"$LocalModules\\$PowerShellModuleName\") -eq $true)\n{\n\t# Use specific version\n    $PowerShellModuleName = \"$LocalModules\\$PowerShellModuleName\"\n}\n\n# Import the module\nImport-Module -Name $PowerShellModuleName\n\n# Create credential object for the connection\n$SecurePassword = ConvertTo-SecureString $createUserPassword -AsPlainText -Force\n$ServerCredential = New-Object System.Management.Automation.PSCredential ($createUsername, $SecurePassword)\n\n# Get whether trust certificate is necessary\n$createTrustSSL = [System.Convert]::ToBoolean(\"$createTrustSSL\")\n\ntry\n{\n    \n\t# Check to see if we need to trust the ssl cert\n\tif ($createTrustSSL -eq $true)\n\t{\n\t\tOpen-PostGreConnection -Server $createPosgreSQLServerName -Credential $ServerCredential -Port $createPort -TrustSSL\n\t}\n\telse\n\t{\n    \t# Connect to MySQL\n    \tOpen-PostGreConnection -Server $createPosgreSQLServerName -Credential $ServerCredential -Port $createPort\n\t}\n\n    # See if database exists\n    $databaseExists = Get-DatabaseExists -DatabaseName $createDatabaseName\n\n    if ($databaseExists.ItemArray.Count -eq 0)\n    {\n        # Create database\n        Write-Output \"Creating database $createDatabaseName ...\"\n        $executionResult = Invoke-SqlUpdate \"CREATE DATABASE `\"$createDatabaseName`\";\"\n\n        # Check result\n        if ($executionResult -ne -1)\n        {\n            # Commit transaction\n            Write-Error \"Create schema failed.\"\n        }\n        else\n        {\n        \t# See if it was created\n            $databaseExists = Get-DatabaseExists -DatabaseName $createDatabaseName\n            \n            # Check array\n            if ($databaseExists.ItemArray.Count -eq 1)\n            {\n            \t# Success\n                Write-Output \"$createDatabaseName created successfully!\"\n            }\n            else\n            {\n            \t# Failed\n                Write-Error \"$createDatabaseName was not created!\"\n            }\n        }\n    }\n    else\n    {\n    \t# Display message\n        Write-Output \"Database $createDatabaseName already exists.\"\n    }\n}\nfinally\n{\n    Close-SqlConnection\n}\n\n\n"
+  },
+  "Parameters": [
+    {
+      "Id": "8fc92b80-5122-44a0-b3d8-a1d022a35055",
+      "Name": "createPosgreSQLServerName",
+      "Label": "Server",
+      "HelpText": "Hostname (or IP) of the MySQL database server.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "df993ccf-71ab-48de-9a67-e2af6653d35e",
+      "Name": "createUsername",
+      "Label": "Username",
+      "HelpText": "Username to use for the connection",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8a07f25d-a7db-466e-a356-9155cbc5f258",
+      "Name": "createUserPassword",
+      "Label": "Password",
+      "HelpText": "Password for the user account",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "2af18465-c8d1-48f6-afce-1b1b30ae9559",
+      "Name": "createDatabaseName",
+      "Label": "Database Name",
+      "HelpText": "Name of the database to create",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f55e2a34-7a82-4d92-83bb-a19f304774d8",
+      "Name": "createPort",
+      "Label": "Port",
+      "HelpText": "Port for the database instance.",
+      "DefaultValue": "5432",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0366424c-ab0b-4895-8d48-2902e3f6de39",
+      "Name": "createTrustSSL",
+      "Label": "Trust SSL Certificate",
+      "HelpText": "Force trusting an SSL Certificate.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedBy": "twerthi",
+  "$Meta": {
+    "ExportedAt": "2020-05-15T22:58:27.605Z",
+    "OctopusVersion": "2020.1.17",
+    "Type": "ActionTemplate"
+  },
+  "Category": "postgresql"
+}

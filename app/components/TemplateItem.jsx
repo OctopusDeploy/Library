@@ -3,6 +3,7 @@
 import React from 'react';
 import moment from 'moment';
 import marked from 'marked';
+import DOMPurify from 'isomorphic-dompurify';
 import SyntaxHiglighter from 'react-syntax-highlighter';
 import {solarizedLight} from 'react-syntax-highlighter/dist/styles';
 import PropTypes from 'prop-types';
@@ -40,7 +41,8 @@ export default class TemplateItem extends React.Component {
   }
 
   rawMarkup() {
-    let markup = marked((this.state.template.Description || ''), {sanitize: true});
+    let purifiedDescription = DOMPurify.sanitize(this.state.template.Description);
+    let markup = marked(purifiedDescription || '');
     return { __html: markup };
   }
 

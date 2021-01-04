@@ -3,12 +3,11 @@
   "Name": "Slack - Notify Deployment",
   "Description": "Notifies Slack of deployment status. Uses the Octopus Deploy system variable to determine whether a deployment was successful.",
   "ActionType": "Octopus.Script",
-  "Version": 7,
+  "Version": 8,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "function Slack-Rich-Notification ($notification)\n{\n    $payload = @{\n        channel = $OctopusParameters['Channel']\n        username = $OctopusParameters['Username'];\n        icon_url = $OctopusParameters['IconUrl'];\n        attachments = @(\n            @{\n            fallback = $notification[\"fallback\"];\n            color = $notification[\"color\"];\n            fields = @(\n                @{\n                title = $notification[\"title\"];\n                title_link = $notification[\"title_link\"];\n                value = $notification[\"value\"];\n                });\n            };\n        );\n    }\n\n    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n        Invoke-RestMethod -Method POST -Body ($payload | ConvertTo-Json -Depth 4) -Uri $OctopusParameters['HookUrl']  -ContentType 'application/json'\n}\n\n$IncludeMachineName = [boolean]::Parse($OctopusParameters['IncludeMachineName']);\nif ($IncludeMachineName) {\n    $MachineName = $OctopusParameters['Octopus.Machine.Name'];\n    if ($MachineName) {\n      $FormattedMachineName = \"($MachineName)\";\n    }\n}\n\nif ($OctopusParameters['Octopus.Deployment.Error'] -eq $null){\n    Slack-Rich-Notification @{\n        title = \"Success\";\n        title_link = \"$OctopusWebBaseUrl$OctopusWebDeploymentLink\";\n        value = \"Deploy <$OctopusWebBaseUrl$OctopusWebProjectLink|$OctopusProjectName> release <$OctopusWebBaseUrl$OctopusWebReleaseLink|$OctopusReleaseNumber> to $OctopusEnvironmentName $OctopusActionTargetRoles $OctopusDeploymentTenantName $FormattedMachineName\";\n        fallback = \"Deployed $OctopusProjectName release $OctopusReleaseNumber to $OctopusEnvironmentName successfully\";\n        color = \"good\";\n    };\n} else {\n    Slack-Rich-Notification @{\n        title = \"Failed\";\n        title_link = \"$OctopusWebBaseUrl$OctopusWebDeploymentLink\";\n        value = \"Deploy <$OctopusWebBaseUrl$OctopusWebProjectLink|$OctopusProjectName> release <$OctopusWebBaseUrl$OctopusWebReleaseLink|$OctopusReleaseNumber> to $OctopusEnvironmentName $OctopusActionTargetRoles $OctopusDeploymentTenantName $FormattedMachineName\";\n        fallback = \"Failed to deploy $OctopusProjectName release $OctopusReleaseNumber to $OctopusEnvironmentName\";\n        color = \"danger\";\n    };\n}",
+    "Octopus.Action.Script.ScriptBody": "function Slack-Rich-Notification ($notification)\n{\n    $payload = @{\n        channel = $OctopusParameters['Channel']\n        username = $OctopusParameters['Username'];\n        icon_url = $OctopusParameters['IconUrl'];\n        attachments = @(\n            @{\n            fallback = $notification[\"fallback\"];\n            color = $notification[\"color\"];\n            fields = @(\n                @{\n                title = $notification[\"title\"];\n                title_link = $notification[\"title_link\"];\n                value = $notification[\"value\"];\n                });\n            };\n        );\n    }\n\n    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n        Invoke-RestMethod -Method POST -Body ($payload | ConvertTo-Json -Depth 4) -Uri $OctopusParameters['HookUrl']  -ContentType 'application/json'\n}\n\n$OctopusBaseUri = $OctopusWebBaseUrl\n$UseServerUri = [boolean]::Parse($OctopusParameters['UseServerUri']);\nif ($UseServerUri) {\n\t$OctopusBaseUri = $OctopusWebServerUri\n}\n\n$IncludeMachineName = [boolean]::Parse($OctopusParameters['IncludeMachineName']);\nif ($IncludeMachineName) {\n    $MachineName = $OctopusParameters['Octopus.Machine.Name'];\n    if ($MachineName) {\n      $FormattedMachineName = \"($MachineName)\";\n    }\n}\n\nif ($OctopusParameters['Octopus.Deployment.Error'] -eq $null){\n    Slack-Rich-Notification @{\n        title = \"Success\";\n        title_link = \"$OctopusBaseUri$OctopusWebDeploymentLink\";\n        value = \"Deploy <$OctopusBaseUri$OctopusWebProjectLink|$OctopusProjectName> release <$OctopusBaseUri$OctopusWebReleaseLink|$OctopusReleaseNumber> to $OctopusEnvironmentName $OctopusActionTargetRoles $OctopusDeploymentTenantName $FormattedMachineName\";\n        fallback = \"Deployed $OctopusProjectName release $OctopusReleaseNumber to $OctopusEnvironmentName successfully\";\n        color = \"good\";\n    };\n} else {\n    Slack-Rich-Notification @{\n        title = \"Failed\";\n        title_link = \"$OctopusBaseUri$OctopusWebDeploymentLink\";\n        value = \"Deploy <$OctopusBaseUri$OctopusWebProjectLink|$OctopusProjectName> release <$OctopusBaseUri$OctopusWebReleaseLink|$OctopusReleaseNumber> to $OctopusEnvironmentName $OctopusActionTargetRoles $OctopusDeploymentTenantName $FormattedMachineName\";\n        fallback = \"Failed to deploy $OctopusProjectName release $OctopusReleaseNumber to $OctopusEnvironmentName\";\n        color = \"danger\";\n    };\n}",
     "Octopus.Action.Script.Syntax": "PowerShell"
   },
-  "SensitiveProperties": {},
   "Parameters": [
     {
       "Name": "HookUrl",
@@ -27,14 +26,14 @@
     {
       "Name": "IconUrl",
       "Label": "Icon URL",
-      "HelpText": "The icon to use for this user in Slack",
+      "HelpText": "The icon to use for this user in Slack.",
       "DefaultValue": "https://octopus.com/content/resources/favicon.png",
       "DisplaySettings": {}
     },
     {
       "Name": "Username",
       "Label": null,
-      "HelpText": "The username shown in Slack against these notifications",
+      "HelpText": "The username shown in Slack against these notifications.",
       "DefaultValue": "Octopus Deploy",
       "DisplaySettings": {}
     },
@@ -46,13 +45,22 @@
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
       }
+    },
+    {
+      "Name": "UseServerUri",
+      "Label": "Use ServerUri",
+      "HelpText": "If checked then uses `Octopus.Web.ServerUri` instead of `Octopus.Web.BaseUrl`.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
     }
   ],
-  "LastModifiedOn": "2017-03-07T15:44:11.000Z",
-  "LastModifiedBy": "ebrucucen",
+  "LastModifiedOn": "2020-06-09T09:49:52.362Z",
+  "LastModifiedBy": "dario-l",
   "$Meta": {
-    "ExportedAt": "2017-03-07T15:44:02.000Z",
-    "OctopusVersion": "3.16.0",
+    "ExportedAt": "2020-06-09T09:49:52.362Z",
+    "OctopusVersion": "2019.12.1",
     "Type": "ActionTemplate"
   },
   "Category": "slack"
