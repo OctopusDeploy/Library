@@ -3,11 +3,11 @@
   "Name": "SQL - Create Database If Not Exists",
   "Description": "Creates a database if the database does not exist without using SMO.",
   "ActionType": "Octopus.Script",
-  "Version": 2,  
+  "Version": 3,  
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n$command.CommandTimeout = $createCommandTimeout\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedDatabaseName = $createDatabaseName.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create for $createDatabaseName\"\n$command.CommandText = \"IF NOT EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')\n        create database [$createDatabaseName]\"            \n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createDatabaseName\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n$command.CommandTimeout = $createCommandTimeout\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedDatabaseName = $createDatabaseName.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create for $createDatabaseName\"\n$command.CommandText = \"IF NOT EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')\n        create database [$createDatabaseName]\"\n        \nif (![string]::IsNullOrEmpty($createAzureEdition))\n{\n\t$command.CommandText += (\"`r`n (EDITION = '{0}');\" -f $createAzureEdition)\n}\n\n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createDatabaseName\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
   },
   "Parameters": [
     {
@@ -58,6 +58,17 @@
       "DefaultValue": "30",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ead6dae9-418f-405d-9763-1532c2820474",
+      "Name": "createAzureEdition",
+      "Label": "Azure database edition",
+      "HelpText": "Defines the database edition for Azure SQL Databases, leave blank if not using Azure.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "basic|Basic Edition\nstandard|Standard Edition\npremium|Premium Edition\ngeneralpurpose|General Purpose Edition\nbusinesscritical|Business Critical Edition\nhyperscale|Hyperscale Edition"
       }
     }
   ],
