@@ -14,7 +14,7 @@ import buffer from 'vinyl-buffer';
 import babelify from 'babelify';
 import reactify from 'reactify';
 import browserify from 'browserify';
-import uglify from 'gulp-uglify';
+import uglify from 'gulp-uglify-es';
 import postcss from 'gulp-postcss';
 import cssnano from 'cssnano';
 import rename from 'gulp-rename';
