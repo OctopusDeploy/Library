@@ -156,6 +156,7 @@ function humanize(categoryId) {
     case 'swaggerhub': return 'SwaggerHub';
     case 'statuscake': return 'StatusCake';
     case 'teamcity': return 'TeamCity';
+    case 'terraform': return 'Terraform';
     case 'testery': return 'Testery';
     case 'twilio': return 'Twilio';
     case 'victorops': return 'VictorOps'
