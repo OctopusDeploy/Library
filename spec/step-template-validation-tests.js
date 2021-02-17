@@ -128,7 +128,6 @@ describe('step-templates', function() {
 
       templateFiles.forEach(function (templateFile) {
         fs.readFile(dirname + templateFile, 'utf-8', function (err, content) {
-          console.log(templateFile);
           if (err) {
             fail('error reading file ' + templateFile + ': ' + err);
           }
@@ -138,7 +137,6 @@ describe('step-templates', function() {
               return;
             } else {
                 template.Packages.forEach(function (pkg) {
-                console.log('FeedId ' + pkg.FeedId);
                 if (pkg.FeedId === null) return; // null ok
                 if (pkg.FeedId[0] === '#') return; // variables ok
                 if (pkg.FeedId !== null) {
