@@ -3,18 +3,14 @@
   "Name": "ApexSQL DevOps toolkit - Deploy",
   "Description": "This step will execute schema and data synchronization scripts created as deployment resource after comparison is done. \n\nApexSQL DevOps toolkit - Sync and/or ApexSQL DevOps toolkit - Sync data  steps are reqiured",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "CommunityActionTemplateId": null,
   "Packages": [],
-  "Category": "apexsql",
-  "HistoryUrl": "https://github.com/OctopusDeploy/Library/commits/master/step-templates/apexsql-devops-toolkit-deploy.json",
-  "Author":"support@apexsql.com",
-  "Website": "/step-templates/42412324-a768-4943-baf8-bfe26ed2dff3",
-  "LastModifiedBy": "ApexSQLtechops",
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "$schemaSyncScript = ''\n$dataSyncScript = ''\n$schemaSyncQuery = ''\n$dataSyncQuery= ''\n$query = ''\n\nfunction AddArtifact() {\n    Param(\n        [Parameter(Mandatory = $true)]\n        [string]$artifact\n    )\n    if (Test-Path $artifact) {\n        New-OctopusArtifact $artifact\n    }\n}\n\n$exportPath = '#{ExportPath}'\n$PackageDownloadStepName = '#{PackageDownloadStepName}'\n\n$projectId = $OctopusParameters[\"Octopus.Project.Id\"]\n$releaseNumber = $OctopusParameters[\"Octopus.Release.Number\"]\n$nugetPackageId = $OctopusParameters[\"Octopus.Action[$PackageDownloadStepName].Package.NuGetPackageId\"]\n$exportPath = Join-Path (Join-Path $exportPath $projectId) $releaseNumber\n\n$defaultSchemaSyncScript = $OctopusParameters[\"Octopus.Action[$PackageDownloadStepName].Output.Package.InstallationDirectoryPath\"] + '\\SchemaSyncScript.sql'\n$defaultDataSyncScript = $OctopusParameters[\"Octopus.Action[$PackageDownloadStepName].Output.Package.InstallationDirectoryPath\"] + '\\DataSyncScript.sql'\n\nNew-Item -Path $exportPath -Name \"DeploySummary.txt\" -ItemType \"file\" -Force | Out-Null\n$deploySummary = $exportPath + \"\\DeploySummary.txt\"\n\n$schemaSyncScript = $exportPath + '\\SchemaSyncScript.sql'\n$dataSyncScript = $exportPath + '\\DataSyncScript.sql'\n$serverName = '#{ServerName}'\n  $database = '#{Database}'\n  $username = '#{Username}'\n  $password = '#{Password}'\n  $auth = ''\n  \n  if (-not ($null -eq $username -and $null -eq $password))\n  {\t\n      $auth = \" -U \"\"$($username)\"\" -P \"\"$($password)\"\"\"\n  }\n  else\n  {\n\t  $auth = \" -E\"\n  }\n\n$sqlcmdProps = \"sqlcmd.exe -S \"\"$($serverName)\"\" -d \"\"$($database)\"\"$auth -b -i\"\n\tif(Test-Path $schemaSyncScript) \n    {\n\t\t$result = Invoke-Expression -Command \"$sqlcmdProps \"\"$schemaSyncScript\"\"\"\n        $content = \"Sync summary: \" + $result\n        if (Test-Path $deploySummary)\n        {\n        \tAdd-Content $deploySummary $content\n        }\n\t}\n  \tif(Test-Path $dataSyncScript) \n    {\n\t\t$result = Invoke-Expression -Command \"$sqlcmdProps \"\"$dataSyncScript\"\"\"\n        $content = \"Sync data summary: \" + $result\n        if (Test-Path $deploySummary)\n        {\n        \tAdd-Content $deploySummary $content\n        }\n\t}\n\n\tif(Test-Path $defaultSchemaSyncScript) \n    {\n\t\t$result = Invoke-Expression -Command \"$sqlcmdProps \"\"$defaultSchemaSyncScript\"\"\"\n\t}\n    if(Test-Path $defaultDataSyncScript) \n    {\n\t\t$result = Invoke-Expression -Command \"$sqlcmdProps \"\"$defaultDataSyncScript\"\"\"\n\t}\n\nAddArtifact(\"$deploySummary\")"
+    "Octopus.Action.Script.ScriptBody": "$schemaSyncScript = ''\n$dataSyncScript = ''\n$schemaSyncQuery = ''\n$dataSyncQuery= ''\n$query = ''\n\nfunction AddArtifact() {\n    Param(\n        [Parameter(Mandatory = $true)]\n        [string]$artifact\n    )\n    if (Test-Path $artifact) {\n        New-OctopusArtifact $artifact\n    }\n}\n\nfunction Get-ParamValue\n{\n    param\n    (\n        [Parameter(Mandatory = $true)]\n        [String] $ParamName\n    )\n    if($OctopusParameters -and ($OctopusParameters[\"$($ParamName)\"] -ne $null))\n    {\n        # set the variable value\n        return $OctopusParameters[\"$($ParamName)\"]\n    }\n    else\n    {\n        # warning\n        return $null\n    }\n}\n\n$exportPath = '#{ExportPath}'\n$PackageDownloadStepName = '#{PackageDownloadStepName}'\n\n$projectId = $OctopusParameters[\"Octopus.Project.Id\"]\n$releaseNumber = $OctopusParameters[\"Octopus.Release.Number\"]\n$nugetPackageId = $OctopusParameters[\"Octopus.Action[$PackageDownloadStepName].Package.NuGetPackageId\"]\n$exportPath = Join-Path (Join-Path $exportPath $projectId) $releaseNumber\n\n$defaultSchemaSyncScript = $OctopusParameters[\"Octopus.Action[$PackageDownloadStepName].Output.Package.InstallationDirectoryPath\"] + '\\SchemaSyncScript.sql'\n$defaultDataSyncScript = $OctopusParameters[\"Octopus.Action[$PackageDownloadStepName].Output.Package.InstallationDirectoryPath\"] + '\\DataSyncScript.sql'\n\nNew-Item -Path $exportPath -Name \"DeploySummary.txt\" -ItemType \"file\" -Force | Out-Null\n$deploySummary = $exportPath + \"\\DeploySummary.txt\"\n\n$schemaSyncScript = $exportPath + '\\SchemaSyncScript.sql'\n$dataSyncScript = $exportPath + '\\DataSyncScript.sql'\n$serverName = Get-ParamValue -ParamName 'ServerName'\n  $database = Get-ParamValue -ParamName 'Database'\n  $username = Get-ParamValue -ParamName 'Username'\n  $password = Get-ParamValue -ParamName 'Password'\n  $auth = ''\n  \n  if (-not ($null -eq $username -and $null -eq $password))\n  {\t\n      $auth = \" -U \"\"$($username)\"\" -P \"\"$($password)\"\"\"\n  }\n  else\n  {\t\n      $auth = \" -E\"\n  }\n\n$sqlcmdProps = \"sqlcmd.exe -S \"\"$($serverName)\"\" -d \"\"$($database)\"\"$auth -b -i\"\n\tif(Test-Path $schemaSyncScript) \n    {\n\t\t$result = Invoke-Expression -Command \"$sqlcmdProps \"\"$schemaSyncScript\"\"\"\n        $content = \"Sync summary: \" + $result\n        if (Test-Path $deploySummary)\n        {\n        \tAdd-Content $deploySummary $content\n        }\n\t}\n  \tif(Test-Path $dataSyncScript) \n    {\n\t\t$result = Invoke-Expression -Command \"$sqlcmdProps \"\"$dataSyncScript\"\"\"\n        $content = \"Sync data summary: \" + $result\n        if (Test-Path $deploySummary)\n        {\n        \tAdd-Content $deploySummary $content\n        }\n\t}\n\n\tif(Test-Path $defaultSchemaSyncScript) \n    {\n\t\t$result = Invoke-Expression -Command \"$sqlcmdProps \"\"$defaultSchemaSyncScript\"\"\"\n\t}\n    if(Test-Path $defaultDataSyncScript) \n    {\n\t\t$result = Invoke-Expression -Command \"$sqlcmdProps \"\"$defaultDataSyncScript\"\"\"\n\t}\n\nAddArtifact(\"$deploySummary\")",
+    "Octopus.Action.EnabledFeatures": ""
   },
   "Parameters": [
     {
@@ -79,8 +75,10 @@
     }
   ],
   "$Meta": {
-    "ExportedAt": "2019-01-11T07:46:41.413Z",
-    "OctopusVersion": "2018.11.1",
+    "ExportedAt": "2020-08-20T11:36:52.048Z",
+    "OctopusVersion": "2020.3.2",
     "Type": "ActionTemplate"
-  }
+  },
+  "LastModifiedBy": "ApexSQLtechops",
+  "Category": "apexsql"
 }

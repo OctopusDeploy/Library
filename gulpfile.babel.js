@@ -7,16 +7,16 @@ import browserSync from 'browser-sync';
 import LiveServer from 'gulp-live-server';
 import sass from 'gulp-sass';
 import concat from 'gulp-concat';
-import header from 'gulp-header';
-import footer from 'gulp-footer';
+import insert from 'gulp-insert';
 import del from 'del';
 import source from 'vinyl-source-stream';
 import buffer from 'vinyl-buffer';
 import babelify from 'babelify';
 import reactify from 'reactify';
 import browserify from 'browserify';
-import uglify from 'gulp-uglify';
-import cssnano from 'gulp-cssnano';
+import uglify from 'gulp-uglify-es';
+import postcss from 'gulp-postcss';
+import cssnano from 'cssnano';
 import rename from 'gulp-rename';
 import sourcemaps from 'gulp-sourcemaps';
 import inject from 'gulp-inject';
@@ -60,7 +60,7 @@ gulp.task('clean', () => {
 function lint(files, options = {}) {
   return () => {
     return gulp.src(files)
-      .pipe(reload({stream: true, once: true}))
+      .pipe(reload({ stream: true, once: true }))
       .pipe($.eslint(options))
       .pipe($.eslint.format('compact'))
       .pipe($.if(!browserSync.active, $.eslint.failOnError()));
@@ -79,7 +79,7 @@ gulp.task('lint:step-templates', () => {
 
 gulp.task('tests', gulp.series('lint:step-templates', () => {
   return gulp.src('./spec/*-tests.js')
-  // gulp-jasmine works on filepaths so you can't have any plugins before it
+    // gulp-jasmine works on filepaths so you can't have any plugins before it
     .pipe(jasmine({
       includeStackTrace: false,
       reporter: [
@@ -89,33 +89,36 @@ gulp.task('tests', gulp.series('lint:step-templates', () => {
           : new jasmineTerminalReporter())
       ]
     }))
-    .on('error', function(){
+    .on('error', function () {
       process.exit(1);
     });
 }));
 
-function humanize(categoryId){
+function humanize(categoryId) {
 
-  switch(categoryId){
+  switch (categoryId) {
     case 'amazon-chime': return 'Amazon Chime';
     case 'ansible': return 'Ansible';
     case 'apexsql': return 'ApexSQL';
     case 'aspnet': return 'ASP.NET';
     case 'aws': return 'AWS';
-    case 'azureFunctions': return 'Azure Functions';
     case 'azure-site-extensions': return 'Azure Site Extensions';
+    case 'azureFunctions': return 'Azure Functions';
+    case 'chef': return 'Chef';
     case 'clickonce': return 'ClickOnce';
     case 'dll': return 'dll';
+    case 'dlm': return 'dlm';
     case 'dotnetcore': return '.NET Core';
     case 'edgecast': return 'EdgeCast';
     case 'elmah': return 'ELMAH';
     case 'entityframework': return 'Entity Framework';
     case 'event-tracing': return 'Event Tracing for Windows';
     case 'filesystem': return 'File System';
+    case 'firebase': return 'Firebase';
     case 'flyway': return 'Flyway';
+    case 'ghostinspector': return 'Ghost Inspector';
     case 'github': return 'GitHub';
     case 'gitlab': return 'GitLab';
-    case 'ghostinspector': return 'Ghost Inspector';
     case 'hipchat': return 'HipChat';
     case 'hockeyapp': return 'HockeyApp';
     case 'hosts-file': return ' Hosts File';
@@ -123,68 +126,82 @@ function humanize(categoryId){
     case 'iis': return 'IIS';
     case 'jira': return 'JIRA';
     case 'json': return 'JSON';
+    case 'k8s': return 'Kubernetes';
     case 'launchdarkly': return 'LaunchDarkly';
+    case 'lets-encrypt': return 'Lets Encrypt';
     case 'linux': return 'Linux';
+    case 'liquibase': return 'Liquibase';
+    case 'mabl': return 'mabl';
+    case 'mariadb': return 'MariaDB'
     case 'microsoft-teams': return 'Microsoft Teams';
+    case 'mongodb': return 'MongoDB';
+    case 'mysql': return 'MySQL';
     case 'netscaler': return 'NetScaler';
     case 'newrelic': return 'New Relic';
     case 'nunit': return 'NUnit';
     case 'pagerduty': return 'PagerDuty';
+    case 'postgresql': return 'PostgreSQL';
     case 'pulumi': return 'Pulumi';
-    case 'ravendb': return 'RavenDB';
     case 'rabbitmq': return 'RabbitMQ';
+    case 'ravendb': return 'RavenDB';
     case 'readyroll': return 'ReadyRoll';
     case 'redgate': return 'Redgate';
+    case 'roundhouse': return 'RoundhousE'
     case 'sharepoint': return 'SharePoint';
+    case 'snowflake': return 'Snowflake';
     case 'solarwinds': return 'SolarWinds';
     case 'sql': return 'SQL Server';
     case 'ssl': return 'SSL';
     case 'statuspage': return 'StatusPage';
+    case 'swaggerhub': return 'SwaggerHub';
+    case 'statuscake': return 'StatusCake';
     case 'teamcity': return 'TeamCity';
+    case 'terraform': return 'Terraform';
     case 'testery': return 'Testery';
+    case 'twilio': return 'Twilio';
     case 'victorops': return 'VictorOps'
     case 'webdeploy': return 'Web Deploy';
     case 'xml': return 'XML';
     case 'xunit': return 'xUnit';
-    case 'chef': return 'Chef';
+    case 'rnhub': return 'RnHub';
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
   }
 }
 
 function provideMissingData() {
 
-  return eventStream.map(function(file, cb) {
+  return eventStream.map(function (file, cb) {
 
-      var fileContent = file.contents.toString();
-      var template = JSON.parse(fileContent);
-      var pathParts = file.path.split('\\');
-      var fileName = pathParts[pathParts.length - 1];
+    var fileContent = file.contents.toString();
+    var template = JSON.parse(fileContent);
+    var pathParts = file.path.split('\\');
+    var fileName = pathParts[pathParts.length - 1];
 
-      if (!template.HistoryUrl) {
-        template.HistoryUrl = 'https://github.com/OctopusDeploy/Library/commits/master/step-templates/' + fileName;
-      }
+    if (!template.HistoryUrl) {
+      template.HistoryUrl = 'https://github.com/OctopusDeploy/Library/commits/master/step-templates/' + fileName;
+    }
 
-      if (!template.Website) {
-        template.Website = '/step-templates/' + template.Id;
-      }
+    if (!template.Website) {
+      template.Website = '/step-templates/' + template.Id;
+    }
 
-      var categoryId = template.Category;
-      if (!categoryId) {
-        categoryId = 'other';
-      }
+    var categoryId = template.Category;
+    if (!categoryId) {
+      categoryId = 'other';
+    }
 
-      categoryId = categoryId.toLowerCase();
+    categoryId = categoryId.toLowerCase();
 
-      template.Category = humanize(categoryId);
+    template.Category = humanize(categoryId);
 
-      if (!template.Logo) {
-        var logo = fs.readFileSync('./step-templates/logos/' + categoryId + '.png');
-        template.Logo =  Buffer.from(logo).toString('base64');
-      }
+    if (!template.Logo) {
+      var logo = fs.readFileSync('./step-templates/logos/' + categoryId + '.png');
+      template.Logo = Buffer.from(logo).toString('base64');
+    }
 
-      file.contents = Buffer.from(JSON.stringify(template));
+    file.contents = Buffer.from(JSON.stringify(template));
 
-      cb(null, file);
+    cb(null, file);
   });
 }
 
@@ -192,23 +209,25 @@ function provideMissingData() {
 gulp.task('step-templates', gulp.series('tests', () => {
   return gulp.src('./step-templates/*.json')
     .pipe(provideMissingData())
-    .pipe(concat('step-templates.json', {newLine: ','}))
-    .pipe(header('{"items": ['))
-    .pipe(footer(']}'))
+    .pipe(concat('step-templates.json', { newLine: ',' }))
+    .pipe(insert.wrap('{"items": [', ']}'))
     .pipe(argv.production ? gulp.dest(`${publishDir}/app/services`) : gulp.dest(`${buildDir}/app/services`));
 }));
 
 gulp.task('styles:vendor', () => {
-  return gulp.src(vendorStyles, {base: 'node_modules/'})
+  return gulp.src(vendorStyles, { base: 'node_modules/' })
     .pipe(argv.production ? gulp.dest(`${publishDir}/public/styles/vendor`) : gulp.dest(`${buildDir}/public/styles/vendor`));
 });
 
 gulp.task('styles:client', () => {
+  let postCssPlugins = [
+    cssnano
+  ]
   return gulp.src(`${clientDir}/content/styles/main.scss`)
     .pipe(sass().on('error', sass.logError))
-    .pipe($.if(argv.production, sourcemaps.init({loadMaps: true})))
-    .pipe($.if(argv.production, cssnano())).on('error', log.error)
-    .pipe($.if(argv.production, rename({suffix: '.min'})))
+    .pipe($.if(argv.production, sourcemaps.init({ loadMaps: true })))
+    .pipe($.if(argv.production, postcss(postCssPlugins))).on('error', log.error)
+    .pipe($.if(argv.production, rename({ suffix: '.min' })))
     .pipe($.if(argv.production, rev()))
     .pipe($.if(argv.production, sourcemaps.write('.')))
     .pipe(argv.production ? gulp.dest(`${publishDir}/public/styles`) : gulp.dest(`${buildDir}/public/styles`));
@@ -225,7 +244,7 @@ gulp.task('copy:app', () => {
 });
 
 gulp.task('copy:configs', () => {
-  return gulp.src(['./package.json', './web.config', './IISNode.yml'])
+  return gulp.src(['./package.json','./package-lock.json', './web.config', './IISNode.yml'])
     .pipe(argv.production ? gulp.dest(`${publishDir}`) : gulp.dest(`${buildDir}`));
 });
 
@@ -237,35 +256,35 @@ gulp.task('scripts', gulp.series('lint:client', () => {
   })
     .transform(babelify)
     .transform(reactify)
-    .transform(envify({'_': 'purge', 'NODE_ENV': argv.production ? 'production' : 'development'}), {global: true})
+    .transform(envify({ '_': 'purge', 'NODE_ENV': argv.production ? 'production' : 'development' }), { global: true })
     .bundle()
     .pipe(source('app.js'))
     .pipe(buffer())
-    .pipe($.if(argv.production, sourcemaps.init({loadMaps: true})))
+    .pipe($.if(argv.production, sourcemaps.init({ loadMaps: true })))
     .pipe($.if(argv.production, uglify())).on('error', log.error)
-    .pipe($.if(argv.production, rename({suffix: '.min'})))
+    .pipe($.if(argv.production, rename({ suffix: '.min' })))
     .pipe($.if(argv.production, rev()))
     .pipe($.if(argv.production, sourcemaps.write('.')))
     .pipe(argv.production ? gulp.dest(`${publishDir}/public/scripts`) : gulp.dest(`${buildDir}/public/scripts`));
 }));
 
 gulp.task('build:client', gulp.series('step-templates', 'copy:app', 'scripts', 'styles:client', 'styles:vendor', 'images', () => {
-  let vendorSources = gulp.src(vendorStyles, {base: 'node_modules/'});
+  let vendorSources = gulp.src(vendorStyles, { base: 'node_modules/' });
 
-let sources = argv.production
-  ? gulp.src([`${publishDir}/public/**/*.js`, `${publishDir}/public/**/*.css*`, `!${publishDir}/public/**/vendor{,/**}`], {read: false})
-  : gulp.src([`${buildDir}/public/**/*.js`, `${buildDir}/public/**/*.css*`, `!${buildDir}/public/**/vendor{,/**}`], {read: false});
+  let sources = argv.production
+    ? gulp.src([`${publishDir}/public/**/*.js`, `${publishDir}/public/**/*.css*`, `!${publishDir}/public/**/vendor{,/**}`], { read: false })
+    : gulp.src([`${buildDir}/public/**/*.js`, `${buildDir}/public/**/*.css*`, `!${buildDir}/public/**/vendor{,/**}`], { read: false });
 
-return gulp.src(`${serverDir}/views/index.jade`)
-  .pipe(inject(vendorSources, {relative: false, name: 'vendor', ignorePath: 'node_modules', addPrefix: 'styles/vendor'}))
-  .pipe(inject(sources, {relative: false, ignorePath: `${argv.production ? `${publishDir}` : `${buildDir}`}/public`}))
-  .pipe(argv.production ? gulp.dest(`${publishDir}/views`) : gulp.dest(`${buildDir}/views`));
+  return gulp.src(`${serverDir}/views/index.pug`)
+    .pipe(inject(vendorSources, { relative: false, name: 'vendor', ignorePath: 'node_modules', addPrefix: 'styles/vendor' }))
+    .pipe(inject(sources, { relative: false, ignorePath: `${argv.production ? `${publishDir}` : `${buildDir}`}/public` }))
+    .pipe(argv.production ? gulp.dest(`${publishDir}/views`) : gulp.dest(`${buildDir}/views`));
 }));
 
 gulp.task('build:server', gulp.series('lint:server', () => {
   return gulp.src([`./${serverDir}/server.js`])
-  .pipe($.babel())
-  .pipe(argv.production ? gulp.dest(`${publishDir}`) : gulp.dest(`${buildDir}`));
+    .pipe($.babel())
+    .pipe(argv.production ? gulp.dest(`${publishDir}`) : gulp.dest(`${buildDir}`));
 }));
 
 gulp.task('build', gulp.parallel('build:server', 'build:client', 'copy:configs'));

@@ -1,0 +1,44 @@
+{
+    "Id": "36791d2d-aa55-4bc7-bee4-a0d12d73f78e",
+    "Name": "Azure Web App - Set Traffic",
+    "Description": "Sets the traffic distribution between multiple web app slots.\n<hr />\n\n*<p>Note This template is designed to run against an azure web app octopus target, but will not use the slot defined. </p>*\n*<p>Depends on Azure CLI and powershell to be installed on the worker</p>*",
+    "ActionType": "Octopus.AzurePowerShell",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Azure.AccountId": "#{azWebAppSetTraffic.AzureAcct}",
+      "Octopus.Action.Script.ScriptBody": "$webAppName = $OctopusParameters[\"Octopus.Action.Azure.WebAppName\"]\n$rg = $OctopusParameters[\"Octopus.Action.Azure.ResourceGroupName\"]\n\n$trafficDistro = $OctopusParameters[\"azWebAppSetTraffic.trafficDistro\"]\n\n$cmdArgs = \"--name $webAppName --resource-group $rg\" \n\n$cmdAction = \"clear\"\n\nwrite-host \"Checking distribution\"\nif(![string]::IsNullOrEmpty($trafficDistro))\n{\n\t$distribution = \"\"\n\n\t$trafficDistro -split \"`n\" | ForEach-Object { $distribution += \"$_ \"}\n\n\t$distribution = $distribution.TrimEnd(' ')\n    \n    $cmdArgs += \" --distribution $distribution\"\n    \n    $cmdAction = \"set\"\n}\n\n\n$cmd = \"az webapp traffic-routing $cmdAction $cmdArgs\"\n\nwrite-verbose \"cmd to invoke: $cmd\"\n\nwrite-host \"setting distributions\"\ninvoke-expression $cmd\n"
+    },
+    "Parameters": [
+      {
+        "Id": "53d1306d-691c-4739-a09a-8fc9d66c60d3",
+        "Name": "azWebAppSetTraffic.AzureAcct",
+        "Label": "Azure Account",
+        "HelpText": "An Azure account with permissions to the subscription and web app being modified",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "AzureAccount"
+        }
+      },
+      {
+        "Id": "1f788822-9980-44cc-9e9c-f87db5998dd5",
+        "Name": "azWebAppSetTraffic.trafficDistro",
+        "Label": "Traffic Distribution",
+        "HelpText": "<p>\nThe distribution of traffic in percent (0-100). Each web app slot should be defined on a separate line. Any remaining percentage will automatically be applied to production.\n</p><p>\n*Example*\n```\nmyOtherSlot=10\nstage=30\n```\n</p>",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "MultiLineText"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2020-06-29T16:52:24.007Z",
+      "OctopusVersion": "2020.2.10",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "xtreampb",
+    "Category": "azure"
+}

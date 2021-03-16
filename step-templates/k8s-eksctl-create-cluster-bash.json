@@ -1,0 +1,98 @@
+{
+  "Id": "0388c8c3-9f27-4132-90c6-2c11b727d9fd",
+  "Name": "eksctl - Create Cluster (bash)",
+  "Description": "Uses [eksctl](https://eksctl.io/) to create an EKS cluster and register it as a [kubernetes target](https://octopus.com/docs/infrastructure/deployment-targets/kubernetes-target) in Octopus.\n\neksctl must be installed on the worker executing the step.",
+  "ActionType": "Octopus.AwsRunScript",
+  "Version": 3,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "False",
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.AwsAccount.Variable": "eksctl.account",
+    "Octopus.Action.Script.ScriptBody": "clusterName='#{eksctl.cluster.name}'\nregion='#{eksctl.region}'\nkubeConfig='eks-sandbox.yaml'\neksctlYaml='eksctl.yaml'\n\n\n# eksctl is required\nif ! [ -x \"$(command -v eksctl)\" ]; then\n\tfail_step 'eksctl command not found'\nfi\n\n# yq is required\nif ! [ -x \"$(command -v yq)\" ]; then\n\tfail_step 'yq command not found'\nfi\n\ncat >\"./$eksctlYaml\" <<EOL\n#{eksctl.yaml}\nEOL\n\n# Check to see if the cluster exists\necho \"Checking to see if cluster '$clusterName' exists\"\neksctl get cluster --name $clusterName --region $region 2>&1\n\nif [ $? -ne 0 ]\nthen\n\techo \"Cluster does not exist. Creating cluster...\"\n    eksctl create cluster -f $eksctlYaml --kubeconfig $kubeConfig\nelse\n\techo \"Cluster exists. Reading cluster details...\"\n    eksctl utils write-kubeconfig --cluster $clusterName --kubeconfig $kubeConfig \nfi\n\nif [ ! -f $kubeConfig ]\nthen\n\techo \"$kubeConfig does not exist, so the Kubernetes target can not be created!\"\n\texit 1\nfi\n\naccountId=$(get_octopusvariable '#{eksctl.account}')\nworkerPool=$(get_octopusvariable 'eksctl.octopus.target.defaultWorkerPool')\nclusterUrl=$(yq r $kubeConfig 'clusters[0].cluster.server')\n\n# Write service message to create the k8s target\necho \"##octopus[create-kubernetestarget \\\n    name=\\\"$(encode_servicemessagevalue '#{eksctl.octopus.target.name}')\\\" \\\n    octopusRoles=\\\"$(encode_servicemessagevalue '#{eksctl.octopus.target.roles}')\\\" \\\n    clusterName=\\\"$(encode_servicemessagevalue \"$clusterName\")\\\" \\\n    clusterUrl=\\\"$(encode_servicemessagevalue \"$clusterUrl\")\\\" \\\n    octopusAccountIdOrName=\\\"$(encode_servicemessagevalue \"$accountId\")\\\" \\\n    namespace=\\\"$(encode_servicemessagevalue 'default')\\\" \\\n    octopusDefaultWorkerPoolIdOrName=\\\"$(encode_servicemessagevalue \"$workerPool\")\\\" \\\n    updateIfExisting=\\\"$(encode_servicemessagevalue 'True')\\\" \\\n    skipTlsVerification=\\\"$(encode_servicemessagevalue 'True')\\\"]\"",
+    "Octopus.Action.Aws.Region": "#{eksctl.region}"
+  },
+  "Parameters": [
+    {
+      "Id": "df94426d-1270-4cf6-8b6d-1d7b6ab9579d",
+      "Name": "eksctl.cluster.name",
+      "Label": "Cluster Name",
+      "HelpText": "The name of the EKS cluster",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "48ae65bd-df84-42e1-ab80-5c8eba31d948",
+      "Name": "eksctl.account",
+      "Label": "AWS Account",
+      "HelpText": "The AWS account used to create the cluster",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AmazonWebServicesAccount"
+      }
+    },
+    {
+      "Id": "2769000f-795b-486d-844f-2d5d0bb74fc2",
+      "Name": "eksctl.region",
+      "Label": "AWS Region",
+      "HelpText": "The [AWS region code](https://docs.aws.amazon.com/general/latest/gr/rande.html#regional-endpoints) (this can be overridden in the eksctl config)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "80603dbb-08e2-42e1-91b3-7693bab55eb8",
+      "Name": "eksctl.yaml",
+      "Label": "eksctl config",
+      "HelpText": "The eksctl configuration YAML.  See [ekstl docs](https://eksctl.io/usage/creating-and-managing-clusters/).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "4259b03f-33a5-4b18-af55-f605de2125fe",
+      "Name": "eksctl.octopus.target.name",
+      "Label": "Octopus Target Name",
+      "HelpText": "The name of the octopus kubernetes cluster target to create ",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1da097f4-f09d-437e-b5ab-f1f08faa1d31",
+      "Name": "eksctl.octopus.target.roles",
+      "Label": "Octopus Target Roles",
+      "HelpText": "Comma-separated list of the roles to assign to the created target in octopus",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "483e7e32-60ec-4c9e-bc0c-15ae5a483046",
+      "Name": "eksctl.octopus.target.defaultWorkerPool",
+      "Label": "Default Worker Pool",
+      "HelpText": "The name or ID of the default worker pool for the created kubernetes target.\nLeave blank to use the [default pool](https://octopus.com/docs/infrastructure/workers/worker-pools#default-worker-pool).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-05-02T15:04:09.845Z",
+    "OctopusVersion": "2020.1.15",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "MJRichardson",
+  "Category": "k8s"
+}

@@ -1,57 +1,64 @@
 {
   "Id": "5658d525-2a04-47da-85a0-00244976d811",
-  "Name": "Remove Server From Azure Load Balancer",
+  "Name": "Remove Server from Azure Load Balancer",
   "Description": "Uses Service Principal to Remove Server From Azure Load Balancer.",
   "ActionType": "Octopus.AzurePowerShell",
-  "Version": 1,
+  "Version": 3,
   "CommunityActionTemplateId": null,
+  "Packages": [],
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
-    "Octopus.Action.Script.ScriptBody": "#region Verify variables\n\n#Verify psbilbAzureSubscription is not null.\nIf ([string]::IsNullOrEmpty($OctopusParameters['psbilbAzureSubscription']))\n{\n  Throw 'Azure Subscription cannot be null.'\n}\n$azureSubscription = $OctopusParameters['psbilbAzureSubscription']\nWrite-Host ('Azure Subscription: ' + $azureSubscription)\n\n#Verify psbilbAzureResourceGroup is not null.\nIf ([string]::IsNullOrEmpty($OctopusParameters['psbilbAzureResourceGroup']))\n{\n  Throw 'Azure Resource Group cannot be null.'\n}\n$azureResourceGroup = $OctopusParameters['psbilbAzureResourceGroup']\nWrite-Host ('Azure Resource Group: ' + $azureResourceGroup)\n\n\n#Verify psbilbAzureMachineName is not null.\nIf ([string]::IsNullOrEmpty($OctopusParameters['psbilbAzureMachineName']))\n{\n  Throw 'Azure Machine Name cannot be null.'\n}\n$azureMachineName = $OctopusParameters['psbilbAzureMachineName']\nWrite-Host ('Azure Machine Name: ' + $azureMachineName)\n\n#Verify psbilbAzureLoadBalancer is not null.\nIf ([string]::IsNullOrEmpty($OctopusParameters['psbilbAzureLoadBalancer']))\n{\n  Throw 'Azure Load Balancer cannot be null.'\n}\n$azureLoadBalancer = $OctopusParameters['psbilbAzureLoadBalancer']\nWrite-Host ('Azure Load Balancer: ' + $azureLoadBalancer)\n\n#endregion\n\n\n#region Process\n\nSet-AzureRmContext -SubscriptionName $azureSubscription\n\n$azureVM = Get-AzureRmVM -ResourceGroupName $azureResourceGroup -Name $azureMachineName\nIf (!$azureVM)\n{\n  Throw 'Could not retrieve server from Azure needed to remove from Load Balancer.'\n}\n\n$nic = (Get-AzureRmNetworkInterface -ResourceGroupName $azureResourceGroup | Where-Object {$_.VirtualMachine.Id -eq $azureVM.Id})\nIf (!$nic)\n{\n  Throw 'Could not retrieve NIC from Azure needed to remove from Load Balancer.'\n}\n\n$loadBalancer = Get-AzureRmLoadBalancer -Name $azureLoadBalancer -ResourceGroupName $azureResourceGroup\nIf (!$loadBalancer)\n{\n  Throw 'Could not retrieve Load Balancer info from Azure.'\n}\n\n$nic.IpConfigurations[0].LoadBalancerBackendAddressPools = $loadBalancer.BackendAddressPools\nSet-AzureRmNetworkInterface -NetworkInterface $nic\n\n#endregion\n",
-    "Octopus.Action.Package.FeedId": null,
-    "Octopus.Action.Script.ScriptFileName": null,
-    "Octopus.Action.Package.PackageId": null
+    "Octopus.Action.Script.ScriptBody": "#region Verify variables\n\n#Verify rsflbAzureSubscription is not null.\nIf ([string]::IsNullOrEmpty($OctopusParameters['rsflbAzureSubscription']))\n{\n  Throw 'Azure Subscription cannot be null.'\n}\n$azureSubscription = $OctopusParameters['rsflbAzureSubscription']\nWrite-Host ('Azure Subscription: ' + $azureSubscription)\n\n#Verify rsflbAzureResourceGroup is not null.\nIf ([string]::IsNullOrEmpty($OctopusParameters['rsflbAzureResourceGroup']))\n{\n  Throw 'Azure Resource Group cannot be null.'\n}\n$azureResourceGroup = $OctopusParameters['rsflbAzureResourceGroup']\nWrite-Host ('Azure Resource Group: ' + $azureResourceGroup)\n\n#Verify rsflbAzureMachineName is not null.\nIf ([string]::IsNullOrEmpty($OctopusParameters['rsflbAzureMachineName']))\n{\n  Throw 'Azure Machine Name cannot be null.'\n}\n$azureMachineName = $OctopusParameters['rsflbAzureMachineName']\nWrite-Host ('Azure Machine Name: ' + $azureMachineName)\n\n#endregion\n\n#region Process\n\nSet-AzureRmContext -SubscriptionName $azureSubscription\n\n$azureVM = Get-AzureRmVM -ResourceGroupName $azureResourceGroup -Name $azureMachineName\nIf (!$azureVM)\n{\n  Throw 'Could not retrieve server from Azure needed to remove from Load Balancer.'\n}\n\n$nic = (Get-AzureRmNetworkInterface -ResourceGroupName $azureResourceGroup | Where-Object {$_.VirtualMachine.Id -eq $azureVM.Id})\nIf (!$nic)\n{\n  Throw 'Could not retrieve NIC from Azure needed to remove from Load Balancer.'\n}\n\n$nic.IpConfigurations[0].LoadBalancerBackendAddressPools = $null\n$nic | Set-AzureRmNetworkInterface\n\n#endregion",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Azure.AccountId": "#{rsflbAzureAccount}"
   },
   "Parameters": [
     {
-      "Id": "5557227f-35f2-420f-b355-446faffc7159",
+      "Id": "6efd155e-8ab7-4236-bc16-7748a582e3af",
+      "Name": "rsflbAzureAccount",
+      "Label": "Azure Account",
+      "HelpText": "Service Principal used to connect to Azure",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "2cff4dbe-685c-47e0-b7c7-6d6ee25bdc48",
       "Name": "rsflbAzureSubscription",
       "Label": "Azure Subscription",
-      "HelpText": null,
+      "HelpText": "Subscription Load Balancer belongs to. Eg. 00000000-0000-0000-0000-000000000000",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
-      },
-      "Links": {}
+      }
     },
     {
-      "Id": "c33f8afd-a845-4c81-9983-5eb05f9b5b9c",
+      "Id": "150ef843-5b2c-43e9-ac12-a8d0cc45565e",
       "Name": "rsflbAzureResourceGroup",
       "Label": "Azure Resource Group",
-      "HelpText": null,
+      "HelpText": "Resource Group Load Balancer belongs to. Eg. ProductionAus",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
-      },
-      "Links": {}
+      }
     },
     {
-      "Id": "5765eb9d-2d03-4464-b4e9-ae38647e1641",
+      "Id": "7397be30-76e3-4c16-9b8b-05c451a23e70",
       "Name": "rsflbAzureMachineName",
       "Label": "Azure Machine Name",
-      "HelpText": null,
+      "HelpText": "Name of Virtual Machine to remove from Load Balancer. Eg Web01",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
-      },
-      "Links": {}
+      }
     }
   ],
-  "LastModifiedBy": "tbrasch",
   "$Meta": {
-    "ExportedAt": "2017-07-28T18:47:15.489Z",
-    "OctopusVersion": "3.15.7",
+    "ExportedAt": "2020-06-22T10:40:51.529Z",
+    "OctopusVersion": "2020.2.8",
     "Type": "ActionTemplate"
   },
+  "LastModifiedBy": "benjimac93",
   "Category": "Azure"
 }

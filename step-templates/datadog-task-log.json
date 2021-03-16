@@ -1,0 +1,73 @@
+{
+    "Id": "e8550a62-3ed7-4200-b5c7-ba91cbda5e2a",
+  "Name": "Datadog - Log Task",
+  "Description": "Log details of a task to Datadog, including error detail.\n\n**Configuration**: \n\n* In Datadog, add a [standard attribute](https://docs.datadoghq.com/logs/processing/attributes_naming_convention/#standard-attributes-and-aliasing) of `octopus.deployment.properties` to see and access JSON details of the task.  \n\n* When using the step, set the [run condition](https://octopus.com/docs/projects/steps/conditions) of the step to `Always run` to ensure logs are sent for errors as well as successful tasks.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "  \nfunction Send-DatadogEvent (\n    $datadog,\n    [string] $text,\n    [string] $level,\n    $properties = @{},\n    [string] $exception = $null,\n    [switch] $template) {\n    \n    \n    if (-not $level) {\n        $level = 'Information'\n    }\n\n    if (@('Verbose', 'Debug', 'Information', 'Warning', 'Error', 'Fatal') -notcontains $level) {\n        $level = 'Information'\n    }\n\n\n    $ddtags = \"project:$($properties.ProjectName),deploymentname:$($properties.DeploymentName),env:$($properties.EnvironmentName)\"\n    if ($properties[\"TaskType\"] -eq \"Runbook\") {\n        $ddtags += \",runbookname:$($properties.RunbookName),tasktype:runbook\"\n    }\n    else {\n        $ddtags += \",tasktype:deployment\"    \n    }\n\n    $body = New-Object \"System.Collections.Generic.Dictionary[[String],[String]]\"\n    $body.Add(\"ddsource\", \"Octopus Deploy\")\n    $body.Add(\"ddtags\", $ddtags)\n    $body.Add(\"service\", $DatadogServiceName)\n    $body.Add(\"hostname\", \"https://octopus.the-crock.com/\")\n    $body.Add(\"http.url\", \"$($properties[\"TaskLink\"])\")\n    $body.Add(\"octopus.deployment.properties\", \"$($properties | ConvertTo-Json)\")\n\n    if ($exception) {\n        $body.Add(\"error.message\", \"$($properties[\"Error\"])\")\n        $body.Add(\"error.stack\", \"$($exception)\")\n    }\n    \n    $body.Add(\"level\", \"$($level)\")\n  \n    $headers = New-Object \"System.Collections.Generic.Dictionary[[String],[String]]\"\n    $headers.Add(\"Content-Type\", \"application/json\")\n    $headers.Add(\"DD-APPLICATION-KEY\", \"$($DatadogApplicationKey)\")\n    $headers.Add(\"DD-API-KEY\", \"$($DatadogApiKey)\")\n\n    Invoke-RestMethod -Uri $DatadogUrl -Body $($body | ConvertTo-Json)  -ContentType \"application/json\" -Method POST -Headers $headers\n}\n\nfunction Set-ErrorDetails(){\n\n    $octopusAPIHeader = @{ \"X-Octopus-ApiKey\" = $DatadogOctopusAPIKey }\n    $taskDetailUri = \"$($OctopusParameters['Octopus.Web.ServerUri'])/api/tasks/$($OctopusParameters[\"Octopus.Task.Id\"])/details\"\n\n    $taskDetails = Invoke-RestMethod -Method Get -Uri $taskDetailUri -Headers $octopusAPIHeader \n    $errorMessage = \"\";\n    $errorFirstLine = \"\";\n    $isFirstLine = $true;\n\n    foreach ($activityLog in $taskDetails.ActivityLogs) {\n        foreach ($activityLogChild1 in $activityLog.Children) {\n            foreach ($activityLogChild2 in $activityLogChild1.Children) {\n                foreach ($logElement in $activityLogChild2.LogElements) {\n                    if ($logElement.Category -eq \"Error\") {\n                        if ($isFirstLine -eq $true) {\n                            $errorFirstLine = $logElement.MessageText;\n                            $isFirstLine = $false;\n                        }\n\n                        $errorMessage += $logElement.MessageText + \" `n\"\n                    }\n                }\n            }\n        }\n    }\n\n    $exInfo = @{\n        firstLine = $errorFirstLine\n        message = $errorMessage\n    }\n\n    return $exInfo;\n}\n\nfunction Set-TaskProperties(){\n    $taskProperties = @{\n        ProjectName     = $OctopusParameters['Octopus.Project.Name'];\n        Result          = \"succeeded\";\n        InstanceUrl     = $OctopusParameters['Octopus.Web.ServerUri'];\n        EnvironmentName = $OctopusParameters['Octopus.Environment.Name'];\n        DeploymentName  = $OctopusParameters['Octopus.Deployment.Name'];\n        TenantName      = $OctopusParameters[\"Octopus.Deployment.Tenant.Name\"]\n        TaskLink        = $taskLink\n    }\n    \n    if ([string]::IsNullOrEmpty($OctopusParameters[\"Octopus.Runbook.Id\"]) -eq $false) {\n        $taskProperties[\"TaskType\"] \t\t\t= \"Runbook\"\n        $taskProperties[\"RunbookSnapshotName\"] \t= $OctopusParameters[\"Octopus.RunbookSnapshot.Name\"]\n        $taskProperties[\"RunbookName\"]         \t= $OctopusParameters[\"Octopus.Runbook.Name\"]\n    }\n    else {\n        $taskProperties[\"TaskType\"] \t\t= \"Deployment\"\n        $taskProperties[\"ReleaseNumber\"] \t= $OctopusParameters['Octopus.Release.Number'];\n        $taskProperties[\"Channel\"]  \t\t= $OctopusParameters['Octopus.Release.Channel.Name'];\n    }\n\n    return $taskProperties;\n}\n\n#******************************************************************\n\n$taskLink = $OctopusParameters['Octopus.Web.ServerUri'] + \"/app#/\" + $OctopusParameters[\"Octopus.Space.Id\"] + \"/tasks/\" + $OctopusParameters[\"Octopus.Task.Id\"]\n$level = \"Information\"\n$exception = $null\n\nWrite-Output \"Logging the deployment result to Datadog at $DatadogServerUrl...\"\n\n$properties = Set-TaskProperties\n\nif ($OctopusParameters['Octopus.Deployment.Error']) {\n    $exceptionInfo = Set-ErrorDetails\n    $properties[\"Result\"] = \"failed\"\n    $properties[\"Error\"] = $exceptionInfo[\"firstLine\"]\n    $exception = $exceptionInfo[\"message\"]\n    $level = \"Error\"\n}\n\ntry {\n    Send-DatadogEvent $datadog \"A deployment of $($properties.ProjectName) release $($properties.ReleaseNumber) $($properties.Result) in $($properties.EnvironmentName)\" -level $level -template -properties $properties -exception $exception\n}\ncatch [Exception] {\n    Write-Error \"Unable to write task details to Datadog\"\n    $_.Exception | format-list -force\n}\n"
+  },
+  "Parameters": [
+    {
+      "Id": "6a1f7310-294a-4593-898b-afc32bd93bb3",
+      "Name": "DatadogUrl",
+      "Label": "Datadog URL",
+      "HelpText": "The URL for POSTing log information",
+      "DefaultValue": "https://http-intake.logs.datadoghq.eu/v1/input",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2eb26500-3ced-466c-962e-18b91ce6ea46",
+      "Name": "DatadogAPIKey",
+      "Label": "Datadog API Key",
+      "HelpText": "[API Key](https://docs.datadoghq.com/account_management/api-app-keys/#api-keys) required for accessing API.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "289728cb-9442-41b3-a3be-17f4e8287380",
+      "Name": "DatadogApplicationKey",
+      "Label": "Datadog Application Key",
+      "HelpText": "Information on Datadog [Application Keys](https://docs.datadoghq.com/account_management/api-app-keys/#application-keys)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "6afbdc2a-3f85-4807-abff-d7f3e0dcba77",
+      "Name": "DatadogServiceName",
+      "Label": "Datadog Service Name",
+      "HelpText": null,
+      "DefaultValue": "Octopus Deploy",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "62b47d15-e05f-4e0b-a4b9-4a80b98b62f9",
+      "Name": "DatadogOctopusAPIKey",
+      "Label": "",
+      "HelpText": "Only used when an exception has occurred.\n\nOctopus instance [API Key](https://octopus.com/docs/octopus-rest-api/how-to-create-an-api-key).   Requires at least `TaskView` [permission](https://octopus.com/docs/security/users-and-teams/system-and-space-permissions).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-03-04T11:25:36.400Z",
+    "OctopusVersion": "2020.5.249",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "octocrock",
+  "Category": "datadog"
+}
