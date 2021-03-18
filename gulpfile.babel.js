@@ -106,6 +106,7 @@ function humanize(categoryId) {
     case 'azureFunctions': return 'Azure Functions';
     case 'chef': return 'Chef';
     case 'clickonce': return 'ClickOnce';
+    case 'cyberark': return 'CyberArk';
     case 'dll': return 'dll';
     case 'dlm': return 'dlm';
     case 'dotnetcore': return '.NET Core';
