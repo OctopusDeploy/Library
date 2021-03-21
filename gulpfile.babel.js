@@ -106,6 +106,7 @@ function humanize(categoryId) {
     case 'azureFunctions': return 'Azure Functions';
     case 'chef': return 'Chef';
     case 'clickonce': return 'ClickOnce';
+    case 'cyberark': return 'CyberArk';
     case 'dll': return 'dll';
     case 'dlm': return 'dlm';
     case 'dotnetcore': return '.NET Core';
@@ -156,6 +157,7 @@ function humanize(categoryId) {
     case 'swaggerhub': return 'SwaggerHub';
     case 'statuscake': return 'StatusCake';
     case 'teamcity': return 'TeamCity';
+    case 'terraform': return 'Terraform';
     case 'testery': return 'Testery';
     case 'twilio': return 'Twilio';
     case 'victorops': return 'VictorOps'
