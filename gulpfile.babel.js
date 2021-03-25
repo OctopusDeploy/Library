@@ -102,6 +102,7 @@ function humanize(categoryId) {
     case 'apexsql': return 'ApexSQL';
     case 'aspnet': return 'ASP.NET';
     case 'aws': return 'AWS';
+    case 'azure-devops': return 'Azure DevOps';
     case 'azure-site-extensions': return 'Azure Site Extensions';
     case 'azureFunctions': return 'Azure Functions';
     case 'chef': return 'Chef';
