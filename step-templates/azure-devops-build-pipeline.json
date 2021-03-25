@@ -1,0 +1,83 @@
+{
+    "Id": "405e97d7-e7ad-4d62-81cd-5d5fc751ef42",
+    "Name": "Run Azure DevOps Build Pipeline",
+    "Description": "Will trigger a build pipeline in Azure DevOps for a specified branch using the [Azure DevOps REST API](https://docs.microsoft.com/en-us/rest/api/azure/devops/?view=azure-devops-rest-6.1).",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "Author": "adamoctoclose",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "$AzureDevOpsAccessKey = $AzureDevOpsAccessKey\n$AzureDevOpsOrganizationName = $AzureDevOpsOrganizationName\n$AzureDevOpsProjectName = $AzureDevOpsProjectName\n$AzureDevOpsPipelineName = $AzureDevOpsPipelineName\n$AzureDevOpsBranch = $AzureDevOpsBranch\n$AzureDevOpsWaitUntilCompletion = $AzureDevOpsWaitUntilCompletion\n\nfunction Test-RequiredValues\n{\n\tparam (\n    \t[PSVariable]$variableToCheck\n    )\n    if ([string]::IsNullOrWhiteSpace($variableToCheck.Value) -eq $true)\n    {\n    \tWrite-Host \"$($variableToCheck.Name) is required.\"\n        return $false\n    }\n    return $true\n}\nfunction Get-BuildPipelineId \n{\n    param (\n        $defaultUrl,\n        $pipeline\n    )\n    try {\n        Write-Host \"Getting list of available pipelines\"\n        $url = \"$defaultUrl/_apis/pipelines?api-version=6.0-preview.1\"\n        $pipelines = Invoke-RestMethod -Uri $url -Method GET -Headers $azureDevOpsAuthenticationHeader\n        if([string]::IsNullOrWhiteSpace($pipelines) -eq $true)\n        {\n            Write-Error \"Couldn't find any pipelines in $AzureDevOpsPipelineName\"\n            Exit 1\n        }\n        $pipelineId = ($pipelines.value | Where-Object {$_.name -eq $pipeline}).id\n        if([string]::IsNullOrWhiteSpace($pipelineId) -eq $true)\n        {\n            Write-Error \"Found ${$pipelines.count} pipelines in project $AzureDevOpsProjectName but couldn't find $AzureDevOpsPipelineName\"\n            Exit 1\n        }\n        return $pipelineId\n    }\n    catch \n    {\n        Write-Error \"An error occurred while getting the pipelines:`n$($_.Exception.Message)\"\n        Exit 1\n    }\n}\nfunction Invoke-BuildPipeline \n{\n    param (\n        $defaultUrl,\n        $pipelineId,\n        $body\n    )\n    try {\n        $url = \"$defaultUrl/_apis/pipelines/$pipelineId/runs?api-version=6.0-preview.1\"\n        $pipeline = Invoke-RestMethod -Uri $url -Body $body -ContentType \"application/json\" -Method POST -Headers $azureDevOpsAuthenticationHeader\n        return $pipeline       \n    }\n    catch {\n        Write-Error \"An error occurred while invoking the pipeline:`n$($_.Exception.Message)\"\n        Exit 1\n    }    \n}\nfunction Get-BuildPipelineStatus \n{\n    param (\n        $defaultUrl,\n        $pipelineId,\n        $runId\n    )\n    try {\n        $url = \"$defaultUrl/_apis/pipelines/$pipelineId/runs/$($runId)?api-version=6.0-preview.1\"\n        return Invoke-RestMethod -Uri $url -Method GET -Headers $azureDevOpsAuthenticationHeader\n    }\n    catch {\n        Write-Error \"An error occurred while getting the pipeline status:`n$($_.Exception.Message)\"\n        Exit 1\n    }  \n}\n$verificationPassed = @()\n$verificationPassed += Test-RequiredValues -variableToCheck (Get-Variable AzureDevOpsAccessKey)\n$verificationPassed += Test-RequiredValues -variableToCheck (Get-Variable AzureDevOpsOrganizationName)\n$verificationPassed += Test-RequiredValues -variableToCheck (Get-Variable AzureDevOpsProjectName) \n$verificationPassed += Test-RequiredValues -variableToCheck (Get-Variable AzureDevOpsPipelineName)\n$verificationPassed += Test-RequiredValues -variableToCheck (Get-Variable AzureDevOpsBranch)\n\nif ($verificationPassed -contains $false)\n{\n\tWrite-Error \"Required values missing. Please see output for further details.\"\n\tExit 1\n}\n\n$azureDevOpsAuthenticationHeader = @{Authorization = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(\":$($AzureDevOpsAccessKey)\")) }\n\nWrite-Host \"Azure DevOps Organization Name: $AzureDevOpsOrganizationName\"\nWrite-Host \"Azure DevOps Project Name: $AzureDevOpsProjectName\"\nWrite-Host \"Azure DevOps Pipeline Name: $AzureDevOpsPipelineName\"\nWrite-Host \"Azure DevOps Branch: $AzureDevOpsBranch\"\nWrite-Host \"Azure DevOps Wait Until Completion: $AzureDevOpsWaitUntilCompletion\"\n\n$defaultUrl = \"https://dev.azure.com/$AzureDevOpsOrganizationName/$AzureDevOpsProjectName\"\n\n$buildPipelineId = Get-BuildPipelineId -defaultUrl $defaultUrl -pipeline $AzureDevOpsPipelineName\n\n$body = @\"\n{\n    \"resources\": {\n      \"repositories\": {\n        \"self\": {\n          \"refName\": \"refs/heads/$AzureDevOpsBranch\"\n        }\n      }\n    }\n  }\n\"@\n\n$run = Invoke-BuildPipeline -defaultUrl $defaultUrl -pipelineId $buildPipelineId -body $body\n\nWrite-Host \"The pipeline was successfully invoked, you can access the pipeline [here]($($run._links.web.href)).\"\n\nif ($run.state -ne \"completed\" -and $AzureDevOpsWaitUntilCompletion -eq $true)\n{\n    do \n    {\n        Write-Host \"Waiting for pipeline completion...\"\n        Start-Sleep 30\n        $status = Get-BuildPipelineStatus -defaultUrl $defaultUrl -pipelineId $buildPipelineId -runId $run.id\n        Write-Host \"Current Status: $($status.state)\"\n    }\n    while ($status.state -ne \"completed\") \n    if ($status.result -ne \"succeeded\")\n    {\n        Write-Error \"The Azure DevOps pipeline failed to complete succesfully\"\n        Exit 1\n    }\n}\nelse \n{\n    if ($run.result -ne \"succeeded\")\n    {\n        Write-Error \"The Azure DevOps pipeline failed to complete succesfully\"\n        Exit 1\n    }   \n}"
+    },
+    "Parameters": [
+      {
+        "Id": "5f4bdb73-ce24-4d5d-8541-82efae04b9f5",
+        "Name": "AzureDevOpsAccessKey",
+        "Label": "Azure DevOps Access Key",
+        "HelpText": "A [personal access token (PAT)](https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page) is used as an alternate password to authenticate into Azure DevOps. Learn how to create, use, modify, and revoke PATs for Azure DevOps.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "63dd21d5-3d38-4bc2-9b09-9e2e4efa5974",
+        "Name": "AzureDevOpsOrganizationName",
+        "Label": "Azure DevOps Organization Name",
+        "HelpText": "The name of the Azure DevOps [organization](https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/organization-management?view=azure-devops).",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0d641c0c-bd5f-408a-9d9a-6ac710bd134c",
+        "Name": "AzureDevOpsProjectName",
+        "Label": "Azure DevOps Project Name",
+        "HelpText": "Project ID or project name",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "b5e6ea31-5679-48b6-a5ec-4c7274dbb398",
+        "Name": "AzureDevOpsPipelineName",
+        "Label": "Azure DevOps Pipeline Name",
+        "HelpText": "The name of the pipeline you want to run in your Azure DevOps project\n\nExample: helloword-ci",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "62f3eab8-9785-4b96-9c52-a0a12f794e12",
+        "Name": "AzureDevOpsBranch",
+        "Label": "Azure DevOps Branch",
+        "HelpText": "Source branch to build from",
+        "DefaultValue": "Main",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "ea425cd0-110e-45de-b38f-1c07b82cb390",
+        "Name": "AzureDevOpsWaitUntilCompletion",
+        "Label": "Azure DevOps Wait Until Completion",
+        "HelpText": "Wait for the pipeline to finish. If selected then the step will wait until the build pipeline is completed before finishing the step. If the build pipeline fails then the step will also fail.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-03-25T13:12:50.932Z",
+      "OctopusVersion": "2020.5.5",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "adamoctoclose",
+    "Category": "azure-devops"
+  }
