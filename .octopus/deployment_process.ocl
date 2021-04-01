@@ -2,37 +2,8 @@ steps "Notify #octopus-library on Slack" {
     condition = "Always"
 
     actions "Notify #octopus-library on Slack" {
-        action_type = "Octopus.Script"
         properties = {
             Octopus.Action.RunOnServer = "true"
-            Octopus.Action.Script.ScriptBody = <<-EOT
-                $payload = @{ 
-                    channel = $OctopusParameters['ssn_Channel']
-                    username = $OctopusParameters['ssn_Username'];
-                    icon_url = $OctopusParameters['ssn_IconUrl'];
-                    link_names = "true";
-                    attachments = @(
-                        @{
-                            mrkdwn_in = $('pretext', 'text');
-                            pretext = $OctopusParameters['ssn_Title'];
-                            text = $OctopusParameters['ssn_Message'];
-                            color = $OctopusParameters['ssn_Color'];
-                        }
-                    )
-                }
-                
-                try {
-                	[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
-                    Invoke-Restmethod -Method POST -Body ($payload | ConvertTo-Json -Depth 4) -Uri $OctopusParameters['ssn_HookUrl']
-                } catch {
-                    Write-Host "An error occurred while attempting to send Slack notification"
-                    Write-Host $_.Exception
-                    Write-Host $_
-                    exit 0
-                }
-            EOT
-            Octopus.Action.Script.ScriptSource = "Inline"
-            Octopus.Action.Script.Syntax = "PowerShell"
             Octopus.Action.Template.Id = "ActionTemplates-404"
             Octopus.Action.Template.Version = "12"
             ssn_Channel = "#{SlackChannel}"
@@ -112,62 +83,8 @@ steps "Deploy Octopus.Library " {
 steps "HTTP - Invoke URL" {
 
     actions "HTTP - Invoke URL" {
-        action_type = "Octopus.Script"
         properties = {
             Octopus.Action.RunOnServer = "true"
-            Octopus.Action.Script.ScriptBody = <<-EOT
-                # Running outside octopus
-                param(
-                    [string]$url,
-                    [switch]$whatIf
-                ) 
-                
-                $ErrorActionPreference = "Stop" 
-                
-                function Get-Param($Name, [switch]$Required, $Default) {
-                    $result = $null
-                
-                    if ($OctopusParameters -ne $null) {
-                        $result = $OctopusParameters[$Name]
-                    }
-                
-                    if ($result -eq $null) {
-                        $variable = Get-Variable $Name -EA SilentlyContinue   
-                        if ($variable -ne $null) {
-                            $result = $variable.Value
-                        }
-                    }
-                
-                    if ($result -eq $null -or $result -eq "") {
-                        if ($Required) {
-                            throw "Missing parameter value $Name"
-                        } else {
-                            $result = $Default
-                        }
-                    }
-                
-                    return $result
-                }
-                
-                & {
-                    param(
-                        [string]$url
-                    ) 
-                
-                    Write-Host "Invoke Url: $url"
-                
-                    try {
-                    
-                        Invoke-WebRequest -Uri $url -Method Get -UseBasicParsing
-                
-                    } catch {
-                        Write-Host "There was a problem invoking Url"    
-                    }
-                
-                 } `
-                 (Get-Param 'url' -Required)
-            EOT
-            Octopus.Action.Script.Syntax = "PowerShell"
             Octopus.Action.Template.Id = "ActionTemplates-102"
             Octopus.Action.Template.Version = "2"
             url = "#{LibrarySiteWithSlotUrl}"
@@ -179,37 +96,8 @@ steps "HTTP - Invoke URL" {
 steps "Notify #octopus-library of manual intervention" {
 
     actions "Notify #octopus-library of manual intervention" {
-        action_type = "Octopus.Script"
         properties = {
             Octopus.Action.RunOnServer = "true"
-            Octopus.Action.Script.ScriptBody = <<-EOT
-                $payload = @{
-                    channel = $OctopusParameters['ssn_Channel']
-                    username = $OctopusParameters['ssn_Username'];
-                    icon_url = $OctopusParameters['ssn_IconUrl'];
-                    link_names = "true";
-                    attachments = @(
-                        @{
-                            mrkdwn_in = $('pretext', 'text');
-                            pretext = $OctopusParameters['ssn_Title'];
-                            text = $OctopusParameters['ssn_Message'];
-                            color = $OctopusParameters['ssn_Color'];
-                        }
-                    )
-                }
-                
-                try {
-                	[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
-                    Invoke-Restmethod -Method POST -Body ($payload | ConvertTo-Json -Depth 4) -Uri $OctopusParameters['ssn_HookUrl']
-                } catch {
-                    Write-Host "An error occurred while attempting to send Slack notification"
-                    Write-Host $_.Exception
-                    Write-Host $_
-                    exit 0
-                }
-            EOT
-            Octopus.Action.Script.ScriptSource = "Inline"
-            Octopus.Action.Script.Syntax = "PowerShell"
             Octopus.Action.Template.Id = "ActionTemplates-404"
             Octopus.Action.Template.Version = "12"
             ssn_Channel = "#{SlackChannel}"
@@ -227,7 +115,7 @@ steps "Notify #octopus-library of manual intervention" {
                 ```
                 #{/if}
                 
-                <#{Octopus.Web.BaseUrl}#{Octopus.Web.DeploymentLink}|Action manual intervention>
+                <#{Octopus.Web.ServerUri}#{Octopus.Web.DeploymentLink}|Action manual intervention>
             EOT
             ssn_Title = "Confirm changes on Staging slot"
             ssn_Username = "Octopus Deploy"
@@ -271,7 +159,6 @@ steps "Swap Staging slot to Production" {
 steps "Reinstall Let's Encrypt extension" {
 
     actions "Reinstall Let's Encrypt extension" {
-        action_type = "Octopus.AzureResourceGroup"
         is_disabled = true
         properties = {
             AzSiteExt_AppServicePlanName = "#{AzureAppServicePlanName}"
@@ -279,64 +166,6 @@ steps "Reinstall Let's Encrypt extension" {
             AzSiteExt_ExtensionName = "letsencrypt"
             AzSiteExt_ResourceGroupName = "#{AzureResourceGroupName}"
             AzSiteExt_SiteName = "#{AzureSiteName}"
-            Octopus.Action.Azure.AccountId = "#{AzSiteExt_AzureAccountId}"
-            Octopus.Action.Azure.ResourceGroupDeploymentMode = "Incremental"
-            Octopus.Action.Azure.ResourceGroupName = "#{AzSiteExt_ResourceGroupName}"
-            Octopus.Action.Azure.ResourceGroupTemplate = <<-EOT
-                {
-                    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
-                    "contentVersion": "1.0.0.0",
-                    "parameters": {        
-                        "siteName": {
-                            "type": "string",
-                            "metadata": {
-                                "description": "Web site name"
-                            }
-                        },
-                        "appServicePlanName": {
-                            "type": "string",
-                            "metadata": {
-                                "description": "App service plan name"
-                            }
-                        },
-                        "extensionName": {
-                            "type": "string",
-                            "metadata": {
-                                "description": "Extension name"
-                            }
-                        }  
-                    },
-                    "variables": {  
-                        "extensionApi": "2015-06-01"
-                    },
-                    "resources": [
-                        {
-                            "apiVersion": "[variables('extensionApi')]",
-                            "name": "[parameters('siteName')]",
-                            "type": "Microsoft.Web/sites",
-                            "location": "[resourceGroup().location]",
-                            "dependsOn": [],
-                            "properties": {
-                                "name": "[parameters('siteName')]",
-                                "serverFarmId": "[parameters('appServicePlanName')]"
-                            },
-                            "resources": [
-                                {
-                                    "apiVersion": "[variables('extensionApi')]",
-                                    "name": "[parameters('extensionName')]",
-                                    "type": "siteextensions",
-                                    "dependsOn": [
-                                        "[resourceId('Microsoft.Web/Sites', parameters('siteName'))]"
-                                    ],
-                                    "properties": {}
-                                }
-                            ]
-                        }
-                    ]
-                }
-            EOT
-            Octopus.Action.Azure.ResourceGroupTemplateParameters = "{\"siteName\":{\"value\":\"#{AzSiteExt_SiteName}\"},\"extensionName\":{\"value\":\"#{AzSiteExt_ExtensionName}\"},\"appServicePlanName\":{\"value\":\"#{AzSiteExt_AppServicePlanName}\"}}"
-            Octopus.Action.Azure.TemplateSource = "Inline"
             Octopus.Action.Template.Id = "ActionTemplates-401"
             Octopus.Action.Template.Version = "12"
         }
@@ -348,62 +177,8 @@ steps "HTTP - Invoke URL - Production" {
     start_trigger = "StartWithPrevious"
 
     actions "HTTP - Invoke URL - Production" {
-        action_type = "Octopus.Script"
         properties = {
             Octopus.Action.RunOnServer = "true"
-            Octopus.Action.Script.ScriptBody = <<-EOT
-                # Running outside octopus
-                param(
-                    [string]$url,
-                    [switch]$whatIf
-                ) 
-                
-                $ErrorActionPreference = "Stop" 
-                
-                function Get-Param($Name, [switch]$Required, $Default) {
-                    $result = $null
-                
-                    if ($OctopusParameters -ne $null) {
-                        $result = $OctopusParameters[$Name]
-                    }
-                
-                    if ($result -eq $null) {
-                        $variable = Get-Variable $Name -EA SilentlyContinue   
-                        if ($variable -ne $null) {
-                            $result = $variable.Value
-                        }
-                    }
-                
-                    if ($result -eq $null -or $result -eq "") {
-                        if ($Required) {
-                            throw "Missing parameter value $Name"
-                        } else {
-                            $result = $Default
-                        }
-                    }
-                
-                    return $result
-                }
-                
-                & {
-                    param(
-                        [string]$url
-                    ) 
-                
-                    Write-Host "Invoke Url: $url"
-                
-                    try {
-                    
-                        Invoke-WebRequest -Uri $url -Method Get -UseBasicParsing
-                
-                    } catch {
-                        Write-Host "There was a problem invoking Url"    
-                    }
-                
-                 } `
-                 (Get-Param 'url' -Required)
-            EOT
-            Octopus.Action.Script.Syntax = "PowerShell"
             Octopus.Action.Template.Id = "ActionTemplates-102"
             Octopus.Action.Template.Version = "2"
             url = "#{LibrarySiteUrl}"
@@ -415,7 +190,6 @@ steps "HTTP - Invoke URL - Production" {
 steps "GitHub - Create Release" {
 
     actions "GitHub - Create Release" {
-        action_type = "Octopus.Script"
         properties = {
             commitId = "master"
             draft = "false"
@@ -423,41 +197,6 @@ steps "GitHub - Create Release" {
             gitHubRepository = "#{GitHubRepository}"
             gitHubUsername = "#{GitHubOwner}"
             Octopus.Action.RunOnServer = "true"
-            Octopus.Action.Script.ScriptBody = <<-EOT
-                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-                
-                $formattedVersionNumber = [string]::Format("v{0}", $versionNumber)
-                $isDraft = [bool]::Parse($draft)
-                $isPrerelease = [bool]::Parse($preRelease)
-                
-                $releaseData = @{
-                    tag_name = $formattedVersionNumber;
-                    target_commitish = $commitId;
-                    name = $formattedVersionNumber;
-                    body = $releaseNotes;
-                    draft = $isDraft;
-                    prerelease = $isPrerelease;
-                }
-                
-                $releaseParams = @{
-                    Uri = "https://api.github.com/repos/$gitHubUsername/$gitHubRepository/releases";
-                    Method = 'POST';
-                    Headers = @{
-                        Authorization = 'Basic ' + [Convert]::ToBase64String(
-                            [Text.Encoding]::ASCII.GetBytes($gitHubApiKey + ":x-oauth-basic")
-                        );
-                    }
-                    ContentType = 'application/json';
-                    Body = (ConvertTo-Json $releaseData -Compress)
-                }
-                
-                Write-Host "Creating release $formattedVersionNumber for $commitId."
-                $result = Invoke-RestMethod @releaseParams
-                
-                Write-Host "Release successfully created."
-                $result
-            EOT
-            Octopus.Action.Script.Syntax = "PowerShell"
             Octopus.Action.Template.Id = "ActionTemplates-61"
             Octopus.Action.Template.Version = "4"
             preRelease = "false"
@@ -536,37 +275,8 @@ steps "Notify #octopus-library of deployment result" {
     condition = "Always"
 
     actions "Notify #octopus-library of deployment result" {
-        action_type = "Octopus.Script"
         properties = {
             Octopus.Action.RunOnServer = "true"
-            Octopus.Action.Script.ScriptBody = <<-EOT
-                $payload = @{
-                    channel = $OctopusParameters['ssn_Channel']
-                    username = $OctopusParameters['ssn_Username'];
-                    icon_url = $OctopusParameters['ssn_IconUrl'];
-                    link_names = "true";
-                    attachments = @(
-                        @{
-                            mrkdwn_in = $('pretext', 'text');
-                            pretext = $OctopusParameters['ssn_Title'];
-                            text = $OctopusParameters['ssn_Message'];
-                            color = $OctopusParameters['ssn_Color'];
-                        }
-                    )
-                }
-                
-                try {
-                	[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
-                    Invoke-Restmethod -Method POST -Body ($payload | ConvertTo-Json -Depth 4) -Uri $OctopusParameters['ssn_HookUrl']
-                } catch {
-                    Write-Host "An error occurred while attempting to send Slack notification"
-                    Write-Host $_.Exception
-                    Write-Host $_
-                    exit 0
-                }
-            EOT
-            Octopus.Action.Script.ScriptSource = "Inline"
-            Octopus.Action.Script.Syntax = "PowerShell"
             Octopus.Action.Template.Id = "ActionTemplates-404"
             Octopus.Action.Template.Version = "12"
             ssn_Channel = "#{SlackChannel}"
