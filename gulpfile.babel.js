@@ -166,6 +166,7 @@ function humanize(categoryId) {
     case 'xml': return 'XML';
     case 'xunit': return 'xUnit';
     case 'rnhub': return 'RnHub';
+    case 'hashicorp-vault': return 'hashiCorp Vault';
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
   }
 }
