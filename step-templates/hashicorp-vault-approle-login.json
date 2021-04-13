@@ -1,0 +1,75 @@
+{
+    "Id": "e04a9cec-f04a-4da2-849b-1aed0fd408f0",
+    "Name": "HashiCorp Vault - AppRole Login",
+    "Description": "This step logs into a HashiCorp Vault server with the [AppRole](https://www.vaultproject.io/docs/auth/approle) auth method.\n\nThe `client_token` from the response will be made available as a sensitive [Output variable](https://octopus.com/docs/projects/variables/output-variables) named `AppRoleAuthToken` for use in other step templates.\n\nThis step template makes use of the [Rest API](https://www.vaultproject.io/api-docs/auth/approle#login-with-approle), so no other dependencies are needed. \n\n**Required:** \n- The Vault server must be [unsealed](https://www.vaultproject.io/docs/concepts/seal).\n- You must supply both a `RoleId` and `SecretId`.\n\nNotes:\n\n- Tested on both PowerShell Desktop and PowerShell Core.\n",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\n# Variables\n$VAULT_LOGIN_ADDRESS = $OctopusParameters[\"Vault.AppRole.Login.VaultAddress\"]\n$VAULT_LOGIN_API_VERSION = $OctopusParameters[\"Vault.AppRole.Login.ApiVersion\"]\n$VAULT_LOGIN_APPROLE_PATH = $OctopusParameters[\"Vault.AppRole.Login.AppRolePath\"]\n$VAULT_LOGIN_ROLEID = $OctopusParameters[\"Vault.AppRole.Login.RoleID\"]\n$VAULT_LOGIN_SECRETID = $OctopusParameters[\"Vault.AppRole.Login.SecretID\"]\n\n# Validation\nif ([string]::IsNullOrWhiteSpace($VAULT_LOGIN_ADDRESS)) {\n   throw \"Required parameter VAULT_LOGIN_ADDRESS not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($VAULT_LOGIN_API_VERSION)) {\n\tthrow \"Required parameter VAULT_LOGIN_API_VERSION not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($VAULT_LOGIN_APPROLE_PATH)) {\n\tthrow \"Required parameter VAULT_LOGIN_APPROLE_PATH not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($VAULT_LOGIN_ROLEID)) {\n\tthrow \"Required parameter VAULT_LOGIN_ROLEID not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($VAULT_LOGIN_SECRETID)) {\n\tthrow \"Required parameter VAULT_LOGIN_SECRETID not specified\"\n}\n\n# Helper functions\n###############################################################################\nfunction Get-WebRequestErrorBody {\n    param (\n        $RequestError\n    )\n\n    # Powershell < 6 you can read the Exception\n    if ($PSVersionTable.PSVersion.Major -lt 6) {\n        if ($RequestError.Exception.Response) {\n            $reader = New-Object System.IO.StreamReader($RequestError.Exception.Response.GetResponseStream())\n            $reader.BaseStream.Position = 0\n            $reader.DiscardBufferedData()\n            $response = $reader.ReadToEnd()\n\n            return $response | ConvertFrom-Json\n        }\n    }\n    else {\n        return $RequestError.ErrorDetails.Message\n    }\n}\n###############################################################################\n\n$VAULT_LOGIN_ADDRESS = $VAULT_LOGIN_ADDRESS.TrimEnd('/')\n$VAULT_LOGIN_APPROLE_PATH = $VAULT_LOGIN_APPROLE_PATH.TrimStart('/').TrimEnd('/')\n\n# Local variables\n$StepName = $OctopusParameters[\"Octopus.Step.Name\"]\n\ntry\n{\n\t$payload = @{\n    \trole_id = $VAULT_LOGIN_ROLEID\n        secret_id = $VAULT_LOGIN_SECRETID\n    }\n    \n    $uri = \"$VAULT_LOGIN_ADDRESS/$VAULT_LOGIN_API_VERSION/auth/$VAULT_LOGIN_APPROLE_PATH/login\"\n    Write-Verbose \"Making request to $uri\"\n    $response = Invoke-RestMethod -Method Post -Uri $uri -Body ($payload | ConvertTo-Json -Depth 10)\n    \n    if($null -ne $response) {\n    \tSet-OctopusVariable -Name \"AppRoleAuthToken\" -Value $response.auth.client_token -Sensitive\n        Write-Highlight \"Created output variable: ##{Octopus.Action[$StepName].Output.AppRoleAuthToken}\"\n    }\n    else {\n    \tWrite-Error \"Null or Empty response returned from Vault server\" -Category InvalidResult\n    }\n}\ncatch\n{\n\t$ExceptionMessage = $_.Exception.Message\n\t$ErrorBody = Get-WebRequestErrorBody -RequestError $_\n    $Message = \"An error occurred logging in with AppRole: $ExceptionMessage\"\n    if($null -ne $ErrorBody.errors) {\n    \t$AdditionalDetail += $ErrorBody.errors -Join \",\"\n    }\n    else {\n    \t$AdditionalDetail += $ErrorDetails\n    }\n    if (![string]::IsNullOrWhiteSpace($AdditionalDetail)) {\n    \t$Message += \"`n`tDetail: $AdditionalDetail\"\n\t}\n\n    Write-Error $Message -Category ConnectionError\n}"
+    },
+    "Parameters": [
+      {
+        "Id": "bbf1cf96-066a-43e8-8387-24131fa63feb",
+        "Name": "Vault.AppRole.Login.VaultAddress",
+        "Label": "Vault Server URL",
+        "HelpText": "The URL of the Vault instance you are connecting to. Port should be included (The default is `8200`). For example:\n\n\n`https://myvault.local:8200/`",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "bd6ca2f2-2102-40e0-a1e0-36e526393203",
+        "Name": "Vault.AppRole.Login.ApiVersion",
+        "Label": "API version",
+        "HelpText": "All API routes are prefixed with a version e.g. `/v1/`.\n\nSee the [API documentation](https://www.vaultproject.io/api-docs) for further details.",
+        "DefaultValue": "v1",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "v1|v1"
+        }
+      },
+      {
+        "Id": "67c5d1c7-6373-4342-b02b-a7a6fa69402b",
+        "Name": "Vault.AppRole.Login.AppRolePath",
+        "Label": "App Role Path",
+        "HelpText": "The default path is `/approle`. If the AppRole auth method was enabled at a different path, for example `my-path`, then specify `/my-path` instead.",
+        "DefaultValue": "/approle",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "297871f1-a145-4dde-97ba-d7a9a0690cc6",
+        "Name": "Vault.AppRole.Login.RoleID",
+        "Label": "Role ID",
+        "HelpText": "The [RoleID](https://www.vaultproject.io/docs/auth/approle#roleid) of the AppRole.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "4c8ab1b0-36e3-4d19-9a45-557300bb0f06",
+        "Name": "Vault.AppRole.Login.SecretID",
+        "Label": "Secret ID",
+        "HelpText": "The [Secret ID](https://www.vaultproject.io/docs/auth/approle#secretid) of the AppRole.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      }
+    ],
+    "LastModifiedAt": "2021-04-13T08:38:44.521Z",
+    "LastModifiedBy": "harrisonmeister",
+    "$Meta": {
+      "ExportedAt": "2021-04-13T08:40:13.850Z",
+      "OctopusVersion": "2021.1.6966",
+      "Type": "ActionTemplate"
+    },
+    "Category": "hashicorp-vault"
+  }
