@@ -1,0 +1,66 @@
+{
+  "Id": "dd45cba9-a39b-43e0-922e-da9fb7818186",
+  "Name": "Chocolatey - Manage Config",
+  "Description": "Allows managing Chocolatey config.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12\n$chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"Machine\") + \"\\bin\"\nif(-not (Test-Path $chocolateyBin)) {\n    Write-Host \"Environment variable 'ChocolateyInstall' was not found in the system variables. Attempting to find it in the user variables...\"\n    $chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"User\") + \"\\bin\"\n}\n\n$choco = \"$chocolateyBin\\choco.exe\"\n\nif (-not (Test-Path $choco)) {\n    throw \"Chocolatey was not found at $chocolateyBin.\"\n}\n\n# Report the actual version here\n$chocoVersion = & $choco --version\nWrite-Host \"Running Chocolatey version $chocoVersion\"\n\n# default args\n$chocoArgs = @('config', $ChocolateyConfigAction, '--yes')\n\n# we need a source name\nif ([string]::IsNullOrEmpty($ChocolateyConfigName)) {\n    throw \"To manage a feature,  you need to provide a feature name.\"\n}\nelse {\n\t$chocoArgs += \"--name=\"\"'$ChocolateyConfigName'\"\"\"\n}\n\nif ($ChocolateyConfigAction -eq 'set') {\n    if ([string]::IsNullOrEmpty($ChocolateyConfigValue)) {\n        throw 'To set the config, you need to provide a value.'\n    }\n    \n    $chocoArgs += \"--value=\"\"'$ChocolateyConfigValue'\"\"\"\n}\n\n# finally add any other parameters\nif (-not [string]::IsNullOrEmpty($ChocolateyConfigOtherParameters)) {\n\t$chocoArgs += $ChocolateyConfigOtherParameters -split ' '\n}\n\n# execute the command line\nWrite-Host \"Running the command: $choco $chocoArgs\"\n& $choco $chocoArgs",
+    "Octopus.Action.EnabledFeatures": ""
+  },
+  "Parameters": [
+    {
+      "Id": "3d26fd31-9a8a-432d-add8-caee77c88235",
+      "Name": "ChocolateyConfigName",
+      "Label": "(Required) Config Name",
+      "HelpText": "The config name you want to manage. This is a single config name. Multiple config names must be managed in separate steps.\n\nExample:\n\n* _cacheLocation_\n* _commandExeecutionTimeoutSeconds_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5eda17f2-d5e0-4e7b-a005-f540d1854db9",
+      "Name": "ChocolateyConfigAction",
+      "Label": "(Required) Config Action",
+      "HelpText": "The action to perform on the config name.",
+      "DefaultValue": "set",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "set|Set a config\nunset|Unset a config"
+      }
+    },
+    {
+      "Id": "120540e8-0915-469f-bfc7-5ab0f8dec244",
+      "Name": "ChocolateyConfigValue",
+      "Label": "(Required / Optional)",
+      "HelpText": "The value of the config name you want  to set. This is not required if the action is 'unset' and required if the action is 'set'.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8ecc2ac2-4566-4b98-a979-67b755971460",
+      "Name": "ChocolateyConfigOtherParameters",
+      "Label": "(Optional) Other Chocolatey Parameters",
+      "HelpText": "Other parameters to pass to Chocolatey. You can pass multiple parameters separated by a space.\n\nExamples:\n\n* _--debug_\n* _--debug_ _--verbose_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-08-13T20:03:44.800Z",
+    "OctopusVersion": "2020.3.2",
+    "Type": "ActionTemplate"
+  },
+  "LastModfiedAt": "2020-08-13T20:03:44.800Z",
+  "LastModifiedBy": "pauby",
+  "Category": "chocolatey"
+}

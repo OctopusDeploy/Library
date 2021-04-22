@@ -1,0 +1,62 @@
+{
+  "Id": "236ee295-056e-44c1-84ab-da4ae6bd8283",
+  "Name": "SQL - Delete Database",
+  "Description": "Deletes a database from the server without using SMO.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,  
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedDatabaseName = $deleteDatabaseName.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if exists then delete for $createDatabaseName\"\n$command.CommandText = \"IF EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')\n        drop database [$deleteDatabaseName]\"            \n$command.ExecuteNonQuery()\n\n\nWrite-Host \"Successfully dropped the database $createDatabaseName\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+  },
+  "Parameters": [
+    {
+      "Id": "59ae41b4-0f38-45b9-b9d2-2e07dd5c7f6e",
+      "Name": "createSqlServer",
+      "Label": "SQL Server",
+      "HelpText": "The SQL Server to perform the work on",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "193c2440-fdb4-4d67-94c2-99a1292c481c",
+      "Name": "createSqlLoginUserWhoHasCreateUserRights",
+      "Label": "SQL Login",
+      "HelpText": "The login of the user who has permissions to create a database.\n\nLeave blank for integrated security",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3a1090dc-8157-471b-b4d2-f47677f38790",
+      "Name": "createSqlLoginPasswordWhoHasRights",
+      "Label": "SQL Password",
+      "HelpText": "The password of the user who has permissions to create SQL Logins\n\nLeave blank for integrated security",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "5b686a64-5358-4840-8b51-2097448f57dd",
+      "Name": "deleteDatabaseName",
+      "Label": "Database To Delete",
+      "HelpText": "The name of the database to delete",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2018-07-11T20:39:04.366Z",
+  "LastModifiedBy": "OctopusBob",
+  "$Meta": {
+    "ExportedAt": "2018-07-11T20:39:04.366Z",
+    "OctopusVersion": "2018.6.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

@@ -1,0 +1,123 @@
+{
+  "Id": "59528692-2107-45eb-9fde-55e7329822a9",
+  "Name": "Add or update Azure Load Balancer Health Probe",
+  "Description": null,
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Azure.AccountId": "#{Azure.LoadBalancerCreateHealthProbe.Account}",
+    "Octopus.Action.Script.ScriptBody": "\n\nWrite-Output \"Resource group name: $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.ResourceGroupName'])\"\nWrite-Output \"Load balancer name : $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.LoadBalancerName'])\"\nWrite-Output \"Health probe name: $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.HealthProbeName'])\"\n\nWrite-Output \"Protocol: $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Protocol'])\"\nWrite-Output \"Path: $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Path'])\"\nWrite-Output \"Port: $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Port'])\"\nWrite-Output \"Interval: $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Interval'])\"\nWrite-Output \"Probe count: $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.ProbeCount'])\"\n\n\n$loadBalancer = Get-AzureRmLoadBalancer -ResourceGroupName $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.ResourceGroupName'] -name $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.LoadBalancerName']\n$healthProbe = Get-AzureRmLoadBalancerProbeConfig -name $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.HealthProbeName'] -LoadBalancer $loadBalancer  -ErrorAction:SilentlyContinue\n\nif($healthProbe -eq $null)\n{\n\t#Create healthProbe\n\tWrite-Output \"Creating healt probe: $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.HealthProbeName']) on load balancer: $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.LoadBalancerName']) in resource group: $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.ResourceGroupName'])\"\n\t\n\tif($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Protocol'] -eq \"http\")\n\t{\n\t\t#path only used in http\n\t\t$loadBalancer  | Add-AzureRmLoadBalancerProbeConfig -Name $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.HealthProbeName'] `\n\t\t\t-RequestPath  $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Path'] `\n\t\t\t-Protocol $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Protocol'] `\n\t\t\t-Port $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Port']  `\n\t\t\t-IntervalInSeconds $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Interval'] `\n\t\t\t-ProbeCount $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.ProbeCount'] \n\t}\n\telse\n\t{\n\t\t# Path is not part of tcp config\n\t\t$loadBalancer  | Add-AzureRmLoadBalancerProbeConfig -Name $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.HealthProbeName'] `\n\t\t\t-Protocol $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Protocol'] `\n\t\t\t-Port $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Port']  `\n\t\t\t-IntervalInSeconds $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Interval'] `\n\t\t\t-ProbeCount $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.ProbeCount']\n\t}\n}\nelse\n{\n\t#Update healthProbe\n\tWrite-Output \"Updating healt probe: $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.HealthProbeName']) on load balancer: $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.LoadBalancerName']) in resource group: $($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.ResourceGroupName'])\"\n\t\n\tif($OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Protocol'] -eq \"http\")\n\t{\n\t\t#path only used in http\n\t\t$loadBalancer  | Set-AzureRmLoadBalancerProbeConfig -Name $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.HealthProbeName'] `\n\t\t\t-RequestPath  $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Path'] `\n\t\t\t-Protocol $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Protocol'] `\n\t\t\t-Port $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Port']  `\n\t\t\t-IntervalInSeconds $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Interval'] `\n\t\t\t-ProbeCount $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.ProbeCount'] \n\t}\n\telse\n\t{\n\t\t# Path is not part of tcp config\n\t\t$loadBalancer  | Set-AzureRmLoadBalancerProbeConfig -Name $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.HealthProbeName'] `\n\t\t\t-Protocol $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Protocol'] `\n\t\t\t-Port $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Port']  `\n\t\t\t-IntervalInSeconds $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.Interval'] `\n\t\t\t-ProbeCount $OctopusParameters['Azure.LoadBalancerCreateHealthProbe.ProbeCount']\n\t}\n}\n\nWrite-Host \"Save changes to loadbalancer\"\nSet-AzureRmLoadBalancer -LoadBalancer $loadBalancer"
+  },
+  "Parameters": [
+    {
+      "Id": "e720d0e8-14d7-47cc-96a9-b074aa2dcf14",
+      "Name": "Azure.LoadBalancerCreateHealthProbe.Account",
+      "Label": "Account",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "87a93c04-2395-4a73-9999-6b6dacc546fe",
+      "Name": "Azure.LoadBalancerCreateHealthProbe.ResourceGroupName",
+      "Label": "Resource group name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "d155c5eb-7cd8-4f57-b3ca-d6c32c7403e1",
+      "Name": "Azure.LoadBalancerCreateHealthProbe.LoadBalancerName",
+      "Label": "Load balancer name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "79619a6d-1d28-4900-bc24-1c597c649bf4",
+      "Name": "Azure.LoadBalancerCreateHealthProbe.HealthProbeName",
+      "Label": "Health probe name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "beed45f9-6c8d-424b-a072-57c0d1657437",
+      "Name": "Azure.LoadBalancerCreateHealthProbe.Protocol",
+      "Label": "Protocol",
+      "HelpText": null,
+      "DefaultValue": "tcp",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "http|http\ntcp|tcp"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "403a32d1-17c5-4ee9-8095-25919369ded3",
+      "Name": "Azure.LoadBalancerCreateHealthProbe.Path",
+      "Label": "Path",
+      "HelpText": null,
+      "DefaultValue": "/",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "6c7d97da-264c-402d-b207-239922c547ef",
+      "Name": "Azure.LoadBalancerCreateHealthProbe.Port",
+      "Label": "Port",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "a5bfd24b-1249-4383-8204-336abc43a435",
+      "Name": "Azure.LoadBalancerCreateHealthProbe.Interval",
+      "Label": "Interval",
+      "HelpText": "interval in seconds",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "033d0e37-30f9-49c8-b012-c18416596624",
+      "Name": "Azure.LoadBalancerCreateHealthProbe.ProbeCount",
+      "Label": "Unhealty threshold",
+      "HelpText": "number of consecutive failures",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "prebenh",
+  "$Meta": {
+    "ExportedAt": "2018-05-04T12:46:43.193Z",
+    "OctopusVersion": "2018.4.7",
+    "Type": "ActionTemplate"
+  },
+  "Logo" : "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",
+  "Category": "azure"
+}

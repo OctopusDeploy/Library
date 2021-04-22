@@ -1,0 +1,45 @@
+{
+  "Id": "b15c6b3d-20a1-4059-b0e4-75bef1ff41d5",
+  "Name": ".NET - Check .NET Framework Version",
+  "Description": "Check if given .NET framework version (or greater) is installed.",
+  "ActionType": "Octopus.Script",
+  "Version": 8,
+  "CommunityActionTemplateId": "CommunityActionTemplates-561",
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "# This script is based on MSDN: https://msdn.microsoft.com/en-us/library/hh925568\n\n$releaseVersionMapping = @{\n    378389 = '4.5'     # 4.5\n    378675 = '4.5.1'   # 4.5.1 installed with Windows 8.1\n    378758 = '4.5.1'   # 4.5.1 installed on Windows 8, Windows 7 SP1, or Windows Vista SP2\n    379893 = '4.5.2'   # 4.5.2\n    393295 = '4.6'     # 4.6 installed with Windows 10\n    393297 = '4.6'     # 4.6 installed on all other Windows OS versions\n    394254 = '4.6.1'   # 4.6.1 installed on Windows 10\n    394271 = '4.6.1'   # 4.6.1 installed on all other Windows OS versions\n    394802 = '4.6.2'   # 4.6.2 installed on Windows 10\n    394806 = '4.6.2'   # 4.6.2 installed on all other Windows OS versions\n    460798 = '4.7'     # 4.7 installed on Windows 10\n    460805 = '4.7'     # 4.7 installed on all other Windows OS versions\n    461308 = '4.7.1'   # 4.7.1 installed on Windows 10\n    461310 = '4.7.1'   # 4.7.1 installed on all other Windows OS versions\n    461808 = '4.7.2'   # 4.7.2 installed on Windows 10\n    461814 = '4.7.2'   # 4.7.2 installed on all other Windows OS versions\n    528040 = '4.8'     #4.8 installed on Windows 10\n    528049 = '4.8'     #4.8 installed on all other Windows OS versions1\n    528372 = '4.8'     # 4.8 Windows 10 May 2020 Update\n}\n\nfunction Get-DotNetFrameworkVersions() {\n    $dotNetVersions = @()\n    if ($baseKey = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', '')) {\n        # To find .NET Framework versions (.NET Framework 1-4)$dotNetVersions\n        if ($ndpKey = $baseKey.OpenSubKey('SOFTWARE\\Microsoft\\NET Framework Setup\\NDP')) {\n            foreach ($versionKeyName in $ndpKey.GetSubKeyNames()) {\n                if ($versionKeyName -match 'v[2|3]') {\n                    $versionKey = $ndpKey.OpenSubKey($versionKeyName)\n                    if ($versionKey.GetValue('Version', '') -ne '') {\n                        $version = [version] ($versionKey.GetValue('Version'))\n                        $dotNetVersions += \"$($version.Major).$($version.Minor)\"\n                    }\n                }\n            }\n        \n            # for .NET 4.0\n            if ($ndp40Key = $ndpKey.OpenSubKey(\"v4.0\")) {\n                foreach ($subKeyName in $ndp40Key.GetSubKeyNames()) {\n                    $versionKey = $ndp40Key.OpenSubKey($subKeyName)\n                    $version = [version]($versionKey.GetValue('Version', ''))\n                    $dotNetVersions += \"$($version.Major).$($version.Minor)\"\n                }\n            }\n        }\n\n        # To find .NET Framework versions (.NET Framework 4.5 and later)\n        if ($ndp4Key = $baseKey.OpenSubKey('SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full')) {\n            $releaseKey = $ndp4Key.GetValue('Release')\n            $dotNetVersions += $releaseVersionMapping[$releaseKey]\n        }\n    }\n    return $dotNetVersions\n}\n\n$targetVersion = $OctopusParameters['TargetVersion'].Trim()\n$exact = [boolean]::Parse($OctopusParameters['Exact'])\n\n$matchedVersions = Get-DotNetFrameworkVersions | Where-Object { if ($exact) { $_ -eq $targetVersion } else { $_ -ge $targetVersion } }\nif (!$matchedVersions) { \n    throw \"Can't find .NET $targetVersion installed in the machine.\"\n}\n$matchedVersions | foreach { Write-Host \"Found .NET $_ installed in the machine.\" }",
+    "Octopus.Action.RunOnServer": "false"
+  },
+  "Parameters": [
+    {
+      "Id": "e902b08b-2fc3-4f62-aec0-5225533cace8",
+      "Name": "TargetVersion",
+      "Label": "Target .NET framework version",
+      "HelpText": "The target .NET framework version you expect to be installed in the machine. For example, 4.5.2.",
+      "DefaultValue": "4.5.2",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "205e297b-c72c-4d9b-a6fe-9a20ab62d5b0",
+      "Name": "Exact",
+      "Label": "Exact",
+      "HelpText": "If you check \"Exact\", it means the installed .NET framework version MUST match target version.\n\nOtherwise, as long as the installed .NET framework version is greater than or equal to target version, the check will pass.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2019-06-06T07:39:33.409Z",
+    "OctopusVersion": "2018.4.1",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "hullscotty1986",
+  "Category": "aspnet"
+}

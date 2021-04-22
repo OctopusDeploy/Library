@@ -1,11 +1,11 @@
 {
   "Id": "93a10982-f675-42cd-ac3a-46ef28a46afa",
   "Name": "PagerDuty - Open Maintenance Window",
-  "Description": "Open a new maintenance window for the specified services.\n\nNo new incidents will be created for a service that is currently in maintenance.\n\nThis script sets an output variable **WindowId** that can be used in the _PagerDuty - Close Maintenance Window_ template.",
+  "Description": "Open a new maintenance window for the specified services, using the PagerDuty v2 API.\n\nNo new incidents will be created for a service that is currently in maintenance.\n\nThis script sets an output variable **WindowId** that can be used in the _PagerDuty - Close Maintenance Window_ template.",
   "ActionType": "Octopus.Script",
-  "Version": 15,
+  "Version": 16,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "param(\r\n    [array]$ServiceIds = @(\"\"),\r\n    [string]$RequesterId = \"\",\r\n    [string]$Description = \"\",\r\n    [int]$Minutes = 10,\r\n    [string]$Subdomain = \"\",\r\n    [string]$Token = \"\"\r\n) \r\n\r\n$ErrorActionPreference = \"Stop\" \r\n\r\nfunction Get-Param($Name, [switch]$Required, $Default) {\r\n    $Result = $null\r\n\r\n    if ($OctopusParameters -ne $null) {\r\n        $Result = $OctopusParameters[$Name]\r\n    }\r\n\r\n    if ($Result -eq $null) {\r\n        $variable = Get-Variable $Name -EA SilentlyContinue   \r\n        if ($variable -ne $null) {\r\n            $Result = $variable.Value\r\n        }\r\n    }\r\n\r\n    if ($Result -eq $null -or $Result -eq \"\") {\r\n        if ($Required) {\r\n            throw \"Missing parameter value $Name\"\r\n        } else {\r\n            $Result = $Default\r\n        }\r\n    }\r\n\r\n    return $Result\r\n}\r\n\r\n& {\r\n    param([array]$ServiceIds, [string]$RequesterId, [string]$Description, [int]$Minutes, [string]$Subdomain, [string]$Token)\r\n\r\n    Write-Host \"Opening PagerDuty window for $Description\"\r\n\r\n    try {\r\n        $ArrayOfServices = $ServiceIds.split(\",\") | foreach { $_.trim() }\r\n        $Start = ((Get-Date)).ToString(\"yyyy-MM-ddTHH:mm:sszzzzZ\");\r\n        $End = ((Get-Date).AddMinutes($Minutes)).ToString(\"yyyy-MM-ddTHH:mm:sszzzzZ\");\r\n\r\n        Write-Host \"Window will be open from $Start -> $End\"\r\n\r\n        $Post = @{\r\n            'maintenance_window'= @{\r\n                'start_time' = $Start\r\n                'end_time' = $End\r\n                'description' = $Description\r\n                'service_ids' = @($ArrayOfServices)\r\n            }\r\n            'requester_id' = $RequesterId\r\n        } | ConvertTo-Json \r\n\r\n        $ResponseObj = Invoke-RestMethod -Uri (\"https://$Subdomain.pagerduty.com/api/v1/maintenance_windows\") -method Post -Body $Post -ContentType \"application/json\" -Headers @{\"Authorization\"=(\"Token token=$Token\")}\r\n        $WindowId = $ResponseObj.maintenance_window.id\r\n\r\n        Write-Host \"Window Id $WindowId created\"\r\n\r\n        if(Get-Command -name \"Set-OctopusVariable\" -ErrorAction SilentlyContinue) {\r\n            Set-OctopusVariable -name \"WindowId\" -value $WindowId\r\n        } else {\r\n            Write-Host \"Octopus output variable not set\"\r\n        }\r\n    } catch [System.Exception] {\r\n        Write-Host \"Error while opening PagerDuty window\"\r\n        Write-Host $_.Exception.Message\r\n        \r\n        $ResponseStream = $_.Exception.Response.GetResponseStream()\r\n        $Reader = New-Object System.IO.StreamReader($ResponseStream)\r\n        $Reader.ReadToEnd() | Write-Host\r\n        \r\n        Exit 1\r\n    }\r\n} (Get-Param 'ServiceIds' -Required) (Get-Param 'RequesterId' -Required) (Get-Param 'Description' -Required) (Get-Param 'Minutes' -Required) (Get-Param 'Subdomain' -Required) (Get-Param 'Token' -Required)",
+    "Octopus.Action.Script.ScriptBody": "param(\n    [array]$ServiceIds = @(\"\"),\n    [string]$RequesterId = \"\",\n    [string]$Description = \"\",\n    [int]$Minutes = 10,\n    [string]$Token = \"\"\n) \n\n$ErrorActionPreference = \"Stop\" \n\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $Result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $Result = $OctopusParameters[$Name]\n    }\n\n    if ($Result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue   \n        if ($variable -ne $null) {\n            $Result = $variable.Value\n        }\n    }\n\n    if ($Result -eq $null -or $Result -eq \"\") {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        } else {\n            $Result = $Default\n        }\n    }\n\n    return $Result\n}\n\n& {\n    param([array]$ServiceIds, [string]$RequesterId, [string]$Description, [int]$Minutes, [string]$Token)\n\n    Write-Host \"Opening PagerDuty window for $Description\"\n\n    try {\n        $ArrayOfServices = $ServiceIds.split(\",\") | foreach { $_.trim() }\n        $Start = ((Get-Date)).ToString(\"yyyy-MM-ddTHH:mm:sszzzzZ\");\n        $End = ((Get-Date).AddMinutes($Minutes)).ToString(\"yyyy-MM-ddTHH:mm:sszzzzZ\");\n        $ServiceIdArray = @()\n        \n        foreach($ServiceId in $ArrayOfServices){\n        \t$ServiceIdArray += @{\"id\"=$ServiceId; \"type\"=\"service_reference\"}\n        }\n        \n        $Uri = \"https://api.pagerduty.com/maintenance_windows\"\n        $Headers = @{\n          \"Authorization\" = \"Token token=$Token\"\n          \"Accept\" = \"application/vnd.pagerduty+json;version=2\"\n          \"From\" = $RequesterId\n\t\t}\n\n        Write-Host \"Window will be open from $Start -> $End\"\n\n        $Post = @{\n            maintenance_window= @{\n            \ttype = 'maintenance_window'\n                start_time = $Start\n                end_time = $End\n                description = $Description\n                services = $ServiceIdArray\n            }\n        } | ConvertTo-Json -Depth 4\n\n        $ResponseObj = Invoke-RestMethod -Uri $Uri -Method Post -Body $Post -ContentType \"application/json\" -Headers $Headers\n        $WindowId = $ResponseObj.maintenance_window.id\n\n        Write-Host \"Window Id $WindowId created\"\n\n        if(Get-Command -name \"Set-OctopusVariable\" -ErrorAction SilentlyContinue) {\n            Set-OctopusVariable -name \"WindowId\" -value $WindowId\n        } else {\n            Write-Host \"Octopus output variable not set\"\n        }\n    } catch [System.Exception] {\n        Write-Host \"Error while opening PagerDuty window\"\n        Write-Host $_.Exception.Message\n        \n        $ResponseStream = $_.Exception.Response.GetResponseStream()\n        $Reader = New-Object System.IO.StreamReader($ResponseStream)\n        $Reader.ReadToEnd() | Write-Host\n        \n        Exit 1\n    }\n} (Get-Param 'ServiceIds' -Required) (Get-Param 'RequesterId' -Required) (Get-Param 'Description' -Required) (Get-Param 'Minutes' -Required) (Get-Param 'Token' -Required)",
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false"
@@ -14,7 +14,7 @@
     {
       "Name": "Minutes",
       "Label": "Minutes",
-      "HelpText": "The length of the maintenance window in minutes.",
+      "HelpText": "Please set an estimated number of minutes for the maintenance window. The maintenance window will remain open for this duration unless it's proactively closed sooner.",
       "DefaultValue": "60",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -23,8 +23,8 @@
     {
       "Name": "RequesterId",
       "Label": "RequesterId",
-      "HelpText": "The user id of the user creating the maintenance window.\n\nFound here: https://mydomain.pagerduty.com/users/**ABC123**",
-      "DefaultValue": null,
+      "HelpText": "Please configure an email address of the user creating the maintenance window.\n\nExample: Octopus@mydomain.com",
+      "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
@@ -32,8 +32,8 @@
     {
       "Name": "Token",
       "Label": "Token",
-      "HelpText": "The API token of the PagerDuty instance.\n\nFound here: https://mydomain.pagerduty.com/api_keys",
-      "DefaultValue": null,
+      "HelpText": "Please supply the API token of your PagerDuty instance.\n\nFound here: https://mydomain.pagerduty.com/api_keys",
+      "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
@@ -41,7 +41,7 @@
     {
       "Name": "Description",
       "Label": "Description",
-      "HelpText": "A description for this maintenance window.",
+      "HelpText": "Please supply a short description for this maintenance window.",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -50,8 +50,8 @@
     {
       "Name": "ServiceIds",
       "Label": "ServiceIds",
-      "HelpText": "A comma separated list of the service ids that are affected by this maintenance window.\n\nFound here: https://mydomain.pagerduty.com/services/**ABC123**\n\nExample: ABC123, ABC456",
-      "DefaultValue": null,
+      "HelpText": "Please supply a comma separated list of the PagerDuty service ids that will be included in this maintenance window.\n\nFound here: https://mydomain.pagerduty.com/services/**ABC123**\n\nExample: ABC123, ABC456",
+      "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
@@ -66,11 +66,11 @@
       }
     }
   ],
-  "LastModifiedOn": "2016-03-09T23:57:49.706+00:00",
-  "LastModifiedBy": "nskerl",
+  "LastModifiedOn": "2020-07-23T08:13:54.382Z",
+  "LastModifiedBy": "tfbryan",
   "$Meta": {
-    "ExportedAt": "2016-03-09T23:57:49.706+00:00",
-    "OctopusVersion": "3.3.2",
+    "ExportedAt": "2020-07-23T08:13:54.382Z",
+    "OctopusVersion": "2020.1.14",
     "Type": "ActionTemplate"
   },
   "Category": "pagerduty"

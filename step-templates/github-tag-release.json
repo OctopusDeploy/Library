@@ -3,9 +3,9 @@
   "Name": "GitHub - Create Release",
   "Description": "Create a release for a Github Repository.",
   "ActionType": "Octopus.Script",
-  "Version": 4,
+  "Version": 5,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\n$formattedVersionNumber = [string]::Format(\"v{0}\", $versionNumber)\n$isDraft = [bool]::Parse($draft)\n$isPrerelease = [bool]::Parse($preRelease)\n\n$releaseData = @{\n    tag_name = $formattedVersionNumber;\n    target_commitish = $commitId;\n    name = $formattedVersionNumber;\n    body = $releaseNotes;\n    draft = $isDraft;\n    prerelease = $isPrerelease;\n}\n\n$releaseParams = @{\n    Uri = \"https://api.github.com/repos/$gitHubUsername/$gitHubRepository/releases\";\n    Method = 'POST';\n    Headers = @{\n        Authorization = 'Basic ' + [Convert]::ToBase64String(\n            [Text.Encoding]::ASCII.GetBytes($gitHubApiKey + \":x-oauth-basic\")\n        );\n    }\n    ContentType = 'application/json';\n    Body = (ConvertTo-Json $releaseData -Compress)\n}\n\nWrite-Host \"Creating release $formattedVersionNumber for $commitId.\"\n$result = Invoke-RestMethod @releaseParams\n\nWrite-Host \"Release successfully created.\"\n$result",
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\n$formattedVersionNumber = [string]::Format(\"v{0}\", $versionNumber)\n$isDraft = [bool]::Parse($draft)\n$isPrerelease = [bool]::Parse($preRelease)\n\n$releaseData = @{\n    tag_name = $formattedVersionNumber;\n    target_commitish = $commitId;\n    name = $formattedVersionNumber;\n    body = $releaseNotes;\n    draft = $isDraft;\n    prerelease = $isPrerelease;\n}\n$json = (ConvertTo-Json $releaseData -Compress)\n$releaseParams = @{\n    Uri = \"https://api.github.com/repos/$gitHubUsername/$gitHubRepository/releases\";\n    Method = 'POST';\n    Headers = @{\n        Authorization = 'Basic ' + [Convert]::ToBase64String(\n            [Text.Encoding]::ASCII.GetBytes($gitHubApiKey + \":x-oauth-basic\")\n        );\n    }\n    ContentType = 'application/json; charset=utf-8';\n    Body = [System.Text.Encoding]::UTF8.GetBytes($json)\n}\n\nWrite-Host \"Creating release $formattedVersionNumber for $commitId.\"\n$result = Invoke-RestMethod @releaseParams\n\nWrite-Host \"Release successfully created.\"\n$result",
     "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
@@ -83,8 +83,8 @@
       }
     }
   ],
-  "LastModifiedOn": "2018-02-28T02:37:27.534+00:00",
-  "LastModifiedBy": "alfhenrik",
+  "LastModifiedOn": "2020-06-09T08:00:00.000+00:00",
+  "LastModifiedBy": "dario-l",
   "$Meta": {
     "ExportedAt": "2018-02-28T02:37:27.534+00:00",
     "OctopusVersion": "2018.2.6",

@@ -1,0 +1,92 @@
+{
+  "Id": "140d22e8-abe9-4a32-aab7-20af667c6255",
+  "Name": "Azure Website - Load App Settings From File (Geta)",
+  "Description": "Loads app settings from a json file (e.g. local.settings.json) which is also json-transformed to inject environment-specific values.",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 7,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "31f79f978a2e46f9b3add02f695e672b",
+      "Name": "LoadAppSettingsFromFile.Package",
+      "PackageId": "#{Parameters.PackageId}",
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True"
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Azure.AccountId": "#{Azure.Subscription.Name}",
+    "Octopus.Action.Package.JsonConfigurationVariablesEnabled": "True",
+    "Octopus.Action.EnabledFeatures": "Octopus.Features.JsonConfigurationVariables",
+    "Octopus.Action.Package.JsonConfigurationVariablesTargets": "#{Parameters.SettingsFile.Path}",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.PackageId": "#{Utilities.PackageId}",
+    "Octopus.Action.Package.FeedId": "feeds-builtin",
+    "Octopus.Action.Package.DownloadOnTentacle": "False",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "Function Get-Parameter($Name, $Required, $Default, [switch]$FailOnValidate) {\n    $result = $null\n    $errMessage = [string]::Empty\n\n    If ($null -ne $OctopusParameters) {\n        $result = $OctopusParameters[$Name]\n        Write-Host (\"Octopus parameter value for \" + $Name + \": \" + $result)\n    }\n\n    If ($null -eq $result) {\n        $variable = Get-Variable $Name -EA SilentlyContinue\n        if ($null -ne $variable) {\n            $result = $variable.Value\n        }\n    }\n\n    If ($null -eq $result) {\n        If ($Required) {\n            $errMessage = \"Mandatory parameter '$Name' not specified\"\n        }\n        Else {\n            $result = $Default\n        }\n    } \n\n    If (-Not [string]::IsNullOrEmpty($errMessage)) {\n        If ($FailOnValidate) {\n            Throw $errMessage\n        }\n        Else {\n            Write-Warning $errMessage\n        }\n    }\n\n    return $result\n}\n\nFunction Main(\n    [Parameter(Mandatory = $true)][string] $azureResourceGroupName,\n    [Parameter(Mandatory = $true)][string] $azureWebAppName,\n    [Parameter(Mandatory = $true)][string] $azureSettingsFilePath,\n    [Parameter(Mandatory = $false)][string] $azureDeploySlotName = $null\n) {\n    Write-Host \"Start AzureLoadAppSettingsFromFile\"\n\n    If ((Test-Path $azureSettingsFilePath) -ne $true) {\n        Write-Warning \"Settings file '$azureSettingsFilePath' not found!\"\n        Exit 0\n    }\n\n    $settingsJson = Get-Content -Raw -Path $azureSettingsFilePath | ConvertFrom-Json\n\n    If (($settingsJson -eq $null) -or ($settingsJson.Values -eq $null)) {\n        Write-Warning \"Settings file '$azureSettingsFilePath' doesn't contain Values object. Unable to load app settings!\"\n        Exit 0\n    }\n\n    # Parse app settings into a hashtable object\n\n    $settingsValues = $settingsJson.Values\n\n    $appSettings = @{}\n    $settingsValues.psobject.properties | Foreach { $appSettings[$_.Name] = $_.Value }\n\n    # Set app settings for either slot or a webapp\n\n    If ([string]::IsNullOrEmpty($azureDeploySlotName)) {\n        Set-AzureRmWebApp -Name $azureWebAppName -ResourceGroupName $azureResourceGroupName -AppSettings $appSettings\n    } Else {\n        Set-AzureRmWebAppSlot -Name $azureWebAppName -ResourceGroupName $azureResourceGroupName -AppSettings $appSettings -Slot $azureDeploySlotName\n    }\n\n    Write-Host \"End AzureLoadAppSettingsFromFile\"\n}\n\n& Main `\n    -azureResourceGroupName (Get-Parameter \"Parameters.ResourceGroup.Name\" $true \"\" $true) `\n    -azureWebAppName (Get-Parameter \"Parameters.WebApp.Name\" $true \"\" $true) `\n    -azureSettingsFilePath (Get-Parameter \"Parameters.SettingsFile.Path\" $true \"\" $true) `\n    -azureDeploySlotName (Get-Parameter \"Parameters.DeploySlot.Name\" $false \"\" $true)"
+  },
+  "Parameters": [
+    {
+      "Id": "e21c4265-7e92-4893-a359-3d8c4b0223c2",
+      "Name": "Parameters.ResourceGroup.Name",
+      "Label": "Resource group name",
+      "HelpText": "Name of the target resource group.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4485ab2e-2003-4fab-814f-90ce9a338cce",
+      "Name": "Parameters.WebApp.Name",
+      "Label": "Webapp / function name",
+      "HelpText": "Name of the target webapp.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f589143a-3f46-4a2b-b14f-02469ed80c19",
+      "Name": "Parameters.SettingsFile.Path",
+      "Label": "Settings file path",
+      "HelpText": "Path of the JSON settings file relative to script directory. Or in most of the cases easiest is to use Octopus Action variable for the extract path: `#{Octopus.Action.Package[LoadAppSettingsFromFile.Package].ExtractedPath}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "fb46e50c-283a-4d7d-b4ec-2a171f76d8c4",
+      "Name": "Parameters.DeploySlot.Name",
+      "Label": "Deploy slot name",
+      "HelpText": "Name of the deploy slot. Production slot will be updated if left blank.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "81b491a9-e1f5-4b22-b9d2-22df2bb60686",
+      "Name": "Parameters.PackageId",
+      "Label": "Package Id",
+      "HelpText": "Id of the referenced package which when extracted might contain the settings file.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "sarbis",
+  "$Meta": {
+    "ExportedAt": "2019-01-22T09:58:08.811Z",
+    "OctopusVersion": "2018.10.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "azure"
+}

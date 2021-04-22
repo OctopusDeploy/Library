@@ -1,0 +1,83 @@
+{
+  "Id": "771ab2f2-9c27-43a8-be13-6c7c92b435fb",
+  "Name": "SQL - Create Database If Not Exists",
+  "Description": "Creates a database if the database does not exist without using SMO.",
+  "ActionType": "Octopus.Script",
+  "Version": 3,  
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n$command.CommandTimeout = $createCommandTimeout\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedDatabaseName = $createDatabaseName.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create for $createDatabaseName\"\n$command.CommandText = \"IF NOT EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')\n        create database [$createDatabaseName]\"\n        \nif (![string]::IsNullOrEmpty($createAzureEdition))\n{\n\t$command.CommandText += (\"`r`n (EDITION = '{0}');\" -f $createAzureEdition)\n}\n\n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createDatabaseName\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+  },
+  "Parameters": [
+    {
+      "Id": "1ab13f1f-fc67-4042-b8ec-04d2cc552bc5",
+      "Name": "createSqlServer",
+      "Label": "SQL Server",
+      "HelpText": "The SQL Server to perform the work on",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f66c4de1-d7d7-4832-be00-f58b10ec3d7b",
+      "Name": "createSqlLoginUserWhoHasCreateUserRights",
+      "Label": "SQL Login",
+      "HelpText": "The login of the user who has permissions to create a database.\n\nLeave blank for integrated security",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3041c36f-8a5a-472f-b59f-bd6a4d914d21",
+      "Name": "createSqlLoginPasswordWhoHasRights",
+      "Label": "SQL Password",
+      "HelpText": "The password of the user who has permissions to create SQL Logins\n\nLeave blank for integrated security",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "2ce68c75-0c31-4410-a5c6-d0df6dcd4fa2",
+      "Name": "createDatabaseName",
+      "Label": "Database to create",
+      "HelpText": "The name of the database to create",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e56f7e39-09da-4bf2-84a6-703fa840746c",
+      "Name": "createCommandTimeout",
+      "Label": "Command timeout",
+      "HelpText": "Number of seconds before throwing a timeout error.",
+      "DefaultValue": "30",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ead6dae9-418f-405d-9763-1532c2820474",
+      "Name": "createAzureEdition",
+      "Label": "Azure database edition",
+      "HelpText": "Defines the database edition for Azure SQL Databases, leave blank if not using Azure.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "basic|Basic Edition\nstandard|Standard Edition\npremium|Premium Edition\ngeneralpurpose|General Purpose Edition\nbusinesscritical|Business Critical Edition\nhyperscale|Hyperscale Edition"
+      }
+    }
+  ],
+  "LastModifiedOn": "2019-06-17T17:24:39.877Z",
+  "LastModifiedBy": "OctopusBob",
+  "$Meta": {
+    "ExportedAt": "2019-06-17T17:24:39.877Z",
+    "OctopusVersion": "2019.5.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

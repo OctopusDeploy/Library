@@ -1,17 +1,14 @@
 {
   "Id": "f5cebc0a-cc16-4876-9f72-bfbd513e6fdd",
   "Name": "HTTP - Test URL",
-  "Description": "Makes a GET request to a HTTP(S) end point and verifies that a particular status code and response (optional) is returned within a specified period of time",
+  "Description": "Makes a GET request to a HTTP(S) end point and verifies that a particular status code and (optional) response is returned within a specified period of time.",
   "ActionType": "Octopus.Script",
-  "Version": 13,
+  "Version": 17,
+  "Packages": [],
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$uri = $OctopusParameters['Uri']\r\n$customHostHeader = $OctopusParameters['CustomHostHeader']\r\n$expectedCode = [int] $OctopusParameters['ExpectedCode']\r\n$timeoutSeconds = [int] $OctopusParameters['TimeoutSeconds']\r\n$Username = $OctopusParameters['AuthUsername']\r\n$Password = $OctopusParameters['AuthPassword']\r\n$UseWindowsAuth = [System.Convert]::ToBoolean($OctopusParameters['UseWindowsAuth'])\r\n$ExpectedResponse = $OctopusParameters['ExpectedResponse']\r\n\r\n\r\nWrite-Host \"Starting verification request to $uri\"\r\nif ($customHostHeader)\r\n{\r\n    Write-Host \"Using custom host header $customHostHeader\"\r\n}\r\n\r\nWrite-Host \"Expecting response code $expectedCode.\"\r\nWrite-Host \"Expecting response: $ExpectedResponse.\"\r\n\r\n\r\n$timer = [System.Diagnostics.Stopwatch]::StartNew()\r\n$success = $false\r\ndo\r\n{\r\n    try\r\n    {\r\n        if ($Username -and $Password -and $UseWindowsAuth)\r\n        {\r\n            Write-Host \"Making request to $uri using windows authentication for user $Username\"\r\n            $request = [system.Net.WebRequest]::Create($uri)\r\n            $Credential = New-Object System.Management.Automation.PSCredential -ArgumentList $Username, $(ConvertTo-SecureString -String $Password -AsPlainText -Force)\r\n            $request.Credentials = $Credential \r\n            \r\n            if ($customHostHeader)\r\n            {\r\n                $request.Host = $customHostHeader\r\n            }\r\n\r\n            try\r\n            {\r\n                $response = $request.GetResponse()\r\n            }\r\n            catch [System.Net.WebException]\r\n            {\r\n                Write-Host \"Request failed :-( System.Net.WebException\"\r\n                Write-Host $_.Exception\r\n                $response = $_.Exception.Response\r\n            }\r\n            \r\n        }\r\n\t\telseif ($Username -and $Password)\r\n        {\r\n            Write-Host \"Making request to $uri using basic authentication for user $Username\"\r\n            $Credential = New-Object System.Management.Automation.PSCredential -ArgumentList $Username, $(ConvertTo-SecureString -String $Password -AsPlainText -Force)\r\n            if ($customHostHeader)\r\n            {\r\n                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -Credential $Credential -Headers @{\"Host\" = $customHostHeader}\r\n            }\r\n            else \r\n            {\r\n                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -Credential $Credential\r\n            }\r\n        }\r\n\t\telse\r\n        {\r\n            Write-Host \"Making request to $uri using anonymous authentication\"\r\n            if ($customHostHeader)\r\n            {\r\n                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -Headers @{\"Host\" = $customHostHeader}\r\n            }\r\n            else \r\n            {\r\n                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing\r\n            }\r\n        }\r\n        \r\n        $code = $response.StatusCode\r\n        $body = $response.Content;\r\n        Write-Host \"Recieved response code: $code\"\r\n        Write-Host \"Recieved response: $body\"\r\n\r\n        if($response.StatusCode -eq $expectedCode)\r\n        {\r\n            $success = $true\r\n        }\r\n        if ($success -and $ExpectedResponse)\r\n        {\r\n            $success = ($ExpectedResponse -eq $body)\r\n        }\r\n    }\r\n    catch\r\n    {\r\n        # Anything other than a 200 will throw an exception so\r\n        # we check the exception message which may contain the \r\n        # actual status code to verify\r\n        \r\n        Write-Host \"Request failed :-(\"\r\n        Write-Host $_.Exception\r\n\r\n        if($_.Exception -like \"*($expectedCode)*\")\r\n        {\r\n            $success = $true\r\n        }\r\n    }\r\n\r\n    if(!$success)\r\n    {\r\n        Write-Host \"Trying again in 5 seconds...\"\r\n        Start-Sleep -s 5\r\n    }\r\n}\r\nwhile(!$success -and $timer.Elapsed -le (New-TimeSpan -Seconds $timeoutSeconds))\r\n\r\n$timer.Stop()\r\n\r\n# Verify result\r\n\r\nif(!$success)\r\n{\r\n    throw \"Verification failed - giving up.\"\r\n}\r\n\r\nWrite-Host \"Sucesss! Found status code $expectedCode\"",
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\n$uri = $OctopusParameters['Uri']\n$customHostHeader = $OctopusParameters['CustomHostHeader']\n$expectedCode = [int] $OctopusParameters['ExpectedCode']\n$timeoutSeconds = [int] $OctopusParameters['TimeoutSeconds']\n$Username = $OctopusParameters['AuthUsername']\n$Password = $OctopusParameters['AuthPassword']\n$UseWindowsAuth = [System.Convert]::ToBoolean($OctopusParameters['UseWindowsAuth'])\n$ExpectedResponse = $OctopusParameters['ExpectedResponse']\n$securityProtocol = $OctopusParameters['SecurityProtocol']\n\nWrite-Host \"Starting verification request to $uri\"\nif ($customHostHeader)\n{\n    Write-Host \"Using custom host header $customHostHeader\"\n}\n\nWrite-Host \"Expecting response code $expectedCode.\"\nWrite-Host \"Expecting response: $ExpectedResponse.\"\n\nif ($securityProtocol)\n{\n    Write-Host \"Using security protocol $securityProtocol\"\n    [Net.ServicePointManager]::SecurityProtocol = [Enum]::parse([Net.SecurityProtocolType], $securityProtocol) \n}\n\n$timer = [System.Diagnostics.Stopwatch]::StartNew()\n$success = $false\ndo\n{\n    try\n    {\n        if ($Username -and $Password -and $UseWindowsAuth)\n        {\n            Write-Host \"Making request to $uri using windows authentication for user $Username\"\n            $request = [system.Net.WebRequest]::Create($uri)\n            $Credential = New-Object System.Management.Automation.PSCredential -ArgumentList $Username, $(ConvertTo-SecureString -String $Password -AsPlainText -Force)\n            $request.Credentials = $Credential \n            \n            if ($customHostHeader)\n            {\n                $request.Host = $customHostHeader\n            }\n\n            try\n            {\n                $response = $request.GetResponse()\n            }\n            catch [System.Net.WebException]\n            {\n                Write-Host \"Request failed :-( System.Net.WebException\"\n                Write-Host $_.Exception\n                $response = $_.Exception.Response\n            }\n            \n        }\n\t\telseif ($Username -and $Password)\n        {\n            Write-Host \"Making request to $uri using basic authentication for user $Username\"\n            $Credential = New-Object System.Management.Automation.PSCredential -ArgumentList $Username, $(ConvertTo-SecureString -String $Password -AsPlainText -Force)\n            if ($customHostHeader)\n            {\n                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -Credential $Credential -Headers @{\"Host\" = $customHostHeader} -TimeoutSec $timeoutSeconds\n            }\n            else \n            {\n                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -Credential $Credential -TimeoutSec $timeoutSeconds\n            }\n        }\n\t\telse\n        {\n            Write-Host \"Making request to $uri using anonymous authentication\"\n            if ($customHostHeader)\n            {\n                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -Headers @{\"Host\" = $customHostHeader} -TimeoutSec $timeoutSeconds\n            }\n            else \n            {\n                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -TimeoutSec $timeoutSeconds\n            }\n        }\n        \n        $code = $response.StatusCode\n        $body = $response.Content;\n        Write-Host \"Recieved response code: $code\"\n        Write-Host \"Recieved response: $body\"\n\n        if($response.StatusCode -eq $expectedCode)\n        {\n            $success = $true\n        }\n        if ($success -and $ExpectedResponse)\n        {\n            $success = ($ExpectedResponse -eq $body)\n        }\n    }\n    catch\n    {\n        # Anything other than a 200 will throw an exception so\n        # we check the exception message which may contain the \n        # actual status code to verify\n        \n        Write-Host \"Request failed :-(\"\n        Write-Host $_.Exception\n\n        if($_.Exception -like \"*($expectedCode)*\")\n        {\n            $success = $true\n        }\n    }\n\n    if(!$success)\n    {\n        Write-Host \"Trying again in 5 seconds...\"\n        Start-Sleep -s 5\n    }\n}\nwhile(!$success -and $timer.Elapsed -le (New-TimeSpan -Seconds $timeoutSeconds))\n\n$timer.Stop()\n\n# Verify result\n\nif(!$success)\n{\n    throw \"Verification failed - giving up.\"\n}\n\nWrite-Host \"Sucesss! Found status code $expectedCode\"",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptSource": "Inline",
-    "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptFileName": null,
-    "Octopus.Action.Package.FeedId": null,
-    "Octopus.Action.Package.PackageId": null
+    "Octopus.Action.Script.ScriptSource": "Inline"
   },
   "Parameters": [
     {
@@ -19,7 +16,7 @@
       "Name": "Uri",
       "Label": "URI",
       "HelpText": "The full Uri of the endpoint",
-      "DefaultValue": null,
+      "DefaultValue": "",
       "DisplaySettings": {}
     },
     {
@@ -27,9 +24,20 @@
       "Name": "CustomHostHeader",
       "Label": "Custom HOST header",
       "HelpText": "An optional custom HOST header which will be passed with the request",
-      "DefaultValue": null,
+      "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b4e57984-01df-4438-96e5-75e74c2c6188",
+      "Name": "SecurityProtocol",
+      "Label": "Security Protocol",
+      "HelpText": "The optional security protocol version to use for HTTPS requests.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "SystemDefault\nSsl3\nTls\nTls11\nTls12"
       }
     },
     {
@@ -53,7 +61,7 @@
       "Name": "AuthUsername",
       "Label": "Username",
       "HelpText": "Username for authentication. Leave blank to use Anonymous.",
-      "DefaultValue": null,
+      "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
@@ -63,7 +71,7 @@
       "Name": "AuthPassword",
       "Label": "Password",
       "HelpText": "Password for authentication. Leave blank for Anonymous.",
-      "DefaultValue": null,
+      "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "Sensitive"
       }
@@ -83,16 +91,16 @@
       "Name": "ExpectedResponse",
       "Label": "Expected Response",
       "HelpText": "The response should be this text",
-      "DefaultValue": null,
+      "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
     }
   ],
-  "LastModifiedBy": "HumanPrinter",
+  "LastModifiedBy": "harrisonmeister",
   "$Meta": {
-    "ExportedAt": "2017-06-28T12:51:00.000+00:00",
-    "OctopusVersion": "3.4.10",
+    "ExportedAt": "2020-06-16T08:03:12.574Z",
+    "OctopusVersion": "2020.2.13",
     "Type": "ActionTemplate"
   },
   "Category": "http"

@@ -1,12 +1,13 @@
 {
   "Id": "3b534e57-e8b0-4a06-aa2c-9e7eba1f4337",
   "Name": "Upload files by FTP",
-  "Description": "Upload files to a remote server via File Transfer Protocol (FTP) using WinSCP.\n\nThis step template requires the [WinSCP .NET Assembly](http://winscp.net/eng/docs/library#downloading_and_installing_the_assembly) to be installed on the server running the deployment.",
+  "Description": "Upload files to a remote server via File Transfer Protocol (SFTP or FTP) using WinSCP.\n\nThis step template requires the [WinSCP .NET Assembly](http://winscp.net/eng/docs/library#downloading_and_installing_the_assembly) to be installed on the server running the deployment.\n\n# Notes on usage\n\nYou will need to have a \"Deploy a Package\" step before this step to supply the files to deploy. You can have this all happen on your Octopus Server rather than one of your web servers by following the steps at [Deploying Packages to your Octopus Server](https://octopus.com/docs/deployment-process/steps/how-to-run-steps-on-the-octopus-server#deploying-packages-to-your-octopus-server).\n\n## Cleaning up deployments\n\nIf you aren't deploying to an application host and don't want the deployment files to persist on the tentacle irrespective of the life cycle retention policy ensure that you set the \"Delete Previous Deployment\" to `true` and they will be removed.",
   "ActionType": "Octopus.Script",
-  "Version": 4,
+  "Version": 5,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "## --------------------------------------------------------------------------------------\r\n## Input\r\n## --------------------------------------------------------------------------------------\r\n$PathToWinScp = $OctopusParameters['PathToWinScp']\r\n$FtpHost = $OctopusParameters['FtpHost']\r\n$FtpUsername = $OctopusParameters['FtpUsername']\r\n$FtpPassword = $OctopusParameters['FtpPassword']\r\n$FtpRemoteDirectory = $OctopusParameters['FtpRemoteDirectory']\r\n$FtpPackageStepName = $OctopusParameters['FtpPackageStepName']\r\n$FtpDeleteUnrecognizedFiles = $OctopusParameters['FtpDeleteUnrecognizedFiles']\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Helpers\r\n## --------------------------------------------------------------------------------------\r\n# Helper for validating input parameters\r\nfunction Validate-Parameter([string]$foo, [string[]]$validInput, $parameterName) {\r\n    if (! $parameterName -contains \"Password\") \r\n    { \r\n        Write-Host \"${parameterName}: $foo\" \r\n    }\r\n    if (! $foo) {\r\n        throw \"No value was set for $parameterName, and it cannot be empty\"\r\n    }\r\n}\r\n\r\n# A collection of functions that can be used by script steps to determine where packages installed\r\n# by previous steps are located on the filesystem.\r\nfunction Find-InstallLocations {\r\n    $result = @()\r\n    $OctopusParameters.Keys | foreach {\r\n        if ($_.EndsWith('].Output.Package.InstallationDirectoryPath')) {\r\n            $result += $OctopusParameters[$_]\r\n        }\r\n    }\r\n    return $result\r\n}\r\n \r\nfunction Find-InstallLocation($stepName) {\r\n    $result = $OctopusParameters.Keys | where {\r\n        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\r\n    } | select -first 1\r\n \r\n    if ($result) {\r\n        return $OctopusParameters[$result]\r\n    }\r\n \r\n    throw \"No install location found for step: $stepName\"\r\n}\r\n \r\nfunction Find-SingleInstallLocation {\r\n    $all = @(Find-InstallLocations)\r\n    if ($all.Length -eq 1) {\r\n        return $all[0]\r\n    }\r\n    if ($all.Length -eq 0) {\r\n        throw \"No package steps found\"\r\n    }\r\n    throw \"Multiple package steps have run; please specify a single step\"\r\n}\r\n \r\n# Session.FileTransferred event handler\r\nfunction FileTransferred\r\n{\r\n    param($e)\r\n \r\n    if ($e.Error -eq $Null)\r\n    {\r\n        Write-Host (\"Upload of {0} succeeded\" -f $e.FileName)\r\n    }\r\n    else\r\n    {\r\n        Write-Error (\"Upload of {0} failed: {1}\" -f $e.FileName, $e.Error)\r\n    }\r\n \r\n    if ($e.Chmod -ne $Null)\r\n    {\r\n        if ($e.Chmod.Error -eq $Null)\r\n        {\r\n            Write-Host \"##octopus[stdout-verbose]\"\r\n            Write-Host (\"Permisions of {0} set to {1}\" -f $e.Chmod.FileName, $e.Chmod.FilePermissions)\r\n            Write-Host \"##octopus[stdout-default]\"\r\n        }\r\n        else\r\n        {\r\n            Write-Error (\"Setting permissions of {0} failed: {1}\" -f $e.Chmod.FileName, $e.Chmod.Error)\r\n        }\r\n \r\n    }\r\n    else\r\n    {\r\n        Write-Host \"##octopus[stdout-verbose]\"\r\n        Write-Host (\"Permissions of {0} kept with their defaults\" -f $e.Destination)\r\n        Write-Host \"##octopus[stdout-default]\"\r\n    }\r\n \r\n    if ($e.Touch -ne $Null)\r\n    {\r\n        if ($e.Touch.Error -eq $Null)\r\n        {\r\n            Write-Host \"##octopus[stdout-verbose]\"\r\n            Write-Host (\"Timestamp of {0} set to {1}\" -f $e.Touch.FileName, $e.Touch.LastWriteTime)\r\n            Write-Host \"##octopus[stdout-default]\"\r\n        }\r\n        else\r\n        {\r\n            Write-Error (\"Setting timestamp of {0} failed: {1}\" -f $e.Touch.FileName, $e.Touch.Error)\r\n        }\r\n \r\n    }\r\n    else\r\n    {\r\n        # This should never happen during \"local to remote\" synchronization\r\n        Write-Host \"##octopus[stdout-verbose]\"\r\n        Write-Host (\"Timestamp of {0} kept with its default (current time)\" -f $e.Destination)\r\n        Write-Host \"##octopus[stdout-default]\"\r\n    }\r\n}\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Configuration\r\n## --------------------------------------------------------------------------------------\r\nValidate-Parameter $PathToWinScp -parameterName \"Path to WinSCP .NET Assembly\"\r\nValidate-Parameter $FtpHost -parameterName \"Host\"\r\nValidate-Parameter $FtpUsername -parameterName \"Username\"\r\nValidate-Parameter $FtpPassword -parameterName \"Password\"\r\nValidate-Parameter $FtpRemoteDirectory -parameterName \"Remote directory\"\r\nValidate-Parameter $FtpPackageStepName -parameterName \"Package step name\"\r\nValidate-Parameter $FtpDeleteUnrecognizedFiles -parameterName \"Delete unrecognized files\"\r\n\r\n## --------------------------------------------------------------------------------------\r\n## Main script\r\n## --------------------------------------------------------------------------------------\r\n\r\n# Load WinSCP .NET assembly\r\n$fullPathToWinScp = \"$PathToWinScp\\WinSCPnet.dll\"\r\nif(-not (Test-Path $fullPathToWinScp))\r\n{\r\n    throw \"$PathToWinScp does not contain the WinSCP .NET Assembly\"\r\n}\r\nAdd-Type -Path $fullPathToWinScp\r\n\r\n$stepPath = \"\"\r\nif (-not [string]::IsNullOrEmpty($FtpPackageStepName)) {\r\n    Write-Host \"Finding path to package step: $FtpPackageStepName\"\r\n    $stepPath = Find-InstallLocation $FtpPackageStepName\r\n} else {\r\n    $stepPath = Find-SingleInstallLocation\r\n}\r\nWrite-Host \"Package was installed to: $stepPath\"\r\n\r\ntry\r\n{\r\n    $sessionOptions = New-Object WinSCP.SessionOptions\r\n    $sessionOptions.Protocol = [WinSCP.Protocol]::Ftp\r\n    $sessionOptions.HostName = $FtpHost\r\n    $sessionOptions.UserName = $FtpUsername\r\n    $sessionOptions.Password = $FtpPassword\r\n \r\n    $session = New-Object WinSCP.Session\r\n    try\r\n    {\r\n        # Will continuously report progress of synchronization\r\n        $session.add_FileTransferred( { FileTransferred($_) } )\r\n \r\n        # Connect\r\n        $session.Open($sessionOptions)\r\n \r\n        Write-Host \"Beginning synchronization between $stepPath and $FtpRemoteDirectory on $FtpHost\"\r\n        \r\n        if (-not $session.FileExists($FtpRemoteDirectory))\r\n        {\r\n            Write-Host \"Remote directory not found, creating $FtpRemoteDirectory\"\r\n            $session.CreateDirectory($FtpRemoteDirectory);\r\n        }\r\n        \r\n        # Synchronize files\r\n        $synchronizationResult = $session.SynchronizeDirectories(\r\n            [WinSCP.SynchronizationMode]::Remote, $stepPath, $FtpRemoteDirectory, $FtpDeleteUnrecognizedFiles)\r\n \r\n        # Throw on any error\r\n        $synchronizationResult.Check()\r\n    }\r\n    finally\r\n    {\r\n        # Disconnect, clean up\r\n        $session.Dispose()\r\n    }\r\n \r\n    exit 0\r\n}\r\ncatch [Exception]\r\n{\r\n    throw $_.Exception.Message\r\n}\r\n"
+    "Octopus.Action.Script.ScriptBody": "## --------------------------------------------------------------------------------------\n## Input\n## --------------------------------------------------------------------------------------\n$PathToWinScp = $OctopusParameters['PathToWinScp']\n$FtpHost = $OctopusParameters['FtpHost']\n$FtpUsername = $OctopusParameters['FtpUsername']\n$FtpPassword = $OctopusParameters['FtpPassword']\n$FtpHostKeyFingerprint = $OctopusParameters['FtpHostKeyFingerprint']\n$FtpPasskey = $OctopusParameters['FtpPasskey']\n$FtpPasskeyPhrase = $OctopusParameters['FtpPasskeyPhrase']\n$FtpRemoteDirectory = $OctopusParameters['FtpRemoteDirectory']\n$FtpPackageStepName = $OctopusParameters['FtpPackageStepName']\n$FtpDeleteUnrecognizedFiles = $OctopusParameters['FtpDeleteUnrecognizedFiles']\n$DeleteDeploymentStep = $OctopusParameters['DeleteDeploymentStep']\n\n## --------------------------------------------------------------------------------------\n## Helpers\n## --------------------------------------------------------------------------------------\n# Helper for validating input parameters\nfunction Validate-Parameter([string]$foo, [string[]]$validInput, $parameterName) {\n    if (! $parameterName -contains \"Password\")\n    {\n        Write-Host \"${parameterName}: $foo\"\n    }\n    if (! $foo) {\n        throw \"No value was set for $parameterName, and it cannot be empty\"\n    }\n}\n\n# A collection of functions that can be used by script steps to determine where packages installed\n# by previous steps are located on the filesystem.\nfunction Find-InstallLocations {\n    $result = @()\n    $OctopusParameters.Keys | foreach {\n        if ($_.EndsWith('].Output.Package.InstallationDirectoryPath')) {\n            $result += $OctopusParameters[$_]\n        }\n    }\n    return $result\n}\n\nfunction Find-InstallLocation($stepName) {\n    $result = $OctopusParameters.Keys | where {\n        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\n    } | select -first 1\n\n    if ($result) {\n        return $OctopusParameters[$result]\n    }\n\n    throw \"No install location found for step: $stepName\"\n}\n\nfunction Find-SingleInstallLocation {\n    $all = @(Find-InstallLocations)\n    if ($all.Length -eq 1) {\n        return $all[0]\n    }\n    if ($all.Length -eq 0) {\n        throw \"No package steps found\"\n    }\n    throw \"Multiple package steps have run; please specify a single step\"\n}\n\n# Session.FileTransferred event handler\nfunction FileTransferred\n{\n    param($e)\n\n    if ($e.Error -eq $Null)\n    {\n        Write-Host (\"Upload of {0} succeeded\" -f $e.FileName)\n    }\n    else\n    {\n        Write-Error (\"Upload of {0} failed: {1}\" -f $e.FileName, $e.Error)\n    }\n\n    if ($e.Chmod -ne $Null)\n    {\n        if ($e.Chmod.Error -eq $Null)\n        {\n            Write-Host \"##octopus[stdout-verbose]\"\n            Write-Host (\"Permisions of {0} set to {1}\" -f $e.Chmod.FileName, $e.Chmod.FilePermissions)\n            Write-Host \"##octopus[stdout-default]\"\n        }\n        else\n        {\n            Write-Error (\"Setting permissions of {0} failed: {1}\" -f $e.Chmod.FileName, $e.Chmod.Error)\n        }\n\n    }\n    else\n    {\n        Write-Host \"##octopus[stdout-verbose]\"\n        Write-Host (\"Permissions of {0} kept with their defaults\" -f $e.Destination)\n        Write-Host \"##octopus[stdout-default]\"\n    }\n\n    if ($e.Touch -ne $Null)\n    {\n        if ($e.Touch.Error -eq $Null)\n        {\n            Write-Host \"##octopus[stdout-verbose]\"\n            Write-Host (\"Timestamp of {0} set to {1}\" -f $e.Touch.FileName, $e.Touch.LastWriteTime)\n            Write-Host \"##octopus[stdout-default]\"\n        }\n        else\n        {\n            Write-Error (\"Setting timestamp of {0} failed: {1}\" -f $e.Touch.FileName, $e.Touch.Error)\n        }\n\n    }\n    else\n    {\n        # This should never happen during \"local to remote\" synchronization\n        Write-Host \"##octopus[stdout-verbose]\"\n        Write-Host (\"Timestamp of {0} kept with its default (current time)\" -f $e.Destination)\n        Write-Host \"##octopus[stdout-default]\"\n    }\n}\n\n## --------------------------------------------------------------------------------------\n## Configuration\n## --------------------------------------------------------------------------------------\nValidate-Parameter $PathToWinScp -parameterName \"Path to WinSCP .NET Assembly\"\nValidate-Parameter $FtpHost -parameterName \"Host\"\nValidate-Parameter $FtpUsername -parameterName \"Username\"\nValidate-Parameter $FtpPassword -parameterName \"Password\"\nValidate-Parameter $FtpRemoteDirectory -parameterName \"Remote directory\"\nValidate-Parameter $FtpPackageStepName -parameterName \"Package step name\"\nValidate-Parameter $FtpDeleteUnrecognizedFiles -parameterName \"Delete unrecognized files\"\n\n## --------------------------------------------------------------------------------------\n## Main script\n## --------------------------------------------------------------------------------------\n\n# Load WinSCP .NET assembly\n$fullPathToWinScp = \"$PathToWinScp\\WinSCPnet.dll\"\nif(-not (Test-Path $fullPathToWinScp))\n{\n    throw \"$PathToWinScp does not contain the WinSCP .NET Assembly\"\n}\nAdd-Type -Path $fullPathToWinScp\n\n$stepPath = \"\"\nif (-not [string]::IsNullOrEmpty($FtpPackageStepName)) {\n    Write-Host \"Finding path to package step: $FtpPackageStepName\"\n    $stepPath = Find-InstallLocation $FtpPackageStepName\n} else {\n    $stepPath = Find-SingleInstallLocation\n}\nWrite-Host \"Package was installed to: $stepPath\"\n\ntry\n{\n    $sessionOptions = New-Object WinSCP.SessionOptions\n\n    # WinSCP defaults to SFTP, but it's good to ensure that's the case\n    if ($FtpHostKeyFingerprint -ne \"\") {\n      $sessionOptions.Protocol = [WinScp.Protocol]::Sftp\n    }\n    else {\n      $sessionOptions.Protocol = [WinSCP.Protocol]::Ftp\n    }\n    $sessionOptions.HostName = $FtpHost\n    $sessionOptions.UserName = $FtpUsername\n\n    $sessionOptions.SshHostKeyFingerprint = $FtpHostKeyFingerprint\n\n    # If there is a path to the private key, use that instead of a password\n    if ($FtpPasskey -ne \"\") {\n      Write-Host \"Attempting to use passkey instead of password\"\n\n      # Check key exists\n      if (!(Test-Path $FtpPasskey)) {\n        throw \"Unable to locate passkey at: $FtpPasskey\"\n      }\n\n      $sessionOptions.SshPrivateKeyPath = $FtpPasskey\n\n      # If the key requires a passphrase to access\n      if ($FtpPasskeyPhrase -ne \"\") {\n        $sessionOptions.PrivateKeyPassphrase = $FtpPasskeyPhrase\n      }\n    }\n    else {\n      $sessionOptions.Password = $FtpPassword\n    }\n\n    $session = New-Object WinSCP.Session\n    try\n    {\n        # Will continuously report progress of synchronization\n        $session.add_FileTransferred( { FileTransferred($_) } )\n\n        # Connect\n        $session.Open($sessionOptions)\n\n        Write-Host \"Beginning synchronization between $stepPath and $FtpRemoteDirectory on $FtpHost\"\n\n        if (-not $session.FileExists($FtpRemoteDirectory))\n        {\n            Write-Host \"Remote directory not found, creating $FtpRemoteDirectory\"\n            $session.CreateDirectory($FtpRemoteDirectory);\n        }\n\n        # Synchronize files\n        $synchronizationResult = $session.SynchronizeDirectories(\n            [WinSCP.SynchronizationMode]::Remote, $stepPath, $FtpRemoteDirectory, $FtpDeleteUnrecognizedFiles)\n\n        # Throw on any error\n        $synchronizationResult.Check()\n    }\n    finally\n    {\n        # Disconnect, clean up\n        $session.Dispose()\n\n        if ($DeleteDeploymentStep) {\n          Remove-Item -Path $stepPath -Recurse\n        }\n    }\n\n    exit 0\n}\ncatch [Exception]\n{\n    throw $_.Exception.Message\n}\n",
+    "Octopus.Action.Script.ScriptSource": "Inline"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -14,7 +15,7 @@
       "Name": "PathToWinScp",
       "Label": "Path to WinScp",
       "HelpText": "The directory where you extracted the WinSCP .NET Assembly.",
-      "DefaultValue": null,
+      "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
@@ -23,7 +24,7 @@
       "Name": "FtpHost",
       "Label": "Host",
       "HelpText": "The address of your FTP server. Example: `ftp.yourhost.com`.",
-      "DefaultValue": null,
+      "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
@@ -47,10 +48,37 @@
       }
     },
     {
+      "Name": "FtpHostKeyFingerprint",
+      "Label": "Host Key Fingerprint(s)",
+      "HelpText": "By supplying a host key fingerprint (or a semicolon separated list), you will force the deployment into SFTP mode, and automatically accept the host certificates.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "FtpPasskey",
+      "Label": "Passkey",
+      "HelpText": "Path to the PPK passkey file, leave blank if using a Password",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "FtpPasskeyPhrase",
+      "Label": "Passkey Phrase",
+      "HelpText": "If your passkey is encrypted, please supply the pass phrase.\n\nIf the password field is bound, the binding expression will be visible to other authorized users.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
       "Name": "FtpRemoteDirectory",
       "Label": "Remote directory",
       "HelpText": "The directory on your FTP server in which you want files to be placed. Example: `/site/wwwroot`",
-      "DefaultValue": null,
+      "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
@@ -59,7 +87,7 @@
       "Name": "FtpPackageStepName",
       "Label": "Package step name",
       "HelpText": "Name of the previously-deployed package step that contains the files that you want to deploy.",
-      "DefaultValue": null,
+      "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "StepName"
       }
@@ -72,13 +100,22 @@
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
       }
+    },
+    {
+      "Name": "DeleteDeploymentStep",
+      "Label": "Delete Deployment Step?",
+      "HelpText": "Should this script delete the deployment - for example, if you are running this on the Octopus Server, you might want to clean up the output of the previous package deploy step when this has completed.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
     }
   ],
-  "LastModifiedOn": "2015-06-19T04:42:34.402+00:00",
-  "LastModifiedBy": "alfhenrik",
+  "LastModifiedOn": "2018-07-05T15:12:39.219Z",
+  "LastModifiedBy": "Zhaph",
   "$Meta": {
-    "ExportedAt": "2015-06-19T04:42:34.402+00:00",
-    "OctopusVersion": "3.0.0.1614",
+    "ExportedAt": "2018-07-05T15:12:39.219Z",
+    "OctopusVersion": "2018.6.2",
     "Type": "ActionTemplate"
   },
   "Category": "winscp"

@@ -1,0 +1,104 @@
+{
+  "Id": "3dfd5df3-2e9f-412b-93be-dcf4ef2d3da7",
+  "Name": "ApexSQL DevOps toolkit - Sync",
+  "Description": "The step will compare the database from a deployment package with the target database to create a schema synchronization script deployment resource\n\n[ApexSQL Diff](https://www.apexsql.com/sql-tools-diff.aspx) is required",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "function Get-ApexSQLToolLocation\n{\n    param\n    (\n        [Parameter(Mandatory = $true)]\n        [String] $ApplicationName\n    )\n    $key = \"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ApexSQL $($ApplicationName)_is1\"\n    if (Test-Path \"HKLM:\\$Key\")\n    {\n\t\t$ApplicationPath = (Get-ItemProperty -Path \"HKLM:\\$key\" -Name InstallLocation).InstallLocation\n\t}\n    else\n    {\n\t\t$reg = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)\n\n\t\t$regKey= $reg.OpenSubKey(\"$key\")\n\t\tif ($regKey)\n        {\n\t\t\t$ApplicationPath = $regKey.GetValue(\"InstallLocation\")\n\t\t}\n        else\n        {\n\t\t\t$reg = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry32)\n\t\t\t$regKey= $reg.OpenSubKey(\"$key\")\n\t\t\tif ($regKey)\n            {\n\t\t\t\t$ApplicationPath = $regKey.GetValue(\"InstallLocation\")\n\t\t\t}\n            else\n            {\n                return $null\n\t\t\t}\n\t\t}\n\t}\n    if ($ApplicationPath)\n    {\n        return $ApplicationPath + \"ApexSQL\" + $ApplicationName.replace(' ','') + \".com\"\n    }\n}\n\nfunction AddArtifact() {\n    Param(\n        [Parameter(Mandatory = $true)]\n        [string]$artifact\n    )\n    if (Test-Path $artifact) {\n        New-OctopusArtifact $artifact\n    }\n}\n\nfunction Get-ParamValue\n{\n    param\n    (\n        [Parameter(Mandatory = $true)]\n        [String] $ParamName\n    )\n    if($OctopusParameters -and ($OctopusParameters[\"$($ParamName)\"] -ne $null))\n    {\n        # set the variable value\n        return $OctopusParameters[\"$($ParamName)\"]\n    }\n    else\n    {\n        # warning\n        return $null\n    }\n}\n\n$exportPath = Get-ParamValue -ParamName 'ExportPath'\n$PackageDownloadStepName = Get-ParamValue -ParamName 'PackageDownloadStepName'\n$s2 = Get-ParamValue -ParamName 'ServerName'\n$d2 = Get-ParamValue -ParamName 'Database'\n$u2 = Get-ParamValue -ParamName 'Username'\n$p2 = Get-ParamValue -ParamName 'Password'\n$projectFilePath = Get-ParamValue -ParamName 'ProjectFilePath'\n$additional = Get-ParamValue -ParamName 'Additional'\n\n$projectId = $OctopusParameters[\"Octopus.Project.Id\"]\n$releaseNumber = $OctopusParameters[\"Octopus.Release.Number\"]\n$nugetPackageId = $OctopusParameters[\"Octopus.Action[$PackageDownloadStepName].Package.NuGetPackageId\"]\n$exportPath = Join-Path (Join-Path $exportPath $projectId) $releaseNumber\n\nif (-Not (Test-Path $exportPath)) { New-Item $exportPath -ItemType Directory }\n\n$FolderList = Get-ChildItem $OctopusParameters[\"Octopus.Action[$PackageDownloadStepName].Output.Package.InstallationDirectoryPath\"] -Directory\n\nForeach($f in $Folderlist){\nif ($f.Name -like '*Script*')\n\t{\n \t\t$DatabaseScripts = $f.Name\n \t}\n}\n\n$sfPath = $OctopusParameters[\"Octopus.Action[$PackageDownloadStepName].Output.Package.InstallationDirectoryPath\"] + '\\' + $DatabaseScripts\n\nif($null -eq $sfPath) {\n    throw \"Step: '$PackageDownloadStepName' didn't download any NuGet package.\"\n}\n\n$schemaSyncScript = \"SchemaSyncScript.sql\"\n$schemaSyncSummary = \"SchemaSyncSummary.log\"\n$schemaSyncReport = \"SchemaSyncReport.html\"\n\n\n$creds2 = ''\nif ($u2 -ne $null -and $p2 -ne $null)\n{\n    $creds2 = \"/user2:`\"$($u2)`\" /password2:`\"$($p2)`\"\"\n}\n\n$project = ''\nif($projectFilePath -ne $null)\n{\n    $project = \"/project: `\"$($projectFilePath)`\"\"\n}\n\n$additionalParams = ''\nif($additional -ne $null)\n{\n    $additionalParams = $additional\n}\n\n\n$toolLocation = Get-ApexSQLToolLocation -ApplicationName 'Diff'\n$toolParams = \" /sf1:`\"$($sfPath)`\" /server2:`\"$($s2)`\" /database2:`\"$($d2)`\" $($creds2)\"\n$toolParams += \" /ot:sql /on:`'$($exportPath)\\$($schemaSyncScript)`'\"\n$toolParams += \" /ot2:html /on2:`\"$($exportPath)\\$($schemaSyncReport)`\"\"\n$toolParams += \" /cso:`\"$($exportPath)\\$($schemaSyncSummary)`\"\"\n$toolParams += \" $($project)\"\n$toolParams += \" $($additionalParams) /v /f\"\n\nInvoke-Expression -Command (\"& `\"$($toolLocation)`\" $toolParams\")\n\nAddArtifact(\"$exportPath\\$schemaSyncScript\")\nAddArtifact(\"$exportPath\\$schemaSyncSummary\")\nAddArtifact(\"$exportPath\\$schemaSyncReport\")",
+    "Octopus.Action.EnabledFeatures": ""
+  },
+  "Parameters": [
+    {
+      "Id": "86778bfc-aab9-42ea-b67b-ee0c0fe1c203",
+      "Name": "PackageDownloadStepName",
+      "Label": "Retrieve package from",
+      "HelpText": "Select the step from which the database package can be sourced",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Id": "fd75e328-92da-4e88-bb1c-35504fdccf15",
+      "Name": "ExportPath",
+      "Label": "Export location",
+      "HelpText": "The location for exported deployment resources. This path will be used in the “ApexSQL DevOps toolkit – Deploy” step. ",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a487d044-8a82-4065-bb1d-d7ccb5a65468",
+      "Name": "ServerName",
+      "Label": "SQL Server",
+      "HelpText": "Provide the SQL Server name for the deployment target database",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "dca94a19-8d97-49b5-a4e5-21f32781df32",
+      "Name": "Database",
+      "Label": "Database",
+      "HelpText": "Provide the name of the target database which will be used for comparison with source schema located in the deployment package in order to generate deployment resource. ",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5465f0aa-7b85-4020-99f9-a9f45f7b39b3",
+      "Name": "Username",
+      "Label": "Username",
+      "HelpText": "The account name used for SQL authentication method. Windows authentication method with the account that runs the Tentacle service will be used for SQL Server connection if left empty",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5396a1bd-5f84-48cd-a452-135aa67a24a4",
+      "Name": "Password",
+      "Label": "Password",
+      "HelpText": "Enter password for chosen account used for SQL authentication method. Leave empty if Windows authentication method is used",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "2a296435-ccf6-444d-8cb6-d0606eb1bce8",
+      "Name": "ProjectFilePath",
+      "Label": "Project file path",
+      "HelpText": "Use to import schema comparison options and objects filter template created with ApexSQL Diff. Application defaults will be used if not provided\n\nSee also:\n[How to narrow schema comparison and synchronization to affected objects only](https://knowledgebase.apexsql.com/narrow-schema-comparison-synchronization-affected-objects/)\n",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e3cfcc10-1e5c-4554-83ca-0d9db66c7848",
+      "Name": "Additional",
+      "Label": "Additional parameters",
+      "HelpText": "Enter any CLI options switches used with ApexSQL Diff. Options will override existing options imported from project file\n\nSee also:\n[ApexSQL Diff Command Line Interface (CLI) switches](https://knowledgebase.apexsql.com/apexsql-diff-command-line-interface-cli-switches/)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-08-20T11:40:28.179Z",
+    "OctopusVersion": "2020.3.2",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "ApexSQLtechops",
+  "Category": "apexsql"
+}

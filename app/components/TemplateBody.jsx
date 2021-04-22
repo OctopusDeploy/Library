@@ -1,8 +1,8 @@
 'use strict';
 
 import React from 'react';
-import SyntaxHiglighter from 'react-syntax-highlighter';
-import {solarizedLight} from 'react-syntax-highlighter/dist/styles';
+import SyntaxHighlighter from 'react-syntax-highlighter';
+import { solarizedLight } from 'react-syntax-highlighter/dist/cjs/styles/hljs';
 import PropTypes from 'prop-types';
 
 const displayName = 'octopus-library-template-body';
@@ -50,7 +50,7 @@ export default class TemplateBody extends React.Component {
         <h3>{header}</h3>
         <div className="tutorial">
           <div dangerouslySetInnerHTML={{ __html: description }}/>
-          <a className="faint"
+          <a className="showHideScript"
               onClick={this.toggleTemplateBody.bind(this)}
           >
             {this.state.showTemplateBody ? 'Hide' : 'Show '} script
@@ -59,11 +59,11 @@ export default class TemplateBody extends React.Component {
         <div className="templateContent"
             style={style}
         >
-          <SyntaxHiglighter language={this.props.scriptSyntax}
+          <SyntaxHighlighter language={this.props.scriptSyntax}
               style={solarizedLight}
           >
             {this.props.templateBody}
-          </SyntaxHiglighter>
+          </SyntaxHighlighter>
         </div>
       </div>
     );

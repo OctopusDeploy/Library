@@ -25,6 +25,7 @@ class LibraryDb {
           ExportedAt: t.$Meta.ExportedAt,
           ActionType: t.ActionType,
           Author: t.LastModifiedBy,
+          Packages: t.Packages,
           Parameters: t.Parameters,
           Properties: t.Properties,
           Category: t.Category,

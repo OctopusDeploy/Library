@@ -1,0 +1,84 @@
+{
+  "Id": "0ad0ad00-adad-adad-adad-000000000003",
+  "Name": "IIS - Add HTTP(S) Bindings",
+  "Description": "Adds an HTTP and HTTPS bindings to a website using the specified host name, port numbers, Certificate Location, and SSL Thumbprint",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\nParam(\n    [string] $AD_AddBinding_WebsiteName,\n    [string] $AD_AddBinding_HostName,\n    [Int16] $AD_AddBinding_HttpPort = 80,\n    [Int16] $AD_AddBinding_HttpsPort = 443,\n    [string] $AD_AddBinding_SSLThumbprint = $null,\n    [string] $AD_AddBinding_SSLCertificateLocation = \"My\",\n    [Int16] $AD_AddBinding_Attempts = 5,\n    [switch] $WhatIf\n)\n\n$ErrorActionPreference = \"Stop\"\n\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($null -ne $OctopusParameters) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($null -eq $result) {\n        $variable = Get-Variable $Name -EA SilentlyContinue\n        if ($null -ne $variable) {\n            $result = $variable.Value\n        }\n    }\n\n    if ($null -eq $result) {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        }\n        else {\n            $result = $Default\n        }\n    }\n\n    return $result\n}\n\nfunction Execute(\n    [Parameter(Mandatory = $true)][string] $WebsiteName,\n    [Parameter(Mandatory = $true)][string] $HostName,\n    [Parameter(Mandatory = $false)][Int16] $HttpPort = 80,\n    [Parameter(Mandatory = $false)][Int16] $HttpsPort = 443,\n    [Parameter(Mandatory = $false)][string] $SSLThumbprint = $null,\n    [Parameter(Mandatory = $false)][string] $SSLCertificateLocation = \"My\",\n    [Parameter(Mandatory = $false)][Int16] $Attempts = 5\n) {\n    Import-Module WebAdministration\n\n    $attemptCount = 0\n    $operationIncomplete = $true\n    $maxFailures = $Attempts\n    $sleepBetweenFailures = 1\n\n    $appId = '{00112233-4455-6677-8899-AABBCCDDEEFF}'\n\n    while ($operationIncomplete -and $attemptCount -lt $maxFailures) {\n        $attemptCount = ($attemptCount + 1)\n        if ($attemptCount -ge 2) {\n            Write-Output \"Waiting for $sleepBetweenFailures seconds before retrying...\"\n            Start-Sleep -s $sleepBetweenFailures\n            Write-Output \"Retrying...\"\n            $sleepBetweenFailures = ($sleepBetweenFailures * 2)\n        }\n        try {\n            $protocol = \"http\"\n            $otherProtocol = \"https\"\n\n            $existingBinding = Get-WebBinding -Name $WebsiteName -Port $HttpPort -HostHeader $HostName\n            $msg = \"Binding '{0} *:{1}:{2} sslFlags=0' on '{3}'\" -f $protocol, $HttpPort, $HostName, $WebsiteName\n            if ($null -eq $existingBinding) {\n                Write-Output \"$msg doesn't exist - ADDING...\"\n                if (-Not ($WhatIf)) {\n                    New-WebBinding -Name $WebsiteName -Protocol $protocol -Port $HttpPort -HostHeader $HostName -SslFlags 0\n                }\n                Write-Output \"$msg - ADDED\"\n            }\n            elseif ($existingBinding.protocol -contains $protocol) {\n                Write-Output \"$msg  already exists - SKIPING\"\n            }\n            else {\n                Write-Error \"$msg can't be added because it already exists on $otherProtocol\"\n            }\n            Write-Output \"SSL is : $SSLThumbprint\"\n            if (-Not ([string]::IsNullOrWhitespace($SSLThumbprint))) {\n                $protocol = \"https\"\n                $otherProtocol = \"http\"\n                $existingBinding = Get-WebBinding -Name $WebsiteName -Port $HttpsPort -HostHeader $HostName\n                $msg = \"Binding '{0} *:{1}:{2} sslFlags=1' on '{3}'\" -f $protocol, $HttpsPort, $HostName, $WebsiteName\n                if ($null -eq $existingBinding) {\n                    Write-Output \"$msg doesn't exist - ADDING...\"\n                    if (-Not ($WhatIf)) {\n                        New-WebBinding -Name $WebsiteName -Protocol $protocol -Port $HttpsPort -HostHeader $HostName -SslFlags 1\n                        netsh http add sslcert hostnameport=$($HostName):$HttpsPort certhash=$SSLThumbprint appid=$appId certstorename=$SSLCertificateLocation\n                    }\n                    Write-Output \"$msg - ADDED\"\n                }\n                elseif ($existingBinding.protocol -contains $protocol) {\n                    Write-Output \"$msg  already exists - SKIPING\"\n                }\n                else {\n                    Write-Error \"$msg can't be added because it already exists on $otherProtocol\"\n                }\n            }\n            $operationIncomplete = $false\n        }\n        catch [System.Exception] {\n            if ($attemptCount -lt ($maxFailures)) {\n                Write-Host (\"Attempt $attemptCount of $maxFailures failed: \" + $_.Exception.Message)\n            }\n            else {\n                throw\n            }\n        }\n    }\n}\n& Execute `\n(Get-Param 'AD_AddBinding_WebsiteName' -Required)`\n(Get-Param 'AD_AddBinding_HostName' -Required)`\n(Get-Param 'AD_AddBinding_HttpPort')`\n(Get-Param 'AD_AddBinding_HttpsPort')`\n(Get-Param 'AD_AddBinding_SSLThumbprint')`\n(Get-Param 'AD_AddBinding_SSLCertificateLocation')`\n(Get-Param 'AD_AddBinding_Attempts')\n"
+  },
+  "Parameters": [
+    {
+      "Name": "AD_AddBinding_WebsiteName",
+      "Label": "Website name",
+      "HelpText": "The website name to apply the binding to",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AD_AddBinding_HostName",
+      "Label": "Host name",
+      "HelpText": "The host name",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AD_AddBinding_HttpPort",
+      "Label": "Http Port",
+      "HelpText": "Optional HTTP port number",
+      "DefaultValue": "80",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AD_AddBinding_HttpsPort",
+      "Label": "HTTPS Port",
+      "HelpText": "Optional HTTPS port number",
+      "DefaultValue": "443",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AD_AddBinding_SSLThumbprint",
+      "Label": "SSL Thumbprint",
+      "HelpText": "The SSL certificate thumbprint(no spaces)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AD_AddBinding_SSLCertificateLocation",
+      "Label": "Certificate Store Location",
+      "HelpText": "Optional Certificate Store location, Defaults to \"My\"",
+      "DefaultValue": "My",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AD_AddBinding_Attempts",
+      "Label": "Nr of attempts",
+      "HelpText": "Optional number of attempts before failing",
+      "DefaultValue": "5",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "rms230",
+  "$Meta": {
+    "ExportedAt": "2020-07-17T05:49:27.280Z",
+    "OctopusVersion": "2019.8.6",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}

@@ -1,0 +1,114 @@
+{
+  "Id": "4703dd4c-9f2d-471d-b15a-c1e345378695",
+  "Name": "F5-LTM-REST - Enable, Disable, or Force Offline Member",
+  "Description": "F5-LTM-REST - Enable, Disable, or Force Offline Member with optional wait for connections to drop",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Based on the F5 template by spuder.\n# This template has been translated to use REST instead of the iControl SOAP commandlets.\n# https://www.powershellgallery.com/packages/F5-LTM/1.4.297\n# https://devcentral.f5.com/s/articles/powershell-module-for-the-f5-ltm-rest-api\nImport-Module -Name F5-LTM\n\nfunction WaitFor-ConnectionCount() \n{ \n    param(\n        $pool_name, \n        $member,\n        [int]$MaxWaitTime = 300, #defaults to 5 minutes\n        $ConnectionCount = 0\n    )\n    $member_addr = $member\n\n    Write-Host \"Waiting for current connections to drop to \"$ConnectionCount\n\n    $cur_connections = 100;\n    $elapsed = [System.Diagnostics.Stopwatch]::StartNew();\n\n    while ( $cur_connections -gt $ConnectionCount -and $elapsed.ElapsedMilliseconds -lt ($MaxWaitTime * 1000))\n    {\n        $MemberStatisticsA = Get-PoolMemberStats -PoolName $pool_name -Address $member_addr\n        $MemberStatisticEntry = $MemberStatisticsA.'serverside.curConns'\n        $cur_connections = $MemberStatisticEntry.Value; \n\n        Write-Host \"Current Connections: $cur_connections\"\n\n        Start-Sleep -s 5\n    }\n}\n\n$Pool = $OctopusParameters['F5LTM.PoolName'].trim();\n\nIf ([string]::IsNullOrWhiteSpace($OctopusParameters['F5LTM.MemberIP'])) {\n    Write-Host \"No IP Adress was provided on the 'LTM Member IP`, using [System.Net.Dns]::GetHostAddresses to resolve it\"\n    $ip = $([System.Net.Dns]::GetHostAddresses(\"$($OctopusParameters['Octopus.Machine.Hostname'])\") | Where {$_.AddressFamily -ne 'InterNetworkV6'}).IpAddressToString\n    if ($ip -is [array]) {\n      Write-Host \"Found multiple ipv4 addresses, using first address $($ip[0])\"\n      $ip = $ip[0]\n    }\n} Else {\n    $ip = $OctopusParameters['F5LTM.MemberIP']\n}\n\n$Member = $ip\n\nWrite-Host \"Member is $Member\"\n\n# Gets the hostname of the current machine being deployed.\n$curhost = hostname\n$hostname = $OctopusParameters['F5LTM.HostName']\n$username = $OctopusParameters['F5LTM.Username']\n$password = ConvertTo-SecureString $OctopusParameters['F5LTM.Password'] -AsPlainText -Force\n$credential = New-Object System.Management.Automation.PSCredential ($username, $password)\n\nWrite-host \"Currently deploying to $curhost\"\n\nIf (($OctopusParameters['F5LTM.EnableOrDisable'] -ne \"Enabled\") -and ($OctopusParameters['F5LTM.WaitForConnections'] -eq \"True\"))\n{\n    New-F5Session -LTMName $hostname -LTMCredentials $credential\n\n    Write-Host \"Setting $Member to $($OctopusParameters['F5LTM.EnableOrDisable']) in $Pool pool\";\n\n    Disable-PoolMember -PoolName $Pool -Address $Member\n\n    Write-Host \"Waiting for connections to drain before deploying.  This could take a while....\"\n\n    WaitFor-ConnectionCount -pool_name $Pool -member $Member -MaxWaitTime $OctopusParameters['F5LTM.MaxWaitTime'] -ConnectionCount $OctopusParameters['F5LTM.ConnectionCount']\n\n    if ($OctopusParameters['F5LTM.EnableOrDisable'] -eq \"Disabled\") \n    {\n        Write-Host \"Setting $Member to Offline in $Pool pool\";\n\n        Disable-PoolMember -PoolName $Pool -Address $Member -Force\n    }\n}\nElse\n{\n    New-F5Session -LTMName $hostname -LTMCredentials $credential\n\n    Write-host \"Setting $Member to $($OctopusParameters['F5LTM.EnableOrDisable']) in $Pool pool.\"\n\n    if ($OctopusParameters['F5LTM.EnableOrDisable'] -eq \"Disabled\") \n    {\n        Disable-PoolMember -PoolName $Pool -Address $Member -Force\n    } \n    Else\n    {\n        Enable-PoolMember -PoolName $Pool -Address $Member\n    }\n}"
+  },
+  "Parameters": [
+    {
+      "Id": "5ed914ec-ff22-436d-ac37-1ccc5216372e",
+      "Name": "F5LTM.WaitForConnections",
+      "Label": "Wait on Connections?",
+      "HelpText": "If checked, the deployment won't continue until current connections on the node = 0",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "d3b82f88-87d5-4aec-be2a-4a0b3408b8db",
+      "Name": "F5LTM.ConnectionCount",
+      "Label": "Kill connections when <=",
+      "HelpText": "The default is to wait until there are no connections left on the node.  If you don't want to wait for zero connections before deploying, you can put a value here and when that number of connections is reached the deployment will happen killing the rest of the connected sessions.",
+      "DefaultValue": "0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2207ca51-ce9c-4498-8394-e0553fbcf54c",
+      "Name": "F5LTM.MaxWaitTime",
+      "Label": "Max. Wait Time (seconds)",
+      "HelpText": "Maximum wait time (in seconds) before killing connections and moving on. Defaults to 5 minutes",
+      "DefaultValue": "300",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7f503c0b-0050-4685-a9d8-7dbc42199ac0",
+      "Name": "F5LTM.EnableOrDisable",
+      "Label": "LTM Status",
+      "HelpText": "State member will be put into (Enabled, Disabled, Offline)  \n\n- **Disabled** continues to process persistent and active connections. It can accept new connections only if the connections belong to an existing persistence session.  \n\n- **Offline** allows existing connections to time out, but no new connections are allowed.",
+      "DefaultValue": "Disabled",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Enabled|Enable\nDisabled|Disable\nOffline|Forced Offline"
+      }
+    },
+    {
+      "Id": "e49bb08a-c72b-4bae-95ea-bb2c4c808657",
+      "Name": "F5LTM.PoolName",
+      "Label": "LTM Pool name",
+      "HelpText": "Name of F5 pool",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "50225d2a-503c-443e-85ca-8a42cba25ea3",
+      "Name": "F5LTM.MemberIP",
+      "Label": "LTM Member IP",
+      "HelpText": "IP Address of F5 pool member. Default will auto discover the ip address of Tentacle.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "559c46da-55be-4bb7-88fd-0d17b09455c5",
+      "Name": "F5LTM.HostName",
+      "Label": "LTM Host name",
+      "HelpText": "The DNS name or IP address of the F5 LTM device.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "25f4bb72-26df-4c97-8b4b-fbac72aa2655",
+      "Name": "F5LTM.Username",
+      "Label": "LTM username",
+      "HelpText": "Credential used to access F5 REST API",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4973c257-489f-4c1c-8c30-721e3ff11ccc",
+      "Name": "F5LTM.Password",
+      "Label": "LTM password",
+      "HelpText": "Credential used to access F5 REST API",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "LastModifiedBy": "gvanderberg",
+  "$Meta": {
+    "ExportedAt": "2020-06-10T10:23:31.760Z",
+    "OctopusVersion": "2019.12.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "f5"
+}

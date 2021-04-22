@@ -3,10 +3,10 @@
   "Name": "Datadog - Schedule Downtime",
   "Description": "Datadog is cloud monitoring service which allows you to push arbitrary events into via an api. This task allows you to schedule a downtime event to prevent error alerts during a deployment.",
   "ActionType": "Octopus.Script",
-  "Version": 3,
+  "Version": 4,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "# Lets handle our own errors here\r\n$ErrorActionPreference = \"continue\"\r\n\r\n$apiKey = $OctopusParameters['ApiKey']\r\n$appKey = $OctopusParameters['AppKey']\r\n$endpoint = $OctopusParameters['DatadogEndpoint']\r\n$downtimeApiEndpoint = \"/api/v1/downtime\"\r\n$scope = $OctopusParameters['Environment']\r\n$durstring = $OctopusParameters['Duration']\r\n\r\n[int]$duration = [convert]::ToInt32($durstring,10)\r\n\r\n# Write out some debug information\r\nWrite-Host \"Scheduling Downtime for: $scope\"\r\nWrite-Host \"Datadog Endpoint: $endpoint$downtimeApiEndpoint\"\r\n\r\n# Create the url from basic information\r\n$url = \"$endpoint$downtimeApiEndpoint`?api_key=$apiKey&application_key=$appKey\"\r\n\r\nWrite-Host $url\r\n\r\n$start=[Math]::Floor([decimal](Get-Date(Get-Date).ToUniversalTime()-uformat \"%s\"))\r\n$end = $start + $duration\r\n$json = @\"\r\n{\r\n      \"scope\": \"env:$scope\",\r\n      \"start\": \"$start\",\r\n      \"end\": \"$end\"\r\n  }\r\n\"@\r\n\r\n# Make the response and handle exceptions **Requires PS 3.0 + \r\ntry {\r\n    $response = Invoke-WebRequest -Uri $url -Method POST -Body ($json | ConvertFrom-Json | ConvertTo-Json) -ContentType \"Application/json\"\r\n}catch{\r\n    Write-Error \"Error: $_\"\r\n    EXIT 0\r\n}\r\n\r\n# Some Error handling here\r\nif($response.StatusCode -ne 200){\r\n    Write-Error \"There was an error listing response content below to debug\"\r\n    $response.RawContent\r\n}else{\r\n    Write-Host \"Sent Successfully\"\r\n}\r\n\r\n# We usually don't want to fail a deployment because of this\r\nEXIT 0"
+    "Octopus.Action.Script.ScriptBody": "# Lets handle our own errors here\r\n$ErrorActionPreference = \"continue\"\r\n\r\n$apiKey = $OctopusParameters['ApiKey']\r\n$appKey = $OctopusParameters['AppKey']\r\n$endpoint = $OctopusParameters['DatadogEndpoint']\r\n$downtimeApiEndpoint = \"/api/v1/downtime\"\r\n$scope = $OctopusParameters['Environment']\r\n$durstring = $OctopusParameters['Duration']\r\n\r\n[int]$duration = [convert]::ToInt32($durstring,10)\r\n\r\n# Write out some debug information\r\nWrite-Host \"Scheduling Downtime for: $scope\"\r\nWrite-Host \"Datadog Endpoint: $endpoint$downtimeApiEndpoint\"\r\n\r\n# Create the url from basic information\r\n$url = \"$endpoint$downtimeApiEndpoint`?api_key=$apiKey&application_key=$appKey\"\r\n\r\nWrite-Host $url\r\n\r\n$start=[Math]::Floor([decimal](Get-Date(Get-Date).ToUniversalTime()-uformat \"%s\"))\r\n$end = $start + $duration\r\n$json = @\"\r\n{\r\n      \"scope\": \"env:$scope\",\r\n      \"start\": \"$start\",\r\n      \"end\": \"$end\"\r\n  }\r\n\"@\r\n\r\n# Make the response and handle exceptions **Requires PS 3.0 + \r\ntry {\r\n    $response = Invoke-WebRequest -Uri $url -Method POST -Body ($json | ConvertFrom-Json | ConvertTo-Json) -ContentType \"Application/json\" -UseBasicParsing\r\n}catch{\r\n    Write-Error \"Error: $_\"\r\n    EXIT 0\r\n}\r\n\r\n# Some Error handling here\r\nif($response.StatusCode -ne 200){\r\n    Write-Error \"There was an error listing response content below to debug\"\r\n    $response.RawContent\r\n}else{\r\n    Write-Host \"Sent Successfully\"\r\n}\r\n\r\n# We usually don't want to fail a deployment because of this\r\nEXIT 0"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -55,10 +55,9 @@
         "Octopus.ControlType": "SingleLineText"
       }
     }
-
   ],
-  "LastModifiedOn": "2016-03-01T02:15:54.920+00:00",
-  "LastModifiedBy": "ryankelley",
+  "LastModifiedOn": "2019-09-18T00:54:17.669Z",
+  "LastModifiedBy": "baynewc1",
   "$Meta": {
     "ExportedAt": "2016-03-01T23:11:19.809Z",
     "OctopusVersion": "3.2.0",

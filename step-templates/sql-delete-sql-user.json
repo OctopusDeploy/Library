@@ -1,0 +1,62 @@
+{
+  "Id": "3c3757a6-eab2-4c37-8e9d-1b713a657357",
+  "Name": "SQL - Delete SQL User",
+  "Description": "Deletes a SQL User from the server without using SMO.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,  
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedLogin = $deleteSqlLogin.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then delete user command on the server\"\n$command.CommandText = \"IF EXISTS(SELECT 1 FROM sys.server_principals WHERE name = '$escapedLogin')\n\tDROP LOGIN [$deleteSqlLogin]\"            \n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully deleted the account $createSqlLogin\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+  },
+  "Parameters": [
+    {
+      "Id": "a891f549-3de1-40e6-a657-dfe5770484eb",
+      "Name": "createSqlServer",
+      "Label": "SQL Server",
+      "HelpText": "The SQL Server to perform the action on",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a26a532f-40e2-469d-9ea3-b556e82ca001",
+      "Name": "createSqlLoginUserWhoHasCreateUserRights",
+      "Label": "SQL Login",
+      "HelpText": "The user who has permissions to create the user\n\nLeave blank for integrated security",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3f9d69dd-14c8-4854-97ab-c9a186bf9285",
+      "Name": "createSqlLoginPasswordWhoHasRights",
+      "Label": "SQL Password",
+      "HelpText": "The password of the user who has permissions to create SQL Logins\n\nLeave blank for integrated security",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "b791dca9-e95e-41b7-8388-4585dfa3011e",
+      "Name": "deleteSqlLogin",
+      "Label": "Username to delete",
+      "HelpText": "The SQL Login which will be deleted",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2018-07-11T20:39:04.366Z",
+  "LastModifiedBy": "OctopusBob",
+  "$Meta": {
+    "ExportedAt": "2018-07-11T20:39:04.366Z",
+    "OctopusVersion": "2018.6.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

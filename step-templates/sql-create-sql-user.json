@@ -1,0 +1,82 @@
+{
+  "Id": "d4d7d32d-0aec-4a9e-8455-7f91fcd0d6fb",
+  "Name": "SQL - Create SQL User If Not Exists",
+  "Description": "Create a SQL Login if the login doesn't already exist without using SMO.",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "Function Test-AzureSQL\n{\n\t# Define parameters\n    param ($SqlConnection)\n    \n    # Define local variables\n    $azureDetected = $false\n    \n    # Create command object\n    $command = $SqlConnection.CreateCommand()\n\n    # Check state\n    if ($SqlConnection.State -ne [System.Data.ConnectionState]::Open)\n    {\n    \t# Open the connection\n        $SqlConnection.Open()\n    }\n    \n    # Set command text\n    $command.CommandType = [System.Data.CommandType]::Text\n    $command.CommandText = \"SELECT SERVERPROPERTY ('edition')\"\n    \n    # Execute statement\n    $reader = $command.ExecuteReader()\n    \n    # Read results\n    while ($reader.Read())\n    {\n    \t# Get value from field\n        $value = $reader.GetValue(0)\n        \n        # Check to see if it's Azure\n        if ($value -like \"*Azure*\")\n        {\n        \t# It's azure\n            $azureDetected = $true\n            \n            # break\n            break\n        }\n    }\n    \n    # Check to see if reader is open\n    if ($reader.IsClosed -eq $false)\n    {\n    \t# Close reader object\n        $reader.Close()\n    }\n    \n    # Not found\n    return $azureDetected\n}\n\nif ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\" \n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$isAzureSQL = Test-AzureSQL -SqlConnection $sqlConnection\n\n$escapedLogin = $createSqlLogin.Replace(\"'\", \"''\")\nWrite-Host \"Running the if not exists then create user command on the server for $escapedLogin\"\n\nif ([string]::IsNullOrWhiteSpace($createSqlPassword) -eq $true) {\n\tWrite-Host \"The password sent in was empty, creating account as domain login\"\n    $command.CommandText = \"IF NOT EXISTS(SELECT 1 FROM sys.server_principals WHERE name = '$escapedLogin')\n\tCREATE LOGIN [$createSqlLogin] FROM WINDOWS\"\n    \n    if ($isAzureSQL -eq $false)\n    {\n        $command.CommandText += \" with default_database=[$createSqlDefaultDatabase]\"\n    }\n    \n}\nelse {\n\tWrite-Host \"A password was sent in, creating account as SQL Login\"\n\t$escapedPassword = $createSqlPassword.Replace(\"'\", \"''\")\n\t$command.CommandText = \"IF NOT EXISTS(SELECT 1 FROM sys.sql_logins WHERE name = '$escapedLogin')\n\tCREATE LOGIN [$createSqlLogin] with Password='$escapedPassword'\"  \n\n    if ($isAzureSQL -eq $false)\n    {\n        $command.CommandText += \", default_database=[$createSqlDefaultDatabase]\"\n    }\n}\n\n\n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createSqlLogin\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+  },
+  "Parameters": [
+    {
+      "Id": "95996aae-c3ec-4d6f-ac24-486d33513620",
+      "Name": "createSqlServer",
+      "Label": "SQL Server",
+      "HelpText": "The SQL Server to perform the action on",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "443c9e33-4f94-4141-bae8-24eec4f133d2",
+      "Name": "createSqlLoginUserWhoHasCreateUserRights",
+      "Label": "SQL Login",
+      "HelpText": "The user who has permissions to create the user\n\nLeave blank for integrated security",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0bf48c89-31a2-4462-9be3-3f80e816f0de",
+      "Name": "createSqlLoginPasswordWhoHasRights",
+      "Label": "SQL Password",
+      "HelpText": "The password of the user who has permissions to create SQL Logins\n\nLeave blank for integrated security",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "3f9a4254-db16-4aa5-9ab9-bb8e369ee69e",
+      "Name": "createSqlLogin",
+      "Label": "Username to create",
+      "HelpText": "The SQL Login name that will be created",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b73a9fb0-1b09-473c-956b-07198e5028cc",
+      "Name": "createSqlPassword",
+      "Label": "Password",
+      "HelpText": "The password of the user being created.  Leave this blank if you want to use windows authentication.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "f9746a86-33b5-49b2-9bb2-d528585e9759",
+      "Name": "createSqlDefaultDatabase",
+      "Label": "Default Database",
+      "HelpText": "The default database for the user",
+      "DefaultValue": "master",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-02-12T17:21:40.762Z",
+  "LastModifiedBy": "twerthi",
+  "$Meta": {
+    "ExportedAt": "2021-02-12T17:21:40.762Z",
+    "OctopusVersion": "2020.5.7",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

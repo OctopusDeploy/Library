@@ -1,0 +1,55 @@
+{
+  "Id": "929ff903-29de-4217-b6a9-83fbfd477e11",
+  "Name": ".NET Core - Check .NET Core Framework Version",
+  "Description": "Check if given .NET Core framework version (or greater) is installed.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\" \nfunction Get-Parameter($Name, $Default, [switch]$Required) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        } else {\n            $result = $Default\n        }\n    }\n\n    return $result\n}\n\nfunction Get-DotNetCoreFrameworkVersions() {\n    $dotNetCoreVersions = @()\n    if(Test-Path \"$env:programfiles/dotnet/shared/Microsoft.NETCore.App\") {\n        $dotNetCoreVersions = (ls \"$env:programfiles/dotnet/shared/Microsoft.NETCore.App\").Name\n    }\n    return $dotNetCoreVersions\n}\n\nfunction Get-AspDotNetCoreRuntimeVersions() {\n    $aspDotNetCoreRuntimeVersions = @()\n\t$DotNETCoreUpdatesPath = \"Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\Microsoft\\Updates\\.NET Core\" \n\t$DotNetCoreItems = Get-Item -Path $DotNETCoreUpdatesPath \n\t$aspDotNetCoreRuntimeVersions = $DotNetCoreItems.GetSubKeyNames() | where { $_ -match \"^Microsoft (ASP)?\\.NET Core (?<version>[\\d\\.]+(.*?)?) \"} | foreach { $Matches['version'] }\n\n    return $aspDotNetCoreRuntimeVersions\n}\n\n$targetVersion = (Get-Parameter \"TargetVersion\" -Required).Trim()\n$exact = [boolean]::Parse((Get-Parameter \"Exact\" -Required))\n$CheckASPdotNETCore = [boolean]::Parse((Get-Parameter \"CheckASPdotNETCore\" -Required))\n\n$matchedVersions = Get-DotNetCoreFrameworkVersions | Where-Object { if ($exact) { $_ -eq $targetVersion } else { $_ -ge $targetVersion }  }\nif (!$matchedVersions) { \n    throw \"Can't find .NET Core Runtime $targetVersion installed in the machine.\"\n}\n\n$matchedVersions | foreach { Write-Host \"Found .NET Core Runtime $_ installed in the machine.\" }\n\nif ($CheckASPdotNETCore) {\n    $matchedAspVersions = Get-AspDotNetCoreRuntimeVersions\n    if (!$matchedAspVersions) {\n        throw \"Can't find ASP.NET Core Runtime installed in the machine.\"\n    }\n\n    $matchedAspVersions | foreach { Write-Host \"Found ASP.NET Core Runtime $_ installed in the machine.\" }\n}"
+  },
+  "Parameters": [
+    {
+      "Id": "f386deb4-36fb-4116-ad4a-5bceed89fa5b",
+      "Name": "TargetVersion",
+      "Label": "Target .NET Core framework version",
+      "HelpText": "The target .NET Core framework version you expect to be installed in the machine. For example, 2.0.5.",
+      "DefaultValue": "2.0.5",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "7312dd89-2174-47d7-bdfd-2745fb812f58",
+      "Name": "Exact",
+      "Label": "Exact",
+      "HelpText": "If you check \"Exact\", it means the installed .NET Core framework version MUST match target version.\n\nOtherwise, as long as the installed .NET Coreframework version is greater than or equal to target version, the check will pass.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "4f0b738b-8f06-4c93-a27f-49b3cd06ea9a",
+      "Name": "CheckASPdotNETCore",
+      "Label": "Check ASP.NET Core Module",
+      "HelpText": "If you check \"Check ASP.NET Core Module\", it means this step will check if ASP.NET Core module is installed in the host or not.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2018-06-13T08:43:39.365Z",
+    "OctopusVersion": "2018.4.1",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "cjuroz",
+  "Category": "dotnetcore"
+}

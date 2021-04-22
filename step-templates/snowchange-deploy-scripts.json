@@ -1,0 +1,127 @@
+{
+  "Id": "83d55334-d68e-4062-a84a-810eea445236",
+  "Name": "Snowchange - Deploy Scripts",
+  "Description": "[Snowchange](https://github.com/jamesweakley/snowchange#overview) is a Python script that applies migration scripts to [Snowflake](https://www.snowflake.com/) systems.\n\n**Dependencies:**\nThis step is a PowerShell script which requires Python (and pip) to run.\nFor the scripts package, ensure scripts follow the [naming convention](https://github.com/jamesweakley/snowchange#script-naming) presribed by SnowChange, which uses the Flyway naming convention.\n\n**Activities:**\n* Uses pip to update itself and install `wheel` and `snowflake-connector-python`.\n* If a path to Snowchange.py is not provided, retrieves the latest version of the file from Github.\n* Generates a process-level environment variable, `SNOWSQL_PWD`, which Snowchange requires in order to function.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "4d8e376e-2736-4b9d-bae5-074c07748e85",
+      "Name": "SnowChangeDeploySnowflakeScriptsPackage",
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "SnowChangeDeploySnowflakeScriptsPackage"
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "function Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue\n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    if ($result -eq $null) {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        } else {\n            $result = $Default\n        }\n    }\n\n    return $result\n}\n\n& {\n\tparam(\n    \t[string]$SnowChangeDeploySnowflakeDatabaseName,\n    \t[string]$SnowChangeDeploySnowflakeWarehouse,\n        [string]$SnowChangeDeploySnowflakeDeploymentRole,\n        [string]$SnowChangeDeploySnowflakeDeploymentUser,\n        [string]$SnowChangeDeploySnowflakeRegion,\n        [string]$SnowChangeDeploySnowflakeAccountName,\n        [string]$SnowChangeDeploySNOWSQL_PWD,\n        [string]$SnowChangeDeployPath\n      )\n\n\tpython --version\n\n# Acquire snowchange.py dependencies\n\tpython.exe -m pip install --upgrade pip\n\tpip install --upgrade wheel\n\tpip install --upgrade snowflake-connector-python\n\n# Identify or acquire path to snowchange.py\n\n\tif (!$SnowChangeDeployPath) {\n      Write-Host \"Snowchange path not provided. Downloading from Github.\"\n\n      $wc = New-Object System.Net.WebClient\n      $wc.Encoding = [System.Text.Encoding]::UTF8\n\n      $targetFolder = Join-Path $Env:OctopusCalamariWorkingDirectory 'snowchange'\n      $file = \"snowchange.py\"\n      $targetPath = Join-Path $targetFolder $file\n      $url = \"https://raw.githubusercontent.com/jamesweakley/snowchange/master/$file\"\n\n      Write-Host -Message \"Attempting to create $targetFolder\"\n      New-Item -ItemType \"directory\" -Path \"$targetFolder\"                \n      Write-Host -Message \"Attempting to download from $url\"\n      $wc.DownloadFile(\"$url\", \"$targetPath\")\n\n\t\t$SnowChangeDeployPath = $targetPath\n\t}\n\n# Identify path to Scripts for snowchange.py to execute\n\n\t$scriptsPath = $OctopusParameters[\"Octopus.Action.Package[SnowChangeDeploySnowflakeScriptsPackage].ExtractedPath\"]\n\n# Set Process-level Environment variable for SNOWSQL_PWD\n\n\t$pword = \"$SnowChangeDeploySNOWSQL_PWD\"\n\tSet-Item -Path Env:SNOWSQL_PWD -Value $pword\n\n# If a DB was specified, generate the metadata table name\n\n\tif ($SnowChangeDeploySnowflakeDatabaseName) {\n    \t$metadataTable = \"$SnowChangeDeploySnowflakeDatabaseName\",\".SNOWCHANGE.CHANGE_HISTORY\" -Join \"\"\n    }\n\n# Invoke snowchange.py\n\n\tif ($metadataTable) {\n      python $SnowChangeDeployPath `\n      -f \"$scriptsPath\" `\n      -a \"$SnowChangeDeploySnowflakeAccountName\" `\n      --snowflake-region \"$SnowChangeDeploySnowflakeRegion\" `\n      -u \"$SnowChangeDeploySnowflakeDeploymentUser\" `\n      -r \"$SnowChangeDeploySnowflakeDeploymentRole\" `\n      -w \"$SnowChangeDeploySnowflakeWarehouse\" `\n      -c \"$metadataTable\"\n    } else {\n      python $SnowChangeDeployPath `\n      -f \"$scriptsPath\" `\n      -a \"$SnowChangeDeploySnowflakeAccountName\" `\n      --snowflake-region \"$SnowChangeDeploySnowflakeRegion\" `\n      -u \"$SnowChangeDeploySnowflakeDeploymentUser\" `\n      -r \"$SnowChangeDeploySnowflakeDeploymentRole\" `\n      -w \"$SnowChangeDeploySnowflakeWarehouse\"    \n    }\n} `\n(Get-Param 'SnowChangeDeploySnowflakeDatabaseName') `\n(Get-Param 'SnowChangeDeploySnowflakeWarehouse' -Required) `\n(Get-Param 'SnowChangeDeploySnowflakeDeploymentRole' -Required) `\n(Get-Param 'SnowChangeDeploySnowflakeDeploymentUser' -Required) `\n(Get-Param 'SnowChangeDeploySnowflakeRegion' -Required) `\n(Get-Param 'SnowChangeDeploySnowflakeAccountName' -Required) `\n(Get-Param 'SnowChangeDeploySNOWSQL_PWD' -Required) `\n(Get-Param 'SnowChangeDeployPath')\n"
+  },
+  "Parameters": [
+    {
+      "Id": "4f9e0178-8c8d-4603-b88f-5159e21d2e1f",
+      "Name": "SnowChangeDeploySnowflakeScriptsPackage",
+      "Label": "Scripts Package",
+      "HelpText": "The deployment package that contains the scripts to implement.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "a7dd8952-f09d-4088-b659-d84aca3590f9",
+      "Name": "SnowChangeDeployPath",
+      "Label": "Path to Snowchange",
+      "HelpText": "_Optional:_ Provide an absolute path to an installed copy of snowchange.py. If left blank, the latest version will be downloaded from Github.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "70beb1b0-d737-4fc4-8712-2d8ad8bd9d66",
+      "Name": "SnowChangeDeploySnowflakeAccountName",
+      "Label": "Snowflake Account",
+      "HelpText": "This is the prefix to the Snowflake Url e.g. `contoso` and not `contoso.us-east-1.snowflake...`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5f959b70-5be6-4ad1-ac9b-1390b8a706e9",
+      "Name": "SnowChangeDeploySnowflakeRegion",
+      "Label": "Snowflake Region",
+      "HelpText": "The cloud region of the Snowflake account. e.g. `us-east-1`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "73c860ec-25d1-4775-93a9-68480c2e7ebf",
+      "Name": "SnowChangeDeploySnowflakeWarehouse",
+      "Label": "Warehouse",
+      "HelpText": "The Snowflake warehouse that will receive the changes from the script.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f09080f6-4990-4553-9893-a0455567c56e",
+      "Name": "SnowChangeDeploySnowflakeDatabaseName",
+      "Label": "Database Name",
+      "HelpText": "_Optional:_ Database name is used to contain the metadata changes within the database. If none is provided, a default `METADATA`\n database is created at the top level.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "55db8635-2aa6-41c9-991c-75ce8fa8b9ed",
+      "Name": "SnowChangeDeploySnowflakeDeploymentRole",
+      "Label": "Role",
+      "HelpText": "The role used by the user to execute the scripts.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "87385639-099f-4758-adbc-127ccb7774c9",
+      "Name": "SnowChangeDeploySnowflakeDeploymentUser",
+      "Label": "Snowflake Deployment User Name",
+      "HelpText": "The username Snowchange will use to run the scripts.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9debfcd7-e85e-48c6-ae90-2428d76ce13e",
+      "Name": "SnowChangeDeploySNOWSQL_PWD",
+      "Label": "Snowflake Deployment User Password",
+      "HelpText": "The script will create a process-level environment variable SNOWSQL_PWD, which Snowchange uses for authenticating to Snowflake.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-08-10T15:44:23.481Z",
+    "OctopusVersion": "2019.13.7",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "apfinger",
+  "Category": "Snowflake"
+}

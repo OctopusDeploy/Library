@@ -1,0 +1,72 @@
+{
+  "Id": "9ce258b6-d75d-4fb5-884b-7cd5d7311300",
+  "Name": "SQL - Create Database User If Not Exists",
+  "Description": "Will create a database user using an existing server user if that database user does not exist without using SMO.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,  
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "Write-Host \"SqlLoginWhoHasRights $createSqlLoginUserWhoHasCreateUserRights\"\nWrite-Host \"CreateSqlServer $createSqlServer\"\nWrite-Host \"CreateDatabaseName $createDatabaseName\"\nWrite-Host \"CreateSqlLogin $createSqlLogin\"\n\nif ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=$createDatabaseName;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=$createDatabaseName;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedSqlLogin = $createSqlLogin.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create for $createSqlLogin\"\n$command.CommandText = \"If Not Exists (select 1 from sysusers where name = '$escapedSqlLogin')\n\tCREATE USER [$createSqlLogin] FOR LOGIN [$createSqlLogin] WITH DEFAULT_SCHEMA=[dbo]\"            \n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createSqlLogin\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+  },
+  "Parameters": [
+    {
+      "Id": "65489614-83f3-4cb6-8fb5-c09271dcc2c1",
+      "Name": "createSqlServer",
+      "Label": "SQL Server",
+      "HelpText": "The SQL Server to perform the work on",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e6126a4a-a498-4a60-9f74-e55a08223375",
+      "Name": "createSqlLoginUserWhoHasCreateUserRights",
+      "Label": "SQL Login",
+      "HelpText": "The login of the user who has permissions to create a database user.\n\nLeave blank for integrated security.\n\nSee: https://docs.microsoft.com/en-us/sql/t-sql/statements/create-user-transact-sql?view=sqlallproducts-allversions#permissions for more details",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "23352169-eb79-4c2d-bb97-41825b49b1a9",
+      "Name": "createSqlLoginPasswordWhoHasRights",
+      "Label": "SQL Password",
+      "HelpText": "The password of the user who has permissions to create a database user.\n\nLeave blank for integrated security.\n\nSee: https://docs.microsoft.com/en-us/sql/t-sql/statements/create-user-transact-sql?view=sqlallproducts-allversions#permissions for more details",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "ccaf0052-36e2-4da8-b942-25a8686d7d1f",
+      "Name": "createDatabaseName",
+      "Label": "Database Name",
+      "HelpText": "The name of the database to create the user on",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "eb58a881-3f5c-4fc4-b7a9-f2eee35e599f",
+      "Name": "createSqlLogin",
+      "Label": "SQL Login",
+      "HelpText": "The username to attach to the database if it does not exist",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2020-12-01T20:33:56.8643571Z",
+  "LastModifiedBy": "pstephenson02",
+  "$Meta": {
+    "ExportedAt": "2018-07-11T20:40:58.281Z",
+    "OctopusVersion": "2018.6.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

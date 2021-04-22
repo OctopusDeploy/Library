@@ -1,17 +1,13 @@
 {
   "Id": "001609c0-35d0-4faa-95c3-a995faaeaa5e",
-  "Name": "AWS - Create Lambda",
-  "Description": "Creates a [AWS Lambda Function](#https://aws.amazon.com/lambda/) from the specified zip.\n\nIf the function exists, it will update the function code and update function configuration.\n- Requires the [AWS PowerShell cmdlets](http://aws.amazon.com/powershell/)\n\nTo create environment variables, add variables in project starting with 'env.'.\nFor example, to create environment variable S3BucketName = MyTestFolder, create variable 'env.S3BucketName' = 'MyTestFolder'.",
+  "Name": "AWS - Create Lambda (deprecated)",
+  "Description": "Creates a [AWS Lambda Function](#https://aws.amazon.com/lambda/) from the specified zip.\n\nIf the function exists, it will update the function code and update function configuration.\n- Requires the [AWS PowerShell cmdlets](http://aws.amazon.com/powershell/)\n\nTo create environment variables, add variables in project starting with 'env.'.\nFor example, to create environment variable S3BucketName = MyTestFolder, create variable 'env.S3BucketName' = 'MyTestFolder'.  This function has been deprecated in favor of the new AWS Deploy Lambda step template.  That new step requires 2019.10.x to run properly.  This step is left in place for older versions of Octopus Deploy to still use.",
   "ActionType": "Octopus.Script",
-  "Version": 4,
+  "Version": 7,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "# Check for the PowerShell cmdlets (from AWS - Create Cloud Formation Stack Octopus Step).\r\ntry{ \r\n    Import-Module AWSPowerShell -ErrorAction Stop\r\n}catch{\r\n    \r\n    $modulePath = \"C:\\Program Files (x86)\\AWS Tools\\PowerShell\\AWSPowerShell\\AWSPowerShell.psd1\"\r\n    Write-Output \"Unable to find the AWS module checking $modulePath\" \r\n    \r\n    try{\r\n        Import-Module $modulePath        \r\n    }\r\n    catch{\r\n        throw \"AWS PowerShell not found! Please make sure to install them from https://aws.amazon.com/powershell/\" \r\n    }\r\n}\r\n\r\nfunction Get-EnvironmentVariables () {\r\n    $resultEV = @{}\r\n    $environmentVariableConst = 'env.'\r\n\r\n    $envVariables = $OctopusParameters.Keys | ? {$_ -like $environmentVariableConst + '*' }\r\n    \r\n    foreach($item in $envVariables)\r\n    {\r\n        $key = $item.Replace($environmentVariableConst, '')\r\n        $value = $OctopusParameters[$item]\r\n\r\n        $resultEV.Add($key, $value)\r\n    }\r\n    \r\n    return $resultEV\r\n}\r\n\r\n# Get the parameters.\r\n$functionName = $OctopusParameters['FunctionName']\r\n$functionZip = $OctopusParameters['FunctionZip']\r\n$handler = $OctopusParameters['Handler']\r\n$runtime = $OctopusParameters['Runtime']\r\n$role = $OctopusParameters['Role']\r\n$description = $OctopusParameters['Description']\r\n$memorySize = $OctopusParameters['MemorySize']\r\n$timeout = $OctopusParameters['Timeout']\r\n$awsRegion = $OctopusParameters['AWSRegion']\r\n$awsSecretAccessKey = $OctopusParameters['AWSSecretAccessKey']\r\n$awsAccessKey = $OctopusParameters['AWSAccessKey']\r\n$AWSCL_VpcConfig_SubnetId = $OctopusParameters['AWSCL_VpcConfig_SubnetId']\r\n$vpcSubnetIds = if($AWSCL_VpcConfig_SubnetId) { $AWSCL_VpcConfig_SubnetId.Split(',') }\r\n$AWSCL_VpcConfig_SecurityGroupId = $OctopusParameters['AWSCL_VpcConfig_SecurityGroupId']\r\nif($AWSCL_VpcConfig_SecurityGroupId) { $vpcSecurityGroupIds = $AWSCL_VpcConfig_SecurityGroupId.Split(',') }\r\n\r\n# Check the parameters.\r\nif (-NOT $awsSecretAccessKey) { throw \"You must enter a value for 'AWS Access Key'.\" }\r\nif (-NOT $awsAccessKey) { throw \"You must enter a value for 'AWS Secret Access Key'.\" }\r\nif (-NOT $awsRegion) { throw \"You must enter a value for 'AWS Region'.\" }\r\nif (-NOT $functionName) { throw \"You must enter a value for 'Function Name'.\" }\r\nif (-NOT $functionZip) { throw \"You must enter a value for 'Function Zip'.\" }\r\nif (-NOT $handler) { throw \"You must enter a value for 'Handler'.\" }\r\nif (-NOT $runtime) { throw \"You must enter a value for 'Runtime'.\" }\r\nif (-NOT $role) { throw \"You must enter a value for 'Role'.\" }\r\nif (-NOT $memorySize) { throw \"You must enter a value for 'Memory Size'.\" }\r\nif (-NOT $timeout) { throw \"You must enter a value for 'Timeout'.\" }\r\n\r\nWrite-Output \"--------------------------------------------------\"\r\nWrite-Output \"AWS Region: $awsRegion\"\r\nWrite-Output \"AWS Lambda Function Name: $functionName\"\r\nWrite-Output \"AWS Lambda Handler: $handler\"\r\nWrite-Output \"AWS Lambda Runtime: $runtime\"\r\nWrite-Output \"AWS Lambda Memory Size: $memorySize\"\r\nWrite-Output \"AWS Lambda Timeout: $timeout\"\r\nWrite-Output \"AWS Lambda Role: $role\"\r\nWrite-Output \"--------------------------------------------------\"\r\n\r\n# Set up the credentials and the dependencies.\r\nSet-DefaultAWSRegion -Region $awsRegion\r\n$credential = New-AWSCredentials -AccessKey $awsAccessKey -SecretKey $awsSecretAccessKey\r\n\r\n$awsEnvironmentVariables = Get-EnvironmentVariables\r\n\r\n# Check if the function exists, with a try catch\r\ntry {\r\n    Get-LMFunction -Credential $credential -FunctionName $functionName -Region $awsRegion\r\n    \r\n    Write-Host 'Updating Lambda function code.'\r\n\r\n    # Update the function.\r\n    Update-LMFunctionCode -Credential $credential -Region $awsRegion -FunctionName $functionName -ZipFilename  $functionZip\r\n    \r\n    Write-Host 'Updating Lambda function configuration.'\r\n\r\n    Update-LMFunctionConfiguration -Credential $credential -Region $awsRegion -FunctionName $functionName -Description $description -Handler $handler -MemorySize $memorySize -Role $role -Runtime $runtime -Timeout $timeout -Environment_Variable $awsEnvironmentVariables -VpcConfig_SecurityGroupId $vpcSecurityGroupIds -VpcConfig_SubnetId $vpcSubnetIds\r\n    \r\n    # Feedback\r\n    Write-Output \"--------------------------------------------------\"\r\n    Write-Output \"AWS Lambda Function updated.\"\r\n    Write-Output \"--------------------------------------------------\"\r\n}\r\ncatch {\r\n    # Create the function.\r\n    Publish-LMFunction -Credential $credential -Region $awsRegion -FunctionName $functionName -FunctionZip $functionZip -Handler $handler -Runtime $runtime -Role $role -Description $description -MemorySize $memorySize -Timeout $timeout -Environment_Variable $awsEnvironmentVariables -VpcConfig_SecurityGroupId $vpcSecurityGroupIds -VpcConfig_SubnetId $vpcSubnetIds\r\n\r\n    # Feedback\r\n    Write-Output \"--------------------------------------------------\"\r\n    Write-Output \"AWS Lambda Function created.\"\r\n    Write-Output \"--------------------------------------------------\"\r\n}\r\n",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptSource": "Inline",
-    "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptFileName": null,
-    "Octopus.Action.Package.FeedId": null,
-    "Octopus.Action.Package.PackageId": null
+    "Octopus.Action.Script.ScriptSource": "Inline"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -89,7 +85,7 @@
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "Select",
-        "Octopus.SelectOptions": "nodejs|nodejs\nnodejs4.3|nodejs4.3\njava8|java8\npython2.7|python2.7\ndotnetcore1.0|dotnetcore1.0\nnodejs4.3-edge|nodejs4.3-edge"
+        "Octopus.SelectOptions": "nodejs|nodejs\nnodejs4.3|nodejs4.3\nnodejs6.10|nodejs6.10\njava8|java8\npython2.7|python2.7\npython3.6|python3.6\ndotnetcore1.0|dotnetcore1.0\ndotnetcore2.0|dotnetcore2.0\nnodejs4.3-edge|nodejs4.3-edge\ngo1.x|go1.x"
       },
       "Links": {}
     },
@@ -160,11 +156,11 @@
       "Links": {}
     }
   ],
-  "LastModifiedOn": "2017-07-03T17:05:54.375Z",
-  "LastModifiedBy": "jasmin-mistry",
+  "LastModifiedOn": "2021-02-26T12:09:57.788Z",
+  "LastModifiedBy": "harrisonmeister",
   "$Meta": {
-    "ExportedAt": "2017-07-03T20:07:42.845Z",
-    "OctopusVersion": "3.13.8",
+    "ExportedAt": "2018-04-16T10:25:57.788Z",
+    "OctopusVersion": "2018.3.6",
     "Type": "ActionTemplate"
   },
   "Category": "aws"

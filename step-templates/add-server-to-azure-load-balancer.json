@@ -1,0 +1,84 @@
+{
+  "Id": "540de6f6-f1c6-4e1c-9062-9e78570074f6",
+  "Name": "Add Server to Azure Load Balancer",
+  "Description": "Uses Service Principal to Add Server to Azure Load Balancer.",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "#region Verify variables\n\n#Verify psbilbAzureSubscription is not null.\nIf ([string]::IsNullOrEmpty($OctopusParameters['psbilbAzureSubscription']))\n{\n  Throw 'Azure Subscription cannot be null.'\n}\n$azureSubscription = $OctopusParameters['psbilbAzureSubscription']\nWrite-Host ('Azure Subscription: ' + $azureSubscription)\n\n#Verify psbilbAzureResourceGroup is not null.\nIf ([string]::IsNullOrEmpty($OctopusParameters['psbilbAzureResourceGroup']))\n{\n  Throw 'Azure Resource Group cannot be null.'\n}\n$azureResourceGroup = $OctopusParameters['psbilbAzureResourceGroup']\nWrite-Host ('Azure Resource Group: ' + $azureResourceGroup)\n\n#Verify psbilbAzureMachineName is not null.\nIf ([string]::IsNullOrEmpty($OctopusParameters['psbilbAzureMachineName']))\n{\n  Throw 'Azure Machine Name cannot be null.'\n}\n$azureMachineName = $OctopusParameters['psbilbAzureMachineName']\nWrite-Host ('Azure Machine Name: ' + $azureMachineName)\n\n#Verify psbilbAzureLoadBalancer is not null.\nIf ([string]::IsNullOrEmpty($OctopusParameters['psbilbAzureLoadBalancer']))\n{\n  Throw 'Azure Load Balancer cannot be null.'\n}\n$azureLoadBalancer = $OctopusParameters['psbilbAzureLoadBalancer']\nWrite-Host ('Azure Load Balancer: ' + $azureLoadBalancer)\n\n#Verify psbilbAzureLoadBalancerBackEndPoolName is not null.\nIf ([string]::IsNullOrEmpty($OctopusParameters['psbilbAzureLoadBalancerBackEndPoolName']))\n{\n  Throw 'Azure Load Balancer Backend Pool Name cannot be null.'\n}\n$azureLoadBalancerBackendPoolName = $OctopusParameters['psbilbAzureLoadBalancerBackEndPoolName']\nWrite-Host ('Azure Load Balancer Backend Pool Name: ' + $azureLoadBalancerBackendPoolName)\n\n#endregion\n\n#region Process\n\nSet-AzureRmContext -SubscriptionName $azureSubscription\n\n$azureVM = Get-AzureRmVM -ResourceGroupName $azureResourceGroup -Name $azureMachineName\nIf (!$azureVM)\n{\n  Throw 'Could not retrieve server from Azure needed to remove from Load Balancer.'\n}\n\n$nic = (Get-AzureRmNetworkInterface -ResourceGroupName $azureResourceGroup | Where-Object {$_.VirtualMachine.Id -eq $azureVM.Id})\nIf (!$nic)\n{\n  Throw 'Could not retrieve NIC from Azure needed to remove from Load Balancer.'\n}\n\n$loadBalancer = Get-AzureRmLoadBalancer -Name $azureLoadBalancer -ResourceGroupName $azureResourceGroup\nIf (!$loadBalancer)\n{\n  Throw 'Could not retrieve Load Balancer info from Azure.'\n}\n\n$ap = Get-AzureRmLoadBalancerBackendAddressPoolConfig -Name #{psbilbAzureLoadBalancerBackEndPoolName} -LoadBalancer $loadBalancer\n\n$nic.IpConfigurations[0].LoadBalancerBackendAddressPools = $ap\n$nic | Set-AzureRmNetworkInterface\n\n#endregion\n",
+    "Octopus.Action.Azure.AccountId": "#{psbilbAzureAccount}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "Parameters": [
+    {
+      "Id": "85e7fd91-8976-415a-82b7-1303e150b447",
+      "Name": "psbilbAzureAccount",
+      "Label": "Azure Account",
+      "HelpText": "Service Principal used to connect to Azure",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "e494b221-0b8e-4f02-84f1-079199e9f4b4",
+      "Name": "psbilbAzureSubscription",
+      "Label": "Azure Subscription",
+      "HelpText": "Subscription Load Balancer belongs to. Eg. 00000000-0000-0000-0000-000000000000",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4e0b35a8-c9f7-49e0-b9d2-e8121cf589af",
+      "Name": "psbilbAzureResourceGroup",
+      "Label": "Azure Resource Group",
+      "HelpText": "Resource Group Load Balancer belongs to. Eg. ProductionAus",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "44dfd700-28eb-463c-923a-58cc5ab76eb0",
+      "Name": "psbilbAzureMachineName",
+      "Label": "Azure Machine Name",
+      "HelpText": "Name of Virtual Machine to add to Load Balancer. Eg Web01",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "337bb455-a17c-4251-9543-26cb9ffd7087",
+      "Name": "psbilbAzureLoadBalancer",
+      "Label": "Azure Load Balancer",
+      "HelpText": "Name of Load Balancer. Eg. LoadBalacer01",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0162154d-83ac-41ca-bd6d-8f983187eccd",
+      "Name": "psbilbAzureLoadBalancerBackEndPoolName",
+      "Label": "Azure Load Balancer Back End Pool Name",
+      "HelpText": "Name of Backend Pool on Azure Load Balancer. Eg. WebServers",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-06-22T10:39:16.450Z",
+    "OctopusVersion": "2020.2.8",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "benjimac93",
+  "Category": "Azure"
+}

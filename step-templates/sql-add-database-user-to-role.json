@@ -1,0 +1,82 @@
+{
+  "Id": "1b6b07e5-aa4a-4fc2-b057-afcffada279c",
+  "Name": "SQL - Add Database User To Role",
+  "Description": "Adds a database user to a role without using SMO.  Please note: this is NOT for server roles or server users.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=$createDatabaseName;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=$createDatabaseName;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\nWrite-Host \"Running the script to add the user $createSqlLogin to the role $createRoleName\"\n$command.CommandText = \"ALTER ROLE [$createRoleName] ADD MEMBER [$createSqlLogin]\"            \n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully ran the script to add the user $createSqlLogin to the role $createRoleName\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+  },
+  "Parameters": [
+    {
+      "Id": "a68967a0-946b-4bd2-8e82-b4eb89dee1e0",
+      "Name": "createSqlServer",
+      "Label": "SQL Server",
+      "HelpText": "The SQL Server to perform the work on",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a67b471a-b696-45a3-b730-250eb0a17f8d",
+      "Name": "createSqlLoginUserWhoHasCreateUserRights",
+      "Label": "SQL Login",
+      "HelpText": "The login of the user who has permissions to add members to database roles.\n\nLeave blank for integrated security.\n\nSee: https://docs.microsoft.com/en-us/sql/t-sql/statements/alter-role-transact-sql?view=sqlallproducts-allversions#permissions for more details.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e9971a71-0483-41ff-a7dc-456848fafb96",
+      "Name": "createSqlLoginPasswordWhoHasRights",
+      "Label": "SQL Password",
+      "HelpText": "The password of the user who has permissions to add members to database roles.\n\nLeave blank for integrated security.\n\nSee: https://docs.microsoft.com/en-us/sql/t-sql/statements/alter-role-transact-sql?view=sqlallproducts-allversions#permissions for more details.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "40a7f32b-a801-43f6-b233-2556e27c2338",
+      "Name": "createDatabaseName",
+      "Label": "Database Name",
+      "HelpText": "The name of the database to change",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7a303387-295e-4229-8543-f6f9d1277ae9",
+      "Name": "createSqlLogin",
+      "Label": "SQL Login",
+      "HelpText": "The login of the user which will be added to the role",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2158d7fc-1364-4003-9d03-a8967fc7ef03",
+      "Name": "createRoleName",
+      "Label": "Role Name",
+      "HelpText": "The name of the role to add to",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2020-12-01T20:33:56.8643571Z",
+  "LastModifiedBy": "pstephenson02",
+  "$Meta": {
+    "ExportedAt": "2018-07-11T20:25:03.053Z",
+    "OctopusVersion": "2018.6.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

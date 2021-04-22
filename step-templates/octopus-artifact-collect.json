@@ -1,0 +1,80 @@
+{
+  "Id": "7d09ccec-91b7-4c0c-95d7-27a42b21eb5a",
+  "Name": "Artifact Collect",
+  "Description": "Collect artifacts easily and safely.",
+  "ActionType": "Octopus.Script",
+  "Version": 14,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "try{\n    #region Types - Constants\n    Add-Type -assembly \"system.io.compression.filesystem\"\n    $shaloMaskString = '********'\n    #endregion\n\n    #region Params\n    $shaloArtifactPath = $OctopusParameters['shaloArtifactPath']\n    Write-Host \"     Artifact path: [$shaloArtifactPath]\"\n\n    $shaloCollectedArtifactName = $OctopusParameters['shaloCollectedArtifactName']\n    Write-Host \"     Artifact name: [$shaloCollectedArtifactName]\"\n\n    $shaloArtifactTempPath = $OctopusParameters['shaloArtifactTempPath']\n    if($shaloArtifactTempPath.Length -eq 0){\n        Write-Error \"     Artifact Temporal path not set.\"\n        exit 1\n    }\n    Write-Host \"     Artifact Temporal path: [$shaloArtifactTempPath]\"\n\n    \n\n    $shaloCompressionLevel = $OctopusParameters['shaloCompressionLevel']\n    switch($shaloCompressionLevel) {\n        'Optimal' {$shaloCompressionLevel = [System.IO.Compression.CompressionLevel]::Optimal} \n        'Fastest' {$shaloCompressionLevel = [System.IO.Compression.CompressionLevel]::Fastest} \n        'NoCompression' {$shaloCompressionLevel = [System.IO.Compression.CompressionLevel]::NoCompression} \n    }\n    Write-Host \"     Artifact compresion Level: [$shaloCompressionLevel]\"\n\n    $shaloMaskFilers = $OctopusParameters['shaloMaskFilers']\n    $shaloMaskKeys = $OctopusParameters['shaloMaskKeys']\n    if($shaloMaskFilers.Length -gt 0 -and $shaloMaskKeys.Length -gt 0){\n        Write-Host \"     Scrub sensitive values from this file extensions : [$shaloMaskFilers]\"\n        $shaloMaskFilers = $shaloMaskFilers.Split(',')\n        $shaloMaskKeys = $shaloMaskKeys.Split(',')\n    }\n    #endregion\n\n    \n    if(Test-Path -Path $shaloArtifactPath){\n        Write-Host ''\n        #region Create Temporal Artifact\n        $shaloArtifactObject = Get-Item $shaloArtifactPath\n        try{\n        \tWrite-Host '     Cleaning Artifact Temporal Folder'\n            Remove-Item -Path $shaloArtifactTempPath -Force -Recurse\n        }catch{\n        }\n        if($shaloArtifactObject.PSIsContainer){\n            Write-Host '     Artifact type: [Directory]'\n            Copy-Item -Path $shaloArtifactPath -Destination $shaloArtifactTempPath -Recurse -Force\n        }else{\n            Write-Host '     Artifact type: [File]'\n            New-Item -Path $shaloArtifactTempPath -Force -ItemType Directory\n            Copy-Item -Path $shaloArtifactObject.FullName -Destination ($shaloArtifactTempPath + \"\\\" + $shaloArtifactObject.Name) -Force\n        }\n        Write-Host '     Temporal artifact created'\n        #endregion\n    \n        #region Apply Mask\n        Write-Host ''\n        Write-Host '     Masking sensitive data'\n        if($shaloMaskFilers.Length -gt 0 -and $shaloMaskKeys.Length -gt 0){\n            $shaloArtifactTempObjects = Get-ChildItem -Path $shaloArtifactTempPath -Force -Recurse\n            foreach($shaloItem in $shaloArtifactTempObjects){\n                if($shaloMaskFilers.Trim() -contains $shaloItem.Extension){\n                    foreach($ShaloKey in $shaloMaskKeys){\n                        (Get-Content $shaloItem.FullName) -replace $ShaloKey.Trim(), $shaloMaskString| Set-Content $shaloItem.FullName\n                    }\n                }\n            }\n        }\n        #endregion\n\n        #region Compress and Collect\n        Write-Host ''\n        Write-Host ''\n        Write-Host '     Compressing artifact...'\n        Write-Host \"     Artifact Temporal Path [$shaloArtifactTempPath]\"\n        Compress-Archive -Path $shaloArtifactTempPath -DestinationPath \"$shaloArtifactTempPath\\$shaloCollectedArtifactName.zip\" -Force -CompressionLevel $shaloCompressionLevel\n        Write-Host '     Artifact compressed'\n       \n\n        Write-Host ''\n        Write-Host ''\n        Write-Host '     Collecting artifact...'\n        Write-Host \"     Artifact Path [$shaloArtifactTempPath\\$shaloCollectedArtifactName.zip]\"\n        $Shalohash = Get-FileHash \"$shaloArtifactTempPath\\$shaloCollectedArtifactName.zip\" -Algorithm MD5 | Select Hash\n        Write-Host '     MD5 hash [' $Shalohash.Hash ']'\n        New-OctopusArtifact -Path \"$shaloArtifactTempPath\\$shaloCollectedArtifactName.zip\" -Name \"$shaloCollectedArtifactName.zip\"\n        Write-Host '     Artifact Collected'\n        \n        Write-Host ''\n        Write-Host ''\n    }else{\n        Write-Host ''\n        Write-Host ''\n        Write-Warning '     Artifact not found!'\n    }\n    \n        Write-Host ''\n        Write-Host ''\n        Write-Host 'Done!'\n\n}catch{\n    $ErrorMessage = $_.Exception.Message\n    $FailedItem = $_.Exception.ItemName\n    Write-Error \"We failed to processing $FailedItem. The error message was $ErrorMessage\"\n    exit 1\n}"
+  },
+  "Parameters": [
+    {
+      "Id": "1e50ae45-2a45-43c5-afdb-ac69f2527a37",
+      "Name": "shaloArtifactPath",
+      "Label": "Artifact path",
+      "HelpText": "Folder path or file full name\n\nExample: \n* C:\\somepath\n* C:\\somepath\\file.log",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "bf2684fa-1ddf-4f46-9763-949962c543f3",
+      "Name": "shaloArtifactTempPath",
+      "Label": "Artifact temporal path",
+      "HelpText": "Temporal path that will use to compress files and mask sensitive data",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "380865db-7f30-43bc-9425-6af65a2b9e8d",
+      "Name": "shaloCompressionLevel",
+      "Label": "Compression Level",
+      "HelpText": null,
+      "DefaultValue": "Optimal",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Optimal|Optimal\nFastest|Fastest\nNoCompression|No Compression"
+      }
+    },
+    {
+      "Id": "5161cd62-df8b-4037-83b1-a674f695839b",
+      "Name": "shaloMaskFilers",
+      "Label": "Files with sensitive data",
+      "HelpText": "__Optional__\nComma separated file extensions witch contains sensitive data.\n\nExample: .txt, .config",
+      "DefaultValue": "",
+      "DisplaySettings": {}
+    },
+    {
+      "Id": "2a205ab4-1790-436e-b000-42706ea0524b",
+      "Name": "shaloMaskKeys",
+      "Label": "Keys words that will be masked",
+      "HelpText": "__Optional__\nComma separated sensitive words\n\nExample: username, password, 1234-4567-8912-3456",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "9a5036b8-dc0e-412a-a7ea-4aa2120d8e0d",
+      "Name": "shaloCollectedArtifactName",
+      "Label": "Collected artifact Name",
+      "HelpText": "Artifact Name\n\nExample: DeploymentLogs.#{Octopus.Release.Number}",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "salomonvargas",
+  "$Meta": {
+    "ExportedAt": "2019-05-29T23:09:57.329Z",
+    "OctopusVersion": "2019.3.1",
+    "Type": "ActionTemplate"
+  },
+      "Category": "octopus"
+}

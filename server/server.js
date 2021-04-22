@@ -8,6 +8,7 @@ import React from 'react';
 import ReactDOMServer from 'react-dom/server';
 import {match, RouterContext} from 'react-router';
 import 'babel-core/register';
+import frameguard from 'frameguard';
 
 import config from './package.json';
 import App from './app/components/App';
@@ -22,9 +23,10 @@ app.use(express.static(path.join(__dirname, 'views'), { maxage: '1d' }));
 app.use('/.well-known', express.static('.well-known'));
 
 app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'jade');
+app.set('view engine', 'pug');
 
 app.use(compress());
+app.use(frameguard({ action: 'deny' }));
 
 app.disable('view cache');
 

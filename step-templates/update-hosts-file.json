@@ -1,0 +1,33 @@
+{
+  "Id": "79d6ce26-71bc-44c8-9228-d90cc7de9991",
+  "Name": "Update Hosts File",
+  "Description": "This template will update the value of your HOSTS file to what you define in this step.\nIt will skip all lines that start with \"#\" (comments), and all other lines will be deleted.\nThen the values defined in this step will be added. You can define as many entry lines as you want.",
+  "ActionType": "Octopus.Script",
+  "Version": 9,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$hostsPath = \"$env:windir\\system32\\drivers\\etc\\hosts\"\nWrite-Host \"Opening HOSTS file:$hostsPath\"\n\n$hostEntries = $OctopusParameters[\"uhf_Hosts\"]\nWrite-Verbose \"hostEntries:$hostEntries\"\n\n$lines = (Get-Content $hostsPath)\n\nfor ($i = 0; $i -lt $lines.Length; $i++) {\n    $line = $lines[$i]\n    if ($line -match \"^#\" -or $line -match \"^[\\s\\t]*$\") {\n        continue\n    }\n\n    $line = \"\"\n\n    $lines[$i] = $line\n}\n\nforeach ($hostEntry in $hostEntries.Split(\"`n\")) {\n    Write-Verbose $hostEntry\n    $parts = $hostEntry.Split(\",\")\n    $ip = $parts[0]\n    Write-Verbose $ip\n    $hostname = $parts[1]\n    Write-Verbose $hostname\n    $line = \"$ip`t`t`t$hostname\"\n    Write-Host \"Adding entry:$line\"\n    $lines += $line\n}\n\nOut-File -FilePath $hostsPath -Encoding ascii -InputObject $lines.Where({ $_ -ne \"\"}) -Force"
+  },
+  "Parameters": [
+    {
+      "Id": "a815bb21-5ca4-4645-9076-e0e9c9042006",
+      "Name": "uhf_Hosts",
+      "Label": "Hosts Entries",
+      "HelpText": "A comma delimited list of IP's and Hostnames",
+      "DefaultValue": "127.0.0.1,hostname.xyz\n127.0.0.1,hostname2.xyz",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "BlueWombat",
+  "$Meta": {
+    "ExportedAt": "2019-12-02T05:53:03.714Z",
+    "OctopusVersion": "2019.10.8",
+    "Type": "ActionTemplate"
+  },
+  "Category": "hosts-file"
+}

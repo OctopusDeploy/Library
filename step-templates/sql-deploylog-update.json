@@ -1,0 +1,83 @@
+{
+  "Id": "a9f7644c-3e27-4e46-a591-eee7f3542032",
+  "Name": "SQL Server __DeployLog: Update",
+  "Description": "To be used with:\nSQL Server __DeployLog: Read\r\n\r\nRequires sqlserver PowerShell module on target machine.\r\n\r\nFor more information: https://octopus.com/blog/100x-faster-db-deploys",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "<#\nRequired variables:\n$DLM_PackageStep\n$DLM_DeployStep\n$DLM_ServerInstance\n$DLM_Database\n\nOptional variables (include for SQL Auth, exclude for WinAuth):\n$DLM_Username\n$DLM_Password\n#>\n\n$errorActionPreference = \"stop\"\n\n# Verifying that sqlserver module is installed\nIf (-not(Get-InstalledModule sqlserver -ErrorAction silentlycontinue)) {\n  Write-Error \"This step requires the sqlserver PowerShell module. Please install it and try again.\"\n}\nElse {\n  Write-Output \"PowerShell module sqlserver is already installed.\"\n}\n\n# Declaring variabes\n$deployed_by = ([Environment]::UserDomainName + \"\\\" + [Environment]::UserName)\n$currentPackageVersion = $OctopusParameters[\"Octopus.Action[$DLM_PackageStep].Package.PackageVersion\"]\n$octo_release_number = $OctopusParameters[\"Octopus.Release.Number\"]\n$octo_deployment_id = $OctopusParameters[\"Octopus.Deployment.Id\"]\n$octo_deployment_created_by = $OctopusParameters[\"Octopus.Deployment.CreatedBy.Username\"]\n$deployStatusCode = $OctopusParameters[\"Octopus.Step[$DLM_DeployStep].Status.Code\"]\n$deployStatusError = $OctopusParameters[\"Octopus.Step[$DLM_DeployStep].Status.Error\"]\n$deployStatusErrorDetail = $OctopusParameters[\"Octopus.Step[$DLM_DeployStep].Status.ErrorDetail\"]\n$timestamp = Get-Date\n$utcTime = [datetime]::Now.ToUniversalTime().ToString(\"yyyy-MM-dd HH:mm:ss\")\n\n# Escaping single quotes to avoid breaking T-SQL INSERT statements\n$deployStatusError = $deployStatusError -replace \"'\", \"''\"\n$deployStatusErrorDetail = $deployStatusErrorDetail -replace \"'\", \"''\"\n\n# Logging input variables\nWrite-Verbose \"DLM_PackageStep step is: $DLM_PackageStep\"\nWrite-Verbose \"DLM_DeployStep step is: $DLM_DeployStep\"\nWrite-Verbose \"DLM_ServerInstance instance is: $DLM_ServerInstance\"\nWrite-Verbose \"DLM_Database is: $DLM_Database\"\nWrite-Verbose \"DLM_Username is: $DLM_Username\"\nWrite-Verbose \"deployed_by is: $deployed_by\"\nWrite-Verbose \"currentPackageVersion is: $currentPackageVersion\"\nWrite-Verbose \"octo_release_number is: $octo_release_number\"\nWrite-Verbose \"octo_deployment_id is: $octo_deployment_id\"\nWrite-Verbose \"octo_deployment_created_by is: $octo_deployment_created_by\"\nWrite-Verbose \"deployStatusCode is: $deployStatusCode\"\nWrite-Verbose \"deployStatusError is: $deployStatusError\"\nWrite-Verbose \"deployStatusErrorDetail is: $deployStatusErrorDetail\"\nWrite-Verbose \"utcTime is: $utcTime\"\n\n# For invoke-sqlcmd authentication\n$auth=@{}\nif($DLM_Username){$auth=@{UserName=$DLM_Username;Password=$DLM_Password}}\n\n# Script to check whether __DeployLog exists in target database\n$CheckDeployLogExists = @'\nIF EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES\n           WHERE TABLE_NAME = N'__DeployLog')\n    BEGIN\n    SELECT 'TRUE'\n    END \nELSE\n    BEGIN\n    SELECT 'FALSE'\n    End\n'@\n\n# Script to create the __DeployLog table if it does not already exist\n$CreateDeployLogTbl = @'\nCREATE TABLE [dbo].[__DeployLog](\n\t[deploy_id] [int] IDENTITY(1,1) PRIMARY KEY,\n\t[package_version] [varchar](255) NOT NULL,\n \t[octo_release_number] [nvarchar](50) NOT NULL,\n   \t[octo_deployment_id] [nvarchar](50) NOT NULL,\n    [octo_deployment_created_by] [nvarchar](255) NOT NULL,\n\t[utc_time] [datetime2](7) NOT NULL,\n\t[deployed_by] [nvarchar](50) NULL,\n    [status_code] [nvarchar](50) NULL,\n    [status_error] [nvarchar](MAX) NULL,\n    [status_error_detail] [nvarchar](MAX) NULL\n    )\nGO\n'@\n\n# Checking if __DeployLog still exists following deployment \n# (it may have been dropped if it wasn't included in source code)\n$DeployLogExists = Invoke-Sqlcmd -ServerInstance $DLM_ServerInstance -Database $DLM_Database -Query $CheckDeployLogExists @Auth\n$DeployLogExists = $DeployLogExists[0]\n\n# If __DeployLog has been dropped, recreate it\nif($DeployLogExists -eq \"FALSE\") {\n    Write-Warning \"Table __DeployLog does not exist in $DLM_Database on $DLM_ServerInstance post-deployment. It may have been deleted. You should either add the table to your source code or your filter to avoid data loss.\"\n    Write-Output \"Redeploying __DeployLog table\"\n    Invoke-Sqlcmd -ServerInstance $DLM_ServerInstance -Database $DLM_Database -Query $CreateDeployLogTbl @Auth\n}\n\n# Script to update __DeployLog with info about this deployment\n$updateDeployLog = @\"\nINSERT INTO [dbo].[__DeployLog]\n           ([package_version]\n           ,[octo_release_number]\n           ,[octo_deployment_id]\n           ,[octo_deployment_created_by]\n           ,[utc_time]\n           ,[deployed_by]\n           ,[status_code]\n           ,[status_error]\n           ,[status_error_detail])\n     VALUES\n           ('$currentPackageVersion'\n           ,'$octo_release_number'\n           ,'$octo_deployment_id'\n           ,'$octo_deployment_created_by'\n           ,'$utcTime'\n           ,'$deployed_by'\n           ,'$deployStatusCode'\n           ,'$deployStatusError'\n           ,'$deployStatusErrorDetail')\nGO\n\"@\n\nWrite-Output \"Updating __DeployLog in $DLM_Database on $DLM_ServerInstance.\"\nInvoke-Sqlcmd -ServerInstance $DLM_ServerInstance -Database $DLM_Database -Query $updateDeployLog @Auth"
+  },
+  "Parameters": [
+    {
+      "Id": "a2328977-2df7-42bb-9f23-263031f27fe7",
+      "Name": "DLM_PackageStep",
+      "Label": "Database package deployment step (Required)",
+      "HelpText": "The step that deploys the package containing the database source code to the target machine.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Id": "c4668938-09ea-4b42-9be5-61dfcee9eae6",
+      "Name": "DLM_DeployStep",
+      "Label": "Database update step (Required)",
+      "HelpText": "The step that updates the target database.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Id": "871c40e6-9435-4cc5-8f52-a54eaf8c71ad",
+      "Name": "DLM_ServerInstance",
+      "Label": "Target SQL Server Instance (Required)",
+      "HelpText": "The name of the target SQL Server instance.\ne.g. SQLSERVER01\\myInstance",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "553359a5-9ee8-43a8-b6fc-aa7e5f9d9d9e",
+      "Name": "DLM_Database",
+      "Label": "Target SQL Server Database (Required)",
+      "HelpText": "The name of the target database.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "61f123b1-cb7d-423f-bf3e-da979c3aa539",
+      "Name": "DLM_Username",
+      "Label": "SQL Auth User (Optional)",
+      "HelpText": "The SQL Auth user used to authenticate against the target database. (For Windows Auth, leave blank.)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b373aa81-7807-4653-928b-acf39f6a4888",
+      "Name": "DLM_Password",
+      "Label": "SQL Auth Password (Optional)",
+      "HelpText": "The SQL Auth password used to authenticate against the target database. (For Windows Auth, leave blank.)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-10-02T14:46:20.483Z",
+    "OctopusVersion": "2020.4.2",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "Alex-Yates",
+  "Category": "dlm"
+}
