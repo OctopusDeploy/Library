@@ -167,6 +167,7 @@ function humanize(categoryId) {
     case 'xunit': return 'xUnit';
     case 'rnhub': return 'RnHub';
     case 'hashicorp-vault': return 'HashiCorp Vault';
+    case 'azure-keyvault': return 'Azure Key Vault';
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
   }
 }
