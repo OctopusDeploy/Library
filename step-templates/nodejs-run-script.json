@@ -1,0 +1,76 @@
+{
+  "Id": "24257977-2b8c-4427-8d23-c9d5a99b2da4",
+  "Name": "Node.js - Run script",
+  "Description": "Runs a script from a package using [Node.js](https://nodejs.org/).\n\nNode.js will need to be installed on the deployment target or worker in order for this step to run.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Name": "NodeJs.Script.Package",
+      "Id": "ffa3d562-d1b7-453f-b398-162c20016963",
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "NodeJs.Script.Package"
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$scriptExtractedPath = $OctopusParameters[\"Octopus.Action.Package[NodeJs.Script.Package].ExtractedPath\"]\n\nWrite-Host \"##octopus[stdout-verbose]\"\n\nPush-Location $scriptExtractedPath\n\nWrite-Host \"##octopus[stdout-default]\"\n\n$preScriptCommands = $OctopusParameters[\"NodeJs.Script.PreScriptCommands\"]\n\nif ($null -ne $preScriptCommands) {    \n  Write-Host \"Running pre-script commands: $preScriptCommands\"\n\n  Write-Host \"##octopus[stdout-verbose]\"\n  Write-Host \"##octopus[stderr-progress]\"\n\n  Invoke-Expression $preScriptCommands\n\n  Write-Host \"##octopus[stdout-default]\"\n  Write-Host \"##octopus[stderr-default]\"\n}\n\n$scriptFilePath = $OctopusParameters[\"NodeJs.Script.FilePath\"]\n$arguments = $OctopusParameters[\"NodeJs.Script.Arguments\"] \n$command = \"node $scriptFilePath $arguments\"\n\nWrite-Host \"Running command: $command\"\n\nInvoke-Expression $command\n\nWrite-Host \"##octopus[stdout-verbose]\"\n\nPop-Location\n\nWrite-Host \"##octopus[stdout-default]\"\n"
+  },
+  "Parameters": [
+    {
+      "Id": "4f38ae96-d24c-448b-ab30-cc23c2563531",
+      "Name": "NodeJs.Script.Package",
+      "Label": "Script Package",
+      "HelpText": "Required.\n\nThe package containing the script to be run",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "71930375-01d2-484b-892f-4d69e11baa8f",
+      "Name": "NodeJs.Script.FilePath",
+      "Label": "Script Path",
+      "HelpText": "Required.\n\nThe script to run from inside the package",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ffa6e767-51a2-4891-8ed6-5903d4c84560",
+      "Name": "NodeJs.Script.Arguments",
+      "Label": "Arguments",
+      "HelpText": "Optional.\n\nArguments to supply to the script",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "09f1cbf8-b89b-42b4-b689-6729608bb866",
+      "Name": "NodeJs.Script.PreScriptCommands",
+      "Label": "Pre-Script Commands",
+      "HelpText": "Optional.\n\nCommand(s) to run prior to the script being executed. This might be used to install dependencies via npm and/or build the sources of the script. If building sources ensure that the Script Path is set to the output of the built sources. E.g.\n\n```\nnpm install\nnpm run build\n```",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-06-28T05:52:49.584Z",
+    "OctopusVersion": "2021.1.7379",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "geofflamrock",
+  "Category": "nodejs"
+}

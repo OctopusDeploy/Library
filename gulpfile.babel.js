@@ -140,6 +140,7 @@ function humanize(categoryId) {
     case 'mysql': return 'MySQL';
     case 'netscaler': return 'NetScaler';
     case 'newrelic': return 'New Relic';
+    case 'nodejs': return "Node.js"
     case 'nunit': return 'NUnit';
     case 'pagerduty': return 'PagerDuty';
     case 'postgresql': return 'PostgreSQL';
