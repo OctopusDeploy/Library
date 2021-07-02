@@ -103,6 +103,7 @@ function humanize(categoryId) {
     case 'aspnet': return 'ASP.NET';
     case 'aws': return 'AWS';
     case 'azure-devops': return 'Azure DevOps';
+    case 'azure-keyvault': return 'Azure Key Vault';
     case 'azure-site-extensions': return 'Azure Site Extensions';
     case 'azureFunctions': return 'Azure Functions';
     case 'chef': return 'Chef';
@@ -121,6 +122,7 @@ function humanize(categoryId) {
     case 'ghostinspector': return 'Ghost Inspector';
     case 'github': return 'GitHub';
     case 'gitlab': return 'GitLab';
+    case 'hashicorp-vault': return 'HashiCorp Vault';
     case 'hipchat': return 'HipChat';
     case 'hockeyapp': return 'HockeyApp';
     case 'hosts-file': return ' Hosts File';
@@ -128,6 +130,7 @@ function humanize(categoryId) {
     case 'iis': return 'IIS';
     case 'jira': return 'JIRA';
     case 'json': return 'JSON';
+    case 'jwt': return 'JWT';
     case 'k8s': return 'Kubernetes';
     case 'launchdarkly': return 'LaunchDarkly';
     case 'lets-encrypt': return 'Lets Encrypt';
@@ -166,8 +169,6 @@ function humanize(categoryId) {
     case 'xml': return 'XML';
     case 'xunit': return 'xUnit';
     case 'rnhub': return 'RnHub';
-    case 'hashicorp-vault': return 'HashiCorp Vault';
-    case 'azure-keyvault': return 'Azure Key Vault';
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
   }
 }
