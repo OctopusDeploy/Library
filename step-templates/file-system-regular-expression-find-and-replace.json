@@ -3,7 +3,7 @@
   "Name": "File System - Regular Expression Find and Replace (Updated)",
   "Description": "Find and replace text matching a regular expression in one or more files. Now with working $ replacement.",
   "ActionType": "Octopus.Script",
-  "Version": 6,
+  "Version": 7,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "function Execute-RegexFindReplace($target, $find, $replace, $options) {\n    Write-Output \"Searching $target...\"\n    $orig = [System.IO.File]::ReadAllText($target)\n    \n    $regex = new-object System.Text.RegularExpressions.Regex($find, $options)\n    if ([string]::IsNullOrEmpty($replace)) {        \n$replace = ''\n    }\n    \n    $occurrences = $regex.Matches($orig).Count\n    if ($occurrences -gt 0) {\n        Write-Output \"Found $occurrences occurrence(s), replacing...\"\n        \n        $replaced = $regex.Replace($orig, $replace)\n        [System.IO.File]::WriteAllText($target, $replaced)\n    }\n}\n\nif ([string]::IsNullOrEmpty($RFRFindRegex)) {\n    throw \"A non-empty 'Pattern' is required\"\n}\n\n$options = [System.Text.RegularExpressions.RegexOptions]::None\n$RFROptions.Split(' ') | foreach {\n    $opt = $_.Trim()\n    $flag = [System.Enum]::Parse([System.Text.RegularExpressions.RegexOptions], $opt)\n    $options = $options -bor $flag\n}\n\nWrite-Output \"Replacing occurrences of '$RFRFindRegex' with '$RFRSubstitution' applying options $RFROptions\"\n\n$RFRCandidatePathGlobs.Split(\";\") | foreach {\n    $glob = $_.Trim()\n    Write-Output \"Searching for files that match $glob...\"\n\n    $matches = $null\n    $splits = $glob.Split(@('/**/'), [System.StringSplitOptions]::RemoveEmptyEntries)\n\n    if ($splits.Length -eq 1) {\n        $splits = $glob.Split(@('\\**\\'), [System.StringSplitOptions]::RemoveEmptyEntries)\n    }\n    \n    if ($splits.Length -eq 1) {\n        $matches = ls $glob\n    } else {\n        if ($splits.Length -eq 2) {\n            pushd $splits[0]\n            $matches = ls $splits[1] -Recurse\n            popd\n        } else {\n            $splits\n            throw \"The segment '**' can only appear once, as a directory name, in the glob expression\"\n\n        }\n    }\n\n    $matches | foreach {\n        \n        $target = $_.FullName\n\n        Execute-RegexFindReplace -target $target -find $RFRFindRegex -replace $RFRSubstitution -options $options\n    }\n}\n\n\nWrite-Output \"Done.\"",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -15,31 +15,40 @@
       "Label": "Files",
       "HelpText": "The files to search. Wildcards `*` and `**` are supported. Paths must be fully-qualified, e.g. `C:\\MyApp\\**\\*.xml`. Separate multiple paths with `;` semicolons.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "RFRFindRegex",
       "Label": "Pattern",
       "HelpText": "The regular expression to find in the target files.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "RFRSubstitution",
       "Label": "Substitution",
       "HelpText": "The text to insert in place of each occurrence of _Pattern_. Regular expression [substitutions](http://msdn.microsoft.com/en-us/library/ewy2t5e0.aspx) are supported, so any literal `$` in the substitution pattern must be escaped by doubling (`$$`).",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "RFROptions",
       "Label": "Options",
       "HelpText": "A space-separated list of options from the [RegexOptions](http://msdn.microsoft.com/en-us/library/system.text.regularexpressions.regexoptions.aspx) enumeration.",
       "DefaultValue": "ExplicitCapture",
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedBy": "phillip-haydon",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2015-10-26T21:24:18.756+00:00",
     "OctopusVersion": "3.0.10.2278",

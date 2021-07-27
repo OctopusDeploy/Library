@@ -3,7 +3,7 @@
   "Name": "Git - Pull (HTTPS)",
   "Description": "Gets the latest source for a Git repository.",
   "ActionType": "Octopus.Script",
-  "Version": 7,
+  "Version": 8,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"System.Web\")\nfunction Format-UriWithCredentials($url, $username, $password) {\n    $uri = New-Object \"System.Uri\" $url\n    \n    $url = $uri.Scheme + \"://\"\n    if (-not [string]::IsNullOrEmpty($username)) {\n        $url = $url + [System.Web.HttpUtility]::UrlEncode($username)\n        \n        if (-not [string]::IsNullOrEmpty($password)) {\n            $url = $url + \":\" + [System.Web.HttpUtility]::UrlEncode($password)  \n        }\n        \n        $url = $url + \"@\"    \n    } elseif (-not [string]::IsNullOrEmpty($uri.UserInfo)) {\n        $url = $uri.UserInfo + \"@\"\n    }\n\n    $url = $url + $uri.Host + $uri.PathAndQuery\n    return $url\n}\n\nfunction Test-LastExit($cmd) {\n    if ($LastExitCode -ne 0) {\n        Write-Host \"##octopus[stderr-error]\"\n        write-error \"$cmd failed with exit code: $LastExitCode\"\n    }\n}\n\n$tempDirectoryPath = $OctopusParameters['Octopus.Tentacle.Agent.ApplicationDirectoryPath']\n$tempDirectoryPath = join-path $tempDirectoryPath \"GitPull\" \n$tempDirectoryPath = join-path $tempDirectoryPath $OctopusParameters['Octopus.Environment.Name']\n$tempDirectoryPath = join-path $tempDirectoryPath $OctopusParameters['Octopus.Project.Name']\n$tempDirectoryPath = join-path $tempDirectoryPath $OctopusParameters['Octopus.Action.Name']\n\nWrite-Host \"Repository will be cloned to: $tempDirectoryPath\"\n\n# Step 1: Ensure we have the latest version of the repository\nmkdir $tempDirectoryPath -ErrorAction SilentlyContinue\ncd $tempDirectoryPath\n\nWrite-Host \"##octopus[stderr-progress]\"\n\ngit init\nTest-LastExit \"git init\"\n\n$url = Format-UriWithCredentials -url $OctopusParameters['GitHttpsUrl'] -username $OctopusParameters['Username'] -password $OctopusParameters['Password']\n\n$branch = $OctopusParameters['GitHttpsBranchName']\n\n# We might have already run before, so we need to reset the origin\ngit remote remove origin\ngit remote add origin $url\nTest-LastExit \"git remote add origin\"\n\nWrite-Host \"Fetching remote repository\"\ngit fetch origin\nTest-LastExit \"git fetch origin\"\n\nWrite-Host \"Check out branch $branch\"\ngit reset --hard \"origin/$branch\"\nTest-LastExit \"git reset --hard\"\n\nSet-OctopusVariable -name \"RepositoryDirectory\" -value $tempDirectoryPath\nWrite-Verbose \"Directory path '$tempDirectoryPath' available in 'RepositoryDirectory' output variable\"\nWrite-Host \"Repository successfully cloned to: $tempDirectoryPath\"",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -14,29 +14,41 @@
       "Name": "GitHttpsUrl",
       "Label": "Clone URL",
       "HelpText": "'https://' URL to the repository that will be cloned from.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "Username",
       "Label": "Username",
       "HelpText": "Username to use when authenticating with the HTTPS server.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "Password",
       "Label": "Password",
       "HelpText": "Password to use when authenticating with the HTTPS server. You should create a sensitive variable in your project variables, and then bind this value.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "GitHttpsBranchName",
       "Label": "Branch name",
       "HelpText": "Name of the Git branch to clone",
-      "DefaultValue": "master"
+      "DefaultValue": "master",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-05-16T00:23:04.680+00:00",
-  "LastModifiedBy": "alfhenrik",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2014-05-16T00:23:33.282+00:00",
     "OctopusVersion": "2.4.4.43",

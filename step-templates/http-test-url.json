@@ -3,7 +3,7 @@
   "Name": "HTTP - Test URL",
   "Description": "Makes a GET request to a HTTP(S) end point and verifies that a particular status code and (optional) response is returned within a specified period of time.",
   "ActionType": "Octopus.Script",
-  "Version": 17,
+  "Version": 18,
   "Packages": [],
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\n$uri = $OctopusParameters['Uri']\n$customHostHeader = $OctopusParameters['CustomHostHeader']\n$expectedCode = [int] $OctopusParameters['ExpectedCode']\n$timeoutSeconds = [int] $OctopusParameters['TimeoutSeconds']\n$Username = $OctopusParameters['AuthUsername']\n$Password = $OctopusParameters['AuthPassword']\n$UseWindowsAuth = [System.Convert]::ToBoolean($OctopusParameters['UseWindowsAuth'])\n$ExpectedResponse = $OctopusParameters['ExpectedResponse']\n$securityProtocol = $OctopusParameters['SecurityProtocol']\n\nWrite-Host \"Starting verification request to $uri\"\nif ($customHostHeader)\n{\n    Write-Host \"Using custom host header $customHostHeader\"\n}\n\nWrite-Host \"Expecting response code $expectedCode.\"\nWrite-Host \"Expecting response: $ExpectedResponse.\"\n\nif ($securityProtocol)\n{\n    Write-Host \"Using security protocol $securityProtocol\"\n    [Net.ServicePointManager]::SecurityProtocol = [Enum]::parse([Net.SecurityProtocolType], $securityProtocol) \n}\n\n$timer = [System.Diagnostics.Stopwatch]::StartNew()\n$success = $false\ndo\n{\n    try\n    {\n        if ($Username -and $Password -and $UseWindowsAuth)\n        {\n            Write-Host \"Making request to $uri using windows authentication for user $Username\"\n            $request = [system.Net.WebRequest]::Create($uri)\n            $Credential = New-Object System.Management.Automation.PSCredential -ArgumentList $Username, $(ConvertTo-SecureString -String $Password -AsPlainText -Force)\n            $request.Credentials = $Credential \n            \n            if ($customHostHeader)\n            {\n                $request.Host = $customHostHeader\n            }\n\n            try\n            {\n                $response = $request.GetResponse()\n            }\n            catch [System.Net.WebException]\n            {\n                Write-Host \"Request failed :-( System.Net.WebException\"\n                Write-Host $_.Exception\n                $response = $_.Exception.Response\n            }\n            \n        }\n\t\telseif ($Username -and $Password)\n        {\n            Write-Host \"Making request to $uri using basic authentication for user $Username\"\n            $Credential = New-Object System.Management.Automation.PSCredential -ArgumentList $Username, $(ConvertTo-SecureString -String $Password -AsPlainText -Force)\n            if ($customHostHeader)\n            {\n                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -Credential $Credential -Headers @{\"Host\" = $customHostHeader} -TimeoutSec $timeoutSeconds\n            }\n            else \n            {\n                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -Credential $Credential -TimeoutSec $timeoutSeconds\n            }\n        }\n\t\telse\n        {\n            Write-Host \"Making request to $uri using anonymous authentication\"\n            if ($customHostHeader)\n            {\n                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -Headers @{\"Host\" = $customHostHeader} -TimeoutSec $timeoutSeconds\n            }\n            else \n            {\n                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -TimeoutSec $timeoutSeconds\n            }\n        }\n        \n        $code = $response.StatusCode\n        $body = $response.Content;\n        Write-Host \"Recieved response code: $code\"\n        Write-Host \"Recieved response: $body\"\n\n        if($response.StatusCode -eq $expectedCode)\n        {\n            $success = $true\n        }\n        if ($success -and $ExpectedResponse)\n        {\n            $success = ($ExpectedResponse -eq $body)\n        }\n    }\n    catch\n    {\n        # Anything other than a 200 will throw an exception so\n        # we check the exception message which may contain the \n        # actual status code to verify\n        \n        Write-Host \"Request failed :-(\"\n        Write-Host $_.Exception\n\n        if($_.Exception -like \"*($expectedCode)*\")\n        {\n            $success = $true\n        }\n    }\n\n    if(!$success)\n    {\n        Write-Host \"Trying again in 5 seconds...\"\n        Start-Sleep -s 5\n    }\n}\nwhile(!$success -and $timer.Elapsed -le (New-TimeSpan -Seconds $timeoutSeconds))\n\n$timer.Stop()\n\n# Verify result\n\nif(!$success)\n{\n    throw \"Verification failed - giving up.\"\n}\n\nWrite-Host \"Sucesss! Found status code $expectedCode\"",
@@ -17,7 +17,9 @@
       "Label": "URI",
       "HelpText": "The full Uri of the endpoint",
       "DefaultValue": "",
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Id": "0d760ed5-81ed-46d9-b833-74f75df08bfc",
@@ -46,7 +48,9 @@
       "Label": "Expected code",
       "HelpText": "The expected HTTP status code",
       "DefaultValue": "200",
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Id": "7c96b2b3-53dd-4281-ae1a-ef67cbc0eb72",
@@ -54,7 +58,9 @@
       "Label": "Timeout (Seconds)",
       "HelpText": "The number of seconds before the step fails and times out",
       "DefaultValue": "60",
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Id": "ac0b303c-0c59-4776-be21-d93ebe9e28e7",
@@ -97,7 +103,8 @@
       }
     }
   ],
-  "LastModifiedBy": "harrisonmeister",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2020-06-16T08:03:12.574Z",
     "OctopusVersion": "2020.2.13",

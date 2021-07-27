@@ -3,7 +3,7 @@
   "Name": "Web Deploy - Publish Website (MSDeploy)",
   "Description": "Ensure that Web Deploy 3.5 is installed on the system. The installer is downloaded from http://www.iis.net/downloads/microsoft/web-deploy if required.",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.Web.Deployment\")\r\n\r\n# A collection of functions that can be used by script steps to determine where packages installed\r\n# by previous steps are located on the filesystem.\r\n \r\nfunction Find-InstallLocations {\r\n    $result = @()\r\n    $OctopusParameters.Keys | foreach {\r\n        if ($_.EndsWith('].Output.Package.InstallationDirectoryPath')) {\r\n            $result += $OctopusParameters[$_]\r\n        }\r\n    }\r\n    return $result\r\n}\r\n \r\nfunction Find-InstallLocation($stepName) {\r\n    $result = $OctopusParameters.Keys | where {\r\n        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\r\n    } | select -first 1\r\n \r\n    if ($result) {\r\n        return $OctopusParameters[$result]\r\n    }\r\n \r\n    throw \"No install location found for step: $stepName\"\r\n}\r\n \r\nfunction Find-SingleInstallLocation {\r\n    $all = @(Find-InstallLocations)\r\n    if ($all.Length -eq 1) {\r\n        return $all[0]\r\n    }\r\n    if ($all.Length -eq 0) {\r\n        throw \"No package steps found\"\r\n    }\r\n    throw \"Multiple package steps have run; please specify a single step\"\r\n}\r\n\r\nfunction Test-LastExit($cmd) {\r\n    if ($LastExitCode -ne 0) {\r\n        Write-Host \"##octopus[stderr-error]\"\r\n        write-error \"$cmd failed with exit code: $LastExitCode\"\r\n    }\r\n}\r\n\r\n$stepName = $OctopusParameters['WebDeployPackageStepName']\r\n\r\n$stepPath = \"\"\r\nif (-not [string]::IsNullOrEmpty($stepName)) {\r\n    Write-Host \"Finding path to package step: $stepName\"\r\n    $stepPath = Find-InstallLocation $stepName\r\n} else {\r\n    $stepPath = Find-SingleInstallLocation\r\n}\r\nWrite-Host \"Package was installed to: $stepPath\"\r\n\r\nWrite-Host \"##octopus[stderr-progress]\"\r\n \r\n$websiteName = $OctopusParameters['WebsiteName']\r\n$publishUrl = $OctopusParameters['PublishUrl']\r\n\r\n$destBaseOptions = new-object Microsoft.Web.Deployment.DeploymentBaseOptions\r\n$destBaseOptions.UserName = $OctopusParameters['Username']\r\n$destBaseOptions.Password = $OctopusParameters['Password']\r\n$destBaseOptions.ComputerName = \"https://$publishUrl/msdeploy.axd?site=$websiteName\"\r\n$destBaseOptions.AuthenticationType = \"Basic\"\r\n\r\n$syncOptions = new-object Microsoft.Web.Deployment.DeploymentSyncOptions\r\n$syncOptions.WhatIf = $false\r\n$syncOptions.UseChecksum = $true\r\n\r\n$enableAppOfflineRule = $OctopusParameters['EnableAppOfflineRule']\r\nif($enableAppOfflineRule -eq $true)\r\n{\r\n    $appOfflineRule = $null\r\n    $availableRules = [Microsoft.Web.Deployment.DeploymentSyncOptions]::GetAvailableRules()\r\n    if (!$availableRules.TryGetValue('AppOffline', [ref]$appOfflineRule))\r\n    {\r\n        throw \"Failed to find AppOffline Rule\"\r\n    }\r\n    else\r\n    {\r\n        $syncOptions.Rules.Add($appOfflineRule)\r\n        Write-Host \"Enabled AppOffline Rule\"\r\n    }\r\n}\r\n\r\n$preserveAppData = [boolean]::Parse($OctopusParameters['PreserveApp_Data'])\r\n\r\nif ($preserveAppData -eq $true) {\r\n    \r\n    Write-Host \"Skipping delete actions on App_Data\"\r\n    $skipAppDataFiles = new-object Microsoft.Web.Deployment.DeploymentSkipRule(\"appDataFiles\", \"Delete\", \"filePath\", \"\\App_Data\\.*\", $null)\r\n    $skipAppDataDirectories = new-object Microsoft.Web.Deployment.DeploymentSkipRule(\"appDataDirectories\", \"Delete\", \"dirPath\", \"\\App_Data(\\.*|$)\", $null)\r\n\r\n    $syncOptions.Rules.Add($skipAppDataFiles);\r\n    $syncOptions.Rules.Add($skipAppDataDirectories);\r\n}\r\n\r\n$SkipSyncPaths = $OctopusParameters['SkipSyncPaths']\r\nif ([string]::IsNullOrEmpty($SkipSyncPaths) -eq $false)\r\n{\r\n    $skipPaths = $SkipSyncPaths.Split(\";\", [System.StringSplitOptions]::RemoveEmptyEntries)\r\n    foreach($item in $skipPaths) {\r\n        $index = $skipPaths.IndexOf($item)\r\n        Write-Host \"Skipping sync of AbsolutePath: $item.\"\r\n        $name = \"SkipDirective$index\"\r\n        $value = \"absolutePath=$item\"\r\n        $skipDirective = new-object Microsoft.Web.Deployment.DeploymentSkipDirective($name, $value)\r\n        $destBaseOptions.SkipDirectives.Add($skipDirective)\r\n    }\r\n}\r\n\r\nif ($OctopusParameters['AllowUntrustedCertificate'] -eq $true) {\r\n    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { return $true; }\r\n}\r\n\r\nWrite-Host \"Publishing Website\"\r\n$deploymentObject = [Microsoft.Web.Deployment.DeploymentManager]::CreateObject(\"contentPath\", $stepPath)\r\n\r\n$changes = $deploymentObject.SyncTo(\"contentPath\", $websiteName, $destBaseOptions, $syncOptions)\r\n\r\n#Write out all the changes.\r\n$changes | Select-Object -Property *",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -15,7 +15,9 @@
       "Label": "Publish Url",
       "HelpText": "Publish url to use when publishing the website.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "AllowUntrustedCertificate",
@@ -31,28 +33,36 @@
       "Label": "Website Name",
       "HelpText": "Website name to use when publishing the website.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "Username",
       "Label": "Username",
       "HelpText": "Username to use when authenticating with the HTTPS server.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "Password",
       "Label": null,
       "HelpText": "Password to use when authenticating with the HTTPS server. You should create a sensitive variable in your project variables, and then bind this value.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "WebDeployPackageStepName",
       "Label": "Package Step Name",
       "HelpText": "Name of the previously-deployed package step that contains the files that you want to deploy.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "EnableAppOfflineRule",
@@ -82,8 +92,8 @@
       }
     }
   ],
-  "LastModifiedOn": "2015-07-25T22:00:39.897+00:00",
-  "LastModifiedBy": "dalmiro",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2015-07-25T22:00:43.204+00:00",
     "OctopusVersion": "2.6.5.1010",

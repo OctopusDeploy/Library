@@ -3,7 +3,7 @@
   "Name": "Git - Push (HTTPS)",
   "Description": "Deploy a package using Git to a HTTPS server. Performs a clone, overwrites the repository with the files from your package, then pushes. Great for deploying to AppHarbor and Windows Azure websites.",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"System.Web\")\n\n# A collection of functions that can be used by script steps to determine where packages installed\n# by previous steps are located on the filesystem.\n \nfunction Find-InstallLocations {\n    $result = @()\n    $OctopusParameters.Keys | foreach {\n        if ($_.EndsWith('].Output.Package.InstallationDirectoryPath')) {\n            $result += $OctopusParameters[$_]\n        }\n    }\n    return $result\n}\n \nfunction Find-InstallLocation($stepName) {\n    $result = $OctopusParameters.Keys | where {\n        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\n    } | select -first 1\n \n    if ($result) {\n        return $OctopusParameters[$result]\n    }\n \n    throw \"No install location found for step: $stepName\"\n}\n \nfunction Find-SingleInstallLocation {\n    $all = @(Find-InstallLocations)\n    if ($all.Length -eq 1) {\n        return $all[0]\n    }\n    if ($all.Length -eq 0) {\n        throw \"No package steps found\"\n    }\n    throw \"Multiple package steps have run; please specify a single step\"\n}\n\nfunction Format-UriWithCredentials($url, $username, $password) {\n    $uri = New-Object \"System.Uri\" $url\n    \n    $url = $uri.Scheme + \"://\"\n    if (-not [string]::IsNullOrEmpty($username)) {\n        $url = $url + [System.Web.HttpUtility]::UrlEncode($username)\n        \n        if (-not [string]::IsNullOrEmpty($password)) {\n            $url = $url + \":\" + [System.Web.HttpUtility]::UrlEncode($password)  \n        }\n        \n        $url = $url + \"@\"    \n    } elseif (-not [string]::IsNullOrEmpty($uri.UserInfo)) {\n        $url = $uri.UserInfo + \"@\"\n    }\n\n    $url = $url + $uri.Host + $uri.PathAndQuery\n    return $url\n}\n\nfunction Test-LastExit($cmd) {\n    if ($LastExitCode -ne 0) {\n        Write-Host \"##octopus[stderr-error]\"\n        write-error \"$cmd failed with exit code: $LastExitCode\"\n    }\n}\n\n$tempDirectoryPath = $OctopusParameters['Octopus.Tentacle.Agent.ApplicationDirectoryPath']\n$tempDirectoryPath = join-path $tempDirectoryPath \"GitPush\" \n$tempDirectoryPath = join-path $tempDirectoryPath $OctopusParameters['Octopus.Environment.Name']\n$tempDirectoryPath = join-path $tempDirectoryPath $OctopusParameters['Octopus.Project.Name']\n$tempDirectoryPath = join-path $tempDirectoryPath $OctopusParameters['Octopus.Action.Name']\n\n$stepName = $OctopusParameters['GitHttpsPackageStepName']\n\n$stepPath = \"\"\nif (-not [string]::IsNullOrEmpty($stepName)) {\n    Write-Host \"Finding path to package step: $stepName\"\n    $stepPath = Find-InstallLocation $stepName\n} else {\n    $stepPath = Find-SingleInstallLocation\n}\nWrite-Host \"Package was installed to: $stepPath\"\n\nWrite-Host \"Repository will be cloned to: $tempDirectoryPath\"\n\n# Step 1: Ensure we have the latest version of the repository\nmkdir $tempDirectoryPath -ErrorAction SilentlyContinue\ncd $tempDirectoryPath\n\nWrite-Host \"##octopus[stderr-progress]\"\n \ngit init\nTest-LastExit \"git init\"\n\n$url = Format-UriWithCredentials -url $OctopusParameters['GitHttpsUrl'] -username $OctopusParameters['Username'] -password $OctopusParameters['Password']\n\n$branch = $OctopusParameters['GitHttpsBranchName']\n\n# We might have already run before, so we need to reset the origin\ngit remote remove origin\ngit remote add origin $url\nTest-LastExit \"git remote add origin\"\n\nWrite-Host \"Fetching remote repository\"\ngit fetch origin\nTest-LastExit \"git fetch origin\"\n\nWrite-Host \"Check out branch $branch\"\ngit reset --hard \"origin/$branch\"\n\n# Step 2: Overwrite the contents\nwrite-host \"Synchronizing package contents with local git repository using Robocopy\"\n& robocopy $stepPath $tempDirectoryPath /MIR /xd \".git\"\nif ($lastexitcode -ge 5) {\n    write-error \"Unable to copy files from the package to the local cloned Git repository. See the Robocopy errors above for details.\"\n}\n\n# Step 3: Push the results\n$deploymentName = $OctopusParameters['Octopus.Deployment.Name']\n$releaseName = $OctopusParameters['Octopus.Release.Number']\n$projName = $OctopusParameters['Octopus.Project.Name']\n\ngit add . -A\nTest-LastExit \"git add\"\n\ngit diff-index --quiet HEAD\nif ($lastexitcode -ne 0) {\n    git commit -m \"$projName release $releaseName - $deploymentName\"\n    Test-LastExit \"git commit\"\n}\n\ngit push origin $branch\nTest-LastExit \"git push\"\n",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -15,39 +15,49 @@
       "Label": "Clone URL",
       "HelpText": "`https://` URL to the repository that will be cloned from and pushed to.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "Username",
       "Label": "Username",
       "HelpText": "Username to use when authenticating with the HTTPS server.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "Password",
       "Label": "Password",
       "HelpText": "Password to use when authenticating with the HTTPS server. You should create a sensitive variable in your project variables, and then bind this value.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "GitHttpsPackageStepName",
       "Label": "Package step name",
       "HelpText": "Name of the previously-deployed package step that contains the files that you want to push.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "GitHttpsBranchName",
       "Label": "Branch name",
       "HelpText": "Name of the Git branch to clone/push",
       "DefaultValue": "master",
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-10-24T13:06:56.011+00:00",
-  "LastModifiedBy": "wurmr",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2014-10-24T14:59:45.295+00:00",
     "OctopusVersion": "2.5.11.614",
