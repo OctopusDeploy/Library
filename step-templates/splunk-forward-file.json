@@ -3,7 +3,7 @@
   "Name": "Splunk - Forward File",
   "Description": "Configures splunk forwarding for the specified file. (The splunk forwarder service should be installed on the target server)",
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 3,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "$file = $OctopusParameters['File']\n$index = $OctopusParameters['Index']\n$appName = $OctopusParameters['AppName']\n\n# Enable splunk forwarding\n\nSet-Service SplunkForwarder -startuptype Automatic\n\n# Create log file\n\nif(!(Test-Path \"$file\"))\n{\n    Write-Host \"Creating new log file\"\n    New-Item \"$file\" -type File -Force\n}\nelse\n{\n    Write-Host \"Log file already exists\"\n}\n\n# Create/prepare splunk forwarder directory\n\n$appPath = \"$env:ProgramFiles\\SplunkUniversalForwarder\\etc\\apps\\$appName\\default\"\n\nif(Test-Path \"$appPath\")\n{\n    Write-Host \"Splunk app directory already exists. Removing existing configs\"\n\t\n\t# Remove-Item recursion does not work correctly - http://technet.microsoft.com/library/hh849765.aspx (-Recurse section)\n    # Remove files first then directories (leaf -> root) so we don't get the recursion confirm popup\n    Get-ChildItem $appPath -Recurse | Where { ! $_.PSIsContainer } | Remove-Item -Force\n    Get-ChildItem $appPath -Recurse | Where { $_.PSIsContainer } | Sort @{ Expression = { $_.FullName.length } } -Descending | Remove-Item -Force\n}\nelse\n{\n    Write-Host \"Creating splunk app directory\"\n    New-Item \"$appPath\" -type Directory\n}\n\n# Create forwarder config\n\nWrite-Host \"Creating splunk forwarder config\"\n\n$str = \"[monitor://$file]`r`ndisabled = false`r`nfollowTail = 0`r`nsourcetype = $appName`r`nindex = $index\"\nNew-Item \"$appPath\\inputs.conf\" -type File -value $str\n\n# Restart forwarder service\n\nWrite-Host \"Restarting splunk forwarder\"\nRestart-Service \"SplunkForwarder\"",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -14,23 +14,32 @@
       "Name": "File",
       "Label": "File",
       "HelpText": "The path to the file to forward",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "Index",
       "Label": "Index",
       "HelpText": "The Splunk index to forward to",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "AppName",
       "Label": "App name",
       "HelpText": "The application name outputting to the file",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-05-16T10:27:14.974+00:00",
-  "LastModifiedBy": "sportingsolutions",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2014-05-16T10:27:19.192+00:00",
     "OctopusVersion": "2.4.5.46",

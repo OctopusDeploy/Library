@@ -3,7 +3,7 @@
   "Name": "File System - Clean Directory",
   "Description": "Clean out unwanted files from the installation directory after a deployment.",
   "ActionType": "Octopus.Script",
-  "Version": 26,
+  "Version": 27,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "# Running outside octopus\r\nparam(\r\n\t[string]$cleanInclude,\r\n\t[string]$cleanIgnore,\r\n\t[string]$pathsToClean,\r\n\t[switch]$whatIf\r\n) \r\n\r\nfunction ExpandPathExpressions($workingDirectory, $fileExpressionList) {\r\n\treturn @($fileExpressionList.Split(@(\";\"), \"RemoveEmptyEntries\")) | \r\n\t% { $_.Trim() } |\r\n\t% { ExpandPathExpression $workingDirectory $_ }\r\n}\r\n\r\nfunction ExpandPathExpression($workingDirectory, $FileExpression) {\r\n\r\n\t# \\**\\ denotes a recursive search\r\n\t$recurse = \"**\"\r\n\r\n\t# Scope the clean!\r\n\t$fileExpression = Join-Path $workingDirectory $fileExpression\r\n\r\n\t$headSegments = Split-Path $fileExpression\r\n\t$lastSegment = Split-Path $fileExpression -Leaf\r\n\t$secondLastSegment = $(if($headSegments -ne \"\") {Split-Path $headSegments -Leaf} else {$null}) \r\n\r\n\t$path = \"\\\"\r\n\t$recursive = $false\r\n\t$filter = \"*\"\r\n\t\r\n\tif ($lastSegment -eq $recurse) {\t\r\n\t\r\n\t\t$path = $headSegments\r\n\t\t$recursive = $true\r\n\t\t\r\n\t} elseif ($secondLastSegment -eq $recurse) {\r\n\t\t\r\n\t\t$path = Split-Path $headSegments\r\n\t\t$recursive = $true\r\n\t\t$filter = $lastSegment\t\r\n\t\r\n\t} else {\r\n\t\t\r\n\t\t$path = $headSegments\r\n\t\t$filter = $lastSegment \r\n\t}\r\n\r\n\treturn Get-ChildItem -Path $path -Filter $filter -Recurse:$recursive | ? { !$_.PSIsContainer }\r\n}\r\n\r\nfunction GetParam($Name, [switch]$Required) {\r\n\t$result = $null\r\n\t\r\n\tif ($OctopusParameters -ne $null) {\r\n\t\t$result = $OctopusParameters[$Name]\r\n\t}\r\n\r\n\tif ($result -eq $null) {\r\n\t\t$variable = Get-Variable $Name -EA SilentlyContinue\t\r\n\t\tif ($variable -ne $null) {\r\n\t\t\t$result = $variable.Value\r\n\t\t}\r\n\t}\r\n\t\r\n\tif ($Required -and $result -eq $null) {\r\n\t\tthrow \"Missing parameter value $Name\"\r\n\t}\r\n\t\r\n\treturn $result\r\n}\r\n\r\n& {\r\n\tparam(\r\n\t\t[string]$cleanInclude,\r\n\t\t[string]$cleanIgnore,\r\n\t\t[string]$pathsToClean\r\n\t) \r\n\r\n\tWrite-Host \"Cleaning files from installation directory\"\r\n\tWrite-Host \"Include: $cleanInclude\"\r\n\tWrite-Host \"Ignore: $cleanIgnore\"\r\n\tWrite-Host \"Paths To Clean: $pathsToClean\"\r\n\t\r\n\tif (!$cleanInclude) {\r\n\t\tthrow \"You must specify files to include\"\r\n\t}\r\n\t\r\n\tif (!$pathsToClean) {\r\n\t\tthrow \"You must specify the paths to clean\"\r\n\t}\r\n\t\r\n\t$paths = @($pathsToClean.Split(@(\";\"), \"RemoveEmptyEntries\")) | \r\n\t% { $_.Trim() }\r\n\t\r\n\tforeach ($pathToClean in $paths) {\r\n\t\t\r\n\t\tif (Test-Path $pathToClean) {\r\n\t\t\tWrite-Host \"Scanning directory $pathToClean\"\r\n\t\t\t\r\n\t\t\tif ($pathToClean -eq \"\\\" -or $pathToClean -eq \"/\") {\r\n\t\t\t\tthrow \"Cannot clean root directory\"\r\n\t\t\t}\r\n\t\t\t\r\n\t\t\tcd $pathToClean\r\n\t\t\t\r\n\t\t\t$include = ExpandPathExpressions $pathToClean $cleanInclude\r\n\t\t\t$exclude = ExpandPathExpressions $pathToClean $cleanIgnore\r\n\t\t\t\r\n\t\t\tif ($include -eq $null -or $exclude -eq $null) {\r\n\t\t\t\t$deleteSet = $include\r\n\t\t\t} else {\r\n\t\t\t\t$exclude = $exclude | % {$_}\r\n\t\t\t\t$deleteSet = Compare-Object $include $exclude | ? { $_.SideIndicator -eq \"<=\" } | % { $_.InputObject }\r\n\t\t\t}\r\n\t\t\t\r\n\t\t\tif (!$deleteSet -or $deleteSet.Count -eq 0) {\r\n\t\t\t\tWrite-Warning \"There were no files matching the criteria\"\r\n\t\t\t} else {\r\n\t\t\t\t\r\n\t\t\t\tWrite-Host \"Deleting files\"\r\n\t\t\t\tif ($whatIf) {\r\n\t\t\t\t\tWrite-Host \"What if: Performing the operation `\"Remove File`\" on targets\"\r\n\t\t\t\t}\r\n\t\t\t\t\r\n\t\t\t\t$deleteSet | Write-Host\r\n\t\t\t\t\r\n\t\t\t\tif (!$whatIf) {\r\n\t\t\t\t\t$deleteSet | % { $_.FullName } | Remove-Item -Force -Recurse -WhatIf:$whatIf\r\n\t\t\t\t}\r\n\t\t\t}\r\n\t\t\r\n\t\t} else {\r\n\t\t\t\r\n\t\t\tWrite-Warning \"Could not locate path `\"$pathToClean`\"\"\r\n\t\t}\r\n\t}\r\n } `\r\n (GetParam 'CleanInclude' -Required) `\r\n (GetParam 'CleanIgnore') `\r\n (GetParam 'PathsToClean')\r\n ",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -15,25 +15,31 @@
       "Label": "Paths to clean",
       "HelpText": "A semicolon-separated list of paths to clean.\n\nUsually you would set this to `Octopus.Action[StepName].Output.Package.InstallationDirectoryPath`.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "CleanInclude",
       "Label": "Files to remove",
       "HelpText": "A semicolon-separated list of path expressions that match files to be removed.\n\nExamples:  \n\n    - *.jpg\n    - web.*.config\n    - **\\*.dll\n    - \\Logs\\**\\*.txt\n    - web.*.config;*.txt\n\n`\\**\\` denotes a recursive search",
       "DefaultValue": "",
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "CleanIgnore",
       "Label": "Files to ignore",
       "HelpText": "A semicolon-separated list of path expressions that will be not be removed.\n\nExamples:  \n\n    - web.log4net.config\n    - img\\needed.jpg\n    - **\\*.dll\n    - web.config;Release Notes.txt\n\n`\\**\\` denotes a recursive search",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-08-20T06:59:50.036+00:00",
-  "LastModifiedBy": "Lavinski",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2014-08-20T06:59:52.579+00:00",
     "OctopusVersion": "2.4.0.0",

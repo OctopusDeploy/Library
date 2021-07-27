@@ -3,7 +3,7 @@
   "Name": "IIS AppPool - Update Recycle Settings",
   "Description": "Update the worker process and app pool timeout/recycle times.",
   "ActionType": "Octopus.Script",
-  "Version": 6,
+  "Version": 7,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "Import-Module WebAdministration\n\nfunction Update-IISAppPool-PeriodicRestart($appPool, $periodicRestart) {\n    Write-Output \"Setting worker process periodic restart time to $periodicRestart for AppPool $appPoolName.\"\n    $appPool.Recycling.PeriodicRestart.Time = [TimeSpan]::FromMinutes($periodicRestart)\n    $appPool | Set-Item\n}\n\nfunction Update-IISAppPool-IdleTimeout($appPool, $appPoolName, $idleTimeout) {\n    Write-Output \"Setting worker process idle timeout to $idleTimeout for AppPool $appPoolName.\"\n    $appPool.ProcessModel.IdleTimeout = [TimeSpan]::FromMinutes($idleTimeout)\n    $appPool | Set-Item\n}\n\nfunction Update-IISAppPool-ScheduledTimes($appPool, $appPoolName, $schedule) {\n    $minutes = $periodicRecycleTimes.Split(\",\")\n    $minuteArrayList = New-Object System.Collections.ArrayList\n\n    foreach ($minute in $minutes) {\n        $minute = $minute.trim()\n\n        if ($minute -eq \"-1\") {\n            break\n        }\n        if ($minute -lt 0) {\n            continue\n        }\n\n        $temp = $minuteArrayList.Add([TimeSpan]::FromMinutes($minute))\n    }\n\n    Write-Output \"Setting worker process scheduled restart times to $minuteArrayList for AppPool $appPoolName.\"\n\n    $settingName = \"recycling.periodicRestart.schedule\"\n    Clear-ItemProperty $appPool.PSPath -Name $settingName\n        \n    $doneOne = $false\n    foreach ($minute in $minuteArrayList) {\n        if ($doneOne -eq $false) {\n            Set-ItemProperty $appPool.PSPath -Name $settingName -Value @{value=$minute}\n            $doneOne = $true\n        }\n        else {\n            New-ItemProperty $appPool.PSPath -Name $settingName -Value @{value=$minute}\n        }\n    }\n}\n\nfunction Update-IISAppPool-RecycleEventsToLog($appPool, $appPoolName, $events) {\n    $settingName = \"Recycling.logEventOnRecycle\"\n    Write-Output \"Setting $settingName for AppPool $appPoolName to $events.\"\n\n    Clear-ItemProperty $appPool.PSPath -Name $settingName\n    if ($events -ne \"-\") {\n        Set-ItemProperty $appPool.PSPath -Name $settingName -Value $events\n    }\n}\n\nfunction Run {\n    $OctopusParameters = $OctopusParameters\n    if ($OctopusParameters -eq $null) {\n        write-host \"Using test values\"\n        $OctopusParameters = New-Object \"System.Collections.Hashtable\"\n        $OctopusParameters[\"ApplicationPoolName\"]=\"DefaultAppPool\"\n        $OctopusParameters[\"IdleTimeoutMinutes\"]=\"\"\n        $OctopusParameters[\"RegularTimeIntervalMinutes\"]=\"10\"\n        $OctopusParameters[\"PeriodicRecycleTime\"]=\"14,15,16\"\n        $OctopusParameters[\"RecycleEventsToLog\"]=\"Time, Requests, Schedule, Memory, IsapiUnhealthy, OnDemand, ConfigChange, PrivateMemory\"\n        $OctopusParameters[\"EmptyClearsValue\"]=$true\n    }\n\n    $applicationPoolName = $OctopusParameters[\"ApplicationPoolName\"]\n    $idleTimeout = $OctopusParameters[\"IdleTimeoutMinutes\"]\n    $periodicRestart = $OctopusParameters[\"RegularTimeIntervalMinutes\"]\n    $periodicRecycleTimes = $OctopusParameters[\"PeriodicRecycleTime\"]\n    $recycleEventsToLog = $OctopusParameters[\"RecycleEventsToLog\"]\n    $emptyClearsValue = $OctopusParameters[\"EmptyClearsValue\"]\n\n    if ([string]::IsNullOrEmpty($applicationPoolName)) {\n        throw \"Application pool name is required.\"\n    }\n\n    $appPool = Get-Item IIS:\\AppPools\\$applicationPoolName\n\n    if ($emptyClearsValue -eq $true) {\n        Write-Output \"Empty values will reset to default\"\n        if ([string]::IsNullOrEmpty($idleTimeout)) {\n            $idleTimeout = \"0\"\n        }\n        if ([string]::IsNullOrEmpty($periodicRestart)) {\n            $periodicRestart = \"0\"\n        }\n        if ([string]::IsNullOrEmpty($periodicRecycleTimes)) {\n            $periodicRecycleTimes = \"-1\"\n        }\n        if ([string]::IsNullOrEmpty($recycleEventsToLog)) {\n            $recycleEventsToLog = \"-\"\n        }\n    }\n\n    if (![string]::IsNullOrEmpty($periodicRestart)) {\n        Update-IISAppPool-PeriodicRestart              -appPool $appPool -appPoolName $appPool.Name -PeriodicRestart $periodicRestart\n    }\n    if (![string]::IsNullOrEmpty($idleTimeout)) {\n        Update-IISAppPool-IdleTimeout                  -appPool $appPool -appPoolName $appPool.Name -idleTimeout $idleTimeout\n    }\n    if (![string]::IsNullOrEmpty($periodicRecycleTimes)) {\n        Update-IISAppPool-ScheduledTimes               -appPool $appPool -appPoolName $appPool.Name -Schedule $periodicRecycleTimes\n    }\n    if(![string]::IsNullOrEmpty($recycleEventsToLog)){\n        Update-IISAppPool-RecycleEventsToLog           -appPool $appPool -appPoolName $appPool.Name -Events $recycleEventsToLog    \n    }\n}\n\nRun\n",
     "Octopus.Action.Script.Syntax": "PowerShell",
@@ -20,7 +20,9 @@
       "Label": "Application pool",
       "HelpText": "The name of the application pool to modify. The application pool must already exist.",
       "DefaultValue": "",
-      "DisplaySettings": {},
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
       "Links": {}
     },
     {
@@ -29,7 +31,9 @@
       "Label": "Process idle timeout",
       "HelpText": "Amount of time (in minutes) a worker process will remain idle before it shuts down. A value of 0 means the process does not shut down after an idle timeout.",
       "DefaultValue": "",
-      "DisplaySettings": {},
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
       "Links": {}
     },
     {
@@ -38,7 +42,9 @@
       "Label": "Application pool recycle time interval",
       "HelpText": "Period of time (in minutes) after which the application pool will recycle. A value of 0 means the application pool does not recycle on a regular interval.",
       "DefaultValue": "",
-      "DisplaySettings": {},
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
       "Links": {}
     },
     {
@@ -47,7 +53,9 @@
       "Label": "Application pool periodic recycle time",
       "HelpText": "A specific local time, in minutes after midnight, when the application pool is recycled. Seperate multiple times by using a ,\n\nExample: \"30\" for half an hour past midnight. or \"0, 360\" for midnight and 6 am.",
       "DefaultValue": "",
-      "DisplaySettings": {},
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
       "Links": {}
     },
     {
@@ -73,8 +81,8 @@
       "Links": {}
     }
   ],
-  "LastModifiedOn": "2017-07-05T23:25:56.598+00:00",
-  "LastModifiedBy": "veccsolutions",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2017-07-05T23:25:56.598Z",
     "OctopusVersion": "3.14.1",

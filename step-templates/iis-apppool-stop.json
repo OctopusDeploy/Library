@@ -3,7 +3,7 @@
   "Name": "IIS AppPool - Stop",
   "Description": "Stops an IIS Application Pool",
   "ActionType": "Octopus.Script",
-  "Version": 5,
+  "Version": 6,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "# Load IIS module:\nImport-Module WebAdministration\n\n# Get AppPool Name\n$appPoolName = $OctopusParameters['appPoolName']\n# Get the number of retries\n$retries = $OctopusParameters['appPoolCheckRetries']\n# Get the number of attempts\n$delay = $OctopusParameters['appPoolCheckDelay']\n\n# Check if exists\nif(Test-Path IIS:\\AppPools\\$appPoolName) {\n\n    # Stop App Pool if not already stopped\n    if ((Get-WebAppPoolState $appPoolName).Value -ne \"Stopped\") {\n        Write-Output \"Stopping IIS app pool $appPoolName\"\n        Stop-WebAppPool $appPoolName\n\n        $state = (Get-WebAppPoolState $appPoolName).Value\n        $counter = 1\n\n        # Wait for the app pool to the \"Stopped\" before proceeding\n        do{\n            $state = (Get-WebAppPoolState $appPoolName).Value\n            Write-Output \"$counter/$retries Waiting for IIS app pool $appPoolName to shut down completely. Current status: $state\"\n            $counter++\n            Start-Sleep -Milliseconds $delay\n        }\n        while($state -ne \"Stopped\" -and $counter -le $retries)\n\n        # Throw an error if the app pool is not stopped\n        if($counter -gt $retries) {\n            throw \"Could not shut down IIS app pool $appPoolName. `nTry to increase the number of retries ($retries) or delay between attempts ($delay milliseconds).\" }\n    }\n    else {\n        Write-Output \"$appPoolName already Stopped\"\n    }\n}\nelse {\n    Write-Output \"IIS app pool $appPoolName doesn't exist\"\n}",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -14,7 +14,9 @@
       "Label": "Application pool name",
       "HelpText": "The name of the application pool in IIS.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "AppPoolCheckDelay",
@@ -35,8 +37,8 @@
       }
     }
   ],
-  "LastModifiedOn": "2017-04-10T18:41:25+00:00",
-  "LastModifiedBy": "marpstar",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2017-04-10T18:41:25+00:00",
     "OctopusVersion": "3.12.1",

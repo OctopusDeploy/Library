@@ -3,7 +3,7 @@
   "Name": "SQLAzure - Restore a SQL Azure database from a .bacpac located in Azure Storage",
   "Description": "Given an existing [.bacpac](https://msdn.microsoft.com/en-us/library/azure/hh335292.aspx) in Azure Storage this template restores a SQL Azure database.\n\n**Note** - The storage account used needs to reside in the the same subscription as the SQL Azure Server.",
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 3,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "#Check for the PowerShell cmdlets\ntry{ \n    Import-Module Azure -ErrorAction Stop\n}catch{\n    \n    $azureServiceModulePath = \"C:\\Program Files (x86)\\Microsoft SDKs\\Azure\\PowerShell\\ServiceManagement\\Azure\\Azure.psd1\"\n    Write-Output \"Unable to find the module checking $azureServiceModulePath\" \n    \n    try{\n        Import-Module $azureServiceModulePath\n        \n    }\n    catch{\n        throw \"Windows Azure PowerShell not found! Please make sure to install them from http://www.windowsazure.com/en-us/downloads/#cmd-line-tools\" \n    }\n}\n\nfunction Set-TempAzureSubscription{\n    param(   \n        [Parameter(Mandatory=$true)][string] $subscriptionId,\n        [Parameter(Mandatory=$true)][string] $subscriptionName,\n        [Parameter(Mandatory=$true)][string] $managementCertificate\n    )\n\n    #Ensure no other subscriptions or accounts    \n    Get-AzureSubscription | ForEach-Object { \n        $id = $_.SubscriptionId \n        Write-Output \"Removing Subscription $id\"\n        Remove-AzureSubscription -SubscriptionId $id -Force\n    }\n\n    #Ensure there are no other \n    Get-AzureAccount | ForEach-Object { Remove-AzureAccount $_.ID -Force }\n   \n    [byte[]]$certificateData = [System.Convert]::FromBase64String($managementCertificate)\n    $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2] $certificateData\n\n    Set-AzureSubscription -Certificate $certificate -SubscriptionId $subscriptionId -SubscriptionName $subscriptionName\n    Select-AzureSubscription $subscriptionName\n\n    Write-Output \"Azure Subscription set Id: $subscriptionId Name: $subscriptionName \"\n\n    $subscription = Get-AzureSubscription -Current\n\n    return  $subscription\n}\n\n\nfunction Restore-SqlAzureDatabase{\n    Param(    \n    [Parameter(Mandatory=$true)][string]$databaseServerName,\n    [Parameter(Mandatory=$true)][string]$databaseName,\n    [Parameter(Mandatory=$true)][string]$edition,\n    [Parameter(Mandatory=$true)][string]$serviceObjectiveName, \n    [Parameter(Mandatory=$true)][string]$storageName,\n    [Parameter(Mandatory=$true)][string]$containerName,\n    [Parameter(Mandatory=$true)][string]$sqlAdminUser,                       \n    [Parameter(Mandatory=$true)][string]$sqlAdminPassword,\n    [Parameter(Mandatory=$true)][string]$bacpacFileName,    \n    [Parameter(Mandatory=$false)][bool]$errorIfDatabaseExists=$true\n    )\n\n    $subscription = Get-AzureSubscription -Current \n         \n    $storageKey = (Get-AzureStorageKey -StorageAccountName $storageName).Primary\n    $storageCtx = New-AzureStorageContext -storageaccountname $storageName -storageaccountkey $storageKey\n    $password = $sqlAdminPassword | ConvertTo-SecureString -asPlainText -Force                                                      \n    $sqlCred = New-Object System.Management.Automation.PSCredential($sqlAdminUser,$password)\n    $sqlCtx = New-AzureSqlDatabaseServerContext -ServerName $databaseServerName -Credential $sqlCred    \n  \n    $databases = Get-AzureSqlDatabase -ServerName $databaseServerName\n\n    #Check to see there is a database on the server\n    Foreach ($d in $databases){\n        if($d.Name -eq $databaseName){\n            $database = $d\n            break\n        }    \n    }\n\n    if ($database -eq $null) {\n        Write-Output \"The SQL Azure Database: $databaseName WAS NOT found on $databaseServerName\"  \n    }\n     \n    if($database -ne $null){\n        if ($errorIfDatabaseExists -eq $true) {\n            Write-Output \"A database named $databaseName already exists. If you wish to override this database set the -errorIfDatabaseExists parameter to false.\" \n            return;\n        } else {\n            #Delete the existing database.\n            Write-Output \"The SQL Azure Database: $databaseName WAS found on $databaseServerName\"  \n            Write-Output \"WARNING! Removing SQL Azure database: $databaseName\"\n            Remove-AzureSqlDatabase -ServerName $databaseServerName -DatabaseName $databaseName -Force\n        }\n    } \n\n    Write-Output \"Starting database import...\"\n    $importRequest = Start-AzureSqlDatabaseImport -SqlConnectionContext $sqlCtx -StorageContext $storageCtx -StorageContainerName $containerName -DatabaseName $databaseName -BlobName $bacpacFileName -Edition $edition\n    \n    Write-Output \"Database import request submitted.  Request Id: $($importRequest.RequestGuid)\"  \n\n    Write-Output \"Checking import status...\"\n    $status = Get-AzureSqlDatabaseImportExportStatus -Username $sqlAdminUser -Password $sqlAdminPassword -ServerName $databaseServerName -RequestId $importRequest.RequestGuid\n    Write-Output \"Status: $($status.Status)\"\n    \n    while($status.Status.StartsWith(\"Running\") -Or $status.Status.StartsWith(\"Pending\")){\n        Start-Sleep -s 10\n        Write-Output \"Checking import status...\"  \n        $status = Get-AzureSqlDatabaseImportExportStatus -Username $sqlAdminUser -Password $sqlAdminPassword -ServerName $databaseServerName -RequestId $importRequest.RequestGuid\n        Write-Output \"Status: $($status.Status)\" \n    }\n\n    Get-AzureSqlDatabaseImportExportStatus -Username $sqlAdminUser -Password $sqlAdminPassword -ServerName $databaseServerName -RequestId $importRequest.RequestGuid   \n\n    if ($status.Status -eq \"Completed\") {\n        Write-Output \"Updating database service objective...\"\n\n        #Get the service objective.\n        $serviceObjective = Get-AzureSqlDatabaseServiceObjective -ServerName $databaseServerName -ServiceObjectiveName $serviceObjectiveName\n        Set-AzureSqlDatabase -ConnectionContext $sqlCtx -DatabaseName $databaseName -Force -ServiceObjective $serviceObjective\n        \n        Write-Output \"Updated database service objective.\" \n    }\n\n    return $importRequest\n}\n\n\n#Set the Azure Subscription\n$subscription = Set-TempAzureSubscription -managementCertificate $AzureManagementCertificate -subscriptionId $AzureSubscriptionId -subscriptionName $AzureSubscriptionName \n\nWrite-Output \"=============================================================\"\nWrite-Output \"Using SQL Azure Server $SQLAzureServerName\"\nWrite-Output \"Using Azure Storage Account: $AzureStorageAccountName\"\nWrite-Output \"Using Azure Storeage Container: $AzureStorageContainerName\"\nWrite-Output \"Using bacpac file: $BacPacFileName\"\nWrite-Output \"=============================================================\"\n\nRestore-SqlAzureDatabase -databaseServerName $SQLAzureServerName `\n    -databaseName $databaseName `\n    -edition $SQLAzureDatabaseEdition `\n    -serviceObjectiveName $SQLAzureServiceObjective `\n    -storageName $AzureStorageAccountName `\n    -containerName $AzureStorageContainerName `\n    -sqlAdminUser $SqlAzureAdminUser `\n    -sqlAdminPassword $SqlAzureAdminUserPassword `\n    -bacpacFileName $BacPacFileName `\n    -errorIfDatabaseExists $false\n",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -15,7 +15,9 @@
       "Label": "The Azure management certificate associated with the subscription",
       "HelpText": "The Azure Management Certificate that can be sourced via https://manage.windowsazure.com/publishsettings",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "AzureSubscriptionId",
@@ -40,7 +42,9 @@
       "Label": "The SQL Azure Server Admin User",
       "HelpText": "The SQL Azure Server Administrator User",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "SqlAzureAdminUserPassword",
@@ -65,7 +69,9 @@
       "Label": "The SQL Azure Database used for the  bacpac restore",
       "HelpText": "The name of the SQL Azure Database to which you wish to restore the .bacpac file.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "SQLAzureDatabaseEdition",
@@ -92,25 +98,31 @@
       "Label": "The Azure Storage Account where the .bacpac file is located",
       "HelpText": "The Azure Storage Account where the .bacpac file is located",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "AzureStorageContainerName",
       "Label": "The container name of the bacpac file",
       "HelpText": "The container in Azure storage where the .bacpac file is located.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "BacPacFileName",
       "Label": "The name of the bacpac file to restore",
       "HelpText": "The name of the .bacpac file to restore.",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2015-04-01T11:36:28.847+00:00",
-  "LastModifiedBy": "merbla",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2015-04-01T11:36:52.686+00:00",
     "OctopusVersion": "2.6.5.1010",

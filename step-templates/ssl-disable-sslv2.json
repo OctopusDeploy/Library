@@ -3,7 +3,7 @@
   "Name": "SSL - Disable SSLv2",
   "Description": "Disables SSL v2, requires restart.",
   "ActionType": "Octopus.Script",
-  "Version": 0,
+  "Version": 1,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "Write-host \"Server : $Server\"\r\n\t$ClientEnabled = $false\r\n\t$ServerEnabled = $false\r\n    $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $Server)\r\n    $regkey = $reg.OpenSubkey(\"SYSTEM\\\\CurrentControlSet\\\\Control\\\\SecurityProviders\\\\SCHANNEL\\\\Protocols\\\\SSL 2.0\",$true)\r\n\t$regkeyC = $reg.OpenSubkey(\"SYSTEM\\\\CurrentControlSet\\\\Control\\\\SecurityProviders\\\\SCHANNEL\\\\Protocols\\\\SSL 2.0\\\\Client\",$true)\r\n\t$regkeyS = $reg.OpenSubkey(\"SYSTEM\\\\CurrentControlSet\\\\Control\\\\SecurityProviders\\\\SCHANNEL\\\\Protocols\\\\SSL 2.0\\\\Server\",$true)\r\n\t\r\n\tforeach($subkeyName in $regkey.GetSubKeyNames())\r\n\t{\r\n#CLIENT\r\n\t\t# Check for Client SubKey\r\n\t\tif (!$regkeyC)\t\t\t\r\n\t\t{\r\n\t\t\t$regkey.CreateSubKey('Client')\r\n\t\t\t#reload\r\n\t\t\t$regkeyC = $reg.OpenSubkey(\"SYSTEM\\\\CurrentControlSet\\\\Control\\\\SecurityProviders\\\\SCHANNEL\\\\Protocols\\\\SSL 2.0\\\\Client\",$true)\r\n\t\t\t$regkeyC.SetValue('DisabledByDefault','1','DWORD')\r\n\t\t}\t\t\r\n\t\tforeach($subkeyNameC in $regkeyC.GetValueNames())\r\n\t\t{\t\t\t\t\t\r\n\t\t\tif ($subkeyNameC)\r\n\t\t\t{\r\n\t\t\t\tif ($subkeyNameC -eq 'Enabled')\r\n\t\t\t\t{\r\n\t\t\t\t\t$ClientEnabled = $true\r\n\t\t\t\t}\r\n\t\t\t}\r\n\t\t}\r\n\t\t# Check to see if the Enabled Key was found\r\n\t\tif (!$ClientEnabled)\r\n\t\t{\r\n\t\t\t#Add enabled SubKey with DWORD value\r\n\t\t\t$regkeyC.SetValue('Enabled','0','DWORD')\t\t\t\t\r\n\t\t}\r\n#SERVER\r\n\t\t# Check for Server SubKey\r\n\t\tif (!$regkeyS)\r\n\t\t{\r\n\t\t\t$regkey.CreateSubKey('Server')\r\n\t\t\t#reload\r\n\t\t\t$regkeyS = $reg.OpenSubkey(\"SYSTEM\\\\CurrentControlSet\\\\Control\\\\SecurityProviders\\\\SCHANNEL\\\\Protocols\\\\SSL 2.0\\\\Server\",$true)\r\n\t\t}\t\t\r\n\t\tforeach($subkeyNameS in $regkeyS.GetValueNames())\r\n\t\t{\r\n\t\t\tif ($subkeyNameS)\r\n\t\t\t{\r\n\t\t\t\tif ($subkeyNameS -eq 'Enabled')\r\n\t\t\t\t{\r\n\t\t\t\t\t$ServerEnabled = $true\r\n\t\t\t\t}\r\n\t\t\t}\r\n\t\t}\t\t\r\n\t\tif (!$ServerEnabled)\r\n\t\t{\r\n\t\t\t#Add enabled SubKey with DWORD value\r\n\t\t\t$regkeyS.SetValue('Enabled','0','DWORD')\r\n\t\t}\t\t\t\r\n\t} \r\n\tWrite-host \"Server : $Server : Complete\"",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -14,11 +14,14 @@
       "Name": "Server",
       "Label": "Server name",
       "HelpText": "Server name to disable SSL v2 on.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-05-30T20:48:39.574+00:00",
-  "LastModifiedBy": "Severswoed",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2014-05-30T20:48:41.172+00:00",
     "OctopusVersion": "2.4.7.85",
