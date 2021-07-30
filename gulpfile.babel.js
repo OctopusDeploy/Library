@@ -144,6 +144,7 @@ function humanize(categoryId) {
     case 'netscaler': return 'NetScaler';
     case 'newrelic': return 'New Relic';
     case 'nunit': return 'NUnit';
+    case 'opslevel': return "OpsLevel";
     case 'pagerduty': return 'PagerDuty';
     case 'postgresql': return 'PostgreSQL';
     case 'pulumi': return 'Pulumi';

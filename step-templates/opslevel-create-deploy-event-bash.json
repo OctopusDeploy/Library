@@ -1,0 +1,113 @@
+{
+  "Id": "9a22df59-75ea-4867-852e-fddc0d65fa1a",
+  "Name": "OpsLevel - Create Deploy Event - Bash",
+  "Description": "Track deploys to your services across different environments in [OpsLevel](https://www.opslevel.com/docs/insights/deploys/).",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "if test -f \"./OL_PACKAGE/opslevel\"; then\n\tchmod +x ./OL_PACKAGE/opslevel\n\tcat << EOF | ./OL_PACKAGE/opslevel create deploy --logLevel=WARN -i #{OL_INTEGRATION_URL} -f -\nservice: #{OL_SERVICE}\ndescription: #{OL_DESCRIPTION}\nenvironment: #{OL_ENVIRONMENT}\ndeploy-number: #{OL_DEPLOY_NUMBER}\ndeploy-url: #{OL_DEPLOY_URL}\ndedup-id: #{OL_DEDUP_ID}\ndeployer:\n  name: #{OL_DEPLOYER_NAME}\n  email: #{OL_DEPLOYER_EMAIL}\n#{if Octopus.Release.Package}\n#{if Octopus.Release.Package[].Commits}\ncommit:\n  sha: \"#{Octopus.Release.Package[0].Commits[0].CommitId}\"\n  message: \"#{Octopus.Release.Package[0].Commits[0].Comment}\"\n#{/if}\n#{/if}\nEOF\nelse\n\techo \"Please ensure the `opslevel` CLI package is setup and installed!\"\nfi"
+  },
+  "Parameters": [
+    {
+      "Id": "1f3a7c3e-246e-4767-b314-bfc46d77c9e7",
+      "Name": "OL_PACKAGE",
+      "Label": "OpsLevel CLI Package",
+      "HelpText": "The Package that contains the OpsLevel CLI",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "31ed8779-810d-43e0-a53c-90520b549dab",
+      "Name": "OL_SERVICE",
+      "Label": "Service",
+      "HelpText": "The service alias for the event",
+      "DefaultValue": "#{Octopus.Project.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "033217c3-d9fe-4bf3-a353-5d51768b77e5",
+      "Name": "OL_DESCRIPTION",
+      "Label": "Description",
+      "HelpText": "The description of the event",
+      "DefaultValue": "#{Octopus.Release.Notes}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "1cc660c8-bb22-4ff3-bc09-d7488cd6c24a",
+      "Name": "OL_ENVIRONMENT",
+      "Label": "Environment",
+      "HelpText": "The environment for the event",
+      "DefaultValue": "#{Octopus.Environment.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c60fc4c7-b29c-4f0d-a7d3-691b0bad2a3e",
+      "Name": "OL_DEPLOY_NUMBER",
+      "Label": "Deploy Number",
+      "HelpText": "The deploy number of the event",
+      "DefaultValue": "#{Octopus.Release.Number}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "304310bc-600d-435d-9481-7a71bac9fc24",
+      "Name": "OL_DEPLOY_URL",
+      "Label": "Deploy URL",
+      "HelpText": "The deploy url of the event",
+      "DefaultValue": "#{Octopus.Web.ServerUri}#{Octopus.Web.DeploymentLink}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "53ee85df-3d25-4018-b3e2-0dd34eb721ea",
+      "Name": "OL_DEDUP_ID",
+      "Label": "Dedup Id",
+      "HelpText": "The dedup id for the event",
+      "DefaultValue": "#{Octopus.Release.Id}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "536caa2b-36b3-4a6a-b1ed-245ddea9e647",
+      "Name": "OL_DEPLOYER_EMAIL",
+      "Label": "Deployer Email",
+      "HelpText": "The email of the deployer who created the event",
+      "DefaultValue": "#{Octopus.Deployment.CreatedBy.EmailAddress}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "244d6d8f-a512-4211-8e9e-16ae7caca84a",
+      "Name": "OL_DEPLOYER_NAME",
+      "Label": "Deployer Name",
+      "HelpText": "The name of the deployer who created the event",
+      "DefaultValue": "#{Octopus.Deployment.CreatedBy.Username}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-06-27T16:56:46.770Z",
+    "OctopusVersion": "2021.1.7316",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "rocktavious",
+  "Category": "opslevel"
+}
