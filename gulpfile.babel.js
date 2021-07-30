@@ -170,6 +170,7 @@ function humanize(categoryId) {
     case 'xml': return 'XML';
     case 'xunit': return 'xUnit';
     case 'rnhub': return 'RnHub';
+    case 'venafi': return 'Venafi';
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
   }
 }
