@@ -1,0 +1,43 @@
+{
+    "Id": "d3e20a46-8119-4f4f-9d6f-52c30bcc6c59",
+    "Name": "Venafi TPP - Revoke OAuth Token",
+    "Description": "This step template will revoke an access token obtained through a Venafi TPP instance using the VenafiPS PowerShell module's [Revoke-TppToken](https://venafips.readthedocs.io/en/latest/functions/Revoke-TppToken/) function.\n\n---\n\n**Required:** \n- The `VenafiPS` PowerShell module installed on the deployment target or worker. If the module can't be found, the step will attempt to download a version from the [PowerShell gallery](https://www.powershellgallery.com/packages/VenafiPS).\n\nNotes:\n\n- Tested on Octopus `2021.2`.\n- Tested with VenafiPS `3.1.5`.\n- Tested with both Windows PowerShell and PowerShell Core on Linux.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n$ErrorActionPreference = 'Stop'\n\n# Variables\n$Server = $OctopusParameters[\"Venafi.TPP.RevokeOAuth.Server\"]\n$Token = $OctopusParameters[\"Venafi.TPP.RevokeOAuth.AccessToken\"]\n\n# Validation\nif ([string]::IsNullOrWhiteSpace($Server)) {\n    throw \"Required parameter Venafi.TPP.RevokeOAuth.Server not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($Token)) {\n    throw \"Required parameter Venafi.TPP.RevokeOAuth.AccessToken not specified\"\n}\n\n$SecureToken = ConvertTo-SecureString $Token -AsPlainText -Force\n[PSCredential]$AccessToken = New-Object System.Management.Automation.PsCredential(\"token\", $SecureToken)\n\n# Clean-up\n$Server = $Server.TrimEnd('/')\n\n# Required Modules\nfunction Get-NugetPackageProviderNotInstalled {\n    # See if the nuget package provider has been installed\n    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))\n}\n\n# Check to see if the package provider has been installed\nif ((Get-NugetPackageProviderNotInstalled) -ne $false) {\n    Write-Host \"Nuget package provider not found, installing ...\"    \n    Install-PackageProvider -Name Nuget -Force -Scope CurrentUser\n}\n\nWrite-Host \"Checking for required VenafiPS module ...\"\n$required_venafips_version = 3.1.5\n$module_available = Get-Module -ListAvailable -Name VenafiPS | Where-Object { $_.Version -ge $required_venafips_version }\nif (-not ($module_available)) {\n    Write-Host \"Installing VenafiPS module ...\"\n    Install-Module -Name VenafiPS -MinimumVersion 3.1.5 -Scope CurrentUser -Force\n}\nelse {\n    $first_match = $module_available | Select-Object -First 1 \n    Write-Host \"Found version: $($first_match.Version)\"\n}\n\nWrite-Host \"Importing VenafiPS module ...\"\nImport-Module VenafiPS\n\n# Revoke TPP access token\nWrite-Host \"Revoking access token with $Server\"\nRevoke-TppToken -AuthServer $Server -AccessToken $AccessToken -Force"
+    },
+    "Parameters": [
+      {
+        "Id": "7f3400a2-ae73-4299-93a4-4309d38312ff",
+        "Name": "Venafi.TPP.RevokeOAuth.Server",
+        "Label": "Venafi TPP Server",
+        "HelpText": "The URL of the Venafi TPP instance you want to revoke the access token against.\n\nFor example: `https://mytppserver.example.com`.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "27abe7fc-b82a-4d80-a591-f53d8154414c",
+        "Name": "Venafi.TPP.RevokeOAuth.AccessToken",
+        "Label": "Venafi TPP Access Token",
+        "HelpText": "The access token obtained from the TPP server you want to revoke.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-08-11T10:08:47.547Z",
+      "OctopusVersion": "2021.2.7127",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "mark-the-butler",
+    "Category": "venafi"
+  }
