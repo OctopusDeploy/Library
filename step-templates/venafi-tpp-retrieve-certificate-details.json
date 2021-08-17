@@ -1,0 +1,73 @@
+{
+    "Id": "b893cae4-e280-4686-a60b-38da876528ec",
+    "Name": "Venafi TPP - Retrieve Certificate Details",
+    "Description": "This step template will authenticate against a Venafi TPP instance using an existing OAuth access token, and retrieve a certificate's details using its Distinguished Name (DN). This is the absolute path to the certificate in the TPP instance.\n\nThis is achieved using the VenafiPS PowerShell module's  [Get-VenafiCertificate](https://venafips.readthedocs.io/en/latest/functions/Get-VenafiCertificate/) function.\n\nYou can also store the entire certificate result in `JSON` format in an [Octopus output variable](https://octopus.com/docs/projects/variables/output-variables)\n\nThis output variable can then be used in additional deployment or runbook steps.\n\nOn successful completion, you can also *optionally* revoke the access token used.\n\n---\n\n**Required:** \n- The `VenafiPS` PowerShell module installed on the deployment target or worker. If the module can't be found, the step will attempt to download a version from the [PowerShell gallery](https://www.powershellgallery.com/packages/VenafiPS).\n\nNotes:\n\n- Tested on Octopus `2021.2`.\n- Tested with VenafiPS `3.1.5`.\n- Tested with both Windows PowerShell and PowerShell Core on Linux.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n$ErrorActionPreference = 'Stop'\n\n# Variables\n$Server = $OctopusParameters[\"Venafi.TPP.GetCert.Server\"]\n$Token = $OctopusParameters[\"Venafi.TPP.GetCert.AccessToken\"]\n$Path = $OctopusParameters[\"Venafi.TPP.GetCert.DNPath\"]\n\n# Optional\n$OutputVariableName = $OctopusParameters[\"Venafi.TPP.GetCert.OutputVariableName\"]\n$RevokeToken = $OctopusParameters[\"Venafi.TPP.GetCert.RevokeTokenOnCompletion\"]\n\n# Validation\nif ([string]::IsNullOrWhiteSpace($Server)) {\n    throw \"Required parameter Venafi.TPP.GetCert.Server not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($Token)) {\n    throw \"Required parameter Venafi.TPP.GetCert.AccessToken not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($Path)) {\n    throw \"Required parameter Venafi.TPP.GetCert.DNPath not specified\"\n}\nelse {\n    if ($Path.Contains(\"\\\") -eq $False) {\n        throw \"At least one '\\' is required for the Venafi.TPP.GetCert.DNPath value\"\n    }\n}\n\n$SecureToken = ConvertTo-SecureString $Token -AsPlainText -Force\n[PSCredential]$AccessToken = New-Object System.Management.Automation.PsCredential(\"token\", $SecureToken)\n\n# Clean-up\n$Server = $Server.TrimEnd('/')\n\n# Required Modules\nfunction Get-NugetPackageProviderNotInstalled {\n    # See if the nuget package provider has been installed\n    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))\n}\n\n# Check to see if the package provider has been installed\nif ((Get-NugetPackageProviderNotInstalled) -ne $false) {\n    Write-Host \"Nuget package provider not found, installing ...\"    \n    Install-PackageProvider -Name Nuget -Force -Scope CurrentUser\n}\n\nWrite-Host \"Checking for required VenafiPS module ...\"\n$required_venafips_version = 3.1.5\n$module_available = Get-Module -ListAvailable -Name VenafiPS | Where-Object { $_.Version -ge $required_venafips_version }\nif (-not ($module_available)) {\n    Write-Host \"Installing VenafiPS module ...\"\n    Install-Module -Name VenafiPS -MinimumVersion 3.1.5 -Scope CurrentUser -Force\n}\nelse {\n    $first_match = $module_available | Select-Object -First 1 \n    Write-Host \"Found version: $($first_match.Version)\"\n}\n\nWrite-Host \"Importing VenafiPS module ...\"\nImport-Module VenafiPS\n\n$StepName = $OctopusParameters[\"Octopus.Step.Name\"]\n\n# Create Venafi session\nNew-VenafiSession -Server $Server -AccessToken $AccessToken\n\n# Retrieve certificate details\n$CertificateDetails = Get-VenafiCertificate -CertificateId $Path | Select-Object -First 1\n\nif ($null -eq $CertificateDetails -or $null -eq $CertificateDetails.Path) {\n    Write-Warning \"No certificate details returned for path: $Path`nCheck the path value represents a certificate, and not a folder.\"\n}\nelse {\n    Write-Highlight \"Retrieved certificate details for path: $Path\"\n    $CertificateDetails | Format-List\n    \n    if ([string]::IsNullOrWhiteSpace($OutputVariableName) -eq $False) {\n        $CertificateJson = $CertificateDetails | ConvertTo-Json -Compress -Depth 10 \n        Set-OctopusVariable -Name $OutputVariableName -Value $CertificateJson\n        Write-Highlight \"Created output variable: ##{Octopus.Action[$StepName].Output.$OutputVariableName}\"\n    }\n}\n\nif ($RevokeToken -eq $true) {\n    # Revoke TPP access token\n    Write-Host \"Revoking access token with $Server\"\n    Revoke-TppToken -AuthServer $Server -AccessToken $AccessToken -Force\n}"
+    },
+    "Parameters": [
+      {
+        "Id": "9873f05e-4a09-47aa-88c4-6bf63aad5cbc",
+        "Name": "Venafi.TPP.GetCert.Server",
+        "Label": "Venafi TPP Server",
+        "HelpText": "*Required*: The URL of the Venafi TPP instance you want to find certificate details from.\n\nFor example: `https://mytppserver.example.com`.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "81a075af-2ce7-4f0d-ae97-968dacebc15f",
+        "Name": "Venafi.TPP.GetCert.AccessToken",
+        "Label": "Venafi TPP Access Token",
+        "HelpText": "*Required*: The access token to authenticate against the TPP instance.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "ffdde857-7af9-4fc3-9b74-76789fa1dd9b",
+        "Name": "Venafi.TPP.GetCert.DNPath",
+        "Label": "Venafi TPP Certificate Path",
+        "HelpText": "*Required*: The certificate's Distinguished Name (DN). This is the absolute path to the certificate in the TPP instance, separated by `\\`.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "9af1fa28-325c-411d-8e0e-7aa676f05da1",
+        "Name": "Venafi.TPP.GetCert.OutputVariableName",
+        "Label": "Certificate output variable name (Optional)",
+        "HelpText": "*Optional*: Create an output variable with the certificate details found from the search. The certificate details will be stored in `JSON` format.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "1d8421eb-ed22-4513-9d5e-99bba1f8296f",
+        "Name": "Venafi.TPP.GetCert.RevokeTokenOnCompletion",
+        "Label": "Revoke access token on completion?",
+        "HelpText": "Should the access token used be revoked once the step has been completed successfully? Default: `False`.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-08-16T13:51:19.689Z",
+      "OctopusVersion": "2021.2.7207",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "mark-the-butler",
+    "Category": "venafi"
+  }
