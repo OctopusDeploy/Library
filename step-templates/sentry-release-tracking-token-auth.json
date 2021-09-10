@@ -1,20 +1,20 @@
 {
-  "Id": "b40d5528-5de0-422d-a746-1e93cd04dea0",
+  "Id": "f957377a-6389-4ed1-87a6-3317e5676a77",
   "Name": "Sentry Release Tracking (Token Auth)",
-  "Description": "Posts a new release to Sentry, It can optionaly resolve all previous issues.\n\nIf the release already exists, it only applies the resolving.",
+  "Description": "Posts a new release to Sentry and links it to one or more sentry projects. \n\n**Updated version** which uses the newer **API Token** instead of the now depreciated API Key which is only available in legacy Sentry accounts.",
   "ActionType": "Octopus.Script",
   "Version": 1,
   "CommunityActionTemplateId": null,
   "Packages": [],
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "$url = \"https://sentry.io/api/0/organizations/$organization/releases/\"\nWrite-Host $url\n\n$headers = New-Object \"System.Collections.Generic.Dictionary[[String],[String]]\"\n$headers.Add(\"Authorization\", \"Bearer $sentryApiKey\")\n$body = ConvertTo-Json @{ \n\t\"version\" = $OctopusParameters['Octopus.Release.Number']\n    \"projects\" = $projects.Split(\";\")\n}\n\nWrite-Host $body\nTry\n{\n\t$response = Invoke-RestMethod -Method Post -Uri \"$url\" -Body $body -Headers $headers -ContentType \"application/json\"\n\tWrite-Host $response\n}\nCatch [System.Net.WebException] \n{\n\tWrite-Host $_\n\tif($_.Exception.Response.StatusCode.Value__ -ne 400)\n\t{\n\t\tThrow\n\t}\n}\n",
+    "Octopus.Action.Script.ScriptBody": "$organization = $OctopusParameters[\"SentryReleaseTracking.organization\"]\n$projects = $OctopusParameters[\"SentryReleaseTracking.projects\"]\n$apiToken = $OctopusParameters[\"SentryReleaseTracking.apiToken\"]\n\n$url = \"https://sentry.io/api/0/organizations/$organization/releases/\"\nWrite-Host $url\n\n$headers = New-Object \"System.Collections.Generic.Dictionary[[String],[String]]\"\n$headers.Add(\"Authorization\", \"Bearer $apiToken\")\n$body = ConvertTo-Json @{ \n\t\"version\" = $OctopusParameters['Octopus.Release.Number']\n    \"projects\" = $projects.Split(\";\")\n}\n\nWrite-Host $body\nTry\n{\n\t$response = Invoke-RestMethod -Method Post -Uri \"$url\" -Body $body -Headers $headers -ContentType \"application/json\"\n\tWrite-Host $response\n}\nCatch { \n\tif($_.Exception.Response.StatusCode -ne 400)\n\t{\n  \t\tThrow $_\n    }\n}\n",
     "Octopus.Action.Script.ScriptSource": "Inline"
   },
   "Parameters": [
     {
       "Id": "84a0e54c-c914-481a-9277-4b9ab176c9d6",
-      "Name": "organization",
+      "Name": "SentryReleaseTracking.organization",
       "Label": "Organisation Slug",
       "HelpText": "The organisation-name part of the url",
       "DefaultValue": "",
@@ -24,9 +24,9 @@
     },
     {
       "Id": "7ae25fac-65b3-4830-9ade-56c3443ac63b",
-      "Name": "projects",
+      "Name": "SentryReleaseTracking.projects",
       "Label": "Project Slug",
-      "HelpText": "`;`-separated list of all your sentry api slugs for the apps, (web/api/admin) on this spesific Environment.\n\n    myapp-web-dev;myapp-api-dev\n\nprotip: Add them all to a environment-scoped variable.",
+      "HelpText": "`;`-separated list of all your sentry api slugs for the apps, (web/api/admin) on this specific Environment.\n\n    myapp-web-dev;myapp-api-dev\n\nprotip: Add them all to a environment-scoped variable.",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -34,20 +34,20 @@
     },
     {
       "Id": "4d2396cc-5313-4188-91ab-18cf7b59369a",
-      "Name": "sentryApiKey",
+      "Name": "SentryReleaseTracking.apiToken",
       "Label": "Sentry token",
       "HelpText": "Your sentry token",
       "DefaultValue": "",
       "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
+        "Octopus.ControlType": "Sensitive"
       }
     }
   ],
   "$Meta": {
-    "ExportedAt": "2021-09-09T15:37:55.946Z",
+    "ExportedAt": "2021-09-10T12:19:29.946Z",
     "OctopusVersion": "2021.2.7428",
     "Type": "ActionTemplate"
   },
-  "LastModifiedBy": "shout",
-  "Category": "other"
+  "LastModifiedBy": "Your GitHub Username",
+  "Category": "sentry"
 }
