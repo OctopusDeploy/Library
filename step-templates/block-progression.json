@@ -1,0 +1,64 @@
+{
+    "Id": "78a182b3-5369-4e13-9292-b7f991295ad1",
+    "Name": "Block Release Progression",
+    "Description": "Step template to block the release progression of an Octopus Deploy release so it cannot be promoted beyond the current environment.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.RunOnServer": "true",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "$apiKey = $OctopusParameters[\"Block.Octopus.Api.Key\"]\n$previousReleaseId = $OctopusParameters[\"Block.Octopus.Previous.Release.Id\"]\n$reason = $OctopusParameters[\"Block.Octopus.Reason\"]\n$octopusBaseUrl = $OctopusParameters[\"Block.Octopus.Url\"]\n$spaceId = $OctopusParameters[\"Octopus.Space.Id\"]\n\n$body = @{\n\tDescription = $reason\n}\n$bodyAsJson = $body | ConvertTo-JSON -Depth 10\n\n$headers = @{\"X-Octopus-ApiKey\"=\"$apiKey\"}\n    \nWrite-Host \"Blocking the release $previousReleaseId from progressing\"\nInvoke-RestMethod -Uri \"$($octopusBaseUrl)/api/$($spaceId)/releases/$($previousReleaseId)/defects\" -Method POST -Headers $headers -Body $bodyAsJSON -ContentType 'application/json; charset=utf-8'"
+    },
+    "Parameters": [
+      {
+        "Id": "fc366d69-e56b-476b-8005-5431f1ce8c05",
+        "Name": "Block.Octopus.Url",
+        "Label": "Octopus Url",
+        "HelpText": "The base url (`https://samples.octopus.app`) of your Octopus Server.  Defaults to `Octopus.Web.BaseUrl`.",
+        "DefaultValue": "#{Octopus.Web.BaseUrl}",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "f03e6e96-f1d5-4b91-9ae6-f67fd8ba043c",
+        "Name": "Block.Octopus.Api.Key",
+        "Label": "Octopus API Key",
+        "HelpText": "The API key of a user who has permission to block releases.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "cdcbd826-e075-476c-b67a-ddf0e75a576c",
+        "Name": "Block.Octopus.Previous.Release.Id",
+        "Label": "Release Id to Block",
+        "HelpText": "The Octopus ID (`Releases-123`) of the release to block.  Defaults to `Octopus.Release.CurrentForEnvironment.Id`",
+        "DefaultValue": "#{Octopus.Release.CurrentForEnvironment.Id}",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "5c9c1d6a-ec08-4d79-b442-180f9d0460c6",
+        "Name": "Block.Octopus.Reason",
+        "Label": "Reason",
+        "HelpText": "The reason why this release is being blocked.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-09-13T16:14:01.845Z",
+      "OctopusVersion": "2021.2.7428",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "bobjwalker",
+    "Category": "octopus"
+  }
