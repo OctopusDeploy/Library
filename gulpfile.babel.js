@@ -164,6 +164,7 @@ function humanize(categoryId) {
     case 'teamcity': return 'TeamCity';
     case 'terraform': return 'Terraform';
     case 'testery': return 'Testery';
+    case 'tomcat': return 'Tomcat';
     case 'twilio': return 'Twilio';
     case 'victorops': return 'VictorOps'
     case 'webdeploy': return 'Web Deploy';

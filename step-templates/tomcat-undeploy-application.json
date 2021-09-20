@@ -1,0 +1,73 @@
+{
+  "Id": "34f13b4c-64e1-42b4-ad1a-4599f25a850e",
+  "Name": "Undeploy Tomcat Application via Manager",
+  "Description": "Undeploys the specified application/version from the Tomcat server.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "# Get variables\ntomcatManagerUrl=$(get_octopusvariable \"Tomcat.Undeploy.ManagerUrl\")\ntomcatManagementUser=$(get_octopusvariable \"Tomcat.Undeploy.Management.User\")\ntomcatManagementPassword=$(get_octopusvariable \"Tomcat.Undeploy.Management.Password\")\ncontextPath=$(get_octopusvariable \"Tomcat.Undeploy.ContextPath\")\ndeploymentVersion=$(get_octopusvariable \"Tomcat.Undeploy.DeploymentVersion\")\napplicationFound=false\ndisplayMessage=\"$contextPath\"\n\n# Get list of applications\necho \"Checking Tomcat for $contextPath ...\"\nlistUrl=\"$tomcatManagerUrl/text/list\"\n\nresults=$(curl $listUrl --user \"$tomcatManagementUser\":\"$tomcatManagementPassword\" 2>&1)\n\n# Break results into an array\nIFS=$'\\n' resultArray=($results)\n\n# Loop through results\nfor i in \"${resultArray[@]}\"\ndo\n\t# Check for context path\n    if [[ \"$i\" == *\"$contextPath\"* ]]\n    then\n    \t# Check to see if there was a version specified\n        if [[ \"$deploymentVersion\" != \"\" ]]\n        then\n        \tdisplayMessage=\"$displayMessage $deploymentVersion\"\n        \t# Check for version\n            if [[ \"$i\" == *\"$deploymentVersion\"* ]]\n            then\n            \techo \"Found $contextPath with version $deploymentVersion ...\"\n                applicationFound=true\n                break\n            fi\n        else\n        \tif [[ \"$i\" != *\"##\"* ]]\n            then\n            \techo \"Found $contextPath ...\"\n            \tapplicationFound=true\n            \tbreak\n            fi\n        fi\n    fi\ndone\n\nif [[ \"$applicationFound\" == true ]]\nthen\n\t# Create URL\n\tundeployUrl=\"$tomcatManagerUrl/text/undeploy?path=/$contextPath\"\n    \n\t# Check to see if a version was specified\n\tif [[ \"$deploymentVersion\" != \"\" ]]\n\tthen\n\t\tundeployUrl=\"$undeployUrl&version=$deploymentVersion\"\n\tfi\n\n\t# Let user know what's going on\n\techo \"Removing $displayMessage ...\"\n\n\t# Call the undeploy for Tomcat\n\tcurl \"$undeployUrl\" --user \"$tomcatManagementUser\":\"$tomcatManagementPassword\" 2>&1\nelse\n\techo \"Unable to find $displayMessage ...\"\nfi"
+  },
+  "Parameters": [
+    {
+      "Id": "a3a0b5b5-067f-40fe-b93d-833bbe901937",
+      "Name": "Tomcat.Undeploy.ManagerUrl",
+      "Label": "Tomcat Manager URL",
+      "HelpText": "This is the URL of the Tomcat Manager instance that the package will be uploaded to. This URL is relative to the host that is executing the step. So if the Tentacle is on the same host as Tomcat, then this value may be something like http://localhost:8080/manager.",
+      "DefaultValue": "http://localhost:8080/manager",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "bb902de7-ad45-4f76-8111-0d080d491c77",
+      "Name": "Tomcat.Undeploy.Management.User",
+      "Label": "Management User",
+      "HelpText": "The username to use with the management interface. This user must be assigned to the manager-script group in the tomcat-users.xml file.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7be02a9f-bc24-4df3-bf2b-3d4963c1d6ae",
+      "Name": "Tomcat.Undeploy.Management.Password",
+      "Label": "Management Password",
+      "HelpText": "The password to use with the management interface.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "2b07425a-a164-470e-a8b0-20051e91f796",
+      "Name": "Tomcat.Undeploy.ContextPath",
+      "Label": "Context path",
+      "HelpText": "This field defines the context path of the deployed artifact. For example, setting this field to myapp will result in the deployment being having the context path /myapp in Tomcat. Set the value to / to deploy to the root context.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3c8199d2-db7f-473c-aab5-5e5337e645bd",
+      "Name": "Tomcat.Undeploy.DeploymentVersion",
+      "Label": "Deployment Version (Optional)",
+      "HelpText": "Leave this field blank to to leave the Tomcat version undefined, in which case you will overwrite any existing deployment with the same context path, and parallel deployments will not be enabled.\n\nAlternatively you can define a custom Tomcat version. These versions are compared as plain strings, meaning traditional version strings like 1.0.1 may not be suitable as this format is not guaranteed to correctly identify the latest version using string comparisons. A date string like #{ | NowDateUtc \"yyMMddHHmmss\"} is a good option, as this format produces the correct result when compared as strings.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-09-20T18:05:20.249Z",
+    "OctopusVersion": "2021.2.7462",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "tomcat"
+}
