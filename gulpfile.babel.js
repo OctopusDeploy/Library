@@ -122,6 +122,7 @@ function humanize(categoryId) {
     case 'ghostinspector': return 'Ghost Inspector';
     case 'github': return 'GitHub';
     case 'gitlab': return 'GitLab';
+    case 'google-cloud': return 'Google Cloud';
     case 'hashicorp-vault': return 'HashiCorp Vault';
     case 'hipchat': return 'HipChat';
     case 'hockeyapp': return 'HockeyApp';
