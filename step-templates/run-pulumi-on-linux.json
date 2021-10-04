@@ -1,0 +1,92 @@
+{
+  "Id": "76296cd1-7d8c-47e8-b33f-027ecd3ff6b5",
+  "Name": "Run Pulumi (Linux)",
+  "Description": "Allows you to run Pulumi commands using the Pulumi CLI. For Pulumi stacks that deploy AWS resources, make sure your Octopus Project contains a variable called `AWS` of type `AWS Account`. For Pulumi stacks that deploy Azure resources, set the variable `Azure` of type `Azure Subscriptions` (Service Principal).\n\nLearn more about adding an [AWS Account](https://octopus.com/docs/infrastructure/deployment-targets/aws#create-an-aws-account) or [Azure Subscriptions](https://octopus.com/docs/infrastructure/deployment-targets/azure#azure-service-principal) to your Octopus Deploy instance.",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "# Check if the pulumi command is in the path and if not, download and install it.\n# Additionally, add pulumi to the path.\nif ! [ -x \"$(command -v pulumi)\" ]; then\n\tcurl -fsSL https://get.pulumi.com | sh\n    export PATH=$PATH:$HOME/.pulumi/bin\n\techo \"Pulumi version: $(pulumi version)\"\nfi\n\naccessToken=$(get_octopusvariable \"Pulumi.AccessToken\")\nif [ -z \"${accessToken:-}\" ]; then\n\tfail_step \"Pulumi Access Token must be specified.\"\nfi\nexport PULUMI_ACCESS_TOKEN=$accessToken\n\n# Check for AWS access key credentials and set those in the env.\nexport AWS_ACCESS_KEY_ID=$(get_octopusvariable \"AWS.AccessKey\")\nexport AWS_SECRET_ACCESS_KEY=$(get_octopusvariable \"AWS.SecretKey\")\n\n# Check for Azure SP/personal account credentials and set those in the env.\nexport ARM_SUBSCRIPTION_ID=$(get_octopusvariable \"Azure.SubscriptionNumber\")\nexport ARM_TENANT_ID=$(get_octopusvariable \"Azure.TenantId\")\nexport ARM_CLIENT_ID=$(get_octopusvariable \"Azure.Client\")\nexport ARM_CLIENT_SECRET=$(get_octopusvariable \"Azure.Password\")\n\nif [ -z \"${AWS_SECRET_ACCESS_KEY:-}\" ]; then\n\tif [ -z \"${ARM_CLIENT_SECRET:-}\" ]; then\n    \tfail_step \"Neither secrets for AWS or Azure were detected.\"\n    fi\nfi\n\npulumi login\n\ncwd=$(get_octopusvariable \"Pulumi.WorkingDirectory\")\nif [ -n \"${cwd:-}\" ]; then\n\tpushd $cwd\nfi\n\nrestoreDeps=$(get_octopusvariable \"Pulumi.Restore\")\nif [ \"$restoreDeps\" = \"True\" ]; then\n\techo \"Restoring dependencies...\"\n\tnpm install\nfi\n\ncreateStackIfNotExists=$(get_octopusvariable \"Pulumi.CreateStack\")\nstackName=$(get_octopusvariable \"Pulumi.StackName\")\necho \"Selecting stack $stackName\"\npulumi stack select $stackName || (\n\tif [ \"$createStackIfNotExists\" = \"True\" ]; then\n    \tpulumi stack init $stackName\n    fi\n)\n\npulCmd=$(get_octopusvariable \"Pulumi.Command\")\npulArgs=$(get_octopusvariable \"Pulumi.Args\")\nif [ -n \"${pulArgs:-}\" ]; then\n\tpulumi $pulCmd $pulArgs\nelse\n\tpulumi $pulCmd\nfi\n\n# If a working directory was specified, we would have `pushd`, so let's `popd` now.\nif [ -n \"${cwd:-}\" ]; then\n\tpopd\nfi\n"
+  },
+  "Parameters": [{
+      "Id": "94a93122-235e-4edd-8217-adbe63db85f1",
+      "Name": "Pulumi.StackName",
+      "Label": "Stack Name",
+      "HelpText": "The fully-qualified stack name against which the Pulumi commands will be run. Hint: `{orgName}/{projectName}/{stackName}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f00ffc37-a550-458e-85ff-43909eb76c79",
+      "Name": "Pulumi.CreateStack",
+      "Label": "Create Stack",
+      "HelpText": "Whether to create a new stack if it does not exist already.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "29e68d5d-5c46-4290-993c-51672a431812",
+      "Name": "Pulumi.Command",
+      "Label": "Command",
+      "HelpText": "Eg. `preview`, `up`, `destroy` etc. Learn more [here](https://www.pulumi.com/docs/reference/cli/).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "362423a8-aab4-451f-b79b-3896725b8c84",
+      "Name": "Pulumi.Args",
+      "Label": "Command Args",
+      "HelpText": "Arguments to pass to the Pulumi command. Eg. `-v` to set the verbosity or `--logtostderr` to log to the standard error. [Learn more](https://www.pulumi.com/docs/reference/cli/) about the available commands and the arguments you can pass to each of them.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9f6bda9f-39dd-47cf-9233-5499a837c4fb",
+      "Name": "Pulumi.AccessToken",
+      "Label": "Pulumi Access Token",
+      "HelpText": "The [Pulumi access token](https://www.pulumi.com/docs/intro/console/accounts-and-organizations/accounts/#access-tokens) to use. The access token must have access to the stack, which you are deploying. [Click here](https://app.pulumi.com/account/tokens) to go to the Access Tokens page on the Pulumi Console now.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "aa4310d6-52eb-4b37-9575-db6cfe7c3e3a",
+      "Name": "Pulumi.WorkingDirectory",
+      "Label": "Pulumi Working Directory",
+      "HelpText": "The working directory where the Pulumi app is extracted to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d4d357c7-d4a9-4c1c-b38e-6efcb363ce0b",
+      "Name": "Pulumi.Restore",
+      "Label": "Restore Dependencies",
+      "HelpText": "Whether to restore NodeJS dependencies.",
+      "DefaultValue": "true",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedBy": "praneetloke",
+  "$Meta": {
+    "ExportedAt": "2019-09-26T01:21:54.376Z",
+    "OctopusVersion": "2019.8.4",
+    "Type": "ActionTemplate"
+  },
+  "Category": "pulumi"
+}

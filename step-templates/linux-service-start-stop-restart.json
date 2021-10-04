@@ -1,0 +1,54 @@
+{
+    "Id": "cc2aa1d1-975b-4ac4-a145-094bbd92a2c9",
+    "Name": "Linux Service - Start, Stop, Restart",
+    "Description": null,
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "Author": "twerthi",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "Bash",
+      "Octopus.Action.Script.ScriptBody": "serviceName=$(get_octopusvariable \"templateServiceName\")\naction=$(get_octopusvariable \"templateAction\")\nsleepInSeconds=$(get_octopusvariable \"templateSleepInSeconds\")\n\nfunction get_service_running () {\n\tlocal linuxService=$1\n    local state=$(systemctl is-active \"$linuxService\")\n\n\n    if [[ $state == \"active\" ]]\n    then\n        state=true\n    else\n        state=false\n    fi\n\n  \t# Return the result\n    echo \"$state\"\n}\n\nfunction service_found () {\n\tlocal serviceName=$1\n\tlocal result=\"\"\n\n\tif [[ ! -z $(systemctl status $serviceName | grep \"$serviceName\") ]]\n\tthen\n\t\tresult=true\n\telse\n\t\tresult=false\n\tfi\n\n\techo \"$result\"\n}\n\n# Check for service\nif [[ $(service_found \"$serviceName\") == true ]]\nthen\n\t# Perform action\n\tcase $action in\n\t\tstart)\n\t\t\tif [[ $(get_service_running \"$serviceName\") == false ]]\n\t\t\tthen \n\t\t\t\techo \"Starting service $serviceName...\"\n\t\t\t\tsystemctl start $serviceName\n\n\t\t\t\tsleep $sleepInSeconds\n\n\t\t\t\tif [[ $(get_service_running \"$serviceName\") == true ]]\n\t\t\t\tthen\n\t\t\t\t\techo \"$serviceName started successfully.\"\n\t\t\t\telse\n\t\t\t\t\tfail_step \"$serviceName did not start within the specified wait time.\"\n\t\t\t\tfi\n\t\t\telse\n\t\t\t\tfail_step \"Service $serviceName is already running!\"\n\t\t\tfi\n\t\t\t;;\n\t\tstop)\n\t\t\tif [[ $(get_service_running \"$serviceName\") == true ]]\n\t\t\tthen\n\t\t\t\techo \"Stopping $serviceName...\"\n\t\t\t\tsystemctl stop $serviceName\n\n\t\t\t\tsleep $sleepInSeconds\n\n\t\t\t\tif [[ $(get_service_running \"$serviceName\") == false ]]\n\t\t\t\tthen\n\t\t\t\t\techo \"Stopped $serviceName successfully.\"\n\t\t\t\telse\n\t\t\t\t\tfail_step \"$serviceName failed to stop within the specified wait time.\"\n\t\t\t\tfi\n\t\t\telse\n\t\t\t\tfail_step \"Service $serviceName is not running!\"\n\t\t\tfi\n\t\t\t;;\n\n\t\trestart)\n\t\t\tif [[ $(get_service_running \"$serviceName\") == true ]]\n\t\t\tthen\n\t\t\t\techo \"Restarting $serviceName...\"\n\t\t\t\tsystemctl restart $serviceName\n\n\t\t\t\tsleep $sleepInSeconds\n\n\t\t\t\tif [[ $(get_service_running \"$serviceName\") == true ]]\n\t\t\t\tthen\n\t\t\t\t\techo \"Restarted $serviceName successfully.\"\n\t\t\t\telse\n\t\t\t\t\tfail_step \"$serviceName did not restart within the specified wait time\"\n\t\t\t\tfi\n\t\t\telse\n\t\t\t\tfail_step \"$serviceName is stopped!\"\n\t\t\tfi\n\t\t\t;;\n\n\n\t\t*)\n\t\t\tfail_step \"Invalid action.  Valid actions are start|stop|restart.\"\n\t\t\t;;\n\tesac\nelse\n\tfail_step \"Service $serviceName not found!\"\nfi"
+    },
+    "Parameters": [
+      {
+        "Id": "e8b2d399-ecad-4f25-bff5-f198b36a9de3",
+        "Name": "templateServiceName",
+        "Label": "Service Name",
+        "HelpText": "Name of the service",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "3a1857db-c40e-4a18-8205-994fd30a9f9b",
+        "Name": "templateAction",
+        "Label": "Action",
+        "HelpText": "Action to take on the service",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "start|Start\nstop|Stop\nrestart|Restart"
+        }
+      },
+      {
+        "Id": "e42aff9e-776d-4046-9a6a-7979bf6acf82",
+        "Name": "templateSleepInSeconds",
+        "Label": "Sleep in seconds",
+        "HelpText": "Number of seconds to wait after starting, stopping, or restarting to make sure the action worked successfully.",
+        "DefaultValue": "5",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "LastModifiedBy": "twerthi",    
+    "$Meta": {
+      "ExportedAt": "2020-03-04T18:52:00.622Z",
+      "OctopusVersion": "2019.13.7",
+      "Type": "ActionTemplate"
+    },
+    "Category": "Linux"
+  }

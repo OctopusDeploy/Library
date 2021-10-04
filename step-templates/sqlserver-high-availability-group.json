@@ -1,0 +1,48 @@
+{
+  "Id": "735d2f76-fdbb-4232-9f36-07020cad120d",
+  "Name": "Check SQL Server in High Availability Group",
+  "Description": "Checks for SQL Node currently being serving as primary on high availability group and sets Octopus variable : SQLIsOnSecondary to true if secondary is active in High Availability Group",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "function CheckSQLServerInAOAG($SqlServer, $PrimaryNode)\r\n{\r\n    $serverConn = new-object ('Microsoft.SqlServer.Management.Common.ServerConnection') $SqlServer\r\n    \r\n    try{\r\n            $serverConn.Connect();\r\n            $server = new-object ('Microsoft.SqlServer.Management.Smo.Server') $serverConn  \r\n            if (!$server.IsHadrEnabled)\r\n            {\r\n    \t        Write-Host \"The SQL Server [$SqlServer] is not configured with High Availability Group.\"\r\n            }\r\n            else\r\n            {\r\n                # Get SQL Availability Group\r\n                $SQLAvailabilityGroup = $server.AvailabilityGroups[0]\r\n    \r\n                Write-Host \"Getting High Availability Group properties.\"\r\n                \r\n                # Get SQL Availability Groups Properties\r\n\t            $SQLAvailabilityGroupName = $SQLAvailabilityGroup.Name;\r\n\t            $SQLAvailabilityGroupID = $SQLAvailabilityGroup.Id;\r\n\t            $SQLAvailabilityGroupGuid = $SQLAvailabilityGroup.UniqueId;\r\n\t            $SQLLocalReplicaRole = $SQLAvailabilityGroup.LocalReplicaRole;\r\n\t            $SQLPrimaryReplicaServerName = $SQLAvailabilityGroup.PrimaryReplicaServerName;\r\n\t            \r\n\t            Write-Host\t\"SQLAvailabilityGroupName : $SQLAvailabilityGroupName\"\r\n                Write-Host\t\"SQLAvailabilityGroupID : $SQLAvailabilityGroupID\"\r\n                Write-Host\t\"SQLAvailabilityGroupGuid : $SQLAvailabilityGroupGuid\"\r\n                Write-Host\t\"SQLLocalReplicaRole : $SQLLocalReplicaRole\"\r\n                Write-Host\t\"SQLPrimaryReplicaServerName : $SQLPrimaryReplicaServerName\"    \r\n    \r\n                if ($SQLPrimaryReplicaServerName -eq $PrimaryNode)\r\n                {\r\n    \t            Write-Host \"Setting Octopus variable SQLIsOnSecondary false\"\r\n                    Set-OctopusVariable -name \"SQLIsOnSecondary\" -value \"false\"        \r\n                }\r\n                else \r\n                {\r\n    \t            Write-Host \"Setting Octopus variable SQLIsOnSecondary true\"\r\n    \t            Set-OctopusVariable -name \"SQLIsOnSecondary\" -value \"true\"\r\n                }\r\n            }\r\n        }\r\n        catch\r\n        {\r\n            throw \"Could not connect to server $SqlServer.  Exception is:`r`n$($_ | fl -force | out-string)\"\r\n        }\r\n        finally\r\n        {\r\n            $serverConn.Disconnect();\r\n        }\r\n}\r\n\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SMO\") | out-null\r\n[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.ConnectionInfo\") | out-null\r\nCheckSQLServerInAOAG $HAGroupSQLServer $HAGroupPrimaryNode",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "afe518f5-5778-45b4-86c7-3715fa55b4d9",
+      "Name": "HAGroupSQLServer",
+      "Label": "Enter server name",
+      "HelpText": "SQL Server name used in connection string from website code",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "c3c49b74-9982-400d-bc8f-b292ea7b2488",
+      "Name": "HAGroupPrimaryNode",
+      "Label": "Enter primary node",
+      "HelpText": "Enter primary SQL server name which serves traffic",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "vasant-horapeti",
+  "$Meta": {
+    "ExportedAt": "2019-10-13T08:11:56.532Z",
+    "OctopusVersion": "2018.10.2",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

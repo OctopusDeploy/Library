@@ -1,0 +1,309 @@
+step "Notify #octopus-library on Slack" {
+    condition = "Always"
+
+    action "Notify #octopus-library on Slack" {
+        properties = {
+            Octopus.Action.RunOnServer = "true"
+            Octopus.Action.Template.Id = "ActionTemplates-404"
+            Octopus.Action.Template.Version = "12"
+            ssn_Channel = "#{SlackChannel}"
+            ssn_Color = "good"
+            ssn_HookUrl = "#{SlackWebhook}"
+            ssn_IconUrl = "http://octopusdeploy.com/content/resources/favicon.png"
+            ssn_Message = <<-EOT
+                Release `#{Octopus.Release.Number}` to *#{Octopus.Environment.Name}*
+                
+                #{if Octopus.Release.Notes}
+                *Release notes*
+                ```#{Octopus.Release.Notes}```
+                #{/if}
+            EOT
+            ssn_Title = "Deployment started"
+            ssn_Username = "Octopus Deploy"
+        }
+
+    }
+}
+
+step "Clear Staging slot" {
+    condition = "Always"
+    start_trigger = "StartWithPrevious"
+
+    action "Clear Staging slot" {
+        action_type = "Octopus.AzurePowerShell"
+        properties = {
+            Octopus.Action.Azure.AccountId = "Team Steps - Production Service Principal"
+            Octopus.Action.Script.ScriptBody = <<-EOT
+                #Remove the staging slot if it exists
+                Remove-AzureRmWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging -Force
+                
+                #Create the staging slot
+                New-AzureRmWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging
+            EOT
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "PowerShell"
+        }
+
+    }
+}
+
+step "Deploy Octopus.Library " {
+    properties = {
+        Octopus.Action.TargetRoles = "octopus-library"
+    }
+
+
+    action "Deploy Octopus.Library " {
+        action_type = "Octopus.AzureWebApp"
+        properties = {
+            Octopus.Action.Azure.DeploymentSlot = "#{AzureSlotName}"
+            Octopus.Action.Azure.PreserveAppData = "True"
+            Octopus.Action.Azure.RemoveAdditionalFiles = "True"
+            Octopus.Action.Azure.UseChecksum = "False"
+            Octopus.Action.EnabledFeatures = "Octopus.Features.SubstituteInFiles"
+            Octopus.Action.Package.DownloadOnTentacle = "False"
+            Octopus.Action.Package.FeedId = "Octopus Server (built-in)"
+            Octopus.Action.Package.PackageId = "Octopus.Library"
+            Octopus.Action.SubstituteInFiles.TargetFiles = "views\\index.pug"
+        }
+
+
+        packages {
+            acquisition_location = "Server"
+            feed = "Octopus Server (built-in)"
+            package_id = "Octopus.Library"
+            properties = {
+                SelectionMode = "immediate"
+            }
+
+        }
+    }
+}
+
+step "Deploy Octopus.Library (new App Service Step)" {
+    properties = {
+        Octopus.Action.TargetRoles = "octopus-library"
+    }
+
+
+    action "Deploy Octopus.Library (new App Service Step)" {
+        action_type = "Octopus.AzureAppService"
+        is_disabled = true
+        properties = {
+            Octopus.Action.Azure.DeploymentSlot = "#{AzureSlotName}"
+            Octopus.Action.Azure.DeploymentType = "Package"
+            Octopus.Action.EnabledFeatures = "Octopus.Features.JsonConfigurationVariables,Octopus.Features.ConfigurationTransforms,Octopus.Features.SubstituteInFiles"
+            Octopus.Action.Package.DownloadOnTentacle = "False"
+            Octopus.Action.Package.FeedId = "Octopus Server (built-in)"
+            Octopus.Action.Package.PackageId = "Octopus.Library"
+            Octopus.Action.SubstituteInFiles.TargetFiles = "views\\index.pug"
+        }
+
+        worker_pool_variable = ""
+
+        packages {
+            acquisition_location = "Server"
+            feed = "Octopus Server (built-in)"
+            package_id = "Octopus.Library"
+            properties = {
+                SelectionMode = "immediate"
+            }
+
+        }
+    }
+}
+
+step "HTTP - Invoke URL" {
+
+    action "HTTP - Invoke URL" {
+        properties = {
+            Octopus.Action.RunOnServer = "true"
+            Octopus.Action.Template.Id = "ActionTemplates-102"
+            Octopus.Action.Template.Version = "2"
+            url = "#{LibrarySiteWithSlotUrl}"
+        }
+
+    }
+}
+
+step "Notify #octopus-library of manual intervention" {
+
+    action "Notify #octopus-library of manual intervention" {
+        properties = {
+            Octopus.Action.RunOnServer = "true"
+            Octopus.Action.Template.Id = "ActionTemplates-404"
+            Octopus.Action.Template.Version = "12"
+            ssn_Channel = "#{SlackChannel}"
+            ssn_Color = "good"
+            ssn_HookUrl = "#{SlackWebhook}"
+            ssn_IconUrl = "http://octopusdeploy.com/content/resources/favicon.png"
+            ssn_Message = <<-EOT
+                Confirm the changes in this release on https://library-prod-webapp-staging.azurewebsites.net/
+                
+                #{if Octopus.Release.Notes}
+                *Release notes*
+                
+                ```
+                #{Octopus.Release.Notes}
+                ```
+                #{/if}
+                
+                <#{Octopus.Web.ServerUri}#{Octopus.Web.DeploymentLink}|Action manual intervention>
+            EOT
+            ssn_Title = "Confirm changes on Staging slot"
+            ssn_Username = "Octopus Deploy"
+        }
+
+    }
+}
+
+step "Confirm changes on Staging slot" {
+    start_trigger = "StartWithPrevious"
+
+    action "Confirm changes on Staging slot" {
+        action_type = "Octopus.Manual"
+        properties = {
+            Octopus.Action.Manual.BlockConcurrentDeployments = "False"
+            Octopus.Action.Manual.Instructions = <<-EOT
+                Confirm the changes in this release on [Staging](https://library-prod-webapp-staging.azurewebsites.net/)
+                
+                ### Release notes
+                
+                #{Octopus.Release.Notes}
+            EOT
+        }
+
+    }
+}
+
+step "Swap Staging slot to Production" {
+
+    action "Swap Staging slot to Production" {
+        action_type = "Octopus.AzurePowerShell"
+        properties = {
+            Octopus.Action.Azure.AccountId = "Team Steps - Production Service Principal"
+            Octopus.Action.Script.ScriptBody = "Switch-AzureRmWebAppSlot -SourceSlotName Staging -DestinationSlotName Production -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName}"
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "PowerShell"
+        }
+
+    }
+}
+
+step "HTTP - Invoke URL - Production" {
+    start_trigger = "StartWithPrevious"
+
+    action "HTTP - Invoke URL - Production" {
+        properties = {
+            Octopus.Action.RunOnServer = "true"
+            Octopus.Action.Template.Id = "ActionTemplates-102"
+            Octopus.Action.Template.Version = "2"
+            url = "#{LibrarySiteUrl}"
+        }
+
+    }
+}
+
+step "GitHub - Create Release" {
+
+    action "GitHub - Create Release" {
+        properties = {
+            commitId = "master"
+            draft = "false"
+            gitHubApiKey = "#{GitHubApiKey}"
+            gitHubRepository = "#{GitHubRepository}"
+            gitHubUsername = "#{GitHubOwner}"
+            Octopus.Action.RunOnServer = "true"
+            Octopus.Action.Template.Id = "ActionTemplates-61"
+            Octopus.Action.Template.Version = "4"
+            preRelease = "false"
+            releaseNotes = "#{Octopus.Release.Notes}"
+            versionNumber = "#{Octopus.Release.Number}"
+        }
+
+    }
+}
+
+step "GitHub - Clean vNext Milestone" {
+    start_trigger = "StartWithPrevious"
+
+    action "GitHub - Clean vNext Milestone" {
+        action_type = "Octopus.Script"
+        properties = {
+            Octopus.Action.RunOnServer = "true"
+            Octopus.Action.Script.ScriptBody = <<-EOT
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                
+                $githubUri = "https://api.github.com"
+                $githubHeaders = @{
+                        Authorization = 'Basic ' + [Convert]::ToBase64String(
+                            [Text.Encoding]::ASCII.GetBytes($GitHubApiKey + ":x-oauth-basic")
+                        );
+                }
+                $issuesUri = "$githubUri/repos/$GitHubOwner/$GitHubRepository/issues"
+                
+                
+                $issueRequest = @{
+                    "state" = "closed";
+                    "milestone" = "*"
+                }
+                $qs = [String]::Join("&", ($issueRequest.GetEnumerator() | % { "$($_.Name)=$($_.Value)" }))
+                $closedIssuesRequest = @{
+                    Uri = "$issuesUri`?$qs";
+                    Method = 'GET';
+                    Headers = $githubHeaders;
+                    ContentType = 'application/json';
+                }
+                
+                $closedIssues = Invoke-RestMethod @closedIssuesRequest
+                $closedIssues | % {
+                    $issueNumber = $_.number
+                    Write-Host "Removing issue $issueNumber from milestone..."
+                    $issueUpdate = @{
+                        "milestone" = $null
+                    }
+                    $issueUpdateRequest = @{
+                        Uri = "$issuesUri/$issueNumber";
+                        Method = 'PATCH';
+                        Headers = $githubHeaders;
+                        ContentType = 'application/json';
+                        Body = (ConvertTo-Json $issueUpdate -Compress)
+                    }
+                
+                    try
+                    {
+                        $response = Invoke-RestMethod @issueUpdateRequest
+                        Write-Host "Issue $issueNumber has been removed from milestone!"
+                    } catch {
+                        Write-Error $_.Exception.Message
+                        break
+                    }
+                }
+                
+            EOT
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "PowerShell"
+        }
+
+    }
+}
+
+step "Notify #octopus-library of deployment result" {
+    condition = "Always"
+
+    action "Notify #octopus-library of deployment result" {
+        properties = {
+            Octopus.Action.RunOnServer = "true"
+            Octopus.Action.Template.Id = "ActionTemplates-404"
+            Octopus.Action.Template.Version = "12"
+            ssn_Channel = "#{SlackChannel}"
+            ssn_Color = "#{if Octopus.Deployment.Error}danger#{/if}#{unless Octopus.Deployment.Error}good#{/unless}"
+            ssn_HookUrl = "#{SlackWebhook}"
+            ssn_IconUrl = "http://octopusdeploy.com/content/resources/favicon.png"
+            ssn_Message = "Release `#{Octopus.Release.Number}` to *#{Octopus.Environment.Name}*"
+            ssn_Title = "Deployment *#{if Octopus.Deployment.Error}failed#{/if}#{unless Octopus.Deployment.Error}succeeded#{/unless}*"
+            ssn_Username = "Octopus Deploy"
+        }
+
+    }
+}

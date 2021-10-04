@@ -3,9 +3,9 @@
   "Name": "IIS Website - Delete",
   "Description": "Deletes a website in IIS.",
   "ActionType": "Octopus.Script",
-  "Version": 8,
+  "Version": 10,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$webSiteName = $OctopusParameters['WebSiteName']\nif (! $webSiteName) {\n    throw \"Web Site Name cannot be empty, please specify the web site to delete\"\n}\n\n# Helper to run a block with a retry if things go wrong\n$maxFailures = 5\n$sleepBetweenFailures = Get-Random -minimum 1 -maximum 4\nfunction Execute-WithRetry([ScriptBlock] $command) {\n\t$attemptCount = 0\n\t$operationIncomplete = $true\n\n\twhile ($operationIncomplete -and $attemptCount -lt $maxFailures) {\n\t\t$attemptCount = ($attemptCount + 1)\n\n\t\tif ($attemptCount -ge 2) {\n\t\t\tWrite-Output \"Waiting for $sleepBetweenFailures seconds before retrying...\"\n\t\t\tStart-Sleep -s $sleepBetweenFailures\n\t\t\tWrite-Output \"Retrying...\"\n\t\t}\n\n\t\ttry {\n\t\t\t& $command\n\n\t\t\t$operationIncomplete = $false\n\t\t} catch [System.Exception] {\n\t\t\tif ($attemptCount -lt ($maxFailures)) {\n\t\t\t\tWrite-Output (\"Attempt $attemptCount of $maxFailures failed: \" + $_.Exception.Message)\n\t\t\t\n\t\t\t}\n\t\t\telse {\n\t\t\t    throw \"Failed to execute command\"\n\t\t\t}\n\t\t}\n\t}\n}\n\nAdd-PSSnapin WebAdministration -ErrorAction SilentlyContinue\nImport-Module WebAdministration -ErrorAction SilentlyContinue\n\npushd IIS:\\\n\ntry {\n    Write-Output \"Deleting web site $webSiteName\"\n    $sitePath = (\"IIS:\\Sites\\\" + $webSiteName)\n    \n    Write-Output $sitePath\n    \n    $site = Get-Item $sitePath -ErrorAction SilentlyContinue\n    if (! $site) {\n        Write-Output \"$webSiteName does not exist\"\n    }\n    else {\n        \n        Execute-WithRetry {\n            $state = Get-WebSiteState $webSiteName\n            if($state.Value -eq \"Started\") {\n                Write-Output \"Web site is running. Attempting to stop...\"\n                Stop-WebSite $webSiteName\n            }\n        }\n        \n        Write-Output \"Attempting to delete $webSiteName...\"\n        Execute-WithRetry {\n            Write-Output \"Removing SSL Bindings...\"\n            Get-Item 'IIS:\\SslBindings\\' | Get-ChildItem | select $_.Sites | Where-Object { $_.Sites -contains $webSiteName } | Remove-Item\n            Write-Output \"Removing Web Bindings...\"\n            Get-WebBinding -Name $webSiteName | Remove-WebBinding\n            Write-Output \"Removing web site...\"\n            Remove-WebSite $webSiteName\n        }\n    }\n} catch [System.Exception] {\n    throw (\"Failed to execute command\" + $_.Exception.Message)\n}\n\npopd\n\nWrite-Output \"IIS Configuration complete\"",
+    "Octopus.Action.Script.ScriptBody": "$webSiteName = $OctopusParameters['WebSiteName']\nif (! $webSiteName) {\n    throw \"Web Site Name cannot be empty, please specify the web site to delete\"\n}\n\n# Helper to run a block with a retry if things go wrong\n$maxFailures = 5\n$sleepBetweenFailures = Get-Random -minimum 1 -maximum 4\nfunction Execute-WithRetry([ScriptBlock] $command) {\n\t$attemptCount = 0\n\t$operationIncomplete = $true\n\n\twhile ($operationIncomplete -and $attemptCount -lt $maxFailures) {\n\t\t$attemptCount = ($attemptCount + 1)\n\n\t\tif ($attemptCount -ge 2) {\n\t\t\tWrite-Output \"Waiting for $sleepBetweenFailures seconds before retrying...\"\n\t\t\tStart-Sleep -s $sleepBetweenFailures\n\t\t\tWrite-Output \"Retrying...\"\n\t\t}\n\n\t\ttry {\n\t\t\t& $command\n\n\t\t\t$operationIncomplete = $false\n\t\t} catch [System.Exception] {\n\t\t\tif ($attemptCount -lt ($maxFailures)) {\n\t\t\t\tWrite-Output (\"Attempt $attemptCount of $maxFailures failed: \" + $_.Exception.Message)\n\t\t\t\n\t\t\t}\n\t\t\telse {\n\t\t\t    throw \"Failed to execute command\"\n\t\t\t}\n\t\t}\n\t}\n}\n\nAdd-PSSnapin WebAdministration -ErrorAction SilentlyContinue\nImport-Module WebAdministration -ErrorAction SilentlyContinue\n\npushd IIS:\\\n\ntry {\n    Write-Output \"Deleting web site $webSiteName\"\n    $sitePath = (\"IIS:\\Sites\\\" + $webSiteName)\n    \n    Write-Output $sitePath\n    \n    $site = Get-Item $sitePath -ErrorAction SilentlyContinue\n    if (! $site) {\n        Write-Output \"$webSiteName does not exist\"\n    }\n    else {\n        \n        Execute-WithRetry {\n            $state = Get-WebSiteState $webSiteName\n            if($state.Value -eq \"Started\") {\n                Write-Output \"Web site is running. Attempting to stop...\"\n                Stop-WebSite $webSiteName\n            }\n        }\n        \n        Write-Output \"Attempting to delete $webSiteName...\"\n        Execute-WithRetry {\n            Write-Output \"Removing SSL Bindings...\"\n            #Skipping default binding (Hostname $null) as it will break all sites which depend on this binding (non-SNI enabled sites will be grouped on the default binding! Remove-WebSite can handle this properly.)\n            Get-Item 'IIS:\\SslBindings\\' | Get-ChildItem | select $_.Sites | Where-Object { ($_.Sites -contains $webSiteName) -and ($_.Hostname -ne $null) } | Remove-Item\n            Write-Output \"Removing Web Bindings...\"\n            Get-WebBinding -Name $webSiteName | Remove-WebBinding\n            Write-Output \"Removing web site...\"\n            Remove-WebSite $webSiteName\n        }\n    }\n} catch [System.Exception] {\n    throw (\"Failed to execute command\" + $_.Exception.Message)\n}\n\npopd\n\nWrite-Output \"IIS Configuration complete\"",
     "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
@@ -14,14 +14,17 @@
       "Name": "WebsiteName",
       "Label": "Website name",
       "HelpText": "The name of the website in IIS to delete.\n\nExample: Default Web Site",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-05-20T23:41:17.265+00:00",
-  "LastModifiedBy": "alfhenrik",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
-    "ExportedAt": "2014-05-20T23:41:20.519+00:00",
-    "OctopusVersion": "2.4.4.43",
+    "ExportedAt": "2021-04-22T14:41:30.252Z",
+    "OctopusVersion": "2020.4.6",
     "Type": "ActionTemplate"
   },
   "Category": "iis"

@@ -3,7 +3,7 @@
   "Name": "Run GhostInspector",
   "Description": "Runs GhostInspector smoke tests asynchronously, returning immediately",
   "ActionType": "Octopus.Script",
-  "Version": 7,
+  "Version": 8,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptBody": "\r\n$ErrorActionPreference = \"Stop\" \r\n\r\nfunction Get-Param($Name, [switch]$Required, $Default) {\r\n    $result = $null\r\n\r\n    if ($OctopusParameters -ne $null) {\r\n        $result = $OctopusParameters[$Name]\r\n    }\r\n\r\n    if ($result -eq $null) {\r\n        $variable = Get-Variable $Name -EA SilentlyContinue   \r\n        if ($variable -ne $null) {\r\n            $result = $variable.Value\r\n        }\r\n    }\r\n\r\n    if ($result -eq $null -or $result -eq \"\") {\r\n        if ($Required) {\r\n            throw \"Missing parameter value $Name\"\r\n        } else {\r\n            $result = $Default\r\n        }\r\n    }\r\n\r\n    return $result\r\n}\r\n\r\n& {\r\n    param(\r\n\t\t[string]$suiteId,\r\n\t\t[string]$apiKey,\r\n\t\t[string]$siteUrl,\r\n\t\t[string]$httpAuthUser,\r\n\t\t[string]$httpAuthPass\r\n    ) \r\n\r\n\t$apiUrl = \"https://api.ghostinspector.com/v1/suites/$suiteId/execute/?immediate=1&apiKey=\" + $apiKey\r\n\r\n\tif(-! ([string]::IsNullOrEmpty($siteUrl)))\r\n\t{\r\n\t\t$apiUrl = $apiUrl + '&startUrl=' + $siteUrl\r\n\t}\r\n\t\r\n\tif(-! ([string]::IsNullOrEmpty($httpAuthUser) -and [string]::IsNullOrEmpty($httpAuthPass)))\r\n\t{\r\n\t\t$apiUrl = $apiUrl + '&httpAuthUsername=' + $httpAuthUser + '&httpAuthPassword=' + $httpAuthPass\r\n\t}\r\n\r\n\tWrite-Output \"Invoking API url: $apiUrl\" \r\n\t\r\n    try {\r\n\t\tInvoke-WebRequest $apiUrl -UseBasicParsing\r\n    } catch [Exception] {\r\n        Write-Host \"There was a problem invoking Url\"\r\n        Write-Host $_.Exception|format-list -force;\r\n    }\r\n    Write-Output $(\"Test Output can be viewed here: https://app.ghostinspector.com/suites/{0} -f $suiteId\")\r\n\r\n } `\r\n (Get-Param 'suiteId' -Required) `\r\n (Get-Param 'apiKey' - Required) `\r\n (Get-Param 'siteUrl') `\r\n (Get-Param 'httpAuthUser') `\r\n (Get-Param 'httpAuthPass')",
@@ -54,10 +54,13 @@
       "Label": "GhostInspector API Key",
       "HelpText": "GhostInspector API key.  Can be found here: https://app.ghostinspector.com/account",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedBy": "daniel-simpson",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2016-06-20T06:48:33.000+00:00",
     "OctopusVersion": "3.3.11",

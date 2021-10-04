@@ -1,0 +1,107 @@
+{
+    "Id": "852b78ae-eb32-43c0-bf55-0a5bdd7bebc8",
+    "Name": "Azure Web App - Enable app_offline",
+    "Description": "This step template will take a provided app_offline file from a package and upload it to an Azure Web App to enable a way to safely bring down the app domain for a subsequent deployment.\n\nIt requires a set of [deployment credentials](https://docs.microsoft.com/en-gb/azure/app-service/deploy-configure-credentials) for the Azure Web App.\n\n**Required:** \n- Credentials with access to the [Kudu VFS API](https://github.com/projectkudu/kudu/wiki/REST-API#vfs)\n\nNotes:\n\n- Tested on Octopus `2021.2`.\n- Tested with both Windows PowerShell and PowerShell Core on Linux.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [
+      {
+        "Id": "ff7d24cc-7288-428f-985a-155c467d63ff",
+        "Name": "AzWebApp.EnableAppOffline.SourcePackage",
+        "PackageId": null,
+        "FeedId": null,
+        "AcquisitionLocation": "Server",
+        "Properties": {
+          "Extract": "True",
+          "SelectionMode": "deferred",
+          "PackageParameterName": "AzWebApp.EnableAppOffline.SourcePackage"
+        }
+      }
+    ],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\";\n[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\n# Variables\n$SourcePackage = \"AzWebApp.EnableAppOffline.SourcePackage\"\n$AzWebAppName = $OctopusParameters[\"AzWebApp.EnableAppOffline.AzWebAppName\"]\n$FilePath = $OctopusParameters[\"AzWebApp.EnableAppOffline.FilePath\"]\n$Filename = $OctopusParameters[\"AzWebApp.EnableAppOffline.Filename\"]\n$DeployUsername = $OctopusParameters[\"AzWebApp.EnableAppOffline.Deployment.Username\"]\n$DeployPassword = $OctopusParameters[\"AzWebApp.EnableAppOffline.Deployment.Password\"]\n$DeploymentUrl = $OctopusParameters[\"AzWebApp.EnableAppOffline.Deployment.KuduRestApiUrl\"]\n\n# Validation\nif ([string]::IsNullOrWhiteSpace($AzWebAppName)) {\n    throw \"Required parameter AzWebApp.EnableAppOffline.AzWebAppName not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($Filename)) {\n    throw \"Required parameter AzWebApp.EnableAppOffline.Filename not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($DeployUsername)) {\n    throw \"Required parameter AzWebApp.EnableAppOffline.Deployment.Username not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($DeployPassword)) {\n    throw \"Required parameter AzWebApp.EnableAppOffline.Deployment.Password not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($DeploymentUrl)) {\n    throw \"Required parameter AzWebApp.EnableAppOffline.Deployment.KuduRestApiUrl not specified\"\n}\n\n$DeploymentUrl = $DeploymentUrl.TrimEnd('/')\n$ExtractPathKey = \"Octopus.Action.Package[$($SourcePackage)].ExtractedPath\"\n\n$ExtractPath = $OctopusParameters[$ExtractPathKey]\n$FilePath = Join-Path -Path $ExtractPath -ChildPath $FilePath\nif (!(Test-Path $FilePath)) {\n    throw \"Either the local or package extraction folder $FilePath does not exist or the Octopus Tentacle does not have permission to access it.\"\n}\n\n$sourceFilePath = Join-Path -Path $FilePath -ChildPath $Filename\n\nif (!(Test-Path $sourceFilePath)) {\n    throw \"The file located at '$sourceFilePath' does not exist or the Octopus Tentacle does not have permission to access it.\"\n}\n$destinationFilePathUri = \"$DeploymentUrl/site/wwwroot/$filename\"\n\n# Local variables\n$StepName = $OctopusParameters[\"Octopus.Step.Name\"]\n\nWrite-Verbose \"AzWebApp.EnableAppOffline.AzWebAppName: $AzWebAppName\"\nWrite-Verbose \"AzWebApp.EnableAppOffline.FilePath: $FilePath\"\nWrite-Verbose \"AzWebApp.EnableAppOffline.Filename: $FileName\"\nWrite-Verbose \"AzWebApp.EnableAppOffline.Deployment.Username: $DeployUsername\"\nWrite-Verbose \"AzWebApp.EnableAppOffline.Deployment.Password: ********\"\nWrite-Verbose \"AzWebApp.EnableAppOffline.Deployment.KuduRestApiUrl: $DeploymentUrl\"\n\nWrite-Verbose \"Step Name: $StepName\"\n\ntry {\n    $credPair = \"$($DeployUsername):$($DeployPassword)\"\n    $encodedCredentials = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($credPair))\n    $headers = @{ \n        Authorization = \"Basic $encodedCredentials\"\n        # Ignore E-Tag\n        \"If-Match\" = \"*\" \n    }\n    \n    Write-Host \"Invoking Put request for '$sourceFilePath' to '$destinationFilePathUri'\"\n    $response = Invoke-RestMethod -Method Put -Infile $sourceFilePath -Uri $destinationFilePathUri -Headers $headers -UserAgent 'powershell/1.0' -ContentType 'application/json'\n    \n    Write-Verbose \"Response: $response\"\n}\ncatch {\n    $ExceptionMessage = $_.Exception.Message\n    $ErrorDetails = $_.ErrorDetails.Message\n    $Message = \"An error occurred invoking the Azure Web App REST API: $ExceptionMessage\"\n    if (![string]::IsNullOrWhiteSpace($ErrorDetails)) {\n        $Message += \"`nDetail: $ErrorDetails\"\n    }\n\n    Write-Error $Message -Category ConnectionError\n}"
+    },
+    "Parameters": [
+      {
+        "Id": "b847fd97-bc71-4c89-99fb-bd5c2327027a",
+        "Name": "AzWebApp.EnableAppOffline.AzWebAppName",
+        "Label": "Azure Web App name",
+        "HelpText": "Provide the Azure Web App name.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "e15156cc-1fbd-439f-bbea-5eb1f5da8f2f",
+        "Name": "AzWebApp.EnableAppOffline.SourcePackage",
+        "Label": "AppOffline package source",
+        "HelpText": "Provide the package to source the `app_offline.htm` file from. ",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Package"
+        }
+      },
+      {
+        "Id": "22fdf143-fd7b-48d8-ba52-eed69268b61c",
+        "Name": "AzWebApp.EnableAppOffline.FilePath",
+        "Label": "AppOffline file path",
+        "HelpText": "Provide the path (relative to the package) for the app offline file to be uploaded.\n\n*Note:* If left blank or empty, the file will be sourced from the root of the package.\n",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0b2edf69-da0d-4750-882a-4036c67f0129",
+        "Name": "AzWebApp.EnableAppOffline.Filename",
+        "Label": "AppOffline file name",
+        "HelpText": "*Optional:* Choose the variation of the name of the app offline file. Default: `app_offline.htm`\n\nAvailable options:\n\n- `app_offline.htm`\n- `app_offline.html`",
+        "DefaultValue": "app_offline.htm",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "app_offline.htm|app_offline.htm\napp_offline.html|app_offline.html"
+        }
+      },
+      {
+        "Id": "c873f396-0ca1-4df9-b083-860541d24b61",
+        "Name": "AzWebApp.EnableAppOffline.Deployment.Username",
+        "Label": "Deployment username",
+        "HelpText": "Provide the user or application-scoped [deployment](https://docs.microsoft.com/en-gb/azure/app-service/deploy-configure-credentials) username for the Azure Web App. Default: `$#{AzWebApp.EnableAppOffline.WebAppName}`.",
+        "DefaultValue": "$#{AzWebApp.EnableAppOffline.WebAppName}",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "1c18f666-c91d-411c-a86b-b92d0bddc4ed",
+        "Name": "AzWebApp.EnableAppOffline.Deployment.Password",
+        "Label": "Deployment password",
+        "HelpText": "Provide the user or application-scoped [deployment](https://docs.microsoft.com/en-gb/azure/app-service/deploy-configure-credentials) password for the Azure Web App.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "023c4e13-2a25-4e29-916f-aaafea1d8284",
+        "Name": "AzWebApp.EnableAppOffline.Deployment.KuduRestApiUrl",
+        "Label": "Deployment REST API Url",
+        "HelpText": "*Optional:* Provide a custom deployment REST API URL. Default is: `https://#{AzWebApp.EnableAppOffline.AzWebAppName}.scm.azurewebsites.net/api/vfs`.",
+        "DefaultValue": "https://#{AzWebApp.EnableAppOffline.AzWebAppName}.scm.azurewebsites.net/api/vfs",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-09-17T17:45:50.539Z",
+      "OctopusVersion": "2021.2.7536",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "harrisonmeister",
+    "Category": "azure"
+  }

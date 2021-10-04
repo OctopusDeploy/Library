@@ -3,8 +3,9 @@
 import React from 'react';
 import moment from 'moment';
 import marked from 'marked';
-import SyntaxHiglighter from 'react-syntax-highlighter';
-import {solarizedLight} from 'react-syntax-highlighter/dist/styles';
+import DOMPurify from 'isomorphic-dompurify';
+import SyntaxHighlighter from 'react-syntax-highlighter';
+import {solarizedLight} from 'react-syntax-highlighter/dist/cjs/styles/hljs';
 import PropTypes from 'prop-types';
 
 import CopyToClipboard from 'react-copy-to-clipboard';
@@ -40,7 +41,8 @@ export default class TemplateItem extends React.Component {
   }
 
   rawMarkup() {
-    let markup = marked((this.state.template.Description || ''), {sanitize: true});
+    let purifiedDescription = DOMPurify.sanitize(this.state.template.Description);
+    let markup = marked(purifiedDescription || '');
     return { __html: markup };
   }
 
@@ -112,11 +114,11 @@ export default class TemplateItem extends React.Component {
               <div className="templateContent"
                   style={style}
               >
-                <SyntaxHiglighter language="json"
+                <SyntaxHighlighter language="json"
                     style={solarizedLight}
                 >
                   {this.toJson(this.state.template)}
-                </SyntaxHiglighter>
+                </SyntaxHighlighter>
               </div>
               <p className="align-right">
                 <a className="faint"

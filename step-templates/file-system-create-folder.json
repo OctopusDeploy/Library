@@ -3,7 +3,7 @@
   "Name": "File System - Create Folder",
   "Description": "Creates a folder structure that is passed in.",
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 3,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "$item = $OctopusParameters['FolderPath']\n$readPermissionsTo = $OctopusParameters['ReadPermissionsTo']\n$writePermissionsTo = $OctopusParameters['WritePermissionsTo']\n$modifyPermissionsTo = $OctopusParameters['ModifyPermissionsTo']\n\n\nWrite-Host \"Creating folder $item with permissions.\"\n\nif((Test-Path $item))\n{\n    Write-Host \"Folder $item already exists\"\n}\nelse\n{\n    New-Item -ItemType directory -Path $item -force\n}\n\n# Check item exists\nif(!(Test-Path $item))\n{\n    throw \"$item does not exist\"\n}\n\n# Assign read permissions\n\nif($readPermissionsTo)\n{\n    $users = $readPermissionsTo.Split(\",\")\n    foreach($user in $users)\n    {\n        Write-Host \"Adding read permissions for $user\"\n        $acl = Get-Acl $item\n        $acl.SetAccessRuleProtection($False, $False)\n        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(\n                $user, \"Read\", \"ContainerInherit, ObjectInherit\", \"None\", \"Allow\")\n        $acl.AddAccessRule($rule)\n        Set-Acl $item $acl\n    }\n}\n\n# Assign write permissions\n\nif($writePermissionsTo)\n{\n    $users = $writePermissionsTo.Split(\",\")\n    foreach($user in $users)\n    {\n        Write-Host \"Adding write permissions for $user\"\n        $acl = Get-Acl $item\n        $acl.SetAccessRuleProtection($False, $False)\n        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(\n                $user, \"Write\", \"ContainerInherit, ObjectInherit\", \"None\", \"Allow\")\n        $acl.AddAccessRule($rule)\n        Set-Acl $item $acl\n    }\n}\n\n# Assign modify permissions\n\nif($modifyPermissionsTo)\n{\n    $users = $modifyPermissionsTo.Split(\",\")\n    foreach($user in $users)\n    {\n        Write-Host \"Adding modify permissions for $user\"\n        $acl = Get-Acl $item\n        $acl.SetAccessRuleProtection($False, $False)\n        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(\n                $user, \"Modify\", \"ContainerInherit, ObjectInherit\", \"None\", \"Allow\")\n        $acl.AddAccessRule($rule)\n        Set-Acl $item $acl\n    }\n}\n\nWrite-Host \"Complete\"",
     "Octopus.Action.Script.Syntax": "PowerShell",
@@ -19,7 +19,10 @@
       "Name": "FolderPath",
       "Label": "The folder path to create on the filesystem.",
       "HelpText": "The entire path to the folder, this step will also created nested folders.  For example \"D:\\one\\two\" will create two folders ('one', and then 'two' under folder 'one').  This script will not remove items from the folders.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Id": "becbcbd1-7026-40f0-a655-eb5861d53557",
@@ -27,7 +30,9 @@
       "Label": "Read Users",
       "HelpText": "A comma separated list of users to grant read permissions to",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Id": "029ea466-4907-460a-a3f4-c00b23ad1a96",
@@ -35,7 +40,9 @@
       "Label": "Write Users",
       "HelpText": "A comma separated list of users to grant write permissions to",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Id": "860e0480-db8d-4669-9b25-00f1ce33d0ac",
@@ -43,11 +50,13 @@
       "Label": "Modify Users",
       "HelpText": "A comma separated list of users to grant modify permissions to",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2017-04-05T12:30:02.127Z",
-  "LastModifiedBy": "mhenry1384",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2017-04-05T12:30:02.127Z",
     "OctopusVersion": "3.4.11",

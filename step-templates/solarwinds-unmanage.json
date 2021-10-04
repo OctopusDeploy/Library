@@ -3,7 +3,7 @@
   "Name": "Solarwinds - Unmanage",
   "Description": "Stop monitoring for a Solarwinds node, application or both",
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 3,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}\n\n$solarwindsHost =  $OctopusParameters['Host']\n$node =  $OctopusParameters['NodeId']\n$application =  $OctopusParameters['ApplicationId']\n$timeout = [int] $OctopusParameters['RemanageMinutes']\n$username =  $OctopusParameters['Username']\n$password =  $OctopusParameters['Password']\n\nif ($node -ne \"\")\n{\n    Write-Host \"Stopping Solarwinds monitoring for node $node\"\n\n    $success = $false\n    try\n    {\n        $now = (Get-Date).ToUniversalTime().AddSeconds(5);\n        $remanage = $now.AddMinutes($timeout);\n        $nowString = $now.ToString(\"yyyy-MM-ddTHH:mm:ssZ\")\n        $remanageString = $remanage.ToString(\"yyyy-MM-ddTHH:mm:ssZ\")\n        $body = \"[\"\"$node\"\", \"\"$nowString\"\", \"\"$remanageString\"\", \"\"false\"\"]\"\n        $header = @{}\n        $header.Add(\"Authorization\", \"Basic \"+[System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($username+\":\"+$password)))\n        $uri = \"https://\" + $solarwindsHost + \":17778/SolarWinds/InformationService/v3/Json/Invoke/Orion.Nodes/Unmanage\"\n\n        Write-Host \"Sending request $body to $uri\"\n\n        $response = Invoke-WebRequest -Uri $uri -Method Post -Body $body -Headers $header -ContentType \"application/json\" -UseBasicParsing\n\n        if ($response.StatusCode -eq 200)\n        {\n            $success = $true\n        }\n    }\n    catch\n    {\n        Write-Host \"Something went wrong:\"\n        Write-Host $_.Exception\n    }\n\n    if (!$success)\n    {\n        throw \"Unmanaging node failed.\"\n    }\n\n    Write-Host \"Unmanaged node $node. Will automatically remanage at $remanage.ToString()\"\n}\n\nif ($application -ne \"\")\n{\n    Write-Host \"Stopping Solarwinds monitoring for application $application\"\n\n    $success = $false\n    try\n    {\n        $now = (Get-Date).ToUniversalTime().AddSeconds(5);\n        $remanage = $now.AddMinutes($timeout);\n        $nowString = $now.ToString(\"yyyy-MM-ddTHH:mm:ssZ\")\n        $remanageString = $remanage.ToString(\"yyyy-MM-ddTHH:mm:ssZ\")\n        $body = \"[\"\"$application\"\", \"\"$nowString\"\", \"\"$remanageString\"\", \"\"false\"\"]\"\n        $header = @{}\n        $header.Add(\"Authorization\", \"Basic \"+[System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($username+\":\"+$password)))\n        $uri = \"https://\" + $solarwindsHost + \":17778/SolarWinds/InformationService/v3/Json/Invoke/Orion.APM.Application/Unmanage\"\n\n        Write-Host \"Sending request $body to $uri\"\n\n        $response = Invoke-WebRequest -Uri $uri -Method Post -Body $body -Headers $header -ContentType \"application/json\" -UseBasicParsing\n\n        if ($response.StatusCode -eq 200)\n        {\n            $success = $true\n        }\n    }\n    catch\n    {\n        Write-Host \"Something went wrong:\"\n        Write-Host $_.Exception\n    }\n\n    if (!$success)\n    {\n        throw \"Unmanaging application failed.\"\n    }\n\n    Write-Host \"Unmanaged application $application. Will automatically remanage at $remanage.ToString()\"\n}",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -14,41 +14,59 @@
       "Name": "Host",
       "Label": "Host",
       "HelpText": "IP or DNS of the Solarwinds monitoring server",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "NodeId",
       "Label": "Node ID",
       "HelpText": "Solarwinds ID of machine to be unmonitored. Starts with 'N:'.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "ApplicationId",
       "Label": "Application ID",
       "HelpText": "Solarwinds ID of application to be unmonitored. Starts with 'AA:'.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "RemanageMinutes",
       "Label": "Re-manage after (minutes)",
       "HelpText": "Automatically begins monitoring of a node after given minutes.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "Username",
       "Label": "Username",
       "HelpText": "Username for the Solarwinds console user.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "Password",
       "Label": "Password",
       "HelpText": "Password for the Solarwinds console user",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-05-16T10:24:11.714+00:00",
-  "LastModifiedBy": "sportingsolutions",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2014-05-16T10:24:13.698+00:00",
     "OctopusVersion": "2.4.5.46",

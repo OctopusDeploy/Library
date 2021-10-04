@@ -37,6 +37,14 @@ function ConvertTo-OctopusJson
             return $InputObject.ToString();
         }
 
+        { $InputObject -is [System.Int64] } {
+            return $InputObject.ToString();
+        }
+
+        { $InputObject -is [System.DateTime] } {
+            return "`"$($InputObject.ToString("O"))`"";
+        }
+
         { $InputObject -is [Array] } {
             $json = new-object System.Text.StringBuilder;
             $items = $InputObject;

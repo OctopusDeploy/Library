@@ -3,7 +3,7 @@
   "Name": "MSMQ - Create Transactional Queue",
   "Description": "Create one or more MSMQ transactional queues and configure permissions.",
   "ActionType": "Octopus.Script",
-  "Version": 9,
+  "Version": 10,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "$MSMQQueues = $OctopusParameters['MSMQQueues']\n$MSMQResetPermissions = $OctopusParameters['MSMQResetPermissions']\n$MSMQResetDomains = $OctopusParameters['MSMQResetDomains']\n$MSMQUsers = $OctopusParameters['MSMQUsers']\n$MSMQPermAllow = $OctopusParameters['MSMQPermAllow']\n$MSMQPermDeny = $OctopusParameters['MSMQPermDeny']\n$MSMQAdminUsers = $OctopusParameters['MSMQAdminUsers']\n$MSMQPermAdminAllow = $OctopusParameters['MSMQPermAdminAllow']\n$MSMQPermAdminDeny = $OctopusParameters['MSMQPermAdminDeny']\n\nWrite-Verbose \"`$MSMQQueues = $MSMQQueues\"\nWrite-Verbose \"`$MSMQResetPermissions = $MSMQResetPermissions\"\nWrite-Verbose \"`$MSMQResetDomains = $MSMQResetDomains\"\nWrite-Verbose \"`$MSMQUsers = $MSMQUsers\"\nWrite-Verbose \"`$MSMQPermAllow = $MSMQPermAllow\"\nWrite-Verbose \"`$MSMQPermDeny = $MSMQPermDeny\"\nWrite-Verbose \"`$MSMQAdminUsers = $MSMQAdminUsers\"\nWrite-Verbose \"`$MSMQPermAdminAllow = $MSMQPermAdminAllow\"\nWrite-Verbose \"`$MSMQPermAdminDeny = $MSMQPermAdminDeny\"\n\n#Split the Queues into an array\n$arrQueues = $MSMQQueues.split(\";\")\nforeach ($Queue in $arrQueues) \n{\n    #Does Queue Exists Already?\n    $thisQueue = Get-MSMQQueue $Queue\n    if (!$thisQueue)\n    {\n        #not found, create\n        Write-Output \"Creating Queue: \" $Queue\n        New-MsmqQueue -Name \"$Queue\" -Label \"private$\\$Queue\" -Transactional | Out-Null\n        $thisQueue = Get-MSMQQueue $Queue    \n    }\n    else\n    {\n        Write-Output \"Queue Exists: \" $thisQueue.QueueName\n        \n        if($MSMQResetPermissions -eq \"True\")\n        {\n            foreach($domain in $MSMQResetDomains.split(\";\"))\n            {\n                # reset permissions\n                $QueuePermissions = $thisQueue | Get-MsmqQueueACL\n                foreach ($AccessItem in $MSMQQueuePermissions)\n                {\n                    $userName = [Environment]::UserName\n                    if($AccessItem.AccountName -NotLike \"*$userName\") # not current user\n                    {\n                        $domain = \"$($domain)*\" #append * to end of domain\n                        if ($AccessItem.AccountName -Like \"$($domain)*\")\n                        {\n                            Write-Output \"Removing Permissions $($AccessItem.Right) for $($AccessItem.AccountName)\"\n                            Try\n                            {\n                                $thisQueue | Set-MsmqQueueACL -UserName $AccessItem.AccountName -Remove $AccessItem.Right | Out-Null\n                            }\n                            Catch\n                            {\n                                Write-Output \"Could not set permissions item $_.Exception.Message\"\n                                Break\n                            }\n                        }\n                    }\n                }\n            }\n        }\n    }\n\n    #set acl for users\n    $arrUsers = $MSMQUsers.split(\";\")\n    foreach ($User in $arrUsers)     \n    {    \n        if ($User)\n        {    \n            Write-Output \"Adding ACL for User: \" $User        \n            \n            #allows\n            if ($MSMQPermAllow)\n            {\n                $arrPermissions = $MSMQPermAllow.split(\";\")\n                foreach ($Permission in $arrPermissions)     \n                {\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Allow $Permission | Out-Null                \n                    Write-Output \"ACL Allow set: $Permission\"\n                }\n            }\n                \n            #denies\n            if ($MSMQPermDeny)\n            {\n                $arrPermissions = $MSMQPermDeny.split(\";\")\n                foreach ($Permission in $arrPermissions)     \n                {\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Deny $Permission | Out-Null\n                    Write-Output \"ACL Deny set: $Permission\"\n                }\n            }\n        }\n    }   \n    \n    \n    $arrAdminUsers = $MSMQAdminUsers.split(\";\") \n    foreach ($User in $arrAdminUsers)     \n    {    \n        if ($User)\n        { \n            Write-Output \"Adding ACL for Admin User: \" $User        \n            \n            #allows\n            if ($MSMQPermAdminAllow)\n            {\n                $arrPermissions = $MSMQPermAdminAllow.split(\";\")\n                foreach ($Permission in $arrPermissions)     \n                {\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Allow $Permission | Out-Null                \n                    Write-Output \"ACL Allow admin set: $Permission\"\n                }\n            }\n                \n            #denies\n            if ($MSMQPermAdminDeny)\n            {\n                $arrPermissions = $MSMQPermAdminDeny.split(\";\")\n                foreach ($Permission in $arrPermissions)     \n                {\n                    $thisQueue | Set-MsmqQueueAcl -UserName $User -Deny $Permission | Out-Null\n                    Write-Output \"ACL Deny admin set: $Permission\"\n                }\n            }\n        }\n    }\n}",
     "Octopus.Action.Script.Syntax": "PowerShell",
@@ -75,7 +75,9 @@
       "Label": "Allowed admin permissions",
       "HelpText": "Permissions granted to the queue admin users, separated by semicolons. Example: _DeleteMessage;PeekMessage;ReceiveMessage_",
       "DefaultValue": "FullControl",
-      "DisplaySettings": {},
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
       "Links": {}
     },
     {
@@ -112,8 +114,8 @@
       "Links": {}
     }
   ],
-  "LastModifiedOn": "2018-03-28T07:21:22.039Z",
-  "LastModifiedBy": "WolfyUK",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2018-03-28T07:21:22.039Z",
     "OctopusVersion": "2018.2.8",

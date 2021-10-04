@@ -1,0 +1,53 @@
+{
+    "Id": "c6c23c7b-876d-4758-a908-511f066156d7",
+    "Name": "Worker - Health check",
+    "Description": "Run a health check against a worker.",
+    "ActionType": "Octopus.Script",
+    "Version": 3,
+    "Author": "twerthi",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Define parameters\n$baseUrl = $OctopusParameters['Octopus.Web.ServerUri'] \n$apiKey = $WorkerApiKey\n$spaceId = $OctopusParameters['Octopus.Space.Id']\n$spaceName = $OctopusParameters['Octopus.Space.Name']\n$environmentName = $OctopusParameters['Octopus.Environment.Name']\n$workerName = $OctopusParameters['WorkerName']\n$workerPoolName = $OctopusParameters['WorkerPoolName']\n\n# Check for null or empty\nif ([string]::IsNullOrEmpty($baseUrl))\n{\n\t$baseUrl = $OctopusParameters['#{if Octopus.Web.ServerUri}#{Octopus.Web.ServerUri}#{else}#{Octopus.Web.BaseUrl}#{/if}']\n}\n\n# Get worker\nif (![string]::IsNullOrEmpty($workerPoolName))\n{\n    # Get worker pool\n    $workerPool = (Invoke-RestMethod -Method Get -Uri \"$baseUrl/api/$spaceId/workerpools/all\" -Headers @{\"X-Octopus-ApiKey\"=\"$apiKey\"}) | Where-Object {$_.Name -eq $workerPoolName}\n    \n    # Check to make sure it exists\n    if ($null -ne $workerPool)\n    {\n        $worker = (Invoke-RestMethod -Method Get -Uri \"$baseUrl/api/$spaceId/workerpools/$($workerPool.Id)/workers\" -Headers @{\"X-Octopus-ApiKey\"=\"$apiKey\"}).Items | Where-Object {$_.Name -eq \"$workerName\"}\n    }\n    else\n    {\n    \tWrite-Error \"Worker pool $workerPoolName not found!\"\n    }\n}\nelse\n{\n    $worker = (Invoke-RestMethod -Method Get -Uri \"$baseUrl/api/$spaceId/workers/all\" -Headers @{\"X-Octopus-ApiKey\"=\"$apiKey\"}) | Where-Object {$_.Name -eq \"$workerName\"}\n}\n\n# Check to make sure something was returned\nif ($null -eq $worker)\n{\n\tif (![string]::IsNullOrEmpty($workerPoolName))\n    {\n    \tWrite-Error \"Unable to find $workerName in $workerPoolName!\"\n    }\n    else\n    {\n    \tWrite-Error \"Unable to find $workerName!\"\n    }\n}\n\n# Build payload\n$jsonPayload = @{\n\tName = \"Health\"\n    Description = \"Check $workerName health\"\n    Arguments = @{\n    \tTimeout = \"00:05:00\"\n        MachineIds = @(\n        \t$worker.Id\n        )\n    OnlyTestConnection = \"false\"\n    }\n    SpaceId = \"$spaceId\"\n}\n\n# Display message\nWrite-Output \"Beginning health check of $workerName ...\"\n\n# Execute health check\n$healthCheck = (Invoke-RestMethod -Method Post -Uri \"$baseUrl/api/tasks\" -Body ($jsonPayload | ConvertTo-Json -Depth 10) -Headers @{\"X-Octopus-ApiKey\"=\"$apiKey\"})\n\n# Check to see if the health check is queued\nwhile ($healthCheck.IsCompleted -eq $false)\n{\n    $healthCheck = (Invoke-RestMethod -Method Get -Uri \"$baseUrl/api/tasks/$($healthCheck.Id)\" -Headers @{\"X-Octopus-ApiKey\"=\"$apiKey\"})\n}\n\nif ($healthCheck.State -eq \"Failed\")\n{\n\tWrite-Error \"Health check failed!\"\n}\nelse\n{\n\tWrite-Output \"Health check completed with $($healthCheck.State).\"\n}\n"
+    },
+    "Parameters": [
+      {
+        "Id": "4ec84f25-8c23-4576-b7fe-3b60ca6f0f3c",
+        "Name": "WorkerName",
+        "Label": "Worker name",
+        "HelpText": "Name of the worker to do a health check on.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "d876958b-1d93-45fa-996e-2005de2919ee",
+        "Name": "WorkerPoolName",
+        "Label": "Worker Pool",
+        "HelpText": "(Optional) Worker pool the worker belongs to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "1939947b-e777-4e4a-8caf-729dacb25aed",
+        "Name": "WorkerApiKey",
+        "Label": "Api Key",
+        "HelpText": "Api Key to use to issue health check.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-08-23T12:40:10.975Z",
+      "OctopusVersion": "2021.1.7687",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "benjimac93",
+    "Category": "octopus"
+  }

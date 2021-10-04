@@ -3,15 +3,12 @@
   "Name": "SQL - Execute SQL Script with SQL or Windows Authentication",
   "Description": "Executes SQL script file(s) against the specified database using either SQL or Windows authentication. SQL Scripts can be hardcoded value or can be from an extracted NuGet package.",
   "ActionType": "Octopus.Script",
-  "Version": 167,
+  "Version": 169,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "function Get-DBConnection\r\n{\r\n    [CmdletBinding()]\r\n    param\r\n    (\r\n        [Parameter(Position = 0)]\r\n        [string]\r\n        [ValidateNotNullorEmpty()]\r\n        $serverInstance,\r\n\r\n        [switch]\r\n        $SqlAuthentication,\r\n\r\n        [string]\r\n        $Username,\r\n\r\n        [string]\r\n        $Password\r\n    )\r\n    try\r\n    {\r\n        $connection = (New-Object Microsoft.SqlServer.Management.Smo.Server($serverInstance))\r\n\r\n        if ($SqlAuthentication)\r\n        {\r\n            $connection.ConnectionContext.LoginSecure = $false\r\n            $connection.ConnectionContext.set_Login($Username)\r\n            $securePassword = ConvertTo-SecureString $Password -AsPlainText -Force\r\n            $connection.ConnectionContext.set_SecurePassword($securePassword)\r\n        }\r\n        \r\n        $connection.Refresh()\r\n        \r\n        return $connection\r\n    }\r\n    catch\r\n    {\r\n        throw $_.Exception.InnerException.ToString()\r\n    }\r\n        \r\n}\r\n\r\nfunction Invoke-ExecuteSQLScript {\r\n\r\n    [CmdletBinding()]\r\n    param\r\n    (\r\n        [parameter(Mandatory = $true, Position = 0)]\r\n        [ValidateNotNullOrEmpty()]\r\n        [string]\r\n        $serverInstance,\r\n\r\n        [parameter(Mandatory = $true, Position = 1)]\r\n        [ValidateNotNullOrEmpty()]\r\n        [string]\r\n        $dbName,\r\n\r\n        [string]\r\n        $Authentication,\r\n\r\n        [string]\r\n        $Username,\r\n\r\n        [string]\r\n        $Password,\r\n\r\n        [string]\r\n        $SQLScripts\r\n    )\r\n\r\n    [System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SMO\") | out-null\r\n\r\n    if ($Authentication -eq \"SqlAuthentication\")\r\n    {\r\n        $SqlServer = Get-DBConnection -serverInstance $serverInstance -SqlAuthentication -Username $Username -Password $Password\r\n    }\r\n    else\r\n    {\r\n        $SqlServer = Get-DBConnection -serverInstance $serverInstance\r\n    }\r\n\r\n    if ($null -eq $SqlServer.Databases[$dbName])\r\n    {\r\n        throw \"Database $dbName does not exist on server $serverInstance\"\r\n    }\r\n    \r\n    if ($null -ne $SqlServer)\r\n    {\r\n        foreach ($SQLScript in $SQLScripts.Split(\"`n\"))\r\n        {\r\n            try \r\n            {\r\n                $children = $SQLScript -replace \".*\\\\\"\r\n                $replacematch = $children -replace \"\\*\",\"\\*\" -replace \"\\.\",\"\\.\"\r\n                $parent = $SQLScript -replace $replacematch\r\n\r\n                $scripts = Get-ChildItem -Path $parent -Filter $children\r\n\r\n                foreach ($script in $scripts)\r\n                {\r\n                    $sr = New-Object System.IO.StreamReader($script.FullName)\r\n                    $scriptContent = $sr.ReadToEnd()\r\n                    $SqlServer.Databases[$dbName].ExecuteNonQuery($scriptContent)\r\n                    $sr.Close()\r\n\r\n\t\t\t\t\twrite-verbose (\"Executed manual script - {0}\" -f $script.Name)\r\n                }\r\n            }\r\n            catch \r\n            {\r\n                Write-Error $_.Exception\r\n            }\r\n        }\r\n    }\r\n}\r\n\r\nif (Test-Path Variable:OctopusParameters)\r\n{\r\n\tif ($null -ne $DacpacPackageExtractStepName -and $DacpacPackageExtractStepName -ne '')\r\n    {\r\n        Write-Verbose \"Dacpac Package Extract Step Name not empty. Locating scripts located in the Dacpac Extract Step.\"\r\n        $installDirPathKey = 'Octopus.Action[{0}].Output.Package.InstallationDirectoryPath' -f $DacpacPackageExtractStepName\r\n        $installDirPath = $OctopusParameters[$installDirPathKey]\r\n        $ScriptsToExecute = Join-Path $installDirPath $SqlScripts\r\n    }\r\n    else\r\n    {   \r\n        Write-Verbose \"Locating scripts from the literal entry of Octopus Parameter SQLScripts\"\r\n        $ScriptsToExecute = $OctopusParameters[\"SQLScripts\"]\r\n    }\r\n    if ($OctopusParameters[\"Authentication\"] -eq \"SqlAuthentication\")\r\n    {\r\n        Write-Verbose \"Using Sql Authentication\"\r\n        Invoke-ExecuteSQLScript -serverInstance $OctopusParameters[\"serverInstance\"] `\r\n                                -dbName $OctopusParameters[\"dbName\"] `\r\n                                -Authentication $OctopusParameters[\"Authentication\"] `\r\n                                -Username $OctopusParameters[\"Username\"] `\r\n                                -Password $OctopusParameters[\"Password\"] `\r\n                                -SQLScripts $ScriptsToExecute\r\n    }\r\n    else\r\n    {\r\n        Write-Verbose \"Using Windows Integrated Authentication\"\r\n        Invoke-ExecuteSQLScript -serverInstance $OctopusParameters[\"serverInstance\"] `\r\n                                -dbName $OctopusParameters[\"dbName\"] `\r\n                                -SQLScripts $ScriptsToExecute\r\n    }\r\n}",
+    "Octopus.Action.Script.ScriptBody": "function Get-DBConnection\r\n{\r\n    [CmdletBinding()]\r\n    param\r\n    (\r\n        [Parameter(Position = 0)]\r\n        [string]\r\n        [ValidateNotNullorEmpty()]\r\n        $serverInstance,\r\n\r\n        [switch]\r\n        $SqlAuthentication,\r\n\r\n        [string]\r\n        $Username,\r\n\r\n        [string]\r\n        $Password\r\n    )\r\n    try\r\n    {\r\n        $connection = (New-Object Microsoft.SqlServer.Management.Smo.Server($serverInstance))\r\n\r\n        if ($SqlAuthentication)\r\n        {\r\n            $connection.ConnectionContext.LoginSecure = $false\r\n            $connection.ConnectionContext.set_Login($Username)\r\n            $securePassword = ConvertTo-SecureString $Password -AsPlainText -Force\r\n            $connection.ConnectionContext.set_SecurePassword($securePassword)\r\n        }\r\n        \r\n        $connection.Refresh()\r\n        \r\n        return $connection\r\n    }\r\n    catch\r\n    {\r\n        throw $_.Exception.ToString()\r\n    }\r\n        \r\n}\r\n\r\nfunction Invoke-ExecuteSQLScript {\r\n\r\n    [CmdletBinding()]\r\n    param\r\n    (\r\n        [parameter(Mandatory = $true, Position = 0)]\r\n        [ValidateNotNullOrEmpty()]\r\n        [string]\r\n        $serverInstance,\r\n\r\n        [parameter(Mandatory = $true, Position = 1)]\r\n        [ValidateNotNullOrEmpty()]\r\n        [string]\r\n        $dbName,\r\n\r\n        [string]\r\n        $Authentication,\r\n\r\n        [string]\r\n        $Username,\r\n\r\n        [string]\r\n        $Password,\r\n\r\n        [string]\r\n        $SQLScripts\r\n    )\r\n\r\n    [System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SMO\") | out-null\r\n\r\n    if ($Authentication -eq \"SqlAuthentication\")\r\n    {\r\n        $SqlServer = Get-DBConnection -serverInstance $serverInstance -SqlAuthentication -Username $Username -Password $Password\r\n    }\r\n    else\r\n    {\r\n        $SqlServer = Get-DBConnection -serverInstance $serverInstance\r\n    }\r\n\r\n    if ($null -eq $SqlServer.Databases[$dbName])\r\n    {\r\n        throw \"Database $dbName does not exist on server $serverInstance\"\r\n    }\r\n    \r\n    if ($null -ne $SqlServer)\r\n    {\r\n        foreach ($SQLScript in $SQLScripts.Split(\"`n\"))\r\n        {\r\n            try \r\n            {\r\n                $children = $SQLScript -replace \".*\\\\\"\r\n                $replacematch = $children -replace \"\\*\",\"\\*\" -replace \"\\.\",\"\\.\"\r\n                $parent = $SQLScript -replace $replacematch\r\n\r\n                $scripts = Get-ChildItem -Path $parent -Filter $children\r\n\r\n                foreach ($script in $scripts)\r\n                {\r\n                    $sr = New-Object System.IO.StreamReader($script.FullName)\r\n                    $scriptContent = $sr.ReadToEnd()\r\n                    $SqlServer.Databases[$dbName].ExecuteNonQuery($scriptContent)\r\n                    $sr.Close()\r\n\r\n\t\t\t\t\twrite-verbose (\"Executed manual script - {0}\" -f $script.Name)\r\n                }\r\n            }\r\n            catch \r\n            {\r\n                Write-Error $_.Exception\r\n            }\r\n        }\r\n    }\r\n}\r\n\r\nif (Test-Path Variable:OctopusParameters)\r\n{\r\n\tif ($null -ne $DacpacPackageExtractStepName -and $DacpacPackageExtractStepName -ne '')\r\n    {\r\n        Write-Verbose \"Dacpac Package Extract Step Name not empty. Locating scripts located in the Dacpac Extract Step.\"\r\n        $installDirPathKey = 'Octopus.Action[{0}].Output.Package.InstallationDirectoryPath' -f $DacpacPackageExtractStepName\r\n        $installDirPath = $OctopusParameters[$installDirPathKey]\r\n        $ScriptsToExecute = Join-Path $installDirPath $SqlScripts\r\n    }\r\n    else\r\n    {   \r\n        Write-Verbose \"Locating scripts from the literal entry of Octopus Parameter SQLScripts\"\r\n        $ScriptsToExecute = $OctopusParameters[\"SQLScripts\"]\r\n    }\r\n    if ($OctopusParameters[\"Authentication\"] -eq \"SqlAuthentication\")\r\n    {\r\n        Write-Verbose \"Using Sql Authentication\"\r\n        Invoke-ExecuteSQLScript -serverInstance $OctopusParameters[\"serverInstance\"] `\r\n                                -dbName $OctopusParameters[\"dbName\"] `\r\n                                -Authentication $OctopusParameters[\"Authentication\"] `\r\n                                -Username $OctopusParameters[\"Username\"] `\r\n                                -Password $OctopusParameters[\"Password\"] `\r\n                                -SQLScripts $ScriptsToExecute\r\n    }\r\n    else\r\n    {\r\n        Write-Verbose \"Using Windows Integrated Authentication\"\r\n        Invoke-ExecuteSQLScript -serverInstance $OctopusParameters[\"serverInstance\"] `\r\n                                -dbName $OctopusParameters[\"dbName\"] `\r\n                                -SQLScripts $ScriptsToExecute\r\n    }\r\n}",
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
-    "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptFileName": null,
-    "Octopus.Action.Package.FeedId": null,
-    "Octopus.Action.Package.PackageId": null
+    "Octopus.Action.RunOnServer": "false"
   },
   "Parameters": [
     {
@@ -20,7 +17,9 @@
       "Label": "Server Instance Name",
       "HelpText": "The SQL Server Instance name",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Id": "63a2671c-cd1e-4bd3-acad-59f656f9a698",
@@ -28,7 +27,9 @@
       "Label": "Database Name",
       "HelpText": "The database name",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Id": "bc768cdf-3d5f-4a94-8b08-647056eb3977",
@@ -47,7 +48,9 @@
       "Label": "Username",
       "HelpText": "The username to use to connect (only applies with SqlAuthentication selected)",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Id": "d00b988d-bdf3-4376-aec7-90954e3cb635",
@@ -55,7 +58,9 @@
       "Label": "Password",
       "HelpText": "The password to use to connect (only applies with SqlAuthentication selected)",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Id": "4de1507a-3824-46b0-bf11-126b953c73da",
@@ -78,10 +83,11 @@
       }
     }
   ],
-  "LastModifiedBy": "RichiePhoebix",
+  "LastModifiedOn": "2021-09-16T08:42:00.000+00:00",
+  "LastModifiedBy": "harrisonmeister",
   "$Meta": {
-    "ExportedAt": "2016-10-24T11:58:14.982+00:00",
-    "OctopusVersion": "3.4.4",
+    "ExportedAt": "2021-09-16T08:42:00.000+00:00",
+    "OctopusVersion": "2021.3.2156",
     "Type": "ActionTemplate"
   },
   "Category": "sql"

@@ -1,0 +1,75 @@
+{
+  "Id": "0EAF2914-E291-4CCF-833C-25EA769BF82B",
+  "Name": "elmah.io - Upload Source Map",
+  "Description": "Step template for uploading a source map and a minified JavaScript file to elmah.io.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$apiKey = $OctopusParameters['ElmahIoSourceMap_ApiKey']\n$logId = $OctopusParameters['ElmahIoSourceMap_LogId']\n$path = $OctopusParameters['ElmahIoSourceMap_Path']\n$sourceMap = $OctopusParameters['ElmahIoSourceMap_SourceMap']\n$minifiedJavaScript = $OctopusParameters['ElmahIoSourceMap_MinifiedJavaScript']\n$boundary = [System.Guid]::NewGuid().ToString()\n\n$mapFile = [System.IO.File]::ReadAllBytes($sourceMap)\n$mapContent = [System.Text.Encoding]::UTF8.GetString($mapFile)\n$mapFileName = Split-Path $sourceMap -leaf\n$jsFile = [System.IO.File]::ReadAllBytes($minifiedJavaScript)\n$jsContent = [System.Text.Encoding]::UTF8.GetString($jsFile)\n$jsFileName = Split-Path $minifiedJavaScript -leaf\n\n$LF = \"`r`n\"\n$bodyLines = (\n    \"--$boundary\",\n    \"Content-Disposition: form-data; name=`\"Path`\"$LF\",\n    $path,\n    \"--$boundary\",\n    \"Content-Disposition: form-data; name=`\"SourceMap`\"; filename=`\"$mapFileName`\"\",\n    \"Content-Type: application/json$LF\",\n    $mapContent,\n    \"--$boundary\",\n    \"Content-Disposition: form-data; name=`\"MinifiedJavaScript`\"; filename=`\"$jsFileName`\"\",\n    \"Content-Type: text/javascript$LF\",\n    $jsContent,\n    \"--$boundary--$LF\"\n) -join $LF\n\nInvoke-RestMethod \"https://api.elmah.io/v3/sourcemaps/${logId}?api_key=${apiKey}\" -Method POST -ContentType \"multipart/form-data; boundary=`\"$boundary`\"\" -Body $bodyLines",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "01c70303-6af5-4b44-992d-e2b104fdd433",
+      "Name": "ElmahIoSourceMap_ApiKey",
+      "Label": "API Key",
+      "HelpText": "Required: Input your elmah.io API key located on the organization settings page.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "b7963b69-c261-4008-a1ac-65133eead721",
+      "Name": "ElmahIoSourceMap_LogId",
+      "Label": "Log ID",
+      "HelpText": "Required: The ID of the log which should contain the minified JavaScript and source map.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4a72b7bd-5a74-4038-b4e4-8dfd0f7231e7",
+      "Name": "ElmahIoSourceMap_Path",
+      "Label": "Path",
+      "HelpText": "Required: An URL to the online minified JavaScript file. The URL can be absolute or relative but will always be converted to a relative path (no protocol, domain, and query parameters). elmah.io uses this path to lookup any lines in a JS stack trace that will need de-minification.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d774ab07-f626-4d2d-baa7-62a06fed7ff6",
+      "Name": "ElmahIoSourceMap_SourceMap",
+      "Label": "Source Map",
+      "HelpText": "Required: A path to the source map file. Only files with an extension of .map and content type of application/json will be accepted.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c2ca2875-21dc-4633-ab38-fa5e84f34f74",
+      "Name": "ElmahIoSourceMap_MinifiedJavaScript",
+      "Label": "Minified JavaScript",
+      "HelpText": "Required: A path to the minified JavaScript file. Only files with an extension of .js and content type of text/javascript will be accepted.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "elmahio",
+  "$Meta": {
+    "ExportedAt": "2021-09-06T08:51:54.463Z",
+    "OctopusVersion": "2021.2.7428",
+    "Type": "ActionTemplate"
+  },
+  "Category": "elmah"
+}

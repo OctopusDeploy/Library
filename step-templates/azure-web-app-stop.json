@@ -1,0 +1,35 @@
+{
+  "Id": "5178ba6d-e0b9-4176-8487-148060ed3a70",
+  "Name": "Azure Web App - Stop",
+  "Description": "Stops an azure web app.\n<hr />\n\n*<p>Note This template is designed to run against an azure web app octopus target </p>*\n*<p>Depends on Azure CLI and powershell to be installed on the running machine</p>*",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Azure.AccountId": "#{azWebApp.AzureAcct}",
+    "Octopus.Action.Script.ScriptBody": "try\n{\n\taz --version\n}\n\ncatch\n{\n\tthrow \"az cli not installed\"\n}\n\n$webApp = $OctopusParameters[\"Octopus.Action.Azure.WebAppName\"]\n$resourceGroup = $OctopusParameters[\"Octopus.Action.Azure.ResourceGroupName\"]\n\n$appState = az webapp list --resource-group $resourceGroup --query \"[?name=='$webApp'].{state: state, hostName: defaultHostName}\" | ConvertFrom-Json\n\nif($appState.state -eq 'stopped')\n{\n\tWrite-Host \"Web App $webApp already stopped\"\n    return\n}\n\nWrite-Host \"Stopping webapp $webApp in group $resourceGroup\"\naz webapp stop --name $webApp --resource-group $resourceGroup\n"
+  },
+  "Parameters": [
+    {
+      "Id": "bcb5fe61-4f02-44af-85b9-8c9197567d50",
+      "Name": "azWebApp.AzureAcct",
+      "Label": "Azure Account",
+      "HelpText": "The azure account that has access to the web app",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-06-08T18:36:07.610Z",
+    "OctopusVersion": "2020.2.10",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "xtreampb",
+  "Category": "azure"
+}

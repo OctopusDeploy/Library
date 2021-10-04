@@ -1,0 +1,73 @@
+{
+    "Id": "e56e9b28-1cf2-4646-af70-93e31bcdb86b",
+    "Name": "SQL - Fix Orphaned User",
+    "Description": "Will fix an orphaned user in the database by re-associating the SID.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "Author": "twerthi",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "function Get-ModuleInstalled\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName\n    )\n\n    # Check to see if the module is installed\n    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))\n    {\n        # It is installed\n        return $true\n    }\n    else\n    {\n        # Module not installed\n        return $false\n    }\n}\n\nfunction Get-NugetPackageProviderNotInstalled\n{\n\t# See if the nuget package provider has been installed\n    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))\n}\n\nfunction Install-PowerShellModule\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName,\n        $LocalModulesPath\n    )\n    \n    # Set TLS order\n    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12\n\n\t# Check to see if the package provider has been installed\n    if ((Get-NugetPackageProviderNotInstalled) -ne $false)\n    {\n    \t# Display that we need the nuget package provider\n        Write-Host \"Nuget package provider not found, installing ...\"\n        \n        # Install Nuget package provider\n        Install-PackageProvider -Name Nuget -Force\n    }\n\n\t# Save the module in the temporary location\n    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force\n\n}\n\n# Define PowerShell Modules path\n$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName\n$env:PSModulePath = \"$LocalModules;$env:PSModulePath\"\n\n# Check to see if SqlServer module is installed\nif (((Get-ModuleInstalled -PowerShellModuleName \"SqlServer\") -ne $true) -and ((Get-ModuleInstalled -PowerShellModuleName \"SQLPS\") -ne $true))\n{\n  # Display message\n  Write-Output \"PowerShell module SqlServer not present, downloading temporary copy ...\"\n\n  # Download and install temporary copy\n  Install-PowerShellModule -PowerShellModuleName \"SqlServer\" -LocalModulesPath $LocalModules\n  \n  # Display\n  Write-Output \"Importing module SqlServer ...\"\n\n  # Import the module\n  Import-Module -Name \"SqlServer\"  \n}\n\nWrite-Host \"SqlLoginWhoHasRights $autoFixSqlLoginUserWhoHasRights\"\nWrite-Host \"SqlServer $autoFixSqlServer\"\nWrite-Host \"DatabaseName $autoFixDatabaseName\"\nWrite-Host \"SqlLogin $autoFixSqlLogin\"\n\nif ([string]::IsNullOrWhiteSpace($autoFixSqlLoginUserWhoHasRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$autoFixSqlServer;Database=$autoFixDatabaseName;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$autoFixSqlServer;Database=$autoFixDatabaseName;User ID=$autoFixSqlLoginUserWhoHasRights;Password=$autoFixSqlLoginPasswordWhoHasRights;\"\n}\n\n# Build sql query\n$sqlQuery = @\"\nDECLARE @OrphanedUsers TABLE\n(\n\tUserName VARCHAR(50) null,\n\tUserSID VARBINARY(100) null\n)\n\nINSERT INTO @OrphanedUsers EXEC sp_change_users_login 'Report'\n\nIF EXISTS ( SELECT UserName FROM @OrphanedUsers WHERE UserName = '$autoFixSqlLogin' )\n\tBEGIN\n\t\tPRINT '$autoFixSqlLogin is orphaned, fixing ...'\n        EXEC sp_change_users_login 'Auto_Fix', '$autoFixSqlLogin'\n    END\nELSE\n\tPRINT '$autoFixSqlLogin is not orphaned.'\n\"@\n\n# Execute the command to find orphaned users, then fix if matching\nInvoke-SqlCmd -ConnectionString $connectionString -Query $sqlQuery -Verbose\n\n"
+    },
+    "Parameters": [
+      {
+        "Id": "083897f2-d65d-45a5-b9fb-ef760a727303",
+        "Name": "autoFixSqlServer",
+        "Label": "SQL Server",
+        "HelpText": "The SQL Server to perform the work on",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "ead6a85f-71e6-4c42-b6b2-ef048edabcbd",
+        "Name": "autoFixSqlLoginUserWhoHasRights",
+        "Label": "SQL Login",
+        "HelpText": "The login of the user who has permissions to create a database.\n\nLeave blank for integrated security",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "eb648cdd-0390-4569-8af9-e4e51946585f",
+        "Name": "autoFixSqlLoginPasswordWhoHasRights",
+        "Label": "SQL Password",
+        "HelpText": "The password of the user who has permissions to create SQL Logins\n\nLeave blank for integrated security",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "835159c0-7c5a-4714-ad9e-888dd29e6cd3",
+        "Name": "autoFixDatabaseName",
+        "Label": "Database Name",
+        "HelpText": "The name of the database to create the user on",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "7be27e8c-efef-4700-8b7f-fba78a25788f",
+        "Name": "autoFixSqlLogin",
+        "Label": "SQL Login",
+        "HelpText": "The username to attach to the database if it does not exist",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2020-07-22T00:41:40.086Z",
+      "OctopusVersion": "2020.2.16",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "twerthi",
+    "Category": "sql"
+  }

@@ -1,0 +1,126 @@
+{
+  "Id": "d09f55f6-5b32-441f-b6b2-1ee6c3e53182",
+  "Name": "Azure DB - Execute SQL ",
+  "Description": "Runs a sql command against an Azure SQL Server database.\n\nAdds a firewall rule to allow the machine executing the step to access the database; the rule is then removed.\n\n*Depends on az cli*\n\n*Depends on sqlserver powershell module *",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Azure.AccountId": "#{azDbSqlCmd.azAccount}",
+    "Octopus.Action.Script.ScriptBody": "# insure module installed.  Designed to run on cloud infrastructure where owners doesn't have controll over the workers.\n\nif (Get-Module -ListAvailable -Name sqlserver)\n{\n\tWrite-Verbose \"sqlserver module installed and available\"\n    Import-Module sqlserver\n}\n\nelse\n{\n\tWrite-Warning \"installing module for the current user.`nIf worker is owned, consider installing the powershell module 'sqlserver' globally to speed up deployments\"\n\tInstall-Module -Name sqlserver -Scope CurrentUser -AllowClobber -Force\n}\n\n# parse parameters\n\n$resourceGroup = $OctopusParameters[\"azDbSqlCmd.resourceGroupName\"]\n$sqlServerName = $OctopusParameters[\"azDbSqlCmd.ServerName\"]\n$dbName = $OctopusParameters[\"azDbSqlCmd.dbName\"]\n$userId = $OctopusParameters[\"azDbSqlCmd.userId\"]\n$userPwd = $OctopusParameters[\"azDbSqlCmd.userPwd\"]\n$authType = $OctopusParameters[\"azDbSqlCmd.AuthType\"]\n$connTimeout = $OctopusParameters[\"azDbSqlCmd.connectionTimeout\"] -as [int]\n$resultsOutput = $OctopusParameters[\"azDbSqlCmd.resultsOutput\"]\n\n$sqlCmd = $OctopusParameters[\"azDbSqlCmd.sqlCmd\"]\n\n# get current IP address\nWrite-Host \"Getting worker IP address...\" -NoNewLine\n$workerPublicIp = (Invoke-WebRequest -uri \"http://ifconfig.me/ip\" -UseBasicParsing).Content\nWrite-Host \"Done. IP is: $workerPublicIp\"\n\n# create Connection string\nswitch ($authType)\n{\n\t\"sql\"\n    {\n    \t$connectionString = \"Server=tcp:$sqlServerName.database.windows.net;Initial Catalog=$dbName;Persist Security Info=False;User ID=$userId;Password=$userPwd;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;\"\n    }\n    \"adPwd\"\n    {\n    \t$connectionString = \"Server=tcp:$sqlServerName.database.windows.net;Initial Catalog=$dbName;Persist Security Info=False;User ID=$userId;Password=$userPwd;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Authentication=`\"Active Directory Password`\";\"\n    }\n    \"ad\"\n    {\n    \t$connectionString = \"Server=tcp:$sqlServerName.database.windows.net;Initial Catalog=$dbName;Persist Security Info=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Authentication=`\"Active Directory Integrated`\";\"\n    }\n}\n\n# open firewall port\nwrite-host \"opening firewall on server $sqlServerName for ip: $workerPublicIp\"\nInvoke-Expression \"az sql server firewall-rule create -g $resourceGroup -n tempOctoSqlCmd -s $sqlServerName --start-ip-address $workerPublicIp --end-ip-address $workerPublicIp\"\n\n# invoke sql cmd\ntry\n{\n\t$id = New-Guid\n    $resultFilePath = \"$env:temp/$id.txt\"\n\tWrite-Host \"running sql statement: ``$sqlCmd``\"\n    \n    switch ($resultsOutput)\n    {\n        'none'\n        {\n        \tInvoke-SqlCmd -ConnectionString $connectionString -Query $sqlCmd -QueryTimeout $connTimeout\n        }\n\n        'variable'\n        {\n        \tInvoke-SqlCmd -ConnectionString $connectionString -Query $sqlCmd -QueryTimeout $connTimeout | ConvertTo-CSV | Out-File -FilePath \"$resultFilePath\"\n            $outputContent = Get-Content -Path $resultFilePath | ConvertFrom-CSV\n            Set-OctopusVariable -name \"azDbSqlCmd.results\"\n        }\n\n        'artifact'\n        {\n           \tInvoke-SqlCmd -ConnectionString $connectionString -Query $sqlCmd -QueryTimeout $connTimeout | ConvertTo-CSV | Out-File -FilePath \"$resultFilePath\"\n            New-OctopusArtifact -Path $resultFilePath -Name azDbSqlCmd.results.csv\n        }\n    }\n}\ncatch\n{\n\tthrow\n}\nfinally\n{\n  # close firewall port\n  write-host \"closing firewall on server $sqlServerName for ip: $workerPublicIp\"\n  Invoke-Expression \"az sql server firewall-rule delete -g $resourceGroup -n tempOctoSqlCmd -s $sqlServerName\"\n}\n"
+  },
+  "Parameters": [
+    {
+      "Id": "4f94e536-a48f-4d9a-854d-c02ca56d6ef2",
+      "Name": "azDbSqlCmd.azAccount",
+      "Label": "Azure Account",
+      "HelpText": "An Azure account with permissions to the subscription and the sql server being targeted",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "068237eb-7329-426e-8dee-72ed96eb3e32",
+      "Name": "azDbSqlCmd.resourceGroupName",
+      "Label": "Resource Group Name",
+      "HelpText": "The name of the resource group hosting the sql server",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "12590219-613f-4556-908a-cd87c509449f",
+      "Name": "azDbSqlCmd.ServerName",
+      "Label": "SQL Server Name",
+      "HelpText": "The name of the sql server. The FQDN (`database.windows.net`) will automatically be appended to this when needed.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3fe35f76-f140-48df-be0c-2a927069bc8b",
+      "Name": "azDbSqlCmd.dbName",
+      "Label": "Database Name",
+      "HelpText": "The name of the database to execute the sql command against",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "bbe9a203-89db-4286-a684-c95748543805",
+      "Name": "azDbSqlCmd.AuthType",
+      "Label": "SQL Server Authentication Type",
+      "HelpText": "The type of authentication to use when connecting.",
+      "DefaultValue": "sql",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "sql|SQL Authentication\nadPwd|Active Directory Password\nad|Active Directory Integration"
+      }
+    },
+    {
+      "Id": "539885ef-8ff9-407e-8e33-3bf211d58df6",
+      "Name": "azDbSqlCmd.userId",
+      "Label": "User Id",
+      "HelpText": "The user id to use when authenticating with the sql server",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "60af2045-ec59-4f4f-baf4-79e0ae8bd60d",
+      "Name": "azDbSqlCmd.userPwd",
+      "Label": "User Password",
+      "HelpText": "Used with SQL or Active directory Password authentication.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "e631537b-c109-4678-a7e5-bbc8166cca78",
+      "Name": "azDbSqlCmd.connectionTimeout",
+      "Label": "Connection Timeout",
+      "HelpText": "The timeout for the query measured in seconds between 0 and 65534. 0 indicates no timeout",
+      "DefaultValue": "0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9f787938-012a-45e9-ae58-5a06b1f4f012",
+      "Name": "azDbSqlCmd.sqlCmd",
+      "Label": "SQL Command",
+      "HelpText": "The sql command to execute",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "273c678e-008e-4598-978e-9d7abaadbf6c",
+      "Name": "azDbSqlCmd.resultsOutput",
+      "Label": "Results Output",
+      "HelpText": "How should the results of the sql statement be retained.  Results are only provided with select statements.",
+      "DefaultValue": "none",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "none|None\nvariable|Output Variable\nartifact|Process Artifact"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-07-22T16:38:39.012Z",
+    "OctopusVersion": "2020.2.10",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "xtreampb",
+  "Category": "azure"
+}

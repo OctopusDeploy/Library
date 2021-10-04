@@ -3,13 +3,13 @@
   "Name": "IIS Website - Set IP Security",
   "Description": "Takes a list of ip/mask and allow them in ipsecurity",
   "ActionType": "Octopus.Script",
-  "Version": 9,
+  "Version": 10,
   "CommunityActionTemplateId": null,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false",
-    "Octopus.Action.Script.ScriptBody": "function allowIp([string]$Website, [string]$ip, [string]$mask) {\r\n    $value = @{ipAddress=\"$ip\";allowed=\"true\"}\r\n    if ($mask -ne \"\")\r\n    {\r\n        Write-Output \"Adding ip $ip/$mask to allow\"\r\n        $value.subnetMask = $mask\r\n    }\r\n    else\r\n    {\r\n         Write-Output \"Adding ip $ip to allow\"\r\n    }\r\n\r\n    add-webconfiguration /system.webServer/security/ipSecurity -location $Website -value $value -pspath IIS://\r\n}\r\n\r\nClear-WebConfiguration -Filter /system.webServer/security/ipSecurity -location $Site\r\n\r\nif ($EnableProxyMode -eq \"true\") {\r\n    Write-Output \"Enabling proxy mode\"\r\n    #set-webconfigurationproperty -Filter /system.webServer/security/dynamicIpSecurity -location $Site -Name \"enableProxyMode\" -Value \"true\"\r\n    set-webconfigurationproperty -Filter /system.webServer/security/ipSecurity -location $Site -Name \"enableProxyMode\" -Value \"true\"\r\n}\r\n\r\nif ($SetDeny -eq \"true\") {\r\n    Write-Output \"Setting Deny rule\"\r\n    set-webconfigurationproperty -Filter /system.webServer/security/ipSecurity -location $Site -Name \"allowUnlisted\" -Value \"false\"\r\n}\r\n\r\n$ips = $IpAddresses -split '\\n'\r\n$ips = $ips.Trim('\\r')\r\nforeach ($u in $ips) {\r\n    $a = $u.Split(\"/\")\r\n    allowIp $Site $a[0] $a[1]\r\n}",
+    "Octopus.Action.Script.ScriptBody": "$existingRules = Get-WebConfiguration /system.webServer/security/ipSecurity/* -location $Site -pspath IIS://;\r\n[Object[]]$newRules = @();\r\n\r\n$ips = $IpAddresses -split '\\n';\r\n$ips = $ips.Trim('\\r');\r\nforeach ($u in $ips) {\r\n    $a = $u.Split(\"/\");\r\n    $newRules += [Object]@{ ipAddress = $a[0]; subnetMask = $a[1]; allowed = $true };\r\n}\r\n\r\nif ($EnableProxyMode -eq \"true\") {\r\n    Write-Output \"Enabling proxy mode\"\r\n    set-webconfigurationproperty -Filter /system.webServer/security/ipSecurity -location $Site -Name \"enableProxyMode\" -Value \"true\"\r\n}\r\n\r\nif ($SetDeny -eq \"true\") {\r\n    Write-Output \"Setting Deny rule\"\r\n    set-webconfigurationproperty -Filter /system.webServer/security/ipSecurity -location $Site -Name \"allowUnlisted\" -Value \"false\"\r\n}\r\n\r\nfunction addRules([string]$website, [Object[]]$newRules, [Object[]]$oldRules) {\r\n\r\n    foreach ($rule in $newRules) {\r\n        if (ruleExists $rule $oldRules) {\r\n            Write-Host \"Rule $($rule.ipAddress)/$($rule.subnetMask) already exists\";\r\n\r\n            continue;\r\n        }\r\n\r\n        $value = @{ipAddress = $($rule.ipAddress); allowed = \"true\" }\r\n        if ([string]::IsNullOrEmpty($rule.subnetMask)) {\r\n            Write-Output \"Adding ip $($rule.ipAddress) to allow\"\r\n        }\r\n        else {\r\n            Write-Output \"Adding ip $($rule.ipAddress)/$($rule.subnetMask) to allow\"\r\n            $value.subnetMask = $rule.subnetMask;\r\n        }\r\n\r\n        add-webconfiguration /system.webServer/security/ipSecurity -location $website -value $value -pspath IIS://\r\n    }    \r\n}\r\n\r\nfunction clearRules([string]$website, [Object[]]$newRules, [Object[]]$oldRules) {\r\n\r\n    foreach ($rule in $oldRules) {\r\n        if (ruleExists $rule $newRules) {\r\n            continue;\r\n        }\r\n\r\n        Write-Host \"Rule $($rule.ipAddress)/$($rule.subnetMask) is not exists, remove it\";\r\n\r\n        Clear-WebConfiguration -Filter $rule.ItemXPath -location $rule.Location\r\n    }    \r\n}\r\n\r\nfunction ruleExists([Object]$rule, [Object[]]$rules) {\r\n    foreach ($r in $rules) {\r\n        if ($r.ipAddress -eq $rule.ipAddress -and $r.allowed -eq $rule.allowed) {\r\n            if ($r.subnetMask -eq $rule.subnetMask) {\r\n                return $true;\r\n            }\r\n\r\n            if (([string]::IsNullOrEmpty($r.subnetMask) -or $r.subnetMask -eq \"255.255.255.255\") -and ([string]::IsNullOrEmpty($rule.subnetMask) -or $rule.subnetMask -eq \"255.255.255.255\")) {\r\n                return $true;\r\n            }\r\n        }\r\n    }\r\n\r\n    return $false;\r\n}\r\n\r\naddRules $Site $newRules $existingRules;\r\nclearRules $Site $newRules $existingRules;\r\n",
     "Octopus.Action.Script.ScriptFileName": null,
     "Octopus.Action.Package.FeedId": null,
     "Octopus.Action.Package.PackageId": null
@@ -60,9 +60,9 @@
       "Links": {}
     }
   ],
-  "LastModifiedBy": "BlackstarSolar",
+  "LastModifiedBy": "olsh",
   "$Meta": {
-    "ExportedAt": "2017-02-20T11:24:20.680Z",
+    "ExportedAt": "2021-03-01T11:24:20.680Z",
     "OctopusVersion": "3.7.4",
     "Type": "ActionTemplate"
   },

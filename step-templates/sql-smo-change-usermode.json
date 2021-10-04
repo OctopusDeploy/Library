@@ -3,7 +3,7 @@
   "Name": "SQL - Change User Mode Using SMO",
   "Description": "This uses Sql Management Objects to change user access mode.  If the username and password are both empty then it will attempt a trusted connection using integrated security.",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "CommunityActionTemplateId": null,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SMO\") | out-null\n\n$SqlUsername = $OctopusParameters['SqlUsername']\n$SqlServer = $OctopusParameters['SqlServer']\n$SqlPassword = $OctopusParameters['SqlPassword']\n$SqlDatabase = $OctopusParameters['SqlDatabase']\n$UserAccess = $OctopusParameters['UserAccess']\n$Condition = $OctopusParameters['Condition']\n\ntry\n{    \n    $server = new-object ('Microsoft.SqlServer.Management.Smo.Server') $SqlServer\n  \n    if ($SqlUsername -and $SqlPassword)\n    {\n        Write-Host \"Connecting to $SqlServer as $SqlUsername\"\n        $server.ConnectionContext.LoginSecure = $false\n        $server.ConnectionContext.set_Login($SqlUsername)\n        $server.ConnectionContext.set_Password($SqlPassword)      \n    } \n    else {\n        Write-Host \"Connecting to $SqlServer with integrated security\"\n        $server.ConnectionContext.LoginSecure = $true\n    }\n    \n    $db = $server.Databases[$SqlDatabase]\n\tif ($db -eq $null)\n\t{\n        Write-Host \"Database $SqlDatabase not found, skipping step...\"\n\t} else {\n\t    Write-Host \"Setting user mode to $UserAccess for database $SqlDatabase with condition $Condition\"\n        $db.UserAccess = $UserAccess\n\n        if ($Condition -eq 'Force'){\n            $db.Alter([Microsoft.SqlServer.Management.Smo.TerminationClause]::RollbackTransactionsImmediately)\n        } elseif ($Condition -eq 'Fail'){\n            $db.Alter([Microsoft.SqlServer.Management.Smo.TerminationClause]::FailOnOpenTransactions)\n        } else {\n            $db.Alter()\n        }\n\t}\n}\ncatch\n{    \n    $error[0] | format-list -force\n    Exit 1\n}",
@@ -21,7 +21,9 @@
       "Label": "Sql Server",
       "HelpText": "SQL Server Instance with Port",
       "DefaultValue": "",
-      "DisplaySettings": {},
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
       "Links": {}
     },
     {
@@ -30,7 +32,9 @@
       "Label": "Sql Username (optional)",
       "HelpText": "The SQL Account which has access to Create SQL Database",
       "DefaultValue": "",
-      "DisplaySettings": {},
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
       "Links": {}
     },
     {
@@ -39,7 +43,9 @@
       "Label": "Sql Password (optional)",
       "HelpText": "The password for the SQL Account",
       "DefaultValue": "",
-      "DisplaySettings": {},
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
       "Links": {}
     },
     {
@@ -48,7 +54,9 @@
       "Label": "Sql Database",
       "HelpText": "Name of Database to be created if not already there",
       "DefaultValue": "",
-      "DisplaySettings": {},
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
       "Links": {}
     },
     {
@@ -77,7 +85,8 @@
       "Links": {}
     }
   ],
-  "LastModifiedBy": "donaldgray",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2017-03-29T12:50:15.802Z",
     "OctopusVersion": "3.10.0",

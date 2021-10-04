@@ -3,7 +3,7 @@
   "Name": "IIS Website - Create",
   "Description": "Creates a new website in IIS",
   "ActionType": "Octopus.Script",
-  "Version": 7,
+  "Version": 8,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "## --------------------------------------------------------------------------------------\n## Input\n## --------------------------------------------------------------------------------------\n\n$webSiteName = $OctopusParameters['WebSiteName']\n$applicationPoolName = $OctopusParameters[\"ApplicationPoolName\"]\n$bindingProtocol = $OctopusParameters[\"BindingProtocol\"]\n$bindingPort = $OctopusParameters[\"BindingPort\"]\n$bindingIpAddress = $OctopusParameters[\"BindingIpAddress\"]\n$bindingHost = $OctopusParameters[\"BindingHost\"]\n$bindingSslThumbprint = $OctopusParameters[\"BindingSslThumbprint\"]\n$webRoot = $OctopusParameters[\"WebRoot\"]\n$iisAuthentication = $OctopusParameters[\"IisAuthentication\"]\n$webSiteStart = $OctopusParameters[\"WebsiteStart\"]\n\n\n$anonymousAuthentication = \"Anonymous\"\n$basicAuthentication = \"Basic\"\n$windowsAuthentication = \"Windows\"\n## --------------------------------------------------------------------------------------\n## Helpers\n## --------------------------------------------------------------------------------------\n# Helper for validating input parameters\nfunction Validate-Parameter($foo, [string[]]$validInput, $parameterName) {\n    Write-Host \"${parameterName}: ${foo}\"\n    if (! $foo) {\n        throw \"$parameterName cannot be empty, please specify a value\"\n    }\n    \n    if ($validInput) {\n        @($foo) | % { \n                if ($validInput -notcontains $_) {\n                    throw \"'$_' is not a valid input for '$parameterName'\"\n                }\n             }  \n        }   \n}\n\n# Helper to run a block with a retry if things go wrong\n$maxFailures = 5\n$sleepBetweenFailures = Get-Random -minimum 1 -maximum 4\nfunction Execute-WithRetry([ScriptBlock] $command) {\n\t$attemptCount = 0\n\t$operationIncomplete = $true\n\n\twhile ($operationIncomplete -and $attemptCount -lt $maxFailures) {\n\t\t$attemptCount = ($attemptCount + 1)\n\n\t\tif ($attemptCount -ge 2) {\n\t\t\tWrite-Output \"Waiting for $sleepBetweenFailures seconds before retrying...\"\n\t\t\tStart-Sleep -s $sleepBetweenFailures\n\t\t\tWrite-Output \"Retrying...\"\n\t\t}\n\n\t\ttry {\n\t\t\t& $command\n\n\t\t\t$operationIncomplete = $false\n\t\t} catch [System.Exception] {\n\t\t\tif ($attemptCount -lt ($maxFailures)) {\n\t\t\t\tWrite-Output (\"Attempt $attemptCount of $maxFailures failed: \" + $_.Exception.Message)\n\t\t\t\n\t\t\t}\n\t\t\telse {\n\t\t\t    throw \"Failed to execute command\"\n\t\t\t}\n\t\t}\n\t}\n}\n\n## --------------------------------------------------------------------------------------\n## Validate Input\n## --------------------------------------------------------------------------------------\n\nWrite-Output \"Validating paramters...\"\nValidate-Parameter $webSiteName -parameterName \"Web Site Name\"\nValidate-Parameter $applicationPoolName -parameterName \"Application Pool Name\"\nValidate-Parameter $bindingProtocol -validInput @(\"HTTP\", \"HTTPS\") -parameterName \"Protocol\"\nValidate-Parameter $bindingPort -parameterName \"Port\"\nif($bindingProtocol.ToLower() -eq \"https\") {\n    Validate-Parameter $bindingSslThumbprint -parameterName \"SSL Thumbprint\"\n}\n\n$enabledIisAuthenticationOptions = $iisAuthentication -split '\\s*[,;]\\s*'\n\nValidate-Parameter $enabledIisAuthenticationOptions -validInput @($anonymousAuthentication, $basicAuthentication, $windowsAuthentication) -parameterName \"IIS Authentication\"\n\n$enableAnonymous = $enabledIisAuthenticationOptions -contains $anonymousAuthentication\n$enableBasic = $enabledIisAuthenticationOptions -contains $basicAuthentication\n$enableWindows = $enabledIisAuthenticationOptions -contains $windowsAuthentication\n\n## --------------------------------------------------------------------------------------\n## Configuration\n## --------------------------------------------------------------------------------------\nif (! $webRoot) {\n\t$webRoot = (Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\InetStp' -name PathWWWRoot).PathWWWRoot\n}\n$webRoot = (resolve-path $webRoot).ProviderPath\nValidate-Parameter $webRoot -parameterName \"Relative Home Directory\"\n\n$bindingInformation = \"${bindingIpAddress}:${bindingPort}:${bindingHost}\"\n\nAdd-PSSnapin WebAdministration -ErrorAction SilentlyContinue\nImport-Module WebAdministration -ErrorAction SilentlyContinue\n\n$wsBindings = new-object System.Collections.ArrayList\n$wsBindings.Add(@{ protocol=$bindingProtocol;bindingInformation=$bindingInformation }) | Out-Null\nif (! [string]::IsNullOrEmpty($bindingSslThumbprint)) {\n    $wsBindings.Add(@{ thumbprint=$bindingSslThumbprint }) | Out-Null\n    \n    $sslCertificateThumbprint = $bindingSslThumbprint.Trim()\n    Write-Output \"Finding SSL certificate with thumbprint $sslCertificateThumbprint\"\n    \n    $certificate = Get-ChildItem Cert:\\LocalMachine -Recurse | Where-Object { $_.Thumbprint -eq $sslCertificateThumbprint -and $_.HasPrivateKey -eq $true } | Select-Object -first 1\n    if (! $certificate) \n    {\n        throw \"Could not find certificate under Cert:\\LocalMachine with thumbprint $sslCertificateThumbprint. Make sure that the certificate is installed to the Local Machine context and that the private key is available.\"\n    }\n\n    Write-Output (\"Found certificate: \" + $certificate.Subject)\n\n    if ((! $bindingIpAddress) -or ($bindingIpAddress -eq '*')) {\n        $bindingIpAddress = \"0.0.0.0\"\n    }\n    $port = $bindingPort\n\n    $sslBindingsPath = (\"IIS:\\SslBindings\\\" + $bindingIpAddress + \"!\" + $port)\n\n\tExecute-WithRetry { \n\t\t$sslBinding = get-item $sslBindingsPath -ErrorAction SilentlyContinue\n\t\tif (! $sslBinding) {\n\t\t\tNew-Item $sslBindingsPath -Value $certificate | Out-Null\n\t\t} else {\n\t\t\tSet-Item $sslBindingsPath -Value $certificate | Out-Null\n\t\t}\t\t\n\t}\n}\n\n## --------------------------------------------------------------------------------------\n## Run\n## --------------------------------------------------------------------------------------\n\npushd IIS:\\\n\n$appPoolPath = (\"IIS:\\AppPools\\\" + $applicationPoolName)\n\nExecute-WithRetry { \n    Write-Output \"Finding application pool $applicationPoolName\"\n\t$pool = Get-Item $appPoolPath -ErrorAction SilentlyContinue\n\tif (!$pool) { \n\t\tthrow \"Application pool $applicationPoolName does not exist\" \n\t}\n}\n\n$sitePath = (\"IIS:\\Sites\\\" + $webSiteName)\n\nWrite-Output $sitePath\n\n$site = Get-Item $sitePath -ErrorAction SilentlyContinue\nif (!$site) { \n\tWrite-Output \"Creating web site $webSiteName\"\n    Execute-WithRetry {\n\t\t$id = (dir iis:\\sites | foreach {$_.id} | sort -Descending | select -first 1) + 1\n\t\tnew-item $sitePath -bindings ($wsBindings[0]) -id $id -physicalPath $webRoot -confirm:$false\n    }\n} else {\n\twrite-host \"Web site $webSiteName already exists\"\n}\n\n$cmd = { \n\tWrite-Output \"Assigning website to application pool: $applicationPoolName\"\n\tSet-ItemProperty $sitePath -name applicationPool -value $applicationPoolName\n}\nExecute-WithRetry -Command $cmd\n\nExecute-WithRetry { \n\tWrite-Output \"Setting home directory: $webRoot\"\n\tSet-ItemProperty $sitePath -name physicalPath -value \"$webRoot\"\n}\n\ntry {\n\tExecute-WithRetry { \n\t\tWrite-Output \"Anonymous authentication enabled: $enableAnonymous\"\n\t\tSet-WebConfigurationProperty -filter /system.webServer/security/authentication/anonymousAuthentication -name enabled -value \"$enableAnonymous\" -location $WebSiteName -PSPath \"IIS:\\\"\n\t}\n\n\tExecute-WithRetry { \n\t\tWrite-Output \"Basic authentication enabled: $enableBasic\"\n\t\tSet-WebConfigurationProperty -filter /system.webServer/security/authentication/basicAuthentication -name enabled -value \"$enableBasic\" -location $WebSiteName -PSPath \"IIS:\\\"\n\t}\n\n\tExecute-WithRetry { \n\t\tWrite-Output \"Windows authentication enabled: $enableWindows\"\n\t\tSet-WebConfigurationProperty -filter /system.webServer/security/authentication/windowsAuthentication -name enabled -value \"$enableWindows\" -location $WebSiteName -PSPath \"IIS:\\\"\n\t}\n} catch [System.Exception] {\n\tWrite-Output \"Authentication options could not be set. This can happen when there is a problem with your application's web.config. For example, you might be using a section that requires an extension that is not installed on this web server (such as URL Rewriting). It can also happen when you have selected an authentication option and the appropriate IIS module is not installed (for example, for Windows authentication, you need to enable the Windows Authentication module in IIS/Windows first)\"\n\tthrow\n}\n\n# It can take a while for the App Pool to come to life\nStart-Sleep -s 1\n\nExecute-WithRetry { \n\t$state = Get-WebAppPoolState $applicationPoolName\n\tif ($state.Value -eq \"Stopped\") {\n\t\tWrite-Output \"Application pool is stopped. Attempting to start...\"\n\t\tStart-WebAppPool $applicationPoolName\n\t}\n}\n\nif($webSiteStart -eq $true) {\n    Execute-WithRetry { \n    \t$state = Get-WebsiteState $webSiteName\n    \tif ($state.Value -eq \"Stopped\") {\n    \t\tWrite-Output \"Web site is stopped. Attempting to start...\"\n    \t\tStart-Website $webSiteName\n    \t}\n    }\n} else {\n\twrite-host \"Not starting Web site $webSiteName\"\n}\n\npopd\n\nWrite-Output \"IIS configuration complete\"",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -15,63 +15,81 @@
       "Label": "Website name",
       "HelpText": "The display name of the IIS website to create.\n\nExample: Default Web Site",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "WebRoot",
       "Label": "Relative home directory",
       "HelpText": "The directory which will be used as the home directory of the IIS website. This should be bound to the installation directory of a previous step.\n\nExample: C:\\inetpub\\wwwroot",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "ApplicationPoolName",
       "Label": "Application pool name",
       "HelpText": "Name of the application pool in IIS to use for the new website",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "BindingProtocol",
       "Label": "Protocol",
       "HelpText": "The protocol to use for the new website",
       "DefaultValue": "http",
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "BindingPort",
       "Label": "Port",
       "HelpText": "The port to use for the new website",
       "DefaultValue": "80",
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "BindingIpAddress",
       "Label": "IP address",
       "HelpText": "The IP address to use for the new website",
       "DefaultValue": "*",
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "BindingHost",
       "Label": "Host Header",
       "HelpText": "The host name to use for the new website\n\nExample: company.example.com",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "BindingSslThumbprint",
       "Label": "Thumbprint",
       "HelpText": "The thumbprint of the SSL certificate to use for the new website when using the HTTPS protocol\n\nExample: 7c003ac253aa41e89976f139c11edd7b",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "IisAuthentication",
       "Label": "IIS Authentication",
       "HelpText": "The authentication mode to use for the new website (can be Anonymous, Basic or Windows), specify multiple modes by entering the modes required separated by a ',' or ';'",
       "DefaultValue": "Anonymous",
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "WebsiteStart",
@@ -83,8 +101,8 @@
       }
     }
   ],
-  "LastModifiedOn": "2016-02-04T01:00:46.771+00:00",
-  "LastModifiedBy": "james.leech",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2016-02-04T01:00:46.771+00:00",
     "OctopusVersion": "3.2.19",
