@@ -1,0 +1,82 @@
+{
+  "Id": "422be361-640c-4ac1-a305-cd5d618ccf10",
+  "Name": "Run mabl tests",
+  "Description": "Trigger specific application or environment plans in mabl.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "param(\n    [string]$mablApiKey,\n    [string]$mablEnvId,\n    [string]$mablAppId,\n    [string]$mablPlanLabels,\n    [string]$mablBranch,\n    [string]$mablAwaitCompletion\n) \n\n$ErrorActionPreference = \"Stop\" \n\n# Constants\n$PollSec = 10\n$UserAgent = \"mabl-octopus-plugin/0.0.3\"\n$ApiBase = \"https://api.mabl.com\"\n$DeploymentEventsUri = \"$ApiBase/events/deployment\"\n$ExecutionResultBaseUri = \"$ApiBase/execution/result/event\"\n\nfunction Get-Param($Name, [switch]$Required, $MatchingPattern, $Explanation) {\n    $result = $null\n\n    if ($null -ne $OctopusParameters) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($null -eq $result) {\n        $variable = Get-Variable $Name -EA SilentlyContinue   \n        if ($null -ne $variable) {\n            $result = $variable.Value\n        }\n    }\n\n    if ($null -eq $result -or $result -eq \"\") {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        }\n    }\n\n    if ($null -ne $result -and \"\" -ne $result -and $null -ne $MatchingPattern -and $result -notmatch $MatchingPattern) {\n        throw \"$Explanation\"\n    }\n\n    return $result\n}\n\nfunction Write-Result($Result) {\n    foreach ($execution in $Result.executions) {\n        $planName = $execution.plan.name\n        $planId = $execution.plan.id\n        $planStatus = $execution.plan_execution.status\n        $t = New-TimeSpan -seconds (($execution.stop_time - $execution.start_time) /  1000)\n        $planTime = Get-Date -Hour $t.Hours -Minute $t.Minutes -Second $t.Seconds -UFormat \"%T\"\n\n        Write-Host \"Plan name: ${planName}, id: ${planId}, status: ${planStatus}, run time: ${planTime}\"\n\n        $tests = $execution.journeys\n        $testExecutions = $execution.journey_executions\n\n        foreach ($test in $tests) {\n            $testId = $test.id\n            $testName = $test.name\n\n            foreach ($testExecution in $testExecutions) {\n                if ($testExecution.journey_id -eq $testId) {\n                    $t = New-TimeSpan -seconds (($testExecution.stop_time - $testExecution.start_time) / 1000)\n                    $testTime = Get-Date -Hour $t.Hours -Minute $t.Minutes -Second $t.Seconds -UFormat \"%T\"\n                    $testStatus = $testExecution.status\n                    $testBrowser = $testExecution.browser_type\n                    $testExecutionId = $testExecution.journey_execution_id\n                    Write-Host \"  Test name: ${testName}, id: ${testExecutionId}, status: ${testStatus},\" `\n                        \"browser: ${testBrowser}, run time: ${testTime}\"\n                    break\n                }\n            }\n\n        }\n    }\n}\n\n& {\n    param (\n        [string]$mablApiKey,\n        [string]$mablEnvId,\n        [string]$mablAppId,\n        [string]$mablPlanLabels,\n        [string]$mablAwaitCompletion\n    )\n\n    $kv = \"key:$($mablApiKey)\"\n    $encodedCreds = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($kv))\n    $basicAuthValue = \"Basic $encodedCreds\"\n    $headers = @{\n        Authorization = $basicAuthValue\n        accept        = \"application/json\"\n    }\n\n    # Submit Deployment Event\n    $resp = \"\"\n    $eventId = \"\"\n    try {\n        $m = @{}\n        if ($null -ne $mablEnvId -and \"\" -ne $mablEnvId) {\n            $m.add(\"environment_id\", $mablEnvId)\n        }\n        if ($null -ne $mablAppId -and \"\" -ne $mablAppId) {\n            $m.add(\"application_id\", $mablAppId)\n        }\n        if ($m.count -eq 0) {\n            Write-Host \"Either an environment ID or an application ID must be provided\"\n            exit 1\n        }\n        if ($null -ne $mablPlanLabels -and \"\" -ne $mablPlanLabels) {\n            $planLabelArray = $mablPlanLabels.Split(\",\")\n            $m.add(\"plan_labels\", $planLabelArray)\n        }\n        if ($null -ne $mablBranch -and \"\" -ne $mablBranch) {\n            $m.add(\"source_control_tag\", $mablBranch)\n        }\n        $body = ConvertTo-Json -InputObject $m\n        Write-Host \"Creating Deployment...\"\n        $resp = Invoke-RestMethod -URI $DeploymentEventsUri -Method Post `\n            -Headers $headers -ContentType 'application/json' `\n            -UserAgent $UserAgent -Body $body\n\n        $workspaceId = $resp.workspace_id\n        $eventId = $resp.id\n        Write-Host \"View output at https://app.mabl.com/workspaces/${workspaceId}/events/${eventId}\"\n    }\n    catch {\n        $statusCode = $_.Exception.Response.StatusCode.value__\n    \n        Write-Host \"Failed to invoke deployment events API, status code: \" `\n            $statusCode \" description: \" `\n            $_.Exception.Response.StatusDescription\n    \n        switch ($statusCode) {\n            400 {\n                Write-Host \"At least one of environment ID or application ID must be specified\"\n                break\n            }\n            401 { \n                Write-Host \"Invalid API key has been provided\"\n                break\n            }\n            403 {\n                Write-Host \"The provided API key is not authorized to submit deployment events\"\n                break\n            }\n            404 {\n                Write-Host \"The provided application or environment could not be found\"\n                break\n            }\n        }\n        exit 1\n    }\n\n\n    # Poll Execution Result at least once based on await completion parameter\n    $awaitCompletion = $mablAwaitCompletion -eq \"True\"\n    $totalPlans = 0\n    $passedPlans = 0\n    $failedPlans = 0\n    $totalTests = 0\n    $passedTests = 0\n    $failedTests = 0\n    $execResult = \"\"\n    try {\n        $complete = -Not $awaitCompletion\n        do {\n            Start-Sleep -s $PollSec\n            $eventId = $resp.id\n            $uri = \"$ExecutionResultBaseUri/$eventId\"\n            $execResult = Invoke-RestMethod -URI $uri -Method Get -Headers $headers\n            $totalPlans = $execResult.plan_execution_metrics.total\n            $passedPlans = $execResult.plan_execution_metrics.passed\n            $failedPlans = $execResult.plan_execution_metrics.failed\n            $totalTests = $execResult.journey_execution_metrics.total\n            $passedTests = $execResult.journey_execution_metrics.passed\n            $failedTests = $execResult.journey_execution_metrics.failed\n\n            if ($passedPlans + $failedPlans -eq $totalPlans) {\n                $complete = $TRUE\n            }\n            elseif (!$complete) {\n                Write-Host \"Plan runs\" `\n                    \"[passed: $passedTests, failed: $failedTests, total: $totalTests]\"\n            }\n        } while (!$complete)\n    } \n    catch {\n        $statusCode = $_.Exception.Response.StatusCode.value__\n\n        Write-Host \"Failed to invoke execution result API, status code:\" `\n            $statusCode \" description: `\n                \" $_.Exception.Response.StatusDescription\n    \n        switch ($statusCode) {\n            401 {\n                Write-Host \"Invalid API key has been provided\"\n                break\n            }\n            403 {\n                Write-Host \"The provided API key is not authorized to retrieve execution results\"\n                break\n            }\n            404 {\n                Write-Host \"The deployment event could not be found\"\n                break\n            }\n        }\n    \n        exit 1\n    }\n\n    if ($awaitCompletion) {\n        # Display results\n        Write-Host \"Tests complete with status\" `\n            $(If ($execResult.event_status.succeeded) { \"PASSED\" } else { \"FAILED\"})\n        Write-Result($execResult)\n\n        If ($execResult.event_status.succeeded) { exit 0 } else { exit 1 }\n    }\n\n    Write-Host \"Successfully triggered $totalPlans plan(s)\"\n    exit 0\n} `\n(Get-Param 'mablApiKey' -Required) `\n(Get-Param 'mablEnvId' '-e$' 'Environment IDs must end with -e') `\n(Get-Param 'mablAppId' '-a$' 'Application IDs must end with -a') `\n(Get-Param 'mablPlanLabels') `\n(Get-Param 'mablAwaitCompletion')\n"
+  },
+  "Parameters": [
+    {
+      "Id": "f5a9d523-f97e-49a9-b946-0c56e1018345",
+      "Name": "mablApiKey",
+      "Label": "mabl Integration Key",
+      "HelpText": "(Required) The API key of your workspace. You can find the API key on the Settings/API page.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "364c4c30-0ba3-4eee-9b01-9fb00f718ade",
+      "Name": "mablEnvId",
+      "Label": "Environment ID",
+      "HelpText": "The environment ID to run the tests in. Note that either an environment ID or an application ID must be provided.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0bf3fd34-1104-4d29-8677-0d91e78fc483",
+      "Name": "mablAppId",
+      "Label": "Application ID",
+      "HelpText": "The application ID to run tests on. Note that either an environment ID or an application ID must be provided.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "549d9ef4-2461-45d4-a8bc-44fb79758b52",
+      "Name": "mablPlanLabels",
+      "Label": "Plan Labels",
+      "HelpText": "(Optional) A comma-separated list of plan labels. Plans with any of the labels will be executed.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "db7398c4-2abc-4c56-99af-d32d054db50d",
+      "Name": "mablBranch",
+      "Label": "Test Branch",
+      "HelpText": "(Optional) The mabl branch to run test against.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "DefaultValue": "True",
+      "Name": "mablAwaitCompletion",
+      "Label": "Await Completion",
+      "HelpText": "When checked, the step will wait for all triggered tests to complete."
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-08-26T20:24:23.9520000Z",
+    "OctopusVersion": "2020.3.3",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "bertold",
+  "Category": "mabl"
+}

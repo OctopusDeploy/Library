@@ -3,7 +3,7 @@
   "Name": "Windows - Local User",
   "Description": "Configures a local user. (If assigning user rights the ntrights.exe file should be installed on the target server and added to the system path variable)",
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 3,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "$username = $OctopusParameters['Username']\n$password = $OctopusParameters['Password']\n$memberOf = $OctopusParameters['MemberOf']\n$userRights = $OctopusParameters['UserRights']\n\n# Add/Update User\n\n$user = Get-WmiObject Win32_UserAccount -filter \"LocalAccount=True AND Name='$username'\"\nif($user -eq $null)\n{\n    Write-Host \"Adding user\"\n    net user \"$username\" \"$password\" /add /expires:never /passwordchg:no /yes\n}\nelse\n{\n    Write-Host \"User already exists, updating password\"\n    net user \"$username\" \"$password\" /expires:never /passwordchg:no\n}\n\n# Ensure password never expires\n\nwrite \"Ensuring password never expires\"\n$user = Get-WmiObject Win32_UserAccount -filter \"LocalAccount=True AND Name='$username'\"\n$user.PasswordExpires = $false; \n$user.Put();\n\n# Add/Update group membership\n\nif($memberOf)\n{\n    $groups = $memberOf.Split(\",\")\n    foreach($group in $groups)\n    {\n        $ntGroup = [ADSI](\"WinNT://./$group\")\n        $members = $ntGroup.psbase.Invoke(\"Members\") | %{$_.GetType().InvokeMember(\"Name\", 'GetProperty', $null, $_, $null)}\n        if($members -contains \"$username\")\n        {\n            Write-Host \"User already a member of the $group group\" \n        }\n        else\n        {\n            Write-Host \"Adding to the $group group\"\n            net localgroup \"$group\" \"$username\" /add\n        }\n    }\n}\n\n# Add/Update user rights assignment\n\nif($userRights)\n{\n    $userRightsArr = $userRights.Split(\",\")\n    foreach($userRight in $userRightsArr)\n    {\n        Write-Host \"Granting $userRight right\"\n        & \"ntrights\" +r $userRight -u \"$username\"\n    }\n}\n",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -14,29 +14,41 @@
       "Name": "Username",
       "Label": "Username",
       "HelpText": "The username",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "Password",
       "Label": "Password",
       "HelpText": "The password",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "MemberOf",
       "Label": "Group memberships",
       "HelpText": "A comma separated list of group memberships",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "UserRights",
       "Label": "User rights",
       "HelpText": "A comma separated list of user rights to assign (e.g. SeServiceLogonRight). See http://support.microsoft.com/kb/315276 for full list of rights",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-05-16T10:30:24.734+00:00",
-  "LastModifiedBy": "sportingsolutions",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2014-05-16T10:30:58.052+00:00",
     "OctopusVersion": "2.4.5.46",

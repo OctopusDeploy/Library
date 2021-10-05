@@ -1,0 +1,93 @@
+{
+  "Id": "b362bd69-4a69-42c1-bcb5-2a134549ef3f",
+  "Name": "SQL - Query Octopus Database for Fragmentation",
+  "Description": "This step template will run a fragmentation query on your Octopus database and report the results of the tables.\n\nIf you would like to set this up as a scheduled runbook and get the results in an email, please follow these instructions:\n1) Create a Send an Email step after this step in your process\n2) Set the body type of that email to HTML, and the body to#{Octopus.Action[STEPNAMEHERE].Output.EmailData} \n3) Set the Run Condition of that Send an Email step to Variable, and the value to #{if Octopus.Action[STEPNAMEHERE].Output.Alert== \"True\"}True#{/if}. If you don't do this, you will receive an email regardless of if the threshold was hit.'",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "###PARAMETERS\n\n[string]$sqlUsername = $OctopusParameters[\"IndexFragmentSQLUsername\"]\n[string]$sqlPassword = $OctopusParameters[\"IndexFragmentSQLPassword\"]\n[int]$threshold = $OctopusParameters[\"IndexFragmentFragmentation\"]\n[string]$SQLServer = $OctopusParameters[\"IndexFragmentSQLServer\"]\n[string]$SQLPort = $OctopusParameters[\"IndexFragmentSQLPort\"]\n[string]$databaseName = $OctopusParameters[\"IndexFragmentDatabaseName\"]\n[string]$pageCount = $OctopusParameters[\"IndexFragmentPageCount\"]\n\n\nif ([string]::IsNullOrWhiteSpace($SQLPort)){\n$SQLPort = \"1433\"\n}\n\n#create the full sql server string\n[string]$SQLServerFull = $SQLServer + \",\" + $SQLPort\n\n#creating the connectionString based on choice of auth\nif ([string]::IsNullOrWhiteSpace($sqlUserName)){\n\tWrite-Highlight \"Integrated Authentication being used to connect to SQL.\"\n    $connectionString = \"Server=$SQLServerFull;Database=$databaseName;integrated security=true;\"\n}\nelse {\n\tWrite-Highlight \"SQL Authentication being used to connect to SQL\"\n    $connectionString = \"Server=$SQLServerFull;Database=$databaseName;User ID=$sqlUsername;Password=$sqlPassword;\"\n}\n\n#function for running the query\nfunction ExecuteSqlQuery ($connectionString, $SQLQuery) {\n    $Datatable = New-Object System.Data.DataTable\n    $Connection = New-Object System.Data.SQLClient.SQLConnection\n    $Connection.ConnectionString = $connectionString\n\ttry{\n    \t$Connection.Open()\n    \t$Command = New-Object System.Data.SQLClient.SQLCommand\n    \t$Command.Connection = $Connection\n    \t$Command.CommandText = $SQLQuery\n    \t$Reader = $Command.ExecuteReader()\n    \t$Datatable.Load($Reader)\n    }\n    catch{\n    \tWrite-Error $_.Exception.Message\n    }\n    finally{\n    \tif (($Connection.State) -ne \"Closed\"){\n        Write-Highlight \"Closing the SQL Connection.\"\n    \t$Connection.Close()   \n        }\n    }\n    return $Datatable\n}\n\n#Create the query for fragmentation check\n$query = @\"\nSELECT S.name as 'Schema',\nT.name as 'Table',\nI.name as 'Index',\nDDIPS.avg_fragmentation_in_percent,\nDDIPS.page_count\nFROM sys.dm_db_index_physical_stats (DB_ID(), NULL, NULL, NULL, NULL) AS DDIPS\nINNER JOIN sys.tables T on T.object_id = DDIPS.object_id\nINNER JOIN sys.schemas S on T.schema_id = S.schema_id\nINNER JOIN sys.indexes I ON I.object_id = DDIPS.object_id\nAND DDIPS.index_id = I.index_id\nWHERE DDIPS.database_id = DB_ID()\nand I.name is not null\nAND DDIPS.avg_fragmentation_in_percent > 0\nORDER BY DDIPS.avg_fragmentation_in_percent desc\n\"@\n\n#Run the query against the server and return as a dataset\n$resultsDataTable = New-Object System.Data.DataTable\n$resultsDataTable = ExecuteSqlQuery $connectionString $query \n\n#creating variables for later use\n$highestFrag = 0\n$array = @()\n\n#build an array of html so the data is readable\n$dataforemail = @()\n$dataforemail += \"<header>  <h1>SQL Fragmentation Report</h1></header><br>\"\n$dataforemail += '<table border=\"1\">'\n$dataforemail += \"<tr> <td> Table </td><td>Index</td><td>Fragmentation %</td><td>Page Count</td></td>\"\nforeach ($row in $resultsDataTable){\n\t#checking if the current row's fragmentation % is higher than our highest if it is, set it\n\tif ($row.avg_fragmentation_in_percent -gt $highestFrag -and $row.page_count -gt $pageCount){\n\t\t$highestFrag = $row.avg_fragmentation_in_percent\n\t}\n    #if both thresholds are hit, put the data in HTML format and also an array to later write to console.\n\tif ($row.avg_fragmentation_in_percent -gt $threshold -and $row.page_count -gt $pageCount){\n        $percent = [math]::Round($row.avg_fragmentation_in_percent,2)\n\t\t$dataforemail += \"<tr>\" \n\t\t$dataforemail += \"<td>\" + $row.Table + \"</td>\"\n\t\t$dataforemail += \"<td>\" + $row.Index + \"</td>\"\n        $dataforemail += \"<td>\" + [string]$percent + \"</td>\"\n        $dataforemail += \"<td>\" + $row.page_count + \"</td>\"\n\t\t$dataforemail += \"</tr>\"\n        \n        $arrayRow = \"\" | Select Table,Index,avg_fragmentation_in_percent,page_count\n    \t$arrayRow.Table = $Row.Table\n    \t$arrayRow.Index = $Row.Index\n        $arrayRow.avg_fragmentation_in_percent = [string]$percent\n        $arrayRow.page_count = $Row.page_count\n    \t$array += $arrayRow\n\t}\n}\n$dataforemail += \"</table>\"\n\n#if the threshold has been reached, output data and create output variable for sending email.\nif ($highestFrag -gt $threshold){\n\n\t#convert the array to a string to email\n\t[string]$bodyofemail = [string]$dataforemail\n\n\t#Create all of the necessary variables and output the data\n\t\tSet-OctopusVariable -name \"EmailData\" -value \"$dataforemail\"\n        Set-OctopusVariable -name \"Alert\" -value \"True\"\n        $output = $array | Out-String\n        Write-Highlight 'Here are the results for your database fragmentation. The following tables had above the provided fragmentation % and minimum page count. If you would like to get an email alert with the data, please refer to the description of the step template for instructions on setting that up.'\n        Write-Highlight $output\n}\nelse{\n\n\tWrite-Highlight \"No alert is required.\"\n    Set-OctopusVariable -name \"Alert\" -value \"False\"\n\n\n}\n"
+  },
+  "Parameters": [
+    {
+      "Id": "05a6a3f3-3cb9-4d75-abac-b2125fb84a3b",
+      "Name": "IndexFragmentSQLServer",
+      "Label": "SQL Server",
+      "HelpText": "Enter the Hostname or IP address of your server. Include \\Instance if necessary.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8d6081b3-b934-475b-8b73-cde72f5d085d",
+      "Name": "IndexFragmentSQLPort",
+      "Label": "SQL Server Port",
+      "HelpText": "If left blank, 1433 will be used by default.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "42671f3c-763e-4dbd-836d-ed794d4b0005",
+      "Name": "IndexFragmentDatabaseName",
+      "Label": "SQL Server Database Name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0e439749-1fa9-40f2-9843-126ade5576b1",
+      "Name": "IndexFragmentFragmentation",
+      "Label": "Fragmentation Threshold",
+      "HelpText": "Input the percentage of Fragmentation you would like to be alerted for.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7050d208-a267-412a-9677-95e90909264c",
+      "Name": "IndexFragmentPageCount",
+      "Label": "Page Count Threshold",
+      "HelpText": "Input the minimum page count a table must have to be considered in the results.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4a9d3846-c454-483f-9066-60a1f2cf7413",
+      "Name": "IndexFragmentSQLUsername",
+      "Label": "SQL Server Authentication Username",
+      "HelpText": "Please leave blank if you want to use Integrated Security.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f04df930-bb05-49c1-b6f0-51e97dce3bad",
+      "Name": "IndexFragmentSQLPassword",
+      "Label": "SQL Server Authentication Password",
+      "HelpText": "Please leave blank if you want to use Integrated Security.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-05-25T19:02:40.382Z",
+    "OctopusVersion": "2020.6.4722",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "millerjn21",
+  "Category": "sql"
+}

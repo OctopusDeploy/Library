@@ -3,7 +3,7 @@
   "Name": "File System - Find and Replace",
   "Description": "Find and replace text in one or more files.",
   "ActionType": "Octopus.Script",
-  "Version": 6,
+  "Version": 7,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "function Execute-FindReplace($target, $find, $replace, $ignoreCase) {\n    $options = [System.Text.RegularExpressions.RegexOptions]::None\n    if ($ignoreCase) {\n        $options = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase\n    }\n    \n    Write-Output \"Searching $target...\"\n    $orig = [System.IO.File]::ReadAllText($target)\n    \n    $escFind = [System.Text.RegularExpressions.Regex]::Escape($find)\n    $regex = new-object System.Text.RegularExpressions.Regex($escFind, $options)\n    $removed = $regex.Replace($orig, '')\n    \n    $occurrences = ($orig.Length - $removed.Length) / $find.Length\n    if ($occurrences -gt 0) {\n        Write-Output \"Found $occurrences occurrence(s), replacing...\"\n        \n        $escReplace = $replace.Replace('$', '$$')\n        $replaced = $regex.Replace($orig, $escReplace)\n        [System.IO.File]::WriteAllText($target, $replaced)\n    }\n}\n\nif ([string]::IsNullOrEmpty($FRFindText)) {\n    throw \"A non-empty 'Find' text block is required\"\n}\n\nWrite-Output \"Replacing occurrences of '$FRFindText' with '$FRReplaceText'\"\nif ([Boolean] $FRIgnoreCase) {\n    Write-Output \"Case will be ignored\"\n}\n\n$FRCandidatePathGlobs.Split(\";\") | foreach {\n    $glob = $_.Trim()\n    Write-Output \"Searching for files that match $glob...\"\n\n    $matches = $null\n    $splits = $glob.Split(@('/**/'), [System.StringSplitOptions]::RemoveEmptyEntries)\n\n    if ($splits.Length -eq 1) {\n        $splits = $glob.Split(@('\\**\\'), [System.StringSplitOptions]::RemoveEmptyEntries)\n    }\n    \n    if ($splits.Length -eq 1) {\n        $matches = ls $glob\n    } else {\n        if ($splits.Length -eq 2) {\n            pushd $splits[0]\n            $matches = ls $splits[1] -Recurse\n            popd\n        } else {\n            $splits\n            throw \"The segment '**' can only appear once, as a directory name, in the glob expression\"\n\n        }\n    }\n\n    $matches | foreach {\n        \n        $target = $_.FullName\n\n        Execute-FindReplace -target $target -find $FRFindText -replace $FRReplaceText -ignoreCase ([Boolean] $FRIgnoreCase)\n    }\n}\n\n\nWrite-Output \"Done.\"",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -14,29 +14,41 @@
       "Name": "FRCandidatePathGlobs",
       "Label": "Files",
       "HelpText": "The files to search. Wildcards `*` and `**` are supported. Paths must be fully-qualified, e.g. `C:\\MyApp\\**\\*.xml`. Separate multiple paths with `;` semicolons.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "FRFindText",
       "Label": "Find",
       "HelpText": "The text to find in the target files.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "FRReplaceText",
       "Label": "Replace with",
       "HelpText": "The replacement text to insert in place of each occurrence of _Find_.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "FRIgnoreCase",
       "Label": "Ignore case",
       "HelpText": "If **True**, variations on the character case of _Find_ will be considered a match, for example `Bar` will match `BAR` and `bar`. If **False** only exact matches will be considered.",
-      "DefaultValue": "False"
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-05-14T05:29:37.321+00:00",
-  "LastModifiedBy": "nblumhardt",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2014-05-14T05:38:42.041+00:00",
     "OctopusVersion": "2.4.4.0",

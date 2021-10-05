@@ -1,0 +1,66 @@
+{
+    "Id": "f87564d3-50e0-4265-8ed7-d95e3e21f869",
+    "Name": "Azure Web App - Get Deployment User",
+    "Description": "This step template will retrieve a set of [deployment credentials](https://docs.microsoft.com/en-gb/azure/app-service/deploy-configure-credentials) for an Azure Web App.\n\nIt will create two Octopus [sensitive output variables](https://octopus.com/docs/projects/variables/output-variables#sensitive-output-variables) for use in other deployment or runbook steps. They will be named:\n\n- `userName` - the username from the provided deployment credentials.\n- `userPwd` - the password from the provided deployment credentials.\n\n**Required:** \n- An azure account with permissions to retrieve deployment credentials for the named Azure Web App.\n- The Azure CLI (`az`) is required to run this script. If running on a worker or deployment target, ensure this is installed.\n\nNotes:\n\n- Tested on Octopus `2021.2`.\n- Tested with both Windows PowerShell and PowerShell Core on Linux.",
+    "ActionType": "Octopus.AzurePowerShell",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\";\n[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\n$resourceGroupName = $OctopusParameters[\"AzWebApp.DeploymentCreds.AzResourceGroup\"]\n$WebAppName = $OctopusParameters[\"AzWebApp.DeploymentCreds.AzWebAppName\"]\n$PublishCredentialType = $OctopusParameters[\"AzWebApp.DeploymentCreds.PublishCredentialType\"]\n$StepName = $OctopusParameters[\"Octopus.Step.Name\"]\n\n# Validation\nif ([string]::IsNullOrWhiteSpace($resourceGroupName)) {\n    throw \"Required parameter AzWebApp.DeploymentCreds.AzResourceGroup not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($WebAppName)) {\n    throw \"Required parameter AzWebApp.DeploymentCreds.AzWebAppName not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($PublishCredentialType)) {\n    throw \"Required parameter AzWebApp.DeploymentCreds.PublishCredentialType not specified\"\n}\n    \nWrite-Verbose \"Azure Resource Group Name: $resourceGroupName\"\nWrite-Verbose \"Azure Web App Name: $WebAppName\"\nWrite-Verbose \"Publish Credential Type: $PublishCredentialType\"\n\nWrite-Host \"Getting $PublishCredentialType publish profile deployment credentials...\"\n\n$profiles = az webapp deployment list-publishing-profiles --resource-group $resourceGroupName --name $WebAppName | ConvertFrom-Json | where { $_.publishMethod -ieq $PublishCredentialType } \n\nSet-OctopusVariable -name \"userName\" -value $profiles.userName -Sensitive\nWrite-Highlight \"Created output variable: ##{Octopus.Action[$StepName].Output.userName}\"\nSet-OctopusVariable -name \"userPWD\" -value $profiles.userPWD -Sensitive\nWrite-Highlight \"Created output variable: ##{Octopus.Action[$StepName].Output.userPWD}\"\n\nWrite-Host \"Output variables generated for deployment credentials!\"",
+      "Octopus.Action.Azure.AccountId": "#{AzWebApp.DeploymentCreds.AzAccount}",
+      "OctopusUseBundledTooling": "False"
+    },
+    "Parameters": [
+      {
+        "Id": "7f36b854-6cc8-4a64-a7b4-c3110044cd4b",
+        "Name": "AzWebApp.DeploymentCreds.AzWebAppName",
+        "Label": "Azure Web App name",
+        "HelpText": "Provide the Azure Web App name.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "41c6ca57-2078-4cbb-8e92-26c2207a3ef7",
+        "Name": "AzWebApp.DeploymentCreds.AzResourceGroup",
+        "Label": "Azure Resource Group",
+        "HelpText": "Provide Azure resource group.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "149ef6c1-716c-4738-9985-ea47e5fc6e9b",
+        "Name": "AzWebApp.DeploymentCreds.AzAccount",
+        "Label": "Azure Account",
+        "HelpText": "Provide Azure Account.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "AzureAccount"
+        }
+      },
+      {
+        "Id": "9ac94483-5e3b-49b3-9014-eb4875b95798",
+        "Name": "AzWebApp.DeploymentCreds.PublishCredentialType",
+        "Label": "Deployment credential type",
+        "HelpText": "Choose type of Deployment credentials should be retrieved. Default is: `MSDeploy`\n\nAvailable options are:\n\n- `MSDeploy`\n- `FTP`\n- `ZipDeploy`",
+        "DefaultValue": "MSDeploy",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "MSDeploy|MSDeploy\nFTP|FTP\nZipDeploy|ZipDeploy"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-09-17T17:13:19.362Z",
+      "OctopusVersion": "2021.2.7536",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "adamoctoclose",
+    "Category": "azure"
+  }

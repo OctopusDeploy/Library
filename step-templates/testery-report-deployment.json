@@ -1,0 +1,94 @@
+{
+  "Id": "9c85f96e-09d3-4814-948a-aef8708740b5",
+  "Name": "Testery - Report Deployment",
+  "Description": "Reports a deployment to Testery, enabling you to do post-deployment validation and testing. See https://testery.io for more info.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "try {$pipCmd = get-command pip} catch {}\nif (!($pipCmd)) {\n\tFail-Step \"This step template requires Python 3.6 or greater and pip to be installed. Python is available at https://www.python.org/downloads/\"\n}\n\npip -q install testery --upgrade\n\nwrite-output \"Fail on failure: ${TesteryFailOnFailure}\"\n\n\nif (${TesteryFailOnFailure}) {\n  write-output \"Fail on failure option selected.\"\n  $failOnFailureSwitch=\"--fail-on-failure\"\n} else {\n  write-output \"Fail on failure option not selected.\"\n  $failOnFailureSwitch=\"\"\n}\n\nif (${TesteryWaitForResults}) {\n  $waitForResultsSwitch=\"--wait-for-results\"\n} else {\n  $waitForResultsSwitch=\"\"\n}\n\necho \"Reporting deployment info to Testery...\"\ntestery create-deploy --commit \"${TesteryGitReference}\" --token \"${TesteryToken}\" --project \"${TesteryProjectName}\" --environment \"${TesteryEnvironment}\" --build-id \"${TesteryBuildId}\" \"${failOnFailureSwitch}\" \"${waitForResultsSwitch}\"\n"
+  },
+  "Parameters": [
+    {
+      "Id": "f96b7529-7ced-4265-8176-972ec30b9bba",
+      "Name": "TesteryGitReference",
+      "Label": "Testery Git Reference",
+      "HelpText": "The git hash of the commit for the version of the tests to be run.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f01f917a-b2c8-4038-be1c-b2355639f57e",
+      "Name": "TesteryToken",
+      "Label": "Testery Token",
+      "HelpText": "Your Testery API token (found in Testery -> Settings -> Integrations -> Show API Token)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "4873b6f2-694a-463f-928a-9845b044bc8b",
+      "Name": "TesteryProjectName",
+      "Label": "Testery Project Name",
+      "HelpText": "The name of the test project in the Testery platform.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "811352ba-a3e4-4092-99c2-b48499b9a880",
+      "Name": "TesteryEnvironment",
+      "Label": "Testery Environment",
+      "HelpText": "The name of the environment defined in Testery where you want the tests to run. It may be useful to set this to Octopus.Deployment.Tenant.Name.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7a6aa01f-13a1-4fa7-a681-7f0acda63932",
+      "Name": "TesteryBuildId",
+      "Label": "Testery Build Id",
+      "HelpText": "The build ID from your CI/CD. If you have uploaded any test artifacts from your CI/CD, this build id should match the build id used when uploading artifacts.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "09ed4f34-d381-4f85-8869-c52264694b7c",
+      "Name": "TesteryFailOnFailure",
+      "Label": "Testery Fail On Failure",
+      "HelpText": "When checked, the Octopus deployment will fail if any of the test runs associated with the deployment fail. When unchecked, the Octopus deployment will continue even if there are test failures.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "2266652a-258d-447f-aebf-14e9575d6b9d",
+      "Name": "TesteryWaitForResults",
+      "Label": "Testery Wait For Results",
+      "HelpText": "When checked, Octopus Deploy will wait for the any test runs associated with the deployment to complete before proceeding. This is useful for making sure deployments don't run on environments/tenants with an active test run.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-10-29T16:37:27.511Z",
+    "OctopusVersion": "2020.5.0-rc0003",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "bobjwalker",
+  "Category": "testery"
+}

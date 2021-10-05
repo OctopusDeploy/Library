@@ -58,7 +58,6 @@ describe('step-templates', function() {
         return;
       }
 
-
       var templateFiles =  results.filter(function(file) { return file.substr(-5) === '.json'; });
       stepTemplateCount = templateFiles.length;
 
@@ -108,6 +107,55 @@ describe('step-templates', function() {
 
       var otherThings =  results.filter(function(file) { return file.substr(-5) !== '.json' && file !== 'logos' && file !== 'tests'; });
       expect(otherThings).toEqual([]);
+      done();
+    });
+  });
+
+  it('do not set a non-variable package feedId', function(done) {
+    var fs = require('fs');
+
+    var dirname = './step-templates/';
+
+    fs.readdir(dirname, function (err, results) {
+      if (err) {
+        console.log('error listing files in dir: ' + err);
+        return;
+      }
+
+      var templateFiles = results.filter(function (file) {
+        return file.substr(-5) === '.json';
+      });
+
+      templateFiles.forEach(function (templateFile) {
+        fs.readFile(dirname + templateFile, 'utf-8', function (err, content) {
+          if (err) {
+            fail('error reading file ' + templateFile + ': ' + err);
+          }
+          try {
+            var template = JSON.parse(content);
+            if (template.Packages === undefined || template.Packages.length === 0) {
+              return;
+            } else {
+                template.Packages.forEach(function (pkg) {
+                if (pkg.FeedId === null) return; // null ok
+                if (pkg.FeedId[0] === '#') return; // variables ok
+                if (pkg.FeedId !== null) {
+                    fail(`Package FeedId for ${templateFile} should be null, but was: ${pkg.FeedId}`);
+                }
+              });
+            }
+          } catch (e) {
+            fail(
+              'error reading file ' +
+                dirname +
+                templateFile +
+                ': ' +
+                e +
+                ' - it might be UTF 8 with a BOM. Please resave without the BOM.'
+            );
+          }
+        });
+      });
       done();
     });
   });

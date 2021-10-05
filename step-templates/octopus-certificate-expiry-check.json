@@ -1,0 +1,64 @@
+{
+  "Id": "8ca02a74-b2a1-482e-a2b3-5493016513ba",
+  "Name": "Octopus - Check Certficate Expiry",
+  "Description": "Checks for certificates stored in the [Octopus Certificate library](https://octopus.com/docs/deployment-examples/certificates) which are due to expire within N days.\n\n#### Output variable usage\n\nAn [Output variable](https://octopus.com/docs/projects/variables/output-variables) named `ExpiringCertificateJson` is created with a JSON array of all of the matching expiring certificates with the following properties: \n- Certificate Name\n- Certificate Thumbprint\n- Certificate SubjectCommonName\n- Certificate Issuer\n- Certificate NotAfter \n\n---\nThe Output variable can then be used in a subsequent step. Consider a step named `Check Expiring Certs` which uses this step template. \n\nAdding the following PowerShell script to a subsequent step would iterate over the expiring certificates and highlight them in the Octopus Deployment log:\n\n```powershell\n\nWrite-Highlight \"Expiring Certificates:\"\n#{each cert in Octopus.Action[Check Expiring Certs].Output.ExpiringCertificateJson}\nWrite-Highlight \"- #{cert.Name} (#{cert.Thumbprint}) expires #{cert.NotAfter}\"\n#{/each}\n```\n**Note:** If the Output variable is empty, this indicates that there were no matching certificates that meet the specified expiry window.\n\n#### Pre-requisites\n- Access to the Octopus Server from where the script template runs (e.g. deployment target or worker) is required.\n- An Octopus Server running **2019.1** or greater, as Space support is required.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\nfunction Get-OctopusCertificates {\n    Write-Debug \"Entering: Get-OctopusCertificates\"\n\n    $octopus_uri = $OctopusParameters[\"Certificate.Expiry.Check.OctopusServerUrl\"].Trim('/')\n    $octopus_space_id = $OctopusParameters[\"Octopus.Space.Id\"]\n    $octopus_headers = @{ \"X-Octopus-ApiKey\" = $OctopusParameters[\"Certificate.Expiry.Check.ApiKey\"] }\n    $octopus_certificates_uri = \"$octopus_uri/api/$octopus_space_id/certificates?search=$($OctopusParameters[\"Certificate.Expiry.Check.CertificateDomain\"])\"\n\n    try {\n        # Get a list of certificates that match our domain search criteria.\n        $certificates_search = Invoke-WebRequest -Uri $octopus_certificates_uri -Method Get -Headers $octopus_headers -UseBasicParsing -ErrorAction Stop | ConvertFrom-Json | Select-Object -ExpandProperty Items\n\n        return $certificates_search | Where-Object {\n            $null -eq $_.ReplacedBy -and\n            $null -eq $_.Archived\n        }\n    }\n    catch {\n        Write-Host \"Could not retrieve certificates from Octopus Deploy. Error: $($_.Exception.Message).\"\n        exit 1\n    }\n}\n\nWrite-Host \"Checking for existing certificates in the Octopus Deploy Certificates Store.\"\n$certificates = Get-OctopusCertificates\n\nif ($certificates) {\n\n    # Handle weird behavior between Powershell 5 and Powershell 6+\n    $certificate_count = 1\n    if ($certificates.Count -ge 1) {\n        $certificate_count = $certificates.Count\n    }\n\n    Write-Host \"Found $certificate_count matching domain: $($OctopusParameters[\"Certificate.Expiry.Check.CertificateDomain\"]).\"\n    Write-Host \"Checking to see if any expire within $($OctopusParameters[\"Certificate.Expiry.Check.Days\"]) days.\"\n\n    # Check Expiry Dates\n    $expiring_certificates = $certificates | Where-Object { [DateTime]$_.NotAfter -lt (Get-Date).AddDays($OctopusParameters[\"Certificate.Expiry.Check.Days\"]) }\n\n    if ($expiring_certificates) {\n        Write-Host \"Found certificates that expire with $($OctopusParameters[\"Certificate.Expiry.Check.Days\"]) days.\"\n        \n        $expiring_certs_json = $expiring_certificates | select Name, Thumbprint, SubjectCommonName, Issuer, NotAfter | ConvertTo-Json\n        Set-OctopusVariable -name \"ExpiringCertificateJson\" -value $expiring_certs_json\n\n    }\n    else {\n    \tSet-OctopusVariable -name \"ExpiringCertificateJson\" -value \"\"\n        Write-Host \"Nothing to do here...\"\n    }\n\n    exit 0\n}\n"
+  },
+  "Parameters": [
+    {
+      "Id": "5fd60708-3183-4bfa-b042-a7ce6f8cb1a8",
+      "Name": "Certificate.Expiry.Check.OctopusServerUrl",
+      "Label": "Octopus Url",
+      "HelpText": "Provide the URL of your Octopus Server. The default is `#{if Octopus.Web.ServerUri}#{Octopus.Web.ServerUri}#{else}#{Octopus.Web.BaseUrl}#{/if}`. Cloud instances should use `Octopus.Web.ServerUri`. See [System Variables - Server](https://octopus.com/docs/projects/variables/system-variables#Systemvariables-Server) for more info.",
+      "DefaultValue": "#{if Octopus.Web.ServerUri}#{Octopus.Web.ServerUri}#{else}#{Octopus.Web.BaseUrl}#{/if}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "33fe56db-a089-4979-b103-a502b6e442ba",
+      "Name": "Certificate.Expiry.Check.ApiKey",
+      "Label": "Octopus API Key",
+      "HelpText": "An Octopus Deploy API key with access to change Certificates in the Certificate Store. ",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "00fc5429-bec2-44bc-bdb8-72c578d08d48",
+      "Name": "Certificate.Expiry.Check.Days",
+      "Label": "Expiring within N days",
+      "HelpText": "Enter the number of days to check within the certificates expire",
+      "DefaultValue": "30",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a20adf80-285c-4690-aa1e-39b3926dd310",
+      "Name": "Certificate.Expiry.Check.CertificateDomain",
+      "Label": "Certificate Domain to check",
+      "HelpText": "*Optional* certificate domain to search for. If this parameter is blank or empty, all certificates will be checked for expiry.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedAt": "2020-08-28T08:55:06.515Z",
+  "LastModifiedBy": "benjimac93",
+  "$Meta": {
+    "ExportedAt": "2021-08-23T12:40:10.975Z",
+    "OctopusVersion": "2021.1.7687",
+    "Type": "ActionTemplate"
+  },
+  "Category": "octopus"
+}

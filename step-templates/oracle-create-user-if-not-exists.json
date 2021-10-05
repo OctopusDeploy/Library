@@ -1,0 +1,94 @@
+{
+    "Id": "d8b21b0b-1a07-4d47-9c72-4260e83a807c",
+    "Name": "Oracle - Create User If Not Exists",
+    "Description": "Creates a new user account on a Oracle database server",
+    "ActionType": "Octopus.Script",
+    "Version": 2,
+    "Author": "twerthi",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Define functions\nfunction Get-ModuleInstalled\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName\n    )\n\n    # Check to see if the module is installed\n    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))\n    {\n        # It is installed\n        return $true\n    }\n    else\n    {\n        # Module not installed\n        return $false\n    }\n}\n\nfunction Install-PowerShellModule\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName,\n        $LocalModulesPath\n    )\n\n\t# Check to see if the package provider has been installed\n    if ((Get-NugetPackageProviderNotInstalled) -ne $false)\n    {\n    \t# Display that we need the nuget package provider\n        Write-Host \"Nuget package provider not found, installing ...\"\n        \n        # Install Nuget package provider\n        Install-PackageProvider -Name Nuget -Force\n    }\n\n\t# Save the module in the temporary location\n    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force\n}\n\nfunction Get-NugetPackageProviderNotInstalled\n{\n\t# See if the nuget package provider has been installed\n    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))\n}\n\nfunction Get-UserExists\n{\n\t# Define parameters\n    param ($Hostname,\n    $Username)\n    \n\t# Execute query\n    return Invoke-SqlQuery \"SELECT * FROM ALL_USERS WHERE USERNAME = '$UserName'\"\n}\n\n# Define PowerShell Modules path\n$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName\n$env:PSModulePath = \"$LocalModules$([System.IO.Path]::PathSeparator)$env:PSModulePath\"\n$PowerShellModuleName = \"SimplySql\"\n\n# Set secure protocols\n[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12\n\n# Check to see if SimplySql module is installed\nif ((Get-ModuleInstalled -PowerShellModuleName $PowerShellModuleName) -ne $true)\n{\n    # Tell user what we're doing\n    Write-Output \"PowerShell module $PowerShellModuleName is not installed, downloading temporary copy ...\"\n\n    # Install temporary copy\n    Install-PowerShellModule -PowerShellModuleName $PowerShellModuleName -LocalModulesPath $LocalModules\n}\n\n# Display\nWrite-Output \"Importing module $PowerShellModuleName ...\"\n\n# Check to see if it was downloaded\nif ((Test-Path -Path \"$LocalModules\\$PowerShellModuleName\") -eq $true)\n{\n\t# Use specific location\n    $PowerShellModuleName = \"$LocalModules\\$PowerShellModuleName\"\n}\n\n# Import the module\nImport-Module -Name $PowerShellModuleName\n\n# Create credential object for the connection\n$SecurePassword = ConvertTo-SecureString $oracleLoginPasswordWithAddUserRights -AsPlainText -Force\n$ServerCredential = New-Object System.Management.Automation.PSCredential ($oracleLoginWithAddUserRights, $SecurePassword)\n\ntry\n{\n\t# Connect to MySQL\n    Open-OracleConnection -Datasource $oracleDBServerName -Credential $ServerCredential -Port $oracleDBServerPort -ServiceName $oracleServiceName\n\n    # See if database exists\n    $userExists = Get-UserExists -Username $oracleNewUsername\n\n    if ($userExists -eq $null)\n    {\n        # Create database\n        Write-Output \"Creating user $oracleNewUsername ...\"\n        $executionResults = Invoke-SqlUpdate \"CREATE USER `\"$oracleNewUsername`\" IDENTIFIED BY `\"$oracleNewUserPassword`\"\"\n\n        # See if it was created\n        $userExists = Get-UserExists -Username $oracleNewUsername\n            \n        # Check array\n        if ($userExists -ne $null)\n        {\n            # Success\n            Write-Output \"$oracleNewUsername created successfully!\"\n        }\n        else\n        {\n            # Failed\n            Write-Error \"$oracleNewUsername was not created!\"\n        }\n    }\n    else\n    {\n    \t# Display message\n        Write-Output \"User $oracleNewUsername already exists.\"\n    }\n}\nfinally\n{\n    Close-SqlConnection\n}\n\n\n",
+      "Octopus.Action.EnabledFeatures": ""
+    },
+    "Parameters": [
+      {
+        "Id": "8123da26-a8ed-4b4e-bc04-b5c90546785a",
+        "Name": "oracleDBServerName",
+        "Label": "Oracle Server",
+        "HelpText": "Host name of the Oracle server",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "a4a4ee03-b166-4324-9bdf-4011c1f4f707",
+        "Name": "oracleDBServerPort",
+        "Label": "Port",
+        "HelpText": "Port number the Oracle server listens on.",
+        "DefaultValue": "1521",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "63cd98dc-359c-4c25-8b84-56ab33d9d05f",
+        "Name": "oracleServiceName",
+        "Label": "Service Name",
+        "HelpText": "Service name for Oracle database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "307a4f0e-92b7-4b2f-8cac-b12771d2cb23",
+        "Name": "oracleLoginWithAddUserRights",
+        "Label": "Admin Login name",
+        "HelpText": "Login name of a user with rights to create user accounts.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "78ccf489-2c68-419e-9b53-bdf96ff9ae8c",
+        "Name": "oracleLoginPasswordWithAddUserRights",
+        "Label": "Login Password",
+        "HelpText": "Password Login name.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "8bf12f2a-7d7b-4b8c-bced-2b438fbb21e4",
+        "Name": "oracleNewUsername",
+        "Label": "New user name",
+        "HelpText": "Name of the new user account to create.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "45b96db6-4523-4b07-b8e7-848dc2b63053",
+        "Name": "oracleNewUserPassword",
+        "Label": "New user password",
+        "HelpText": "Password for the new user account.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2020-08-21T21:52:45.217Z",
+      "OctopusVersion": "2020.3.2",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "twerthi",
+    "Category": "oracle"
+  }

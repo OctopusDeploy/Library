@@ -1,0 +1,164 @@
+{
+  "Id": "1a55a26d-53f7-44ae-8aa9-dd52abbfebe3",
+  "Name": "Kubernetes - Deploy Horizontal Pod Autoscaler (with object metrics)",
+  "Description": "Apply a Horizontal Pod Autoscaler monitoring object metrics to a Kubernetes cluster.",
+  "ActionType": "Octopus.KubernetesDeployRawYaml",
+  "Version": 4,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.KubernetesContainers.CustomResourceYaml": "# https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#horizontalpodautoscaler-v1-autoscaling\napiVersion: autoscaling/v2beta2\nkind: HorizontalPodAutoscaler\nmetadata:\n  name: #{HorizontalPodAutoscalerName}\nspec:\n  # https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#horizontalpodautoscalerspec-v1-autoscaling\n  scaleTargetRef:\n    apiVersion: #{HorizontalPodAutoscalerTargetApiVersion}\n    kind: #{HorizontalPodAutoscalerTargetKind}\n    name: #{HorizontalPodAutoscalerTargetName}\n  minReplicas: #{HorizontalPodAutoscalerMinReplicas}\n  maxReplicas: #{HorizontalPodAutoscalerMaxReplicas}\n  # https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#metricspec-v2beta2-autoscaling\n  metrics:\n  - type: Object\n    # https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#objectmetricsource-v2beta2-autoscaling\n    object:\n      metric:\n        name: #{HorizontalPodAutoscalerMetricName}\n        #{if HorizontalPodAutoscalerMetricSelector}selector: {#{HorizontalPodAutoscalerMetricSelector}}#{/if}\n      # https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#crossversionobjectreference-v2beta2-autoscaling\n      describedObject:\n        apiVersion: #{HorizontalPodAutoscalerObjectApiVersion}\n        kind: #{HorizontalPodAutoscalerObjectApiKind}\n        name: #{HorizontalPodAutoscalerObjectName}\n      target:\n        type: #{HorizontalPodAutoscalerMetricType}\n        #{if HorizontalPodAutoscalerMetricType == \"AverageValue\"}#{if HorizontalPodAutoscalerAverageValue}averageValue: #{HorizontalPodAutoscalerAverageValue}#{/if}#{/if}\n        #{if HorizontalPodAutoscalerMetricType == \"Value\"}#{if HorizontalPodAutoscalerValue}value: #{HorizontalPodAutoscalerValue}#{/if}#{/if}"
+  },
+  "Parameters": [
+    {
+      "Id": "e2788bc8-8157-412f-bd4e-b1a1a52cfb26",
+      "Name": "HorizontalPodAutoscalerName",
+      "Label": "Name",
+      "HelpText": null,
+      "DefaultValue": "my-hpa",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f14eefc4-0f46-461b-a736-bcd175d85934",
+      "Name": "HorizontalPodAutoscalerTargetKind",
+      "Label": "Target Kind",
+      "HelpText": "See the [Kubernetes documentation](https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds) for a list of kinds. [Documentation link](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#crossversionobjectreference-v1-autoscaling)",
+      "DefaultValue": "Deployment",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "821a1df1-1aa0-4113-b3d3-0e3abb967f61",
+      "Name": "HorizontalPodAutoscalerTargetName",
+      "Label": "Target Name",
+      "HelpText": "The name of the target. [Documentation link](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#crossversionobjectreference-v1-autoscaling)",
+      "DefaultValue": "my-deployment",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "23470b8c-d28c-43a5-8127-3f87f9024850",
+      "Name": "HorizontalPodAutoscalerMinReplicas",
+      "Label": "Min Replicas",
+      "HelpText": "The minimum number of replicas. [Documentation link](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#horizontalpodautoscalerspec-v1-autoscaling)",
+      "DefaultValue": "1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f9954197-1f82-4fd0-82b4-49589927cdd4",
+      "Name": "HorizontalPodAutoscalerMaxReplicas",
+      "Label": "Max Replicas",
+      "HelpText": "The maximum number of replicas. [Documentation link](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#horizontalpodautoscalerspec-v1-autoscaling)",
+      "DefaultValue": "3",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "459e202a-37a9-4c48-948c-4110a8778710",
+      "Name": "HorizontalPodAutoscalerMetricName",
+      "Label": "Metric Name",
+      "HelpText": "The name of the metroc. [Documentation link](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#resourcemetricsource-v2beta2-autoscaling)",
+      "DefaultValue": "requests-per-second",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "84d90192-0273-40ca-9410-8ebdb34a190e",
+      "Name": "HorizontalPodAutoscalerTargetApiVersion",
+      "Label": "Target Api Version",
+      "HelpText": "Target API version. [Documentation link](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#crossversionobjectreference-v1-autoscaling)",
+      "DefaultValue": "apps/v1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "749a45a2-3a2d-4b9d-abfa-3e793a10dccc",
+      "Name": "HorizontalPodAutoscalerObjectApiVersion",
+      "Label": "Object API Version",
+      "HelpText": null,
+      "DefaultValue": "networking.k8s.io/v1beta1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8a2dfaa7-d4c5-41e9-956e-ac0d91214824",
+      "Name": "HorizontalPodAutoscalerObjectApiKind",
+      "Label": "Object API Kind",
+      "HelpText": null,
+      "DefaultValue": "Ingress",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "641ceb41-4fdc-4d98-9b6a-96142499ed87",
+      "Name": "HorizontalPodAutoscalerObjectName",
+      "Label": "Object Name",
+      "HelpText": null,
+      "DefaultValue": "main-route",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "280fde89-b463-4082-9c22-950456d020b7",
+      "Name": "HorizontalPodAutoscalerMetricSelector",
+      "Label": "Metric Selector",
+      "HelpText": "An option selector to limit the metric by label. This will be in the form of a label string like `matchLabels: {verb: GET}`. [Documentation link](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#metricidentifier-v2beta2-autoscaling)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "93dd4745-a19e-4d31-9357-7dc0ca74d8ef",
+      "Name": "HorizontalPodAutoscalerMetricType",
+      "Label": "",
+      "HelpText": "The type of measurement made on the target metric. [Documentation link](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#metrictarget-v2beta2-autoscaling)",
+      "DefaultValue": "AverageValue",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Value|Value\nAverageValue|Average Value"
+      }
+    },
+    {
+      "Id": "e913c0e5-6436-44e5-8de4-3739dd0b4e32",
+      "Name": "HorizontalPodAutoscalerValue",
+      "Label": "Value",
+      "HelpText": "The value. Used when the metric type is Value. [Documentation link](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#metrictarget-v2beta2-autoscaling)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0b7b9e29-576b-4fa1-b0c0-667d1d2c53ee",
+      "Name": "HorizontalPodAutoscalerAverageValue",
+      "Label": "Average Value",
+      "HelpText": "The average value. Used when the metric type is Average Value. [Documentation link](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#metrictarget-v2beta2-autoscaling)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-07-09T03:41:50.692Z",
+    "OctopusVersion": "2020.3.0-rc0001",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "Category": "k8s"
+}

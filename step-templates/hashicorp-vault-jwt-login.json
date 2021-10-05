@@ -1,0 +1,75 @@
+{
+    "Id": "d49bc861-cd36-4624-960c-77613a54b139",
+    "Name": "HashiCorp Vault - JWT Login",
+    "Description": "This step logs into a HashiCorp Vault server using the [JWT](https://www.vaultproject.io/docs/auth/jwt) auth method.\n\nThe `client_token` from the response will be made available as a sensitive [Output variable](https://octopus.com/docs/projects/variables/output-variables#sensitive-output-variables) named `JWTAuthToken` for use in other step templates.\n\nThis step template makes use of the [Rest API](https://www.vaultproject.io/api/auth/ldap#login-with-ldap-user), so no other dependencies are needed. \n\n**Required:** \n- The Vault server must be [unsealed](https://www.vaultproject.io/docs/concepts/seal).\n- You must supply the full path where the JWT auth method is mounted.\n- You must supply a valid Vault [JWT role](https://www.vaultproject.io/api/auth/jwt#create-role).\n- You must supply a valid, non-expired [JWT token](https://en.wikipedia.org/wiki/JSON_Web_Token).\n\nNotes:\n\n- Tested on Vault Server `1.7.1`.\n- Tested on both PowerShell Desktop and PowerShell Core.\n- Tested with Octopus **2020.1**\n",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\n# Variables\n$VAULT_JWT_LOGIN_ADDRESS = $OctopusParameters[\"Vault.JWT.Login.VaultAddress\"]\n$VAULT_JWT_LOGIN_API_VERSION = $OctopusParameters[\"Vault.JWT.Login.ApiVersion\"]\n$VAULT_JWT_LOGIN_AUTH_PATH = $OctopusParameters[\"Vault.JWT.Login.AuthPath\"]\n$VAULT_JWT_LOGIN_ROLE = $OctopusParameters[\"Vault.JWT.Login.Role\"]\n$VAULT_JWT_LOGIN_TOKEN = $OctopusParameters[\"Vault.JWT.Token\"]\n\n# Validation\nif ([string]::IsNullOrWhiteSpace($VAULT_JWT_LOGIN_ADDRESS)) {\n    throw \"Required parameter Vault.JWT.Login.VaultAddress not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($VAULT_JWT_LOGIN_API_VERSION)) {\n    throw \"Required parameter Vault.JWT.Login.ApiVersion not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($VAULT_JWT_LOGIN_AUTH_PATH)) {\n    throw \"Required parameter Vault.JWT.Login.AuthPath not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($VAULT_JWT_LOGIN_ROLE)) {\n    throw \"Required parameter Vault.JWT.Login.Role not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($VAULT_JWT_LOGIN_TOKEN)) {\n    throw \"Required parameter Vault.JWT.Token not specified\"\n}\n\n# Helper functions\n###############################################################################\nfunction Get-WebRequestErrorBody {\n    param (\n        $RequestError\n    )\n\n    # Powershell < 6 you can read the Exception\n    if ($PSVersionTable.PSVersion.Major -lt 6) {\n        if ($RequestError.Exception.Response) {\n            $reader = New-Object System.IO.StreamReader($RequestError.Exception.Response.GetResponseStream())\n            $reader.BaseStream.Position = 0\n            $reader.DiscardBufferedData()\n            $rawResponse = $reader.ReadToEnd()\n            $response = \"\"\n            try { $response = $rawResponse | ConvertFrom-Json } catch { $response = $rawResponse }\n            return $response\n        }\n    }\n    else {\n        return $RequestError.ErrorDetails.Message\n    }\n}\n###############################################################################\n\n$VAULT_JWT_LOGIN_ADDRESS = $VAULT_JWT_LOGIN_ADDRESS.TrimEnd('/')\n$VAULT_JWT_LOGIN_AUTH_PATH = $VAULT_JWT_LOGIN_AUTH_PATH.TrimStart('/').TrimEnd('/')\n\n# Local variables\n$StepName = $OctopusParameters[\"Octopus.Step.Name\"]\n\ntry {\n    $payload = @{\n        role = $VAULT_JWT_LOGIN_ROLE;\n        jwt = $VAULT_JWT_LOGIN_TOKEN;\n    }\n    \n    $uri = \"$VAULT_JWT_LOGIN_ADDRESS/$VAULT_JWT_LOGIN_API_VERSION/$VAULT_JWT_LOGIN_AUTH_PATH/login\"\n    Write-Host \"Making request to $uri\"\n    $response = Invoke-RestMethod -Method Post -Uri $uri -Body ($payload | ConvertTo-Json -Depth 10)\n    if ($null -ne $response) {\n        Set-OctopusVariable -Name \"JWTAuthToken\" -Value $response.auth.client_token -Sensitive\n        Write-Highlight \"Created output variable: ##{Octopus.Action[$StepName].Output.JWTAuthToken}\"\n    }\n    else {\n        Write-Error \"Null or Empty response returned from Vault server\" -Category InvalidResult\n    }\n}\ncatch {\n    $ExceptionMessage = $_.Exception.Message\n    $ErrorBody = Get-WebRequestErrorBody -RequestError $_\n    $Message = \"An error occurred logging in with JWT: $ExceptionMessage\"\n    $AdditionalDetail = \"\"\n    if (![string]::IsNullOrWhiteSpace($ErrorBody)) {\n        if ($null -ne $ErrorBody.errors) {\n            $AdditionalDetail = $ErrorBody.errors -Join \",\"   \n        }\n        else {\n            $errorDetails = $null\n            try { $errorDetails = ConvertFrom-Json $ErrorBody } catch {}\n            $AdditionalDetail += if ($null -ne $errorDetails) { $errorDetails.errors -Join \",\" } else { $ErrorBody } \n        }\n    }\n    \n    if (![string]::IsNullOrWhiteSpace($AdditionalDetail)) {\n        $Message += \"`n`tDetail: $AdditionalDetail\"\n    }\n\n    Write-Error $Message -Category ConnectionError\n}\n"
+    },
+    "Parameters": [
+      {
+        "Id": "37bec45d-aac8-4962-a8e8-1ccf38ab3038",
+        "Name": "Vault.JWT.Login.VaultAddress",
+        "Label": "Vault Server URL",
+        "HelpText": "The URL of the Vault instance you are connecting to. Port should be included (The default is `8200`). For example:\n\n\n`https://myvault.local:8200/`",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "c4dc7abc-d659-42c3-9bc5-99c12049b9a6",
+        "Name": "Vault.JWT.Login.ApiVersion",
+        "Label": "API version",
+        "HelpText": "All API routes are prefixed with a version e.g. `/v1/`.\n\nSee the [API documentation](https://www.vaultproject.io/api-docs) for further details.",
+        "DefaultValue": "v1",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "v1|v1"
+        }
+      },
+      {
+        "Id": "16272d7f-aac5-49c4-86f3-36725b05c750",
+        "Name": "Vault.JWT.Login.AuthPath",
+        "Label": "JWT Auth Login path",
+        "HelpText": "The path that the JWT method is mounted at. The default is `/auth/jwt`. If the JWT auth method was enabled at a different path, for example `my-path`, then specify `/my-path` instead.\n",
+        "DefaultValue": "/auth/jwt",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "379393d6-98c8-4114-af56-4ecfe29517f3",
+        "Name": "Vault.JWT.Login.Role",
+        "Label": "JWT role",
+        "HelpText": "The Vault [JWT role](https://www.vaultproject.io/api/auth/jwt#create-role).",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "75e6eb74-180c-4aa0-bc47-f7a33b0e9fb4",
+        "Name": "Vault.JWT.Token",
+        "Label": "JWT Token",
+        "HelpText": "The signed [JSON Web Token](https://tools.ietf.org/html/rfc7519) (JWT) to login with.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      }
+    ],
+    "LastModifiedAt": "2021-07-01T12:52:53.159Z",
+    "LastModifiedBy": "harrisonmeister",
+    "$Meta": {
+      "ExportedAt": "2021-07-01T12:52:53.159Z",
+      "OctopusVersion": "2021.1.7236",
+      "Type": "ActionTemplate"
+    },
+    "Category": "hashicorp-vault"
+  }

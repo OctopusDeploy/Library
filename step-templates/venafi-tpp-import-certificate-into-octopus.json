@@ -1,0 +1,175 @@
+{
+    "Id": "e10820c2-ae6d-4030-8a8a-b73ed60a81fc",
+    "Name": "Venafi TPP - Import Certificate into Octopus",
+    "Description": "This step template will authenticate against a Venafi TPP instance using an existing OAuth access token, export a certificate by its Distinguished Name (DN), and then import the certificate into the Octopus certificate store.\n\nThe export is achieved using the VenafiPS PowerShell module's [Export-VenafiCertificate](https://venafips.readthedocs.io/en/latest/functions/Export-VenafiCertificate/) function.\n\n---\n\n**Export options:**\n\n- Provide the distinguished name (DN) path to the certificate.\n- Choose from the following export formats:\n  - `Base64`\n  - `Base64 (PKCS #8)`\n  - `DER`\n  - `PKCS #12` \n- *Optional* - Include the full certificate chain in the export.\n- *Optional* - Friendly name (Label or alias) to use. Permitted with `Base64` and `PKCS #12` formats. \n- *Optional* - Include the private key in the export. Not supported with `DER` format.\n- *Optional* - Provide a password to be used for the exported private key.\n- *Optional* - Also store the export certificate response in `JSON` format in an [Octopus sensitive output variable](https://octopus.com/docs/projects/variables/output-variables#sensitive-output-variables). This output variable can then be used in additional deployment or runbook steps.\n- *Optional* - on successful completion, you can revoke the access token used.\n\n---\n\n**Octopus Import options:**\n\n- Octopus URL\n- Octopus API Key\n- Octopus Space name\n- Certificate name\n- *Optional* - replace the existing certificate if it already exists\n\n---\n\n**Required:** \n- The `VenafiPS` PowerShell module installed on the deployment target or worker. If the module can't be found, the step will attempt to download a version from the [PowerShell gallery](https://www.powershellgallery.com/packages/VenafiPS).\n- PowerShell `5` or greater.\n- Octopus API key with permission to save the certificate.\n\nNotes:\n\n- Tested on Octopus `2021.2`.\n- Tested with VenafiPS `3.1.5`.\n- Tested with both Windows PowerShell and PowerShell Core on Linux.",
+    "ActionType": "Octopus.Script",
+    "Version": 2,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n$ErrorActionPreference = 'Stop'\n\n# TPP required variables\n$Server = $OctopusParameters[\"Venafi.TPP.ImportCert.Server\"]\n$Token = $OctopusParameters[\"Venafi.TPP.ImportCert.AccessToken\"]\n$Path = $OctopusParameters[\"Venafi.TPP.ImportCert.DNPath\"]\n$Format = $OctopusParameters[\"Venafi.TPP.ImportCert.Format\"]\n\n# TPP optional variables\n$IncludeChain = $OctopusParameters[\"Venafi.TPP.ImportCert.IncludeChain\"]\n$FriendlyName = $OctopusParameters[\"Venafi.TPP.ImportCert.FriendlyName\"]\n$IncludePrivateKey = $OctopusParameters[\"Venafi.TPP.ImportCert.IncludePrivateKey\"]\n$PrivateKeyPassword = $OctopusParameters[\"Venafi.TPP.ImportCert.PrivateKeyPassword\"]\n$OutputVariableName = $OctopusParameters[\"Venafi.TPP.ImportCert.OutputVariableName\"]\n$RevokeToken = $OctopusParameters[\"Venafi.TPP.ImportCert.RevokeTokenOnCompletion\"]\n\n# Octopus required variables\n$OctopusServerUri = $OctopusParameters[\"Venafi.TPP.ImportCert.OctopusServerUri\"]\n$OctopusApiKey = $OctopusParameters[\"Venafi.TPP.ImportCert.OctopusApiKey\"]\n$OctopusSpaceName = $OctopusParameters[\"Venafi.TPP.ImportCert.OctopusSpaceName\"]\n$OctopusCertificateName = $OctopusParameters[\"Venafi.TPP.ImportCert.OctopusCertificateName\"]\n$OctopusReplaceExistingCertificate = $OctopusParameters[\"Venafi.TPP.ImportCert.OctopusReplaceExistingCertificate\"]\n\n# TPP validation\nif ([string]::IsNullOrWhiteSpace($Server)) {\n    throw \"Required parameter Venafi.TPP.ImportCert.Server not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($Token)) {\n    throw \"Required parameter Venafi.TPP.ImportCert.AccessToken not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($Path)) {\n    throw \"Required parameter Venafi.TPP.ImportCert.DNPath not specified\"\n}\nelse {\n    if ($Path.Contains(\"\\\") -eq $False) {\n        throw \"At least one '\\' is required for the Venafi.TPP.ImportCert.DNPath value\"\n    }\n}\nif ([string]::IsNullOrWhiteSpace($Format)) {\n    throw \"Required parameter Venafi.TPP.ImportCert.Format not specified\"\n}\n\n# TPP conditional validation\nif ($IncludePrivateKey -eq $True) {\n    if ([string]::IsNullOrWhiteSpace($PrivateKeyPassword)) {\n        throw \"IncludePrivateKey set to true, but parameter Venafi.TPP.ImportCert.PrivateKeyPassword not specified\"\n    }\n}\nelse {\n    $PrivateKeyPassword = $null\n}\n\n# Octopus validation\nif ([string]::IsNullOrWhiteSpace($OctopusServerUri)) {\n    throw \"Required parameter Venafi.TPP.ImportCert.OctopusServerUri not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($OctopusApiKey)) {\n    throw \"Required parameter Venafi.TPP.ImportCert.OctopusApiKey not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($OctopusSpaceName)) {\n    throw \"Required parameter Venafi.TPP.ImportCert.OctopusSpaceName not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($OctopusCertificateName)) {\n    throw \"Required parameter Venafi.TPP.ImportCert.OctopusCertificateName not specified\"\n}\nif ([string]::IsNullOrWhiteSpace($OctopusReplaceExistingCertificate)) {\n    throw \"Required parameter Venafi.TPP.ImportCert.OctopusReplaceExistingCertificate not specified\"\n}\n\n# Helper functions\n###############################################################################\nfunction Get-WebRequestErrorBody {\n    param (\n        $RequestError\n    )\n\n    # Powershell < 6 you can read the Exception\n    if ($PSVersionTable.PSVersion.Major -lt 6) {\n        if ($RequestError.Exception.Response) {\n            $reader = New-Object System.IO.StreamReader($RequestError.Exception.Response.GetResponseStream())\n            $reader.BaseStream.Position = 0\n            $reader.DiscardBufferedData()\n            $rawResponse = $reader.ReadToEnd()\n            $response = \"\"\n            try { $response = $rawResponse | ConvertFrom-Json } catch { $response = $rawResponse }\n            return $response\n        }\n    }\n    else {\n        return $RequestError.ErrorDetails.Message\n    }\n}\n\nfunction Get-MatchingOctopusCertificates {\n    param (\n        [string]$ServerUri,\n        [string]$ApiKey,\n        [string]$SpaceId,\n        [string]$CertificateName\n    )\n    Write-Debug \"Entering: Get-MatchingOctopusCertificates\"\n\n    try {\n\n        $header = @{ \"X-Octopus-ApiKey\" = $ApiKey }\n\n        # Get a list of certificates that match our domain search criteria.\n        $partial_certificates = (Invoke-RestMethod -Uri \"$ServerUri/api/$SpaceId/certificates?partialName=$([uri]::EscapeDataString($CertificateName))&skip=0&take=2000\" -Headers $header) | Select-Object -ExpandProperty Items\n\n        # return certs that arent archived and havent been replaced.\n        return $partial_certificates | Where-Object {\n            $null -eq $_.ReplacedBy -and\n            $null -eq $_.Archived -and \n            $CertificateName -eq $_.Name\n        }\n    }\n    catch {\n        $Detail = (Get-WebRequestErrorBody -RequestError $_)\n        Write-Error \"Could not retrieve certificates from Octopus. Error: $($_.Exception.Message).`n`t$Detail\"\n    }\n}\n\nfunction Replace-OctopusCertificate {\n    param (\n        [string]$ServerUri,\n        [string]$ApiKey,\n        [string]$SpaceId,\n        [string]$CertificateId,\n        [string]$CertificateName,\n        [string]$CertificateData,\n        [string]$CertificatePwd\n    )\n    Write-Debug \"Entering: Replace-OctopusCertificate\"   \n    try {\n\n        $header = @{ \"X-Octopus-ApiKey\" = $ApiKey }\n\n        $replacement_certificate = @{\n            CertificateData = $CertificateData\n        }\n\n        if (![string]::IsNullOrWhiteSpace($CertificatePwd)) {\n            $replacement_certificate.Password = $CertificatePwd\n        }\n        \n        # Replace the cert\n        $updated_certificate = Invoke-RestMethod -Method Post -Uri \"$ServerUri/api/$SpaceId/certificates/$CertificateId/replace\" -Headers $header -Body ($replacement_certificate | ConvertTo-Json -Depth 10)\n        Write-Highlight \"Replaced certificate in Octopus for '$($updated_certificate.Name)' ($($updated_certificate.Id))\"\n    }\n    catch {\n        $Detail = (Get-WebRequestErrorBody -RequestError $_)\n        Write-Error \"Could not replace certificate in Octopus. Error: $($_.Exception.Message).`n`t$Detail\"\n    }\n}\n\nfunction New-OctopusCertificate {\n    param (\n        [string]$ServerUri,\n        [string]$ApiKey,\n        [string]$SpaceId,\n        [string]$CertificateName,\n        [string]$CertificateData,\n        [string]$CertificatePwd\n    )\n    Write-Debug \"Entering: New-OctopusCertificate\"   \n    try {\n\n        $header = @{ \"X-Octopus-ApiKey\" = $ApiKey }\n\n        $certificate = @{\n            Name            = $CertificateName;\n            CertificateData = @{\n                NewValue = $CertificateData;\n                HasData  = $True;\n            }\n            Password        = @{\n                HasValue = $False;\n                NewValue = $null;\n            }\n        }\n\n        if (![string]::IsNullOrWhiteSpace($CertificatePwd)) {\n            $certificate.Password.NewValue = $CertificatePwd\n            $certificate.Password.HasData = $True\n        }\n        \n        # Create new certificate\n        $new_certificate = Invoke-RestMethod -Method Post -Uri \"$ServerUri/api/$SpaceId/certificates\" -Headers $header -Body ($certificate | ConvertTo-Json -Depth 10)\n        Write-Highlight \"New certificate created in Octopus for '$($new_certificate.Name)' ($($new_certificate.Id))\"\n    }\n    catch {\n        $Detail = (Get-WebRequestErrorBody -RequestError $_)\n        Write-Error \"Could not create new certificate in Octopus. Error: $($_.Exception.Message).`n`t$Detail\"\n    }\n}\n\nfunction Clean-VenafiCertificateForOctopus {\n    param (\n        [string]$CertificateData\n    )\n    Write-Debug \"Entering: Clean-VenafiCertificateForOctopus\"   \n    $PemHeaderFragment = \"-----BEGIN *\"\n    $PemFooterFragment = \"-----END *\"\n\n    $CertificateBytes = [Convert]::FromBase64String($CertificateData)\n    $RawCert = [System.Text.Encoding]::UTF8.GetString($CertificateBytes)\n    \n    $CleanedCertLines = @()\n    if (![string]::IsNullOrWhiteSpace($RawCert)) {\n        $RawCertLines = ($RawCert -Split \"`n\")\n        $currentLine = 0\n        while ($currentLine -lt $RawCertLines.Length) {\n            Write-Verbose \"Working on line $currentLine\"\n            $headerPosition = [Array]::FindIndex($RawCertLines, $currentLine, [Predicate[string]] { $args[0] -like $PemHeaderFragment })\n            if ($headerPosition -gt -1) {\n                $footerPosition = [Array]::FindIndex($RawCertLines, $headerPosition, [Predicate[string]] { $args[0] -like $PemFooterFragment })\n                if ($footerPosition -lt 0) {\n                    throw \"Unable to find a matching '-----END' PEM fragment!\"\n                }\n                else {\n                    Write-Verbose \"Selecting PEM lines: $headerPosition-$footerPosition\"\n                    $pemLines = $RawCertLines[$headerPosition..$footerPosition]\n                    $CleanedCertLines += $pemLines\n                    $currentLine = $footerPosition\n                }\n            }\n            else {\n                $currentLine++\n            }\n        }\n    }\n    if ($CleanedCertLines.Length -le 0) {\n        throw \"Something went wrong extracting contents from file (no cleansed contents)\"\n    }\n\n    $CleanedCert = $CleanedCertLines | Out-String\n    $CleanedCertData = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($CleanedCert))\n    \n    return $CleanedCertData    \n}\n###############################################################################\n# MAIN STEP TEMPLATE FLOW\n###############################################################################\n\n# TPP Access token\n$SecureToken = ConvertTo-SecureString $Token -AsPlainText -Force\n[PSCredential]$AccessToken = New-Object System.Management.Automation.PsCredential(\"token\", $SecureToken)\n\n# Clean-up\n$Server = $Server.TrimEnd('/')\n$OctopusServerUri = $OctopusServerUri.TrimEnd('/')\n$OctopusSpaceName = $OctopusSpaceName.Trim(\" \")\n$OctopusCertificateName = $OctopusCertificateName.Trim(\" \")\n\n# Required Venafi Module\nfunction Get-NugetPackageProviderNotInstalled {\n    # See if the nuget package provider has been installed\n    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))\n}\n\n# Check to see if the package provider has been installed\nif ((Get-NugetPackageProviderNotInstalled) -ne $false) {\n    Write-Host \"Nuget package provider not found, installing ...\"    \n    Install-PackageProvider -Name Nuget -Force -Scope CurrentUser\n}\n\nWrite-Host \"Checking for required VenafiPS module ...\"\n$required_venafips_version = 3.1.5\n$module_available = Get-Module -ListAvailable -Name VenafiPS | Where-Object { $_.Version -ge $required_venafips_version }\nif (-not ($module_available)) {\n    Write-Host \"Installing VenafiPS module ...\"\n    Install-Module -Name VenafiPS -MinimumVersion 3.1.5 -Scope CurrentUser -Force\n}\nelse {\n    $first_match = $module_available | Select-Object -First 1 \n    Write-Host \"Found version: $($first_match.Version)\"\n}\n\nWrite-Host \"Importing VenafiPS module ...\"\nImport-Module VenafiPS\n\n$StepName = $OctopusParameters[\"Octopus.Step.Name\"]\n$ExportFormatsIncompatibleWithOctopusCertificateStore = @(\"Base64\", \"Base64 (PKCS #8)\")\n\nWrite-Verbose \"Venafi.TPP.ImportCert.Server: $Server\"\nWrite-Verbose \"Venafi.TPP.ImportCert.AccessToken: ********\"\nWrite-Verbose \"Venafi.TPP.ImportCert.DNPath: $Path\"\nWrite-Verbose \"Venafi.TPP.ImportCert.Format: $Format\"\nWrite-Verbose \"Venafi.TPP.ImportCert.IncludeChain: $IncludeChain\"\nWrite-Verbose \"Venafi.TPP.ImportCert.FriendlyName: $FriendlyName\"\nWrite-Verbose \"Venafi.TPP.ImportCert.IncludePrivateKey: $IncludePrivateKey\"\nWrite-Verbose \"Venafi.TPP.ImportCert.PrivateKeyPassword: ********\"\nWrite-Verbose \"Venafi.TPP.ImportCert.CertDetails.OutputVariableName: $OutputVariableName\"\nWrite-Verbose \"Venafi.TPP.ImportCert.RevokeTokenOnCompletion: $RevokeTokenOnCompletion\"\nWrite-Verbose \"Venafi.TPP.ImportCert.OctopusServerUri: $OctopusServerUri\"\nWrite-Verbose \"Venafi.TPP.ImportCert.OctopusApiKey: ********\"\nWrite-Verbose \"Venafi.TPP.ImportCert.OctopusSpaceName: $OctopusSpaceName\"\nWrite-Verbose \"Venafi.TPP.ImportCert.OctopusCertificateName: $OctopusCertificateName\"\nWrite-Verbose \"Venafi.TPP.ImportCert.OctopusReplaceExistingCertificate: $OctopusReplaceExistingCertificate\"\nWrite-Verbose \"Step Name: $StepName\"\n\nWrite-Host \"Requesting new session from $Server\"\nNew-VenafiSession -Server $Server -AccessToken $AccessToken\n\n# Export certificate\n$ExportCert_Params = @{\n    CertificateId = $Path;\n    Format        = $Format;\n}\n\n# Optional IncludeChain field\nif ($IncludeChain -eq $True) {\n    $ExportCert_Params.IncludeChain = $True\n}\n\n# Optional FriendlyName field\nif (-not [string]::IsNullOrWhiteSpace($FriendlyName)) {\n    $ExportCert_Params.FriendlyName = $FriendlyName\n}\n\n# Optional Private key field\nif (-not [string]::IsNullOrWhiteSpace($PrivateKeyPassword) -and $IncludePrivateKey -eq $True) {\n    $SecurePrivateKeyPassword = ConvertTo-SecureString $PrivateKeyPassword -AsPlainText -Force\n    $ExportCert_Params.PrivateKeyPassword = $SecurePrivateKeyPassword    \n    $ExportCert_Params.IncludePrivateKey = $True\n}\n\n# Do the export\n$ExportCertificateResponse = ((Export-VenafiCertificate @ExportCert_Params) 6> $null)\n\nif ($null -eq $ExportCertificateResponse -or $null -eq $ExportCertificateResponse.CertificateData) {\n    Write-Warning \"No certificate data returned for path: $Path`nCheck the path value represents a certificate, and not a folder.\"\n}\nelse {\n    Write-Host \"Successfully retrieved certificate data to export for path: $Path\"\n        \n    # Get octopus space Id\n    $header = @{ \"X-Octopus-ApiKey\" = $OctopusApiKey }\n    $spaces = Invoke-RestMethod -Uri \"$OctopusServerUri/api/spaces?partialName=$([uri]::EscapeDataString($OctopusSpaceName))&skip=0&take=500\" -Headers $header \n    $OctopusSpace = @($spaces.Items | Where-Object { $_.Name -eq $OctopusSpaceName }) | Select-Object -First 1\n\n    if ($null -eq $OctopusSpace) {\n        throw \"Couldnt find Octopus space with name '$OctopusSpaceName'.\"\n    }\n\n    # Check for certificate based on name\n    $CertificateMatches = @(Get-MatchingOctopusCertificates -ServerUri $OctopusServerUri -ApiKey $OctopusApiKey -SpaceId $($OctopusSpace.Id) -CertificateName $OctopusCertificateName) \n    Write-Host \"Found $($CertificateMatches.Length) certificates matching '$OctopusCertificateName'\"\n\n    $FirstCertificateMatch = $CertificateMatches | Select-Object -First 1\n    $CertificateData = $ExportCertificateResponse.CertificateData\n\n    if ($ExportFormatsIncompatibleWithOctopusCertificateStore -icontains $Format) {\n        Write-Host \"Requested export format $Format needs to be cleaned before import to Octopus.\"\n        $CertificateData = Clean-VenafiCertificateForOctopus -CertificateData $CertificateData\n        if ([string]::IsNullOrWhiteSpace($CertificateData)) {\n            throw \"Cleaned certificate data empty!\"\n        }\n    }\n\n    switch ($CertificateMatches.Length) {\n        0 {  \n            # New cert\n            Write-Host \"Creating a new certificate '$OctopusCertificateName'\"\n            New-OctopusCertificate -ServerUri $OctopusServerUri -ApiKey $OctopusApiKey -SpaceId $($OctopusSpace.Id) -CertificateName $OctopusCertificateName -CertificateData $($CertificateData) -CertificatePwd $PrivateKeyPassword\n        }\n        1 {  \n            # One cert to replace\n            if ($OctopusReplaceExistingCertificate -eq $False) {\n                Write-Host \"Replace existing certificate set to False, nothing to do.\"\n            }\n            else {\n                Write-Host \"Replacing existing certificate '$OctopusCertificateName' ($($FirstCertificateMatch.Id))\"\n                Replace-OctopusCertificate -ServerUri $OctopusServerUri -ApiKey $OctopusApiKey -SpaceId $($OctopusSpace.Id) -CertificateId $($FirstCertificateMatch.Id) -CertificateName $OctopusCertificateName -CertificateData $($CertificateData) -CertificatePwd $PrivateKeyPassword\n            }\n        }\n        default {\n            Write-Warning \"Multiple certs matching name '$OctopusCertificateName' found, nothing to do.\"\n            return\n        }\n    }\n\n    if ([string]::IsNullOrWhiteSpace($OutputVariableName) -eq $False) {\n        $CertificateJson = $ExportCertificateResponse | ConvertTo-Json -Compress -Depth 10 \n        Set-OctopusVariable -Name $OutputVariableName -Value $CertificateJson -Sensitive\n        Write-Highlight \"Created sensitive output variable: ##{Octopus.Action[$StepName].Output.$OutputVariableName}\"\n    }\n}\n\nif ($RevokeToken -eq $true) {\n    # Revoke TPP access token\n    Write-Host \"Revoking access token with $Server\"\n    Revoke-TppToken -AuthServer $Server -AccessToken $AccessToken -Force\n}"
+    },
+    "Parameters": [
+      {
+        "Id": "56ef4967-37f5-40a0-a66e-f3fa589b6467",
+        "Name": "Venafi.TPP.ImportCert.Server",
+        "Label": "Venafi TPP Server",
+        "HelpText": "*Required*: The URL of the Venafi TPP instance you want to export the certificate from.\n\nFor example: `https://mytppserver.example.com`.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "49bcdbbb-3674-4901-8bf6-164e5e4bc395",
+        "Name": "Venafi.TPP.ImportCert.AccessToken",
+        "Label": "Venafi TPP Access Token",
+        "HelpText": "*Required*: The access token to authenticate against the TPP instance.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "e3156852-4ba9-4dc0-8d39-5a93c52b1910",
+        "Name": "Venafi.TPP.ImportCert.DNPath",
+        "Label": "Venafi TPP Certificate Path",
+        "HelpText": "*Required*: The Distinguished Name (DN) of the certificate you wish to export. This is the absolute path to the certificate in the TPP instance, separated by `\\`.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "4f9f4d4b-d686-4d00-aa93-af35b7df320b",
+        "Name": "Venafi.TPP.ImportCert.Format",
+        "Label": "Certificate Export Format",
+        "HelpText": "*Required*: The certificate export format. Valid options are:\n\n- `Base64`\n- `Base64 (PKCS #8)`\n- `DER`\n- `PKCS #12`",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "Base64|Base64\nBase64 (PKCS #8)|Base64 (PKCS #8)\nDER|DER\nPKCS #12|PKCS #12"
+        }
+      },
+      {
+        "Id": "309d30de-79b6-4461-8a54-1698aedd5822",
+        "Name": "Venafi.TPP.ImportCert.IncludeChain",
+        "Label": "Include certificate chain (Optional)",
+        "HelpText": "*Optional*: Include the certificate chain with the exported certificate. Not supported with `DER` format. Default: `False`.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "71fecac3-25c4-4161-9135-94815a485f03",
+        "Name": "Venafi.TPP.ImportCert.FriendlyName",
+        "Label": "Friendly Name (Optional)",
+        "HelpText": "*Optional*: Label or alias to use. Permitted with `Base64` and `PKCS #12` formats.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "2aaedf1d-be93-4df4-856c-c69650db452a",
+        "Name": "Venafi.TPP.ImportCert.IncludePrivateKey",
+        "Label": "Include Private Key (Optional)",
+        "HelpText": "*Optional*: Include the private key in the certificate export. If this is selected, the `Venafi.TPP.Export.PrivateKeyPassword` must also be provided. Default: `False`.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "2d168360-bcbf-4bdc-833d-a9c182e98a47",
+        "Name": "Venafi.TPP.ImportCert.PrivateKeyPassword",
+        "Label": "Private Key password (Optional)",
+        "HelpText": "*Optional*: The password required to include the private key. Not supported with `DER` format.  You must adhere to the following rules: \n\n- Password is at least 12 characters. \n- Comprised of at least three of the following: \n  - Uppercase alphabetic letters \n  - Lowercase alphabetic letters \n  - Numeric characters \n  - Special characters",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "84f92dd5-064b-47e5-bb11-3dd0faacfeb4",
+        "Name": "Venafi.TPP.ImportCert.OutputVariableName",
+        "Label": "Certificate output variable name (Optional)",
+        "HelpText": "*Optional*: Create an output variable with the certificate details returned from the export call. The certificate details will be stored in `JSON` format.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "606acdfe-641a-47f2-a4ea-56559477ea0c",
+        "Name": "Venafi.TPP.ImportCert.RevokeTokenOnCompletion",
+        "Label": "Revoke access token on completion?",
+        "HelpText": "*Optional*: Should the access token used be revoked once the step has been completed successfully? Default: `False`.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "7813080c-d6d6-4bd1-8c38-d6d03921f541",
+        "Name": "Venafi.TPP.ImportCert.OctopusServerUri",
+        "Label": "Octopus Server Url",
+        "HelpText": "*Required*: Provide the base URL of your Octopus Server. There are two built-in Octopus variables you can use:\n\n- `#{if Octopus.Web.ServerUri}#{Octopus.Web.ServerUri}#{else}#{Octopus.Web.BaseUrl}#{/if}`\n- `Octopus.Web.ServerUri`\n\nSee our [system variables](https://octopus.com/docs/projects/variables/system-variables#Systemvariables-Server) page for further details.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "5be3cf08-43ef-44a3-bd89-3ec3b4928b01",
+        "Name": "Venafi.TPP.ImportCert.OctopusApiKey",
+        "Label": "Octopus API Key",
+        "HelpText": "*Required*: Provide an Octopus API Key with appropriate permissions to save the certificate.\n",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "d901f398-a035-4ba6-a546-553360eed283",
+        "Name": "Venafi.TPP.ImportCert.OctopusSpaceName",
+        "Label": "Octopus Space Name",
+        "HelpText": "*Required*: Provide the Space name for the certificate to be saved in. The default is the current space the step is running within: `#{Octopus.Space.Name}`.",
+        "DefaultValue": "#{Octopus.Space.Name}",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "56f8e1a8-fb6c-4b91-a216-eadc2f5cd673",
+        "Name": "Venafi.TPP.ImportCert.OctopusCertificateName",
+        "Label": "Octopus Certificate Name",
+        "HelpText": "*Required*: A short, memorable, unique name for the imported certificate.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "3a85993f-8844-49aa-951a-804471f53b23",
+        "Name": "Venafi.TPP.ImportCert.OctopusReplaceExistingCertificate",
+        "Label": "Replace existing Octopus certificate?",
+        "HelpText": "*Optional*: If a certificate exists in Octopus with the same name as the one to be imported, should the one stored in Octopus be replaced? Default: `True`.\n\n**Note**: If multiple matches are found, the step template will not replace any, and will log a warning instead.\n\nSee [replacing certificates](https://octopus.com/docs/deployments/certificates/replace-certificate) for further information.",
+        "DefaultValue": "True",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      }
+    ],
+    "LastModifiedAt": "2021-08-18T15:47:39.557Z",
+    "LastModifiedBy": "benjimac93",
+    "$Meta": {
+      "ExportedAt": "2021-08-23T12:40:10.975Z",
+      "OctopusVersion": "2021.1.7687",
+      "Type": "ActionTemplate"
+    },
+    "Category": "venafi"
+  }

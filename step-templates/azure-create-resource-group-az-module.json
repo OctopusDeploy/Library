@@ -1,0 +1,56 @@
+{
+    "Id": "c2b850f7-2d9a-4cda-ab3c-ff3d229eca8e",
+    "Name": "Create Resource Group If Not Exists (AZ Module)",
+    "Description": "This step uses the new `az` modules to create a resource group if it doesn't exist.  \n\nRequires `Octopus Deploy 2020.1` or later.  Requires a worker with the `az` module installed on it.  That module is not bundled with Octopus Deploy.",
+    "ActionType": "Octopus.AzurePowerShell",
+    "Version": 1,
+    "Author": "octopusbob",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "OctopusUseBundledTooling": "False",
+      "Octopus.Action.Azure.AccountId": "#{CreateResourceGroup.Azure.Account}",
+      "Octopus.Action.Script.ScriptBody": "$resourceGroupName = $OctopusParameters[\"CreateResourceGroup.ResourceGroup.Name\"]\n$resourceGroupLocationAbbr = $OctopusParameters[\"CreateResourceGroup.ResourceGroup.Location.Abbr\"]\n\n$existingResourceGroups = (az group list --query \"[?location=='$resourceGroupLocationAbbr']\") | ConvertFrom-JSON\n\n$createResourceGroup = $true\nforeach ($resourceGroupFound in $existingResourceGroups)\n{\t\n\tWrite-Host \"Checking if current resource group $($resourceGroupFound.name) matches $resourceGroupName\"\n    if ($resourceGroupFound.name -eq $resourceGroupName)\n    {\n    \t$createResourceGroup = $false\n    \tWrite-Highlight \"Resource group already exists, skipping creation\"\n    \tbreak\n    }\n}\n\nif ($createResourceGroup)\n{\n\tWrite-Host \"Creating the $resourceGroupName because it was not found in $resourceGroupLocationAbbr\"\n\taz group create -l $resourceGroupLocationAbbr -n $resourceGroupName\n}"
+    },
+    "Parameters": [
+      {
+        "Id": "b854aba4-4acb-428d-b981-79d1f2f50537",
+        "Name": "CreateResourceGroup.Azure.Account",
+        "Label": "Azure Account",
+        "HelpText": "The Azure Account with the necessary permissions to create resource groups.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "AzureAccount"
+        }
+      },
+      {
+        "Id": "c7e43d70-f9ac-43cb-95a8-6a0e75ad40c6",
+        "Name": "CreateResourceGroup.ResourceGroup.Name",
+        "Label": "Resource Group Name",
+        "HelpText": "The name of the resource group to create.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "e1bd7e57-5ad0-445b-9d11-6642acc55b88",
+        "Name": "CreateResourceGroup.ResourceGroup.Location.Abbr",
+        "Label": "The Resource Group Abbreviated Location",
+        "HelpText": "The abbreviated resource group location, for example: centralus",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "centralus|Americas - Central US\neastus|Americas - East US\neastus2|Americas - East US 2\nnorthcentralus|Americas - North Central US\nsouthcentralus|Americas - South Central US\nwestus|Americas - West US\nwestus2|Americas - West US 2\nwestcentralus|Americas - West Central US\ncanadacentral|Americas - Canada Central\ncanadaeast|Americas - Canada East\nbrazilsouth|Americas - Brazil South\neastasia|Asia Pacific - East Asia\nsoutheastasia|Asia Pacific - Southeast Asia\naustraliacentral|Asia Pacific - Australia Central\naustraliacentral2|Asia Pacific - Australia Central 2\naustraliaeast|Asia Pacific - Australia East\naustraliasoutheast|Asia Pacific - Australia Southeast\nchinaeast|Asia Pacific - China East\nchinaeast2|Asia Pacific - China East 2\nchinanorth|Asia Pacific - China North\nchinanorth2|Asia Pacific - China North 2\ncentralindia|Asia Pacific - Central India\nsouthindia|Asia Pacific - South India\nwestindia|Asia Pacific - West India\njapaneast|Asia Pacific - Japan East\njapanwest|Asia Pacific - Japan West\nkoreacentral|Asia Pacific - Korea Central\nkoreasouth|Asia Pacific - Korea South\nnortheurope|Europe - North Europe\nwesteurope|Europe - West Europe\nfrancecentral|Europe - France Central\nfrancesouth|Europe - France South\ngermanynorth|Europe - Germany North\ngermanywestcentral|Europe - Germany West Central\nnorwayeast|Europe - Norway East\nnorwaywest|Europe - Norway West\nspaincentral|Europe - Spain Central\nswitzerlandnorth|Europe - Switzerland North\nswitzerlandwest|Europe - Switzerland West\nuksouth|Europe - UK South\nukwest|Europe - UK West\nsouthafricanorth|Middle East and Africa - South Africa North\nsouthafricawest|Middle East and Africa - South Africa West\nuaecentral|Middle East and Africa - UAE Central\nuaenorth|Middle East and Africa - UAE North"
+        }
+      }
+    ],
+    "LastModifiedBy": "octopusbob",
+    "$Meta": {
+      "ExportedAt": "2020-04-13T15:37:29.866Z",
+      "OctopusVersion": "2020.1.10",
+      "Type": "ActionTemplate"
+    },
+    "Category": "azure"
+  }

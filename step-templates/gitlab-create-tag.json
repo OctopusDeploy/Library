@@ -1,0 +1,94 @@
+{
+  "Id": "4456a21f-56a6-41a4-9237-43338a49b160",
+  "Name": "Gitlab - Create Tag",
+  "Description": "Create an annotated tag in Gitlab repository. \n\nIf you fill release description then tag become Gitlab release too\n(gitlab release internally is a tag stored in git plus release info for this tag stored in gitlab db)\n\nProposed usage is along with publishing package metadata \n\nIt's recommended to use with GitlabTag variable set.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "#fix for bug with encode and powershell 4\n#https://stackoverflow.com/questions/43129163/powershell-invoke-webrequest-to-a-url-with-literal-2f-in-it\nfunction fixUri($uri){\n  $UnEscapeDotsAndSlashes = 0x2000000;\n  $SimpleUserSyntax = 0x20000;\n\n  $type = $uri.GetType();\n  $fieldInfo = $type.GetField(\"m_Syntax\", ([System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic));\n\n  $uriParser = $fieldInfo.GetValue($uri);\n  $typeUriParser = $uriParser.GetType().BaseType;\n  $fieldInfo = $typeUriParser.GetField(\"m_Flags\", ([System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::FlattenHierarchy));\n  $uriSyntaxFlags = $fieldInfo.GetValue($uriParser);\n\n  $uriSyntaxFlags = $uriSyntaxFlags -band (-bnot $UnEscapeDotsAndSlashes);\n  $uriSyntaxFlags = $uriSyntaxFlags -band (-bnot $SimpleUserSyntax);\n  $fieldInfo.SetValue($uriParser, $uriSyntaxFlags);\n}\n\n[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\nAdd-Type -AssemblyName System.Web\n\n$projectIdOrProjectPathEncoded = [System.Web.HttpUtility]::UrlEncode($projectIdOrProjectPath) \n$messageEncoded = [System.Web.HttpUtility]::UrlEncode($message) \n$releaseDescriptionEncoded = [System.Web.HttpUtility]::UrlEncode($releaseDescription) \n\n$getTagUri = New-Object System.Uri \"$gitlabUrl/api/v4/projects/$projectIdOrProjectPathEncoded/repository/tags?tag_name=$tagName\"\nfixUri $getTagUri\n$getTagRequest = @{\n    Uri = $getTagUri;\n    Method = 'GET';\n    Headers = @{'PRIVATE-TOKEN' = $personalAccessToken; }\n    ContentType = 'application/json';\n}\n\n\"Checking if tag $tagName exists.\"\ntry {\n    $resultTag = Invoke-RestMethod @getTagRequest\n    Write-Host \"Tag info received.\"\n}\ncatch {\n    $statusCode = $_.Exception.Response.StatusCode.value__\n    Write-Host \"Error while tag info receive.\"\n    $_.Exception | Format-List -Force\n    throw\n}\nif ($resultTag.name -eq $tagName) {\n    Write-Host \"Tag already exists, skip creation\"\n    exit\n}\n\n$createTagUri = New-Object System.Uri \"$gitlabUrl/api/v4/projects/$projectIdOrProjectPathEncoded/repository/tags?tag_name=$tagName&ref=$vcsReference&message=$messageEncoded&release_description=$releaseDescriptionEncoded\"\nfixUri $createTagUri\n\n$createTagRequest = @{\n    Uri = $createTagUri;\n    Method = 'POST';\n    Headers = @{'PRIVATE-TOKEN' = $personalAccessToken; }\n    ContentType = 'application/json';\n}\n\n\"Creating tag $tagName for $vcsReference.\"\n\n$createTagRequestLines = $createTagRequest | Out-String -Width 1000\n$createTagRequestHeaderLines = $createTagRequest.Headers | Out-String -Width 1000\nWrite-Host \"Request is $createTagRequestLines\"\nWrite-Host \"Headers is $createTagRequestHeaderLines\"\n\ntry {\n    $result = Invoke-RestMethod @createTagRequest\n    Write-Host \"Tag successfully created.\"\n}\ncatch {\n    Write-Host \"Error while tag creating.\"\n    $_.Exception | Format-List -Force\n    throw\n}\n\n\n$result",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Id": "243c81b8-b346-4e85-8422-a7b31c6e05ad",
+      "Name": "gitlabUrl",
+      "Label": "Gitlab Url",
+      "HelpText": "Url of gitlab, e.g. https://gitlab.com",
+      "DefaultValue": "#{GitlabTag.GitlabUrl}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a4b118dc-4e14-4e4c-99a2-1296d1f37afb",
+      "Name": "personalAccessToken",
+      "Label": "Personal access token",
+      "HelpText": "The Gitlab [personal access token](https://docs.gitlab.com/ee/api/README.html#personal-access-tokens)\n#{GitlabTag.PersonalAccessToken} as default value",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "b4008fa4-1c2c-4341-a34c-0f0e1fff0082",
+      "Name": "projectIdOrProjectPath",
+      "Label": "ProjectIdOrProjectPath",
+      "HelpText": "The ID {e.g. 123} or path {e.g. \"SomeCompany/SomeProject\") of the project owned by the authenticated user",
+      "DefaultValue": "#{GitlabTag.ProjectIdOrProjectPath}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "63338a80-6a9f-4f4f-ab9c-42cbbd188271",
+      "Name": "vcsReference",
+      "Label": "VcsReference",
+      "HelpText": "Create tag using this commit SHA, another tag name, or branch name.\nHint to get it from package metadate:\n\n#{each package in Octopus.Deployment.PackageBuildMetadata}#{if Octopus.Template.Each.First}#{package.VcsCommitNumber}#{/if}#{/each}",
+      "DefaultValue": "#{GitlabTag.VcsReference}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "38ac6285-9894-4ae8-b3ff-04bd68ccc5ca",
+      "Name": "tagName",
+      "Label": "Tag name",
+      "HelpText": "Name of new tag",
+      "DefaultValue": "#{GitlabTag.TagName}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5ff9c20a-12d8-46bb-a2a4-ec84690c06ba",
+      "Name": "message",
+      "Label": "Tag message (annotated git tag)",
+      "HelpText": null,
+      "DefaultValue": "#{GitlabTag.TagMessage}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1b84e625-1476-44f7-83e0-b5c0a7631840",
+      "Name": "releaseDescription",
+      "Label": "Release Description",
+      "HelpText": "Add release notes to the Git tag and store it in the GitLab database.\nAlso will be saved as message to annotated tag in git database.",
+      "DefaultValue": "#{GitlabTag.ReleaseDescription}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2019-11-06T16:31:39.759Z",
+    "OctopusVersion": "2019.10.1",
+    "Type": "ActionTemplate"
+  },
+  "Category": "gitlab"
+}

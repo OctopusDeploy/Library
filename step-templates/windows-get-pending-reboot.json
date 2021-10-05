@@ -3,7 +3,7 @@
   "Name": "Windows - Get Pending Reboot",
   "Description": "Get pending reboot status from computer.",
   "ActionType": "Octopus.Script",
-  "Version": 0,
+  "Version": 1,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "$TempErrAct = $ErrorActionPreference \n    $ErrorActionPreference = \"Stop\"   \n    Foreach ($Computer in $ComputerName) \n      { \n        Try \n          { \n            # Setting pending values to false to cut down on the number of else statements \n            $PendFileRename,$Pending,$SCCM = $false,$false,$false \n\t\t\t\n            # Setting CBSRebootPend to null since not all versions of Windows has this value \n            $CBSRebootPend = $null \n\t\t\t\n            # Querying WMI for build version \n            $WMI_OS = Get-WmiObject -Class Win32_OperatingSystem -Property BuildNumber, CSName -ComputerName $Computer \n\t\t\t\n            # Making registry connection to the local/remote computer \n            $RegCon = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey([Microsoft.Win32.RegistryHive]\"LocalMachine\",$Computer) \n\t\t\t\n            # If Vista/2008 & Above query the CBS Reg Key \n            If ($WMI_OS.BuildNumber -ge 6001) \n              { \n                $RegSubKeysCBS = $RegCon.OpenSubKey(\"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\\").GetSubKeyNames() \n                $CBSRebootPend = $RegSubKeysCBS -contains \"RebootPending\" \n              }#End If ($WMI_OS.BuildNumber -ge 6001) \n\t\t\t  \n            # Query WUAU from the registry \n            $RegWUAU = $RegCon.OpenSubKey(\"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\\") \n            $RegWUAURebootReq = $RegWUAU.GetSubKeyNames() \n            $WUAURebootReq = $RegWUAURebootReq -contains \"RebootRequired\" \n\t\t\t\n            # Query PendingFileRenameOperations from the registry \n            $RegSubKeySM = $RegCon.OpenSubKey(\"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\\") \n            $RegValuePFRO = $RegSubKeySM.GetValue(\"PendingFileRenameOperations\",$null) \n\t\t\t\n            # Closing registry connection \n            $RegCon.Close() \n\t\t\t\n            # If PendingFileRenameOperations has a value set $RegValuePFRO variable to $true \n            If ($RegValuePFRO) \n              { \n                $PendFileRename = $true \n              }#End If ($RegValuePFRO) \n           \n            # If any of the variables are true, set $Pending variable to $true \n            If ($CBSRebootPend -or $WUAURebootReq -or $PendFileRename) \n              { \n                $Pending = $true \n              }#End If ($CBS -or $WUAU -or $PendFileRename) \n            # Creating Custom PSObject and Select-Object Splat \n\t\t\t$SelectSplat = @{ \n\t\t\t    Property=('Computer','CBServicing','WindowsUpdate','PendFileRename','PendFileRenVal','RebootPending') \n\t\t\t    } \n            New-Object -TypeName PSObject -Property @{ \n                Computer=$WMI_OS.CSName \n                CBServicing=$CBSRebootPend \n                WindowsUpdate=$WUAURebootReq \n                PendFileRename=$PendFileRename \n                PendFileRenVal=$RegValuePFRO \n                RebootPending=$Pending \n                } | Select-Object @SelectSplat \n          }#End Try \n        Catch \n          { \n            Write-Warning \"$Computer`: $_\" \n            # If $ErrorLog, log the file to a user specified location/path \n            If ($ErrorLog) \n              { \n                Out-File -InputObject \"$Computer`,$_\" -FilePath $ErrorLog -Append \n              }#End If ($ErrorLog) \n          }#End Catch \n      }#End Foreach ($Computer in $ComputerName) \n\t  $ErrorActionPreference = $TempErrAct ",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -14,11 +14,14 @@
       "Name": "ComputerName",
       "Label": "Computer name",
       "HelpText": "Computer Name to get pending reboot status from.",
-      "DefaultValue": null
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2014-05-30T20:32:02.810+00:00",
-  "LastModifiedBy": "Severswoed",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2014-05-30T20:34:01.920+00:00",
     "OctopusVersion": "2.4.7.85",

@@ -1,0 +1,65 @@
+{
+    "Id": "91bbd24f-8975-4d0e-9f55-736587f945e9",
+    "Name": "SQL - Update Job",
+    "Description": "Updates a MS SQL server job with provided ID to be enabled or disabled",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.RunOnServer": "false",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "param(\n    [string]$ConnectionString,\n    [string]$JobId,\n    [string]$JobName,\n    [string]$JobStatus\n)\n\n$ErrorActionPreference = \"Stop\"\n\nfunction Get-Param($Name, [switch]$Required, $Default) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue\n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    if ($result -eq $null) {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        } else {\n            $result = $Default\n        }\n    }\n\n    return $result\n}\n\nfunction Execute-SqlQuery($query) {\n    $queries = [System.Text.RegularExpressions.Regex]::Split($query, \"^\\s*GO\\s*$$\", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline)\n\n    $queries | ForEach-Object {\n        $q = $_\n        if (!(StringIsNullOrWhitespace($q)) -and ($q.Trim().ToLowerInvariant() -ne \"go\")) {\n            $command = $connection.CreateCommand()\n            $command.CommandText = $q\n            $command.ExecuteNonQuery() | Out-Null\n        }\n    }\n}\n\n& {\n    param(\n        [string]$ConnectionString,\n        [string]$JobId,\n        [string]$JobName,\n        [string]$JobStatus\n    )\n\n    $jobStatusText = ''\n    if ($JobStatus -eq '1') {\n        $jobStatusText = \"Enabling\"\n    } elseif ($JobStatus -eq '0') {\n        $jobStatusText = \"Disabling\"\n    }\n\n    $jobDisplayName = ''\n    if ($JobName) {\n        $jobDisplayName = $JobName\n    } else {\n    \t$jobDisplayName = $JobId\n    }\n\n    Write-Highlight \"$jobStatusText SQL Server job: [$jobDisplayName]\"\n    Write-Verbose \"SQL Server Job Id: [$JobId]\"\n\n    $query = @\"\nGO\nUSE [msdb]\nGO\nEXEC msdb.dbo.sp_update_job @job_id=N'$JobId', @enabled=$JobStatus\nGO\n\"@\n\n\t$connection = New-Object System.Data.SqlClient.SqlConnection\n    $connection.ConnectionString = $ConnectionString\n    Register-ObjectEvent -inputobject $connection -eventname InfoMessage -action {\n        write-host $event.SourceEventArgs\n    } | Out-Null\n\n    Write-Verbose \"Connecting\"\n    try {\n        $connection.Open()\n\n        Write-Verbose \"Executing script\"\n        Write-Verbose $query\n        Execute-SqlQuery -query $query\n    }\n    catch [Exception]\n    {\n        Write-Verbose $_.Exception|format-list -force\n        throw $_\n    }\n    finally {\n        Write-Verbose \"Closing connection\"\n        $connection.Dispose()\n    }\n\n  } `\n   (Get-Param 'ConnectionString' -Required) `\n   (Get-Param 'JobId' -Required) `\n   (Get-Param 'JobName') `\n   (Get-Param 'JobStatus' -Required)"
+    },
+    "Parameters": [
+      {
+        "Id": "41a33da5-012d-4871-a3e8-983fa4a5dcbe",
+        "Name": "JobId",
+        "Label": "Job Id",
+        "HelpText": "The SQL server job id which is a `GUID`.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "ba6bdd3b-ebfb-4c47-b214-f95044c8460e",
+        "Name": "JobName",
+        "Label": "Job name",
+        "HelpText": "Optional job name to show on the logs instead of JobId",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "a2ea4eca-77e3-4733-9714-9fa2b87929e7",
+        "Name": "JobStatus",
+        "Label": "Job Status",
+        "HelpText": "Choose `Enable` to enable the job, and `Disabled` to disable the job",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "0|Disabled\n1|Enabled"
+        }
+      },
+      {
+        "Id": "0bdc16b0-0086-4597-9dcd-970ddbdda258",
+        "Name": "ConnectionString",
+        "Label": "ConnectionString",
+        "HelpText": "The connection string to connect to the target SQL Server",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2020-11-20T12:26:07.817Z",
+      "OctopusVersion": "2020.4.0",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "aqovia",
+    "Category": "sql"
+  }

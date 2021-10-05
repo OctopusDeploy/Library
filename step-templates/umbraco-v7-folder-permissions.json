@@ -3,7 +3,7 @@
   "Name": "Set Umbraco 7 Folder Permissions",
   "Description": "To ensure a stable and smoothly running umbraco installation, these permissions need to be set correctly.\n\nThese permissions should be set before or during the insallation of umbraco. The user with the permissions set are the user used by the Application Pool used by the IIS website (usually Network Service or the IIS_IUSRS group). If in doubt, ask your server admin / hosting company\n\n[Umbraco Wiki Article](http://our.umbraco.org/wiki/reference/files-and-folders/permissions)\n",
   "ActionType": "Octopus.Script",
-  "Version": 2,
+  "Version": 3,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "$PhysicalPath = \"$WebsiteDirectory\"\r\n$appPoolAccount = \"IIS APPPOOL\\$ApplicationPoolName\"\r\n$readExecute = $appPoolAccount,\"ReadAndExecute\",\"ContainerInherit,ObjectInherit\",\"None\",\"Allow\"\r\n$read = $appPoolAccount,\"Read\",\"ContainerInherit,ObjectInherit\",\"None\",\"Allow\"\r\n$modify = $appPoolAccount,\"Modify\",\"ContainerInherit,ObjectInherit\",\"None\",\"Allow\"\r\n$fileModify = $appPoolAccount,\"Modify\",\"Allow\"\r\n$objects = @{}\r\n$objects[\"App_Browsers\"] = $readExecute\r\n$objects[\"App_Code\"] = $modify\r\n$objects[\"App_Data\"] = $modify\r\n$objects[\"App_Plugins\"] = $modify\r\n$objects[\"bin\"] = $modify\r\n$objects[\"Config\"] = $modify\r\n$objects[\"Css\"] = $modify\r\n$objects[\"MacroScripts\"] = $modify\r\n$objects[\"Masterpages\"] = $modify\r\n$objects[\"Media\"] = $modify\r\n$objects[\"Scripts\"] = $modify\r\n$objects[\"Umbraco\"] = $modify\r\n$objects[\"Umbraco_Client\"] = $modify\r\n$objects[\"UserControls\"] = $modify\r\n$objects[\"Views\"] = $modify\r\n$objects[\"Web.config\"] = $fileModify\r\n$objects[\"Xslt\"] = $modify\r\nforeach($object in $objects.Keys){\r\n    try {\r\n        $path = Join-Path $PhysicalPath $object\r\n        $acl = Get-ACL $path\r\n        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($objects[$object])\r\n        $acl.AddAccessRule($rule)\r\n        Set-Acl $path $acl\r\n        Get-Acl $path | Format-List\r\n    }\r\n    catch [System.Exception]\r\n    {\r\n        Write-Host \"Unable to set ACL on\" Join-Path $PhysicalPath $object\r\n    }\r\n}",
     "Octopus.Action.Script.Syntax": "PowerShell"
@@ -15,18 +15,22 @@
       "Label": "Website Directory",
       "HelpText": "This is the location where the website is configured to run from in IIS",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "ApplicationPoolName",
       "Label": "Application Pool Name",
       "HelpText": "This is the name of the application pool the website is configured to run under in IIS",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2015-01-23T12:27:44.003+00:00",
-  "LastModifiedBy": "software-programmer",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2015-01-23T12:31:26.603+00:00",
     "OctopusVersion": "2.6.0.778",

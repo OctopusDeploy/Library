@@ -1,0 +1,188 @@
+{
+    "Id": "6a276a58-d082-425f-a77a-ff7b3979ce2e",
+    "Name": "Liquibase - Apply changeset",
+    "Description": "Deploy database updates using Liquibase.  You can include Liquibase in the package itself or choose Download to download it during runtime.  Use the `Report only?` option to output the SQL it will run and upload it as an Artifact.  NOTE: `Report only?` does not work with NoSQL databases such as MongoDB \n\n**This template is now deprecated, please use `Liquibase - Run command`**",
+    "ActionType": "Octopus.Script",
+    "Version": 13,
+    "Author": "twerthi",
+    "Packages": [
+      {
+        "PackageId": null,
+        "FeedId": null,
+        "AcquisitionLocation": "Server",
+        "Properties": {
+          "Extract": "True",
+          "SelectionMode": "deferred",
+          "PackageParameterName": "liquibaseChangeset"
+        },
+        "Id": "15eeeac8-d80d-46ba-bc52-413fddae36f3",
+        "Name": "liquibaseChangeset"
+      }
+    ],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Configure template\n\n# Set TLS\n[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12\n\n# Disable progress bar for PowerShell\n$ProgressPreference = 'SilentlyContinue'\n\n# Downloads and extracts liquibase to the work folder\nFunction Get-Liquibase\n{\n    # Define parameters\n    param ($Version) \n\n\t$repositoryName = \"liquibase/liquibase\"\n\n    # Check to see if version wasn't specified\n    if ([string]::IsNullOrEmpty($Version))\n    {\n        # Get the latest version download url\n        $downloadUrl = (Get-LatestVersionDownloadUrl -Repository $repositoryName | Where-Object {$_.EndsWith(\".zip\")})\n    }\n    else\n    {\n    \t$downloadUrl = (Get-LatestVersionDownloadUrl -Repository $repositoryName -Version $Version | Where-Object {$_.EndsWith(\".zip\")})\n    }\n\n    # Check for download folder\n    if ((Test-Path -Path \"$PSSCriptRoot\\liquibase\") -eq $false)\n    {\n        # Create the folder\n        New-Item -ItemType Directory -Path \"$PSSCriptRoot\\liquibase\"\n    }\n\n    # Download the zip file\n    Write-Output \"Downloading Liquibase from $downloadUrl ...\"\n    $liquibaseZipFile = \"$PSScriptroot\\liquibase\\$($downloadUrl.Substring($downloadUrl.LastIndexOf(\"/\")))\"\n    Invoke-WebRequest -Uri $downloadUrl -OutFile $liquibaseZipFile -UseBasicParsing\n    \n\n    # Extract package\n    Write-Output \"Extracting Liqbuibase ...\"\n    Expand-Archive -Path $liquibaseZipFile -DestinationPath \"$PSSCriptRoot\\liquibase\"\n}\n\n# Downloads and extracts Java to the work folder, then adds the location of java.exe to the $env:PATH variabble so it can be called\nFunction Get-Java\n{\n    # Check to see if a folder needs to be created\n    if((Test-Path -Path \"$PSScriptRoot\\jdk\") -eq $false)\n    {\n        # Create new folder\n        New-Item -ItemType Directory -Path \"$PSSCriptRoot\\jdk\"\n    }\n\n    # Download java\n    Write-Output \"Downloading Java ... \"\n    Invoke-WebRequest -Uri \"https://download.java.net/java/GA/jdk14.0.2/205943a0976c4ed48cb16f1043c5c647/12/GPL/openjdk-14.0.2_windows-x64_bin.zip\" -OutFile \"$PSScriptroot\\jdk\\openjdk-14.0.2_windows-x64_bin.zip\" -UseBasicParsing\n\n    # Extract\n    Write-Output \"Extracting Java ... \"\n    Expand-Archive -Path \"$PSScriptroot\\jdk\\openjdk-14.0.2_windows-x64_bin.zip\" -DestinationPath \"$PSSCriptRoot\\jdk\"\n\n    # Get Java executable\n    $javaExecutable = Get-ChildItem -Path \"$PSScriptRoot\\jdk\" -Recurse | Where-Object {$_.Name -eq \"java.exe\"}\n\n    # Add path to current session\n    $env:PATH += \";$($javaExecutable.Directory)\"\n}\n\n# Gets download url of latest release with an asset\nFunction Get-LatestVersionDownloadUrl\n{\n    # Define parameters\n    param(\n    \t$Repository,\n        $Version\n    )\n    \n    # Define local variables\n    $releases = \"https://api.github.com/repos/$Repository/releases\"\n    \n    # Get latest version\n    Write-Host \"Determining latest release ...\"\n    \n    $tags = (Invoke-WebRequest $releases -UseBasicParsing | ConvertFrom-Json)\n    \n    if ($null -ne $Version)\n    {\n    \t$tags = ($tags | Where-Object {$_.name.EndsWith($Version)})\n    }\n\n    # Find the latest version with a downloadable asset\n    foreach ($tag in $tags)\n    {\n        if ($tag.assets.Count -gt 0)\n        {\n            return $tag.assets.browser_download_url\n        }\n    }\n\n    # Return the version\n    return $null\n}\n\n# Finds the specified changelog file\nFunction Get-ChangeLog\n{\n    # Define parameters\n    param ($FileName)\n    \n    # Find file\n    $fileReference = (Get-ChildItem -Path $OctopusParameters[\"Octopus.Action.Package[liquibaseChangeSet].ExtractedPath\"] -Recurse | Where-Object {$_.Name -eq $FileName})\n\n    # Check to see if something weas returned\n    if ($null -eq $fileReference)\n    {\n        # Not found\n        Write-Error \"$FileName was not found in $PSScriptRoot or subfolders.\"\n    }\n\n    # Return the reference\n    return $fileReference\n}\n\n# Downloads the appropriate JDBC driver\nFunction Get-DatabaseJar\n{\n    # Define parameters\n    param ($DatabaseType)\n\n    # Declare local variables\n    $driverPath = \"\"\n\n    # Check to see if a folder needs to be created\n    if((Test-Path -Path \"$PSScriptRoot\\DatabaseDriver\") -eq $false)\n    {\n        # Create new folder\n        New-Item -ItemType Directory -Path \"$PSSCriptRoot\\DatabaseDriver\" | Out-Null\n    }\n\n    # Download the driver for the selected type\n    switch ($DatabaseType)\n    {\n        \"MariaDB\"\n        {\n            # Download MariaDB driver\n            Write-Host \"Downloading MariaDB driver ...\"\n            $driverPath = \"$PSScriptroot\\DatabaseDriver\\mariadb-java-client-2.6.2.jar\"\n            Invoke-WebRequest -Uri \"https://downloads.mariadb.com/Connectors/java/connector-java-2.6.2/mariadb-java-client-2.6.2.jar\" -OutFile $driverPath -UseBasicParsing\n             \n            break\n        }\n        \"MongoDB\"\n        {\n        \t# Set repo name\n            $repositoryName = \"liquibase/liquibase-mongodb\"\n            \n            # Download MongoDB driver\n            Write-Host \"Downloading Maven MongoDB driver ...\"\n            $driverPath = \"$PSScriptroot\\DatabaseDriver\\mongo-java-driver-3.12.7.jar\"\n            Invoke-WebRequest -Uri \"https://repo1.maven.org/maven2/org/mongodb/mongo-java-driver/3.12.7/mongo-java-driver-3.12.7.jar\" -Outfile $driverPath -UseBasicParsing\n            \n            if ([string]::IsNullOrEmpty($liquibaseVersion))\n            {\n            \t# Get the latest version for the extension\n            \t$downloadUrl = (Get-LatestVersionDownloadUrl -Repository $repositoryName | Where-Object {$_.EndsWith(\".jar\")})\n           \t}\n            else\n            {\n            \t# Download version matching extension\n                $downloadUrl = (Get-LatestVersionDownloadUrl -Repository $repositoryName -Version $liquibaseVersion | Where-Object {$_.EndsWith(\".jar\")})\n            }\n                        \n\t\t\tWrite-Host \"Downloading MongoDB Liquibase extension from $downloadUrl ...\"\n            $extensionPath = \"$PSScriptroot\\$($downloadUrl.Substring($downloadUrl.LastIndexOf(\"/\")))\"\n            \n            Invoke-WebRequest -Uri $downloadUrl -Outfile $extensionPath -UseBasicParsing\n                        \n            # Make driver path null\n            $driverPath = \"$driverPath;$extensionPath\"\n            \n            break\n        }\n        \"MySQL\"\n        {\n            # Download MariaDB driver\n            Write-Host \"Downloading MySQL driver ...\"\n            Invoke-WebRequest -Uri \"https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-8.0.21.zip\" -OutFile \"$PSScriptroot\\DatabaseDriver\\mysql-connector-java-8.0.21.zip\" -UseBasicParsing\n\n            # Extract package\n            Write-Host \"Extracting MySQL driver ...\"\n            Expand-Archive -Path \"$PSScriptroot\\DatabaseDriver\\mysql-connector-java-8.0.21.zip\" -DestinationPath \"$PSSCriptRoot\\DatabaseDriver\"\n\n            # Find driver\n            $driverPath = (Get-ChildItem -Path \"$PSScriptRoot\\DatabaseDriver\" -Recurse | Where-Object {$_.Name -eq \"mysql-connector-java-8.0.21.jar\"}).FullName\n\n            break\n        }\n        \"Oracle\"\n        {\n            # Download Oracle driver\n            Write-Host \"Downloading Oracle driver ...\"\n            $driverPath = \"$PSScriptroot\\DatabaseDriver\\ojdbc10.jar\"\n            Invoke-WebRequest -Uri \"https://download.oracle.com/otn-pub/otn_software/jdbc/211/ojdbc11.jar\" -OutFile $driverPath -UseBasicParsing\n\n            break\n        }\n        \"SqlServer\"\n        {\n            # Download Microsoft driver\n            Write-Host \"Downloading Sql Server driver ...\"\n            Invoke-WebRequest -Uri \"https://go.microsoft.com/fwlink/?linkid=2137600\" -OutFile \"$PSScriptroot\\DatabaseDriver\\sqljdbc_8.4.0.0_enu.zip\" -UseBasicParsing\n\n            # Extract package\n            Write-Host \"Extracting SqlServer driver ...\"\n            Expand-Archive -Path \"$PSScriptroot\\DatabaseDriver\\sqljdbc_8.4.0.0_enu.zip\" -DestinationPath \"$PSSCriptRoot\\DatabaseDriver\"\n\n            # Find driver\n            $driverPath = (Get-ChildItem -Path \"$PSSCriptRoot\\DatabaseDriver\" -Recurse | Where-Object {$_.Name -eq \"mssql-jdbc-8.4.1.jre14.jar\"}).FullName\n\n\t\t\tbreak\n        }\n        \"PostgreSQL\"\n        {\n            # Download PostgreSQL driver\n            Write-Host \"Downloading PostgreSQL driver ...\"\n            $driverPath = \"$PSScriptroot\\DatabaseDriver\\postgresql-42.2.12.jar\"\n            Invoke-WebRequest -Uri \"https://jdbc.postgresql.org/download/postgresql-42.2.12.jar\" -OutFile $driverPath -UseBasicParsing\n\n            break\n        }\n        default\n        {\n            # Display error\n            Write-Error \"Unknown database type: $DatabaseType.\"\n        }\n    }\n\n    # Return the driver location\n    return $driverPath\n}\n\n# Returns the driver name for the liquibase call\nFunction Get-DatabaseDriverName\n{\n    # Define parameters\n    param ($DatabaseType)\n\n    # Declare local variables\n    $driverName = \"\"\n\n    # Download the driver for the selected type\n    switch ($DatabaseType)\n    {\n        \"MariaDB\"\n        {\n            $driverName = \"org.mariadb.jdbc.Driver\"\n            break\n        }\n        \"MongoDB\"\n        {\n        \t$driverName = $null\n            break\n        }\n        \"MySQL\"\n        {\n            $driverName = \"com.mysql.cj.jdbc.Driver\"\n            break\n        }\n        \"Oracle\"\n        {\n            $driverName = \"oracle.jdbc.OracleDriver\"\n            break\n        }\n        \"SqlServer\"\n        {\n            $driverName = \"com.microsoft.sqlserver.jdbc.SQLServerDriver\"\n            break\n        }\n        \"PostgreSQL\"\n        {\n            $driverName = \"org.postgresql.Driver\"\n            break\n        }\n        default\n        {\n            # Display error\n            Write-Error \"Unkonwn database type: $DatabaseType.\"\n        }\n    }\n\n    # Return the driver location\n    return $driverName\n}\n\n# Returns the connection string formatted for the database type\nFunction Get-ConnectionUrl\n{\n    # Define parameters\n    param ($DatabaseType, \n    \t$ServerPort, \n        $ServerName, \n        $DatabaseName, \n        $QueryStringParameters)\n\n    # Define local variables\n    $connectioUrl = \"\"\n\n    # Download the driver for the selected type\n    switch ($DatabaseType)\n    {\n        \"MariaDB\"\n        {\n            $connectionUrl = \"jdbc:mariadb://{0}:{1}/{2}\"\n            break\n        }\n        \"MongoDB\"\n        {\n        \t$connectionUrl = \"mongodb://{0}:{1}/{2}\"            \n            break\n        }\n        \"MySQL\"\n        {\n            $connectionUrl = \"jdbc:mysql://{0}:{1}/{2}\"\n            break\n        }\n        \"Oracle\"\n        {\n            $connectionUrl = \"jdbc:oracle:thin:@{0}:{1}:{2}\"\n            break\n        }\n        \"SqlServer\"\n        {\n            $connectionUrl = \"jdbc:sqlserver://{0}:{1};database={2};\"\n            break\n        }\n        \"PostgreSQL\"\n        {\n            $connectionUrl = \"jdbc:postgresql://{0}:{1}/{2}\"\n            break\n        }\n        default\n        {\n            # Display error\n            Write-Error \"Unkonwn database type: $DatabaseType.\"\n        }\n    }\n\n    if (![string]::IsNullOrEmpty($QueryStringParameters))\n    {\n        if ($QueryStringParameters.StartsWith(\"?\") -eq $false)\n        {\n            # Add the question mark\n            $connectionUrl += \"?\"\n        }\n        $connectionUrl += \"$QueryStringParameters\"\n    }\n\n    # Return the url\n    return ($connectionUrl -f $ServerName, $ServerPort, $DatabaseName)\n}\n\n# Create array for arguments\n$liquibaseArguments = @()\n\n# Check for license key\nif (![string]::IsNullOrEmpty($liquibaseProLicenseKey))\n{\n\t# Add key to arguments\n    $liquibaseArguments += \"--liquibaseProLicenseKey=$liquibaseProLicenseKey\"\n}\n\n# Find Change log\n$changeLogFile = (Get-ChangeLog -FileName $liquibaseChangeLogFileName)\n$liquibaseArguments += \"--changeLogFile=$($changeLogFile.Name)\"\n\n# Check to see if it needs to be downloaed to machine\nif ($liquibaseDownload -eq $true)\n{\n    # Download and extract liquibase\n    Get-Liquibase -Version $liquibaseVersion -DownloadFolder $workingFolder\n\n    # Download and extract java and add it to PATH environment variable\n    Get-Java\n\n    # Get the driver\n    $driverPath = Get-DatabaseJar -DatabaseType $liquibaseDatabaseType\n\n\tif (![string]::IsNullOrEmpty($driverPath))\n    {\n    \t# Add to arguments\n    \t$liquibaseArguments += \"--classpath=$driverPath\"\n    }\n}\nelse\n{\n    if (![string]::IsNullOrEmpty($liquibaseClassPath))\n    {\n    \t$liquibaseArguments += \"--classpath=$liquibaseClassPath\"\n    }\n}\n\n# Check to see if liquibase path has been defined\nif ([string]::IsNullOrEmpty($liquibaseExecutablePath))\n{\n    # Assign root\n    $liquibaseExecutablePath = $PSSCriptRoot\n}\n\n# Get the executable location\n$liquibaseExecutable = Get-ChildItem -Path $liquibaseExecutablePath -Recurse | Where-Object {$_.Name -eq \"liquibase.bat\"}\n\n# Add path to current session\n$env:PATH += \";$($liquibaseExecutable.Directory)\"\n\n# Check to make sure it was found\nif ([string]::IsNullOrEmpty($liquibaseExecutable))\n{\n    # Could not find the executable\n    Write-Error \"Unable to find liquibase.bat in $PSScriptRoot or subfolders.\"\n}\n\n# Add argument for driver\n#$databaseDriver = Get-DatabaseDriverName -DatabaseType $liquibaseDatabaseType\n#if (![string]::IsNullOrEmpty($databaseDriver))\n#{\n#\t$liquibaseArguments += \"--driver=$databaseDriver\"\n#}\n\n# Add connection Url\n$connectionUrl = Get-ConnectionUrl -DatabaseType $liquibaseDatabaseType -ServerPort $liquibaseServerPort -ServerName $liquibaseServerName -DatabaseName $liquibaseDatabaseName -QueryStringParameters $liquibaseQueryStringParameters\n$liquibaseArguments += \"--url=$connectionUrl\"\n\n# Add Username and password\n$liquibaseArguments += \"--username=$liquibaseUsername\"\n$liquibaseArguments += \"--password=`\"$liquibasePassword`\"\"\n\n# Set the location to where the file is\nSet-Location -Path $changeLogFile.Directory\n\n# Check to see if it should run or just report\nif ($liquibaseReport -eq $true)\n{\n    # Set error action preference - updateSQL writes to stderr so this is to prevent errors from showing up\n    $ErrorActionPreference = \"SilentlyContinue\"\n    \n    # Add just report\n    $liquibaseArguments += \"updateSQL\"\n    \n    # Execute liquibase\n    $liquibaseProcess = Start-Process -FilePath $liquibaseExecutable.FullName -ArgumentList $liquibaseArguments -RedirectStandardError \"$PSScriptRoot\\stderr.txt\" -RedirectStandardOutput \"$PSScriptRoot\\ChangeSet.sql\" -Passthru -Wait\n\t    \n    # Display standard error\n    foreach ($line in (Get-Content -Path \"$PSScriptRoot\\stderr.txt\"))\n    {\n    \t# Display\n        Write-Host \"$line\"\n    }\n    \n    # Check exit code\n    if ($liquibaseProcess.ExitCode -eq 0)\n    {\n    \t# Attach artifact\n        New-OctopusArtifact -Path \"$PSScriptRoot\\ChangeSet.sql\" -Name \"ChangeSet.sql\"\n    }\n}\nelse\n{\n    $liquibaseArguments += \"update\"\n    & $liquibaseExecutable.FullName $liquibaseArguments\n}\n\n"
+    },
+    "Parameters": [
+      {
+        "Id": "38e92902-4a82-41f3-a86a-3e467da0c454",
+        "Name": "liquibaseProLicenseKey",
+        "Label": "Pro license key",
+        "HelpText": "Enter your Liquibase Pro license key. [Request a free 30-day trial.](https://www.liquibase.com/trial) Leave blank to use the Community Edition.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "4477651b-2b6d-4352-a1bd-9b9e46c31c75",
+        "Name": "liquibaseDatabaseType",
+        "Label": "Database type",
+        "HelpText": "Select the database type to deploy to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "MariaDB|MariaDB\nMongoDB|MongoDB\nMySQL|MySQL\nOracle|Oracle\nPostgreSQL|PostgreSQL\nSqlServer|SqlServer"
+        }
+      },
+      {
+        "Id": "4c738f97-c803-4a14-895e-ad6bacf09270",
+        "Name": "liquibaseChangeLogFileName",
+        "Label": "Change Log file name",
+        "HelpText": "Name of the changelog file in the package.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "25ee8ea4-f38b-42e6-a503-026d72cc83a2",
+        "Name": "liquibaseServerName",
+        "Label": "Server name",
+        "HelpText": "Name or IP address of the database server.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "592c5987-394a-41c2-bd82-1e234e470296",
+        "Name": "liquibaseServerPort",
+        "Label": "Server port",
+        "HelpText": "The port the database server listens on.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "8e43ac61-4623-4102-bb59-58a2571bfa42",
+        "Name": "liquibaseDatabaseName",
+        "Label": "Database name",
+        "HelpText": "Name of the database (or service name in case of Oracle) to deploy to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "93f218a0-8fb3-42ab-bcb9-500d9f68922b",
+        "Name": "liquibaseUsername",
+        "Label": "Username",
+        "HelpText": "Username of a user that has permission to make changes to the database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "a2d1fee4-7161-4f8c-8d81-c00780acb79e",
+        "Name": "liquibasePassword",
+        "Label": "Password",
+        "HelpText": "Password for the user with permissions to make changes to the database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "42741eb0-3768-4b99-8ad2-668b92db0c77",
+        "Name": "liquibaseQueryStringParameters",
+        "Label": "Connection query string parameters",
+        "HelpText": "Add additional parameters to the connection string URL. Example: ?useUnicode=true",
+        "DefaultValue": "",
+        "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+      },
+      {
+        "Id": "1d907292-d8c6-4afc-bc26-34125b1f66ec",
+        "Name": "liquibaseClassPath",
+        "Label": "Database driver path",
+        "HelpText": "Filepath to the location of the .jar driver for the database type.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "49c3a944-b727-4487-b2b1-493527177f5d",
+        "Name": "liquibaseExecutablePath",
+        "Label": "Executable file path",
+        "HelpText": "File path to the Liquibase executable.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "6e2c9b48-9e67-4bed-aafa-3dc5257f9f62",
+        "Name": "liquibaseReport",
+        "Label": "Report only?",
+        "HelpText": "This option will generate the SQL statements, save them to a file, then attach them to the step as an artifact.  This option only generates the statement, it will not run them.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "35500312-a25b-4a05-ac1e-68a7f51afd1e",
+        "Name": "liquibaseDownload",
+        "Label": "Download Liquibase?",
+        "HelpText": "Use this option to download the software necessary to deploy a Liquibase changeset.  This will download Liquibase, java, and the appropriate driver for the selected database type.  Using this option overrides the `Database driver path` and `Executable file path` inputs.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "3602d6ce-94af-4d59-acc9-ae8a84bafd01",
+        "Name": "liquibaseVersion",
+        "Label": "Liquibase version",
+        "HelpText": "Used with `Download Liquibase` to specify the version of Liquibase to use.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "235f6187-0fbf-409a-820f-61d81cea3722",
+        "Name": "liquibaseChangeset",
+        "Label": "Changeset package",
+        "HelpText": "Select the package with the changeset.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Package"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-02-25T23:33:12.871Z",
+      "OctopusVersion": "2020.6.0-rc0003",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+    "LastModifiedBy": "bobjwalker",
+    "Category": "liquibase"
+  }

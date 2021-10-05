@@ -3,7 +3,7 @@
   "Name": "IIS Website - Stop",
   "Description": "Stops a website in IIS.",
   "ActionType": "Octopus.Script",
-  "Version": 7,
+  "Version": 8,
   "Properties": {
     "Octopus.Action.Script.ScriptBody": "# Load IIS module:\r\nImport-Module WebAdministration\r\n\r\n# Get WebSite Name\r\n$webSiteName = $OctopusParameters['webSiteName']\r\n# Get the number of retries\r\n$retries = $OctopusParameters['webSiteCheckRetries']\r\n# Get the number of attempts\r\n$delay = $OctopusParameters['webSiteCheckDelay']\r\n\r\n# Check if exists\r\nif(Test-Path IIS:\\Sites\\$webSiteName) {\r\n\r\n    # Stop Website if not already stopped\r\n    if ((Get-WebSiteState $webSiteName).Value -ne \"Stopped\") {\r\n        Write-Output \"Stopping IIS Website $webSiteName\"\r\n        Stop-WebSite $webSiteName\r\n    \r\n        $state = (Get-WebSiteState $webSiteName).Value\r\n        $counter = 1\r\n        \r\n        # Wait for the Website to the \"Stopped\" before proceeding\r\n        do{ \r\n            $state = (Get-WebSiteState $webSiteName).Value\r\n            Write-Output \"$counter/$retries Waiting for IIS Website $webSiteName to shut down completely. Current status: $state\"\r\n            $counter++\r\n            Start-Sleep -Milliseconds $delay\r\n        }\r\n        while($state -ne \"Stopped\" -and $counter -le $retries)  \r\n        \r\n        # Throw an error if the Website is not stopped\r\n        if($counter -gt $retries) { \r\n            throw \"Could not shut down IIS Website $webSiteName. `nTry to increase the number of retries ($retries) or delay between attempts ($delay milliseconds).\" }\r\n    }\r\n}\r\nelse {\r\n    Write-Output \"IIS Website $webSiteName doesn't exist\"\r\n}",
     "Octopus.Action.Script.Syntax": "PowerShell",
@@ -17,7 +17,9 @@
       "Label": "Website name",
       "HelpText": "The name of the site in IIS",
       "DefaultValue": null,
-      "DisplaySettings": {}
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     },
     {
       "Name": "WebSiteCheckDelay",
@@ -38,8 +40,8 @@
       }
     }
   ],
-  "LastModifiedOn": "2017-02-09T23:04:46.440Z",
-  "LastModifiedBy": "novascreen",
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
   "$Meta": {
     "ExportedAt": "2017-02-09T23:04:46.440Z",
     "OctopusVersion": "3.3.17",

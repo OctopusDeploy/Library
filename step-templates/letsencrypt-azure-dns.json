@@ -1,0 +1,103 @@
+{
+    "Id": "79e0dd12-6222-4f8a-a8dc-bcbe579ed729",
+    "Name": "Lets Encrypt - Azure DNS",
+    "Description": "Request (or renew) a X.509 SSL Certificate from the [Let's Encrypt Certificate Authority](https://letsencrypt.org/). \n\n#### Features\n\n- ACME v2 protocol support which allows generating wildcard certificates (*.example.com)\n- [Azure DNS](https://azure.microsoft.com/en-us/services/dns/) Challenge for TLD, CNAME and Wildcard domains. \n- Publishes/Updates SSL Certificates in the [Octopus Deploy Certificate Store](https://octopus.com/docs/deployment-examples/certificates). \n- Verified to work on both Windows (PowerShell 5+) and Linux (PowerShell 6+) deployment Targets or Workers.",
+    "ActionType": "Octopus.Script",
+    "Version": 9,
+    "Packages": [],
+    "Properties": {
+        "Octopus.Action.Script.ScriptSource": "Inline",
+        "Octopus.Action.Script.Syntax": "PowerShell",
+        "Octopus.Action.Script.ScriptBody": "###############################################################################\n# TLS 1.2\n###############################################################################\n[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\n###############################################################################\n# Required Modules folder\n###############################################################################\nWrite-Host \"Checking for required powershell modules folder\"\n$ModulesFolder = \"$HOME\\Documents\\WindowsPowerShell\\Modules\"\nif ($PSEdition -eq \"Core\") {\n    if ($PSVersionTable.Platform -eq \"Unix\") {\n        $ModulesFolder = \"$HOME/.local/share/powershell/Modules\"\n    }\n    else {\n        $ModulesFolder = \"$HOME\\Documents\\PowerShell\\Modules\"\n    }\n}\n$PSModuleFolderExists = (Test-Path $ModulesFolder)\nif ($PSModuleFolderExists -eq $False) {\n\tWrite-Host \"Creating directory: $ModulesFolder\"\n\tNew-Item $ModulesFolder -ItemType Directory -Force\n    $env:PSModulePath = $ModulesFolder + [System.IO.Path]::PathSeparator + $env:PSModulePath\n}\n\n###############################################################################\n# Required Modules\n###############################################################################\nWrite-Host \"Checking for required modules.\"\n$required_posh_acme_version = 3.12.0\n$module_check = Get-Module -ListAvailable -Name Posh-Acme | Where-Object { $_.Version -ge $required_posh_acme_version }\n\nif (-not ($module_check)) {\n    Write-Host \"Ensuring NuGet provider is bootstrapped.\"\n    Get-PackageProvider NuGet -ForceBootstrap | Out-Null\n    Write-Host \"Installing Posh-ACME.\"\n    Install-Module -Name Posh-ACME -MinimumVersion 3.12.0 -Scope CurrentUser -Force\n}\n\nImport-Module Posh-ACME\n\n###############################################################################\n# Constants\n###############################################################################\n$LE_AzureDNS_CertificateDomain = $OctopusParameters[\"LE_AzureDNS_CertificateDomain\"]\n$LE_AzureDNS_CertificateName = \"Lets Encrypt - $($LE_AzureDNS_CertificateDomain)\"\n\n# Issuer used in a cert could be one of multiple, including ones no longer supported by Let's Encrypt\n$LE_AzureDNS_Fake_Issuers = @(\"Fake LE Intermediate X1\")\n$LE_AzureDNS_Issuers = @(\"Let's Encrypt Authority X3\", \"R3\", \"E1\", \"R4\", \"E2\")\n\n###############################################################################\n# Helpers\n###############################################################################\nfunction Get-WebRequestErrorBody {\n    param (\n        $RequestError\n    )\n\n    # Powershell < 6 you can read the Exception\n    if ($PSVersionTable.PSVersion.Major -lt 6) {\n        if ($RequestError.Exception.Response) {\n            $reader = New-Object System.IO.StreamReader($RequestError.Exception.Response.GetResponseStream())\n            $reader.BaseStream.Position = 0\n            $reader.DiscardBufferedData()\n            $response = $reader.ReadToEnd()\n\n            return $response | ConvertFrom-Json\n        }\n    }\n    else {\n        return $RequestError.ErrorDetails.Message\n    }\n}\n\n###############################################################################\n# Functions\n###############################################################################\nfunction Get-LetsEncryptCertificate {\n    Write-Debug \"Entering: Get-LetsEncryptCertificate\"\n\n    if ($OctopusParameters[\"LE_AzureDNS_Use_Staging\"] -eq $True) {\n        Write-Host \"Using Lets Encrypt Server: Staging\"\n        Set-PAServer LE_STAGE;\n    }\n    else {\n        Write-Host \"Using Lets Encrypt Server: Production\"\n        Set-PAServer LE_PROD;\n    }\n\n    # Clobber account if it exists.\n    $le_account = Get-PAAccount\n    if ($le_account) {\n        Remove-PAAccount $le_account.Id -Force\n    }\n\n    $azure_password = ConvertTo-SecureString -String $OctopusParameters[\"LE_AzureDNS_AzureAccount.Password\"] -AsPlainText -Force\n    $azure_credential = New-Object System.Management.Automation.PSCredential($OctopusParameters[\"LE_AzureDNS_AzureAccount.Client\"], $azure_password)\n    $azure_params = @{\n        AZSubscriptionId = $OctopusParameters[\"LE_AzureDNS_AzureAccount.SubscriptionNumber\"];\n        AZTenantId       = $OctopusParameters[\"LE_AzureDNS_AzureAccount.TenantId\"];\n        AZAppCred        = $azure_credential\n    }\n\n    try {\n\n        $DnsPlugins = @(\"Azure\")\n        $DomainList = @($LE_AzureDNS_CertificateDomain)\n        \n        # If domain is a wildcard e.g. *.example-domain.com, check if a SAN has been requested e.g. example-domain.com.\n        if ($LE_AzureDNS_CertificateDomain -match \"\\*.\" -and $OctopusParameters[\"LE_AzureDNS_CreateWildcardSAN\"] -eq $True) {\n            $LE_AzureDNS_Certificate_SAN = $LE_AzureDNS_CertificateDomain.Replace(\"*.\",\"\")\n            $DomainList += $LE_AzureDNS_Certificate_SAN\n            # Include additional DnsPlugin of same type to suppress warning.\n            $DnsPlugins += \"Azure\"\n        }\n\n        $Cert_Params = @{\n            Domain = $DomainList\n            AcceptTOS = $True;\n            Contact = $OctopusParameters[\"LE_AzureDNS_ContactEmailAddress\"];\n            DnsPlugin = $DnsPlugins;\n            PluginArgs = $azure_params;\n            PfxPass = $OctopusParameters[\"LE_AzureDNS_PfxPassword\"];\n            Force = $True;\n        }\n\n        return New-PACertificate @Cert_Params\n    }\n    catch {\n        Write-Host \"Failed to Create Certificate. Error Message: $($_.Exception.Message). See Debug output for details.\"\n        Write-Debug (Get-WebRequestErrorBody -RequestError $_)\n        exit 1\n    }\n}\n\nfunction Get-OctopusCertificates {\n    Write-Debug \"Entering: Get-OctopusCertificates\"\n\n    $octopus_uri = $OctopusParameters[\"Octopus.Web.ServerUri\"]\n    $octopus_space_id = $OctopusParameters[\"Octopus.Space.Id\"]\n    $octopus_headers = @{ \"X-Octopus-ApiKey\" = $OctopusParameters[\"LE_AzureDNS_Octopus_APIKey\"] }\n    $octopus_certificates_uri = \"$octopus_uri/api/$octopus_space_id/certificates?search=$($LE_AzureDNS_CertificateDomain)\"\n\n    try {\n        # Get a list of certificates that match our domain search criteria.\n        $certificates_search = Invoke-WebRequest -Uri $octopus_certificates_uri -Method Get -Headers $octopus_headers -UseBasicParsing -ErrorAction Stop | ConvertFrom-Json | Select-Object -ExpandProperty Items\n\n        # We don't want to confuse Production and Staging Lets Encrypt Certificates.\n        $possible_issuers = $LE_AzureDNS_Issuers\n        if ($OctopusParameters[\"LE_AzureDNS_Use_Staging\"] -eq $True) {\n            $possible_issuers = $LE_AzureDNS_Fake_Issuers\n        }\n\n        return $certificates_search | Where-Object {\n            $_.SubjectCommonName -eq $LE_AzureDNS_CertificateDomain -and\n            $possible_issuers -contains $_.IssuerCommonName -and\n            $null -eq $_.ReplacedBy -and\n            $null -eq $_.Archived\n        }\n    }\n    catch {\n        Write-Host \"Could not retrieve certificates from Octopus Deploy. Error: $($_.Exception.Message). See Debug output for details.\"\n        Write-Debug (Get-WebRequestErrorBody -RequestError $_)\n        exit 1\n    }\n}\n\nfunction Publish-OctopusCertificate {\n    param (\n        [string] $JsonBody\n    )\n\n    Write-Debug \"Entering: Publish-OctopusCertificate\"\n\n    if (-not ($JsonBody)) {\n        Write-Host \"Existing Certificate is required.\"\n        exit 1\n    }\n\n    $octopus_uri = $OctopusParameters[\"Octopus.Web.ServerUri\"]\n    $octopus_space_id = $OctopusParameters[\"Octopus.Space.Id\"]\n    $octopus_headers = @{ \"X-Octopus-ApiKey\" = $OctopusParameters[\"LE_AzureDNS_Octopus_APIKey\"] }\n    $octopus_certificates_uri = \"$octopus_uri/api/$octopus_space_id/certificates\"\n\n    try {\n        Invoke-WebRequest -Uri $octopus_certificates_uri -Method Post -Headers $octopus_headers -Body $JsonBody -UseBasicParsing\n        Write-Host \"Published $($LE_AzureDNS_CertificateDomain) certificate to the Octopus Deploy Certificate Store.\"\n    }\n    catch {\n        Write-Host \"Failed to publish $($LE_AzureDNS_CertificateDomain) certificate. Error: $($_.Exception.Message). See Debug output for details.\"\n        Write-Debug (Get-WebRequestErrorBody -RequestError $_)\n        exit 1\n    }\n}\n\nfunction Update-OctopusCertificate {\n    param (\n        [string]$Certificate_Id,\n        [string]$JsonBody\n    )\n\n    Write-Debug \"Entering: Update-OctopusCertificate\"\n\n    if (-not ($Certificate_Id -and $JsonBody)) {\n        Write-Host \"Existing Certificate Id and a replace Certificate are required.\"\n        exit 1\n    }\n\n    $octopus_uri = $OctopusParameters[\"Octopus.Web.ServerUri\"]\n    $octopus_space_id = $OctopusParameters[\"Octopus.Space.Id\"]\n    $octopus_headers = @{ \"X-Octopus-ApiKey\" = $OctopusParameters[\"LE_AzureDNS_Octopus_APIKey\"] }\n    $octopus_certificates_uri = \"$octopus_uri/api/$octopus_space_id/certificates/$Certificate_Id/replace\"\n\n    try {\n        Invoke-WebRequest -Uri $octopus_certificates_uri -Method Post -Headers $octopus_headers -Body $JsonBody -UseBasicParsing\n        Write-Host \"Replaced $($LE_AzureDNS_CertificateDomain) certificate in the Octopus Deploy Certificate Store.\"\n    }\n    catch {\n        Write-Error \"Failed to replace $($LE_AzureDNS_CertificateDomain) certificate. Error: $($_.Exception.Message)\"\n        exit 1\n    }\n}\n\nfunction Get-NewCertificatePFXAsJson {\n    param (\n        $Certificate\n    )\n\n    Write-Debug \"Entering: Get-NewCertificatePFXAsJson\"\n\n    if (-not ($Certificate)) {\n        Write-Host \"Certificate is required.\"\n        Exit 1\n    }\n\n    [Byte[]]$certificate_buffer = [System.IO.File]::ReadAllBytes($Certificate.PfxFullChain)\n    $certificate_base64 = [convert]::ToBase64String($certificate_buffer)\n\n    $certificate_body = @{\n        Name = \"$LE_AzureDNS_CertificateName\";\n        Notes             = \"\";\n        CertificateData   = @{\n            HasValue = $true;\n            NewValue = $certificate_base64;\n        };\n        Password          = @{\n            HasValue = $true;\n            NewValue = $OctopusParameters[\"LE_AzureDNS_PfxPassword\"];\n        };\n    }\n\n    return $certificate_body | ConvertTo-Json\n}\n\nfunction Get-ReplaceCertificatePFXAsJson {\n    param (\n        $Certificate\n    )\n\n    Write-Debug \"Entering: Get-ReplaceCertificatePFXAsJson\"\n\n    if (-not ($Certificate)) {\n        Write-Host \"Certificate is required.\"\n        Exit 1\n    }\n\n    [Byte[]]$certificate_buffer = [System.IO.File]::ReadAllBytes($Certificate.PfxFullChain)\n    $certificate_base64 = [convert]::ToBase64String($certificate_buffer)\n\n    $certificate_body = @{\n        CertificateData = $certificate_base64;\n        Password        = $OctopusParameters[\"LE_AzureDNS_PfxPassword\"];\n    }\n\n    return $certificate_body | ConvertTo-Json\n}\n\n###############################################################################\n# DO THE THING | MAIN |\n###############################################################################\nWrite-Debug \"Do the Thing\"\n\nWrite-Host \"Checking for existing Lets Encrypt Certificates in the Octopus Deploy Certificates Store.\"\n$certificates = Get-OctopusCertificates\n\n# Check for PFX & PEM\nif ($certificates) {\n\n    # Handle weird behavior between Powershell 5 and Powershell 6+\n    $certificate_count = 1\n    if ($certificates.Count -ge 1) {\n        $certificate_count = $certificates.Count\n    }\n\n    Write-Host \"Found $certificate_count for $($LE_AzureDNS_CertificateDomain).\"\n    Write-Host \"Checking to see if any expire within $($OctopusParameters[\"LE_AzureDNS_ReplaceIfExpiresInDays\"]) days.\"\n\n    # Check Expiry Dates\n    $expiring_certificates = $certificates | Where-Object { [DateTime]$_.NotAfter -lt (Get-Date).AddDays($OctopusParameters[\"LE_AzureDNS_ReplaceIfExpiresInDays\"]) }\n\n    if ($expiring_certificates) {\n        Write-Host \"Found certificates that expire with $($OctopusParameters[\"LE_AzureDNS_ReplaceIfExpiresInDays\"]) days. Requesting new certificates for $($LE_AzureDNS_CertificateDomain) from Lets Encrypt\"\n        $le_certificate = Get-LetsEncryptCertificate\n\n        # PFX\n        $existing_certificate = $certificates | Where-Object { $_.CertificateDataFormat -eq \"Pkcs12\" } | Select-Object -First 1\n        $certificate_as_json = Get-ReplaceCertificatePFXAsJson -Certificate $le_certificate\n        Update-OctopusCertificate -Certificate_Id $existing_certificate.Id -JsonBody $certificate_as_json\n    }\n    else {\n        Write-Host \"Nothing to do here...\"\n    }\n\n    exit 0\n}\n\n# No existing Certificates - Lets get some new ones.\nWrite-Host \"No existing certificates found for $($LE_AzureDNS_CertificateDomain).\"\nWrite-Host \"Request New Certificate for $($LE_AzureDNS_CertificateDomain) from Lets Encrypt\"\n\n# New Certificate..\n$le_certificate = Get-LetsEncryptCertificate\n\nWrite-Host \"Publishing: LetsEncrypt - $($LE_AzureDNS_CertificateDomain) (PFX)\"\n$certificate_as_json = Get-NewCertificatePFXAsJson -Certificate $le_certificate\nPublish-OctopusCertificate -JsonBody $certificate_as_json\n\nWrite-Host \"GREAT SUCCESS\"\n",
+        "Octopus.Action.SubstituteInFiles.Enabled": "True"
+    },
+    "Parameters": [{
+            "Id": "f1739a56-2603-42e0-b629-801dd71b0b0c",
+            "Name": "LE_AzureDNS_CertificateDomain",
+            "Label": "Certificate Domain",
+            "HelpText": "Domain (TLD, CNAME or Wildcard) to create a certificate for. ",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "c1f44b38-8025-4b12-b010-df48c02b3da4",
+            "Name": "LE_AzureDNS_PfxPassword",
+            "Label": "PFX Password",
+            "HelpText": "Password to use when converting to / from PFX. ",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Sensitive"
+            }
+        },
+        {
+            "Id": "c258ee0e-e298-4fa1-9c66-5ac0749409c5",
+            "Name": "LE_AzureDNS_ReplaceIfExpiresInDays",
+            "Label": "Replace expiring certificate before N days",
+            "HelpText": "Replace the certificate if it expiries within N days",
+            "DefaultValue": "30",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "2935998d-d030-4af6-ad42-39e8b85e2dce",
+            "Name": "LE_AzureDNS_AzureAccount",
+            "Label": "Azure account",
+            "HelpText": "An Azure Account that has API access to make DNS changes. ",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "AzureAccount"
+            }
+        },
+        {
+            "Id": "85af482d-e577-40b8-94e5-626e545adab5",
+            "Name": "LE_AzureDNS_Octopus_APIKey",
+            "Label": "Octopus Deploy API key",
+            "HelpText": "A Octopus Deploy API key with access to change Certificates in the Certificate Store. ",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Sensitive"
+            }
+        },
+        {
+            "Id": "00d513ed-3d75-48d2-954a-0a0165d85530",
+            "Name": "LE_AzureDNS_Use_Staging",
+            "Label": "Use Lets Encrypt Staging",
+            "HelpText": "Should the Certificate be generated using the Lets Encrypt Staging infrastructure?",
+            "DefaultValue": "false",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Checkbox"
+            }
+        },
+        {
+            "Id": "f1fd315d-9fc5-4b15-b53c-9381ecc5cb88",
+            "Name": "LE_AzureDNS_ContactEmailAddress",
+            "Label": "Contact Email Address",
+            "HelpText": "Email Address",
+            "DefaultValue": "#{Octopus.Deployment.CreatedBy.EmailAddress}",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "2dc7d9bc-9eee-4ee0-a33c-ef9371ed69f1",
+            "Name": "LE_AzureDNS_CreateWildcardSAN",
+            "Label": "Create Wildcard SAN",
+            "HelpText": "Should the certificate have a Subject Alternative Name (SAN) excluding the wildcard?\n\ne.g. a certificate domain of `*.internal.example-domain.com` could also have a SAN of `internal.example-domain.com`",
+            "DefaultValue": "false",
+            "DisplaySettings": {
+              "Octopus.ControlType": "Checkbox"
+            }
+        }
+    ],
+    "LastModifiedAt": "2021-08-23T09:31:24.342Z",
+    "LastModifiedBy": "harrisonmeister",
+    "$Meta": {
+        "ExportedAt": "2021-08-23T09:31:24.342Z",
+        "OctopusVersion": "2021.2.7178",
+        "Type": "ActionTemplate"
+    },
+    "Category": "lets-encrypt"
+}

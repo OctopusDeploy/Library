@@ -1,0 +1,126 @@
+{
+  "Id": "5b4544ed-987b-4532-9d6d-7c7a2ce5bd00",
+  "Name": "Azure Database - Import",
+  "Description": "Imports a bacpac file into an existing database.\n\n*depends on az cli*\n\n*Target database requires 'Allow Azure services and resources to access this server' option turn on in the SQL server firewall*",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Azure.AccountId": "#{azDbImport.AzAcct}",
+    "Octopus.Action.Script.ScriptBody": "$rgname = $OctopusParameters[\"azDbImport.rgName\"]\n$svrName = $OctopusParameters[\"azDbImport.sqlSvrName\"]\n$dbName = $OctopusParameters[\"azDbImport.dbName\"]\n$adminName = $OctopusParameters[\"azDbImport.adminName\"]\n$adminPwd = $OctopusParameters[\"azDbImport.adminPwd\"]\n$accessKey = $OctopusParameters[\"azDbImport.blobAccessKey\"]\n$accessKeyType = $OctopusParameters[\"azDbImport.accessKeyType\"]\n$containerUri = $OctopusParameters[\"azDbImport.ContainerUri\"]\n$backupName = $OctopusParameters[\"azDbImport.backupName\"]\n\n$backupUri = \"$containerUri/$backupName.bacpac\"\n\nif([string]::IsNullOrEmpty($rgname))\n{\n\tthrow \"resource group name is not provided\"\n}\n\nif([string]::IsNullOrEmpty($svrName))\n{\n\tthrow \"sql server name is not provided\"\n}\n\nif([string]::IsNullOrEmpty($dbName))\n{\n\tthrow \"database name not provided\"\n}\n\n# admin name, password and access key will not be validated in favor of security\n\nif([string]::IsNullOrEmpty($accessKeyType))\n{\n\tthrow \"access key type not provided\"\n}\n\nif([string]::IsNullOrEmpty($containerUri))\n{\n\tthrow \"containerUri not provided\"\n}\n\nif([string]::IsNullOrEmpty($backupName))\n{\n\tthrow \"backup name not provided\"\n}\n\nwrite-host \"starting db import\"\naz sql db import --resource-group $rgname --server $svrName --name $dbName --admin-password $adminPwd --admin-user $adminName --storage-key $accessKey --storage-key-type $accessKeyType --storage-uri $backupUri\n"
+  },
+  "Parameters": [
+    {
+      "Id": "0bf888db-667e-4303-a4bd-c721bf1de0ad",
+      "Name": "azDbImport.AzAcct",
+      "Label": "Azure Account",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "d5885f12-d921-4ce8-afc2-384f0b82daae",
+      "Name": "azDbImport.rgName",
+      "Label": "Resource Group Name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "03b281f5-e1e2-42a8-bb43-317bc4981393",
+      "Name": "azDbImport.sqlSvrName",
+      "Label": "SQL Server Name",
+      "HelpText": "The name of the SQL Server to connect to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "85686923-5e57-4b1d-8dd7-6b5ca263ba42",
+      "Name": "azDbImport.backupName",
+      "Label": "Backup Name",
+      "HelpText": "The name of the file being saved.  Defaults to DB Name",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6da5679d-1c84-4fb4-8f91-22fd91b50baa",
+      "Name": "azDbImport.adminName",
+      "Label": "SQL Server Admin Name",
+      "HelpText": "The admin name of the SQL server containing the database you wish to import",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "44e1a2a3-6b9b-44a5-893d-d26f14166b52",
+      "Name": "azDbImport.adminPwd",
+      "Label": "Admin Password",
+      "HelpText": "The admin password of the SQL server containing the database you wish to import",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "40715e88-4892-48c6-83f2-603c0193439b",
+      "Name": "azDbImport.blobAccessKey",
+      "Label": "Azure Blob Access Key",
+      "HelpText": "the access key (Shared Access Key or Storage Access Key) to grant access to the storage account",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "fcb94050-5f81-410e-9ed9-c5f52653f9c6",
+      "Name": "azDbImport.accessKeyType",
+      "Label": "Access Key Type",
+      "HelpText": "The type of key the access key represents",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "SharedAccessKey|Shared Access Key\nStorageAccessKey|Storage Access Key"
+      }
+    },
+    {
+      "Id": "a8631db7-556e-4532-aacd-595266c4347f",
+      "Name": "azDbImport.ContainerUri",
+      "Label": "Container Uri",
+      "HelpText": "The URI of the container to save the exported database in.  Format is: `https://{StorageAccountName}.blob.core.windows.net/{ContainerName}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e67ef4ab-3084-45e7-81df-7cda76baf2fc",
+      "Name": "azDbImport.dbName",
+      "Label": "Database Name",
+      "HelpText": "The name of the database you wish to import",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-06-16T14:33:48.670Z",
+    "OctopusVersion": "2020.2.10",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "Category": "azure"
+}
