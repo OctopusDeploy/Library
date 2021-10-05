@@ -1,0 +1,76 @@
+{
+  "Id": "0bbe289c-3ea9-47f8-970c-caa946878f49",
+  "Name": "Import Databricks Workbooks",
+  "Description": "Import Databricks workbooks (current supported files `.ipynb` and `.scala`) to a databricks instance",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "7885715a-c3e8-492a-ba61-23c34d2e9447",
+      "Name": "DeployDataBricksWorkBookPackage",
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "DeployDataBricksWorkBookPackage"
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\" #region fucntions\nfunction Set-DatabricksWorkBook\n{\n    [CmdletBinding()]\n    param (\n        [Parameter()]\n        [String]\n        $AccessToken, \n        [Parameter()]\n        [String]\n        $DataBricksInstanceUri,\n        [Parameter()]\n        [String]\n        $WorkbooksUploadPath,\n        [Parameter()]\n        [String]\n        $DatabrickImportFolder\n    )\n\n    $headers = @{\n        'Authorization' = (\"Bearer {0}\" -f $AccessToken )\n    }\n    $APIVersion = '/api/2.0'\n    $APICommand = '/workspace/import'\n    $Uri = \"https://$DataBricksInstanceUri$APIVersion$APICommand\"\n        \n    Get-ChildItem -Path $WorkbooksUploadPath -Recurse -File | ForEach-Object{ $currentWorkBook = $_\n        Write-Host (\"Importing Workbook:{0}\" -f $currentWorkBook.FullName)\n \t\t$workbookContent =  [Convert]::ToBase64String((Get-Content -path $currentWorkBook.FullName -Encoding byte))\n    \n        if($DatabrickImportFolder.EndsWith(\"/\"))\n    \t{\n    \t\t$workbookPath   = \"{0}{1}\" -f $DatabrickImportFolder , $currentWorkBook.BaseName\n    \t}\n    \telse \n    \t{\n        \t$workbookPath   = \"{0}/{1}\" -f $DatabrickImportFolder , $currentWorkBook.BaseName\n    \t}\n        \n        switch ($currentWorkBook.Extension.ToLower()) \n        {\n            '.ipynb' { \n                $workbookLanguage = \"PYTHON\" \n                $workbookFormat   = \"JUPYTER\"\n                break\n            }\n            '.scala' {\n                $workbookLanguage = \"SCALA\"\n                $workbookFormat   = \"SOURCE\"\n                break\n        }\n        Default \n            {\n                $workbookLanguage = \"SQL\"\n                $workbookFormat   = \"SOURCE\"\n            }\n        }\n        $requestBody = ConvertTo-Json -InputObject @{ \n            content = $workbookContent\n            path = $workbookPath\n            language = $workbookLanguage\n            format = $workbookFormat\n            overwrite = $true\n            }\n        \n        $apiResponse = Invoke-RestMethod -Method Post  -Uri  $Uri -Headers $headers -Body $requestBody\n        return $apiResponse\n    }\n}\n\n\nfunction Set-DatabricksWorkspaceFolder\n{\n    [CmdletBinding()]\n    param (\n        [Parameter()]\n        [String]\n        $AccessToken, \n        [Parameter()]\n        [String]\n        $DataBricksInstanceUri,\n        [Parameter()]\n        [String]\n        $DatabrickFolder\n    )\n\n    $headers = @{\n        'Authorization' = (\"Bearer {0}\" -f $AccessToken )\n    }\n    $APIVersion = '/api/2.0'\n    $APIListCommand = '/workspace/list'\n    $APIMkdirsCommand = '/workspace/mkdirs'\n    $ListUri = \"https://$DataBricksInstanceUri$APIVersion$APIListCommand\"\n    $MkdirsUri = \"https://$DataBricksInstanceUri$APIVersion$APIMkdirsCommand\"\n\n    $pathRoute = $DatabrickFolder.Substring(1) -split '/'\n    $basePath = \"/\"\n    foreach($path in $pathRoute)\n    {\n        $requestBody = @{ \n            path = $basePath\n        }\n        $apiResponse = Invoke-RestMethod -Uri $ListUri -Headers $headers -Body $requestBody -ContentType application/json  \n        $workSpaceFolder = $apiResponse.objects | Where-Object {$_.object_type -eq \"DIRECTORY\" -and $_.path -eq ( \"{0}{1}\" -f $basePath , $path) } \n        if($null -eq $workSpaceFolder)\n        {\n            $requestBody = ConvertTo-Json -InputObject  @{ \n                path = ( \"{0}{1}\" -f $basePath , $path)\n            } \n            Invoke-RestMethod -Method Post -Uri $MkdirsUri -Headers $headers -Body $requestBody\n        }\n        $basePath = \"{0}/{1}/\" -f $basePath , $path\n        if($basePath.StartsWith(\"//\"))\n        {\n            $basePath = $basePath.Substring(1)\n        }\n    }\n}\n\n#endregion fucntions\n\n\n$DatabrickWorkBookImportFolder = $OctopusParameters[\"Octopus.Action.Package[DeployDataBricksWorkBookPackage].ExtractedPath\"]\n\nWrite-Host \"Checking WorkSpace Folders\"\nSet-DatabricksWorkspaceFolder  -AccessToken $DataBricksAccessToken -DataBricksInstanceUri $DataBricksInstanceUri -DatabrickFolder $DatabricksImportFolder\nWrite-Host \"Importing Databricks Workbooks\"\nSet-DatabricksWorkBook -AccessToken $DataBricksAccessToken -DataBricksInstanceUri $DataBricksInstanceUri -WorkbooksUploadPath $DatabrickWorkBookImportFolder -DatabrickImportFolder $DatabricksImportFolder\n"
+  },
+  "Parameters": [
+    {
+      "Id": "b8cd5d73-29d9-4ba2-bdfa-86cc1316a16f",
+      "Name": "DeployDataBricksWorkBookPackage",
+      "Label": "DataBricks WorkBook Package",
+      "HelpText": "The Databricks workbook package",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "f81b9ccb-beea-4d8f-a049-ee9ea6da643e",
+      "Name": "DataBricksInstanceUri",
+      "Label": "Databricks Instance Uri",
+      "HelpText": "The Databricks Instance URL",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6c1aed25-f9a6-4c1f-b8e9-d50cc8669f2d",
+      "Name": "DataBricksAccessToken",
+      "Label": "Databricks Access Token",
+      "HelpText": "The access token to authenticate against the Databricks instance",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "c95af088-180b-419e-8c44-ce3fb4d96f57",
+      "Name": "DatabricksImportFolder",
+      "Label": "Databricks Workbook Import Folder",
+      "HelpText": "Databricks Workbook import folder location",
+      "DefaultValue": "/",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-10-05T09:38:27.445Z",
+    "OctopusVersion": "2021.2.7428",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "Zogamorph",
+  "Category": "databricks"
+}

@@ -171,6 +171,8 @@ function humanize(categoryId) {
     case 'webdeploy': return 'Web Deploy';
     case 'xml': return 'XML';
     case 'xunit': return 'xUnit';
+    case 'chef': return 'Chef';
+    case 'databricks': return 'Databricks';
     case 'rnhub': return 'RnHub';
     case 'venafi': return 'Venafi';
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
