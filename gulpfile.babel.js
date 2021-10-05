@@ -144,7 +144,7 @@ function humanize(categoryId){
     case 'xml': return 'XML';
     case 'xunit': return 'xUnit';
     case 'chef': return 'Chef';
-    case 'databricks': return 'Databricks'
+    case 'databricks': return 'Databricks';
     default: return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
   }
 }
