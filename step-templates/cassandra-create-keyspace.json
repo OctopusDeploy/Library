@@ -1,0 +1,94 @@
+{
+    "Id": "8ab26143-22d7-4e2f-83a8-f0e2d74a4de2",
+    "Name": "Cassandra - Create database if not exists",
+    "Description": "This template creates a keyspace on a Cassandra server if it doesn't already exist.  **Note** this template is written in Python and requires that `pip` is installed to function correctly.,",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "Python",
+      "Octopus.Action.Script.ScriptBody": "# Import subprocess \nimport subprocess\n\n# Define function to install specified package\ndef install(package):\n    subprocess.check_call([sys.executable, \"-m\", \"pip\", \"install\", package])\n\n# Check to see if cassandra-module is installed\nprint('Checking for Cassandra module ...')\nif 'cassandra-driver' not in sys.modules:\n  # Install the cassandra-driver module\n  print('Installing cassandra-driver module ...')\n  install('cassandra-driver')\nelse:\n  print('cassandra-driver module is present ...')\n\n# Import cassandra modules\nfrom cassandra.cluster import Cluster\nfrom cassandra.auth import PlainTextAuthProvider\n\n# Set username/password authentication provider\nauth_provider = PlainTextAuthProvider(\n        username='#{Cassandra.User.Name}', password='#{Cassandra.User.Password}')\n\n# Connect to server\nprint('Connecting to server ...')\ncluster = None\n\nif '#{Cassandra.User.Name}' != '' and '#{Cassandra.User.Password}' != '':\n\tcluster = Cluster(['#{Cassandra.Server.Name}'], auth_provider=auth_provider)\nelse:\n\tcluster = Cluster(['#{Cassandra.Server.Name}'])\n                    \n# Conect to cluster\nsession = cluster.connect()\nrows = session.execute(\"SELECT keyspace_name FROM system_schema.keyspaces;\")\nkeyspace = next((x for x in rows if x.keyspace_name == '#{Cassandra.Keyspace.Name}'), None)\n\nif keyspace == None:\n  # Create json document\n  strategyjson = None\n  if '#{Cassandra.Server.Mode}' == \"SimpleStrategy\":\n      strategyjson = { 'class' : '#{Cassandra.Server.Mode}', 'replication_factor': '#{Cassandra.Replicas.Number}' }\n\n  if '#{Cassandra.Server.Mode}' == \"NetworkTopologyStrategy\":\n      strategyjson = { 'class' : '#{Cassandra.Server.Mode}', '#{Cassandra.Server.Name}' : '#{Cassandra.Replicas.Number}'}\n\n  # Create keyspace\n  print('Creating keyspace #{Cassandra.Keyspace.Name} ...')\n  session.execute(\"CREATE KEYSPACE IF NOT EXISTS #{Cassandra.Keyspace.Name} WITH REPLICATION = {0};\".format(strategyjson))\n\n  # Verify keyspace was created\n  rows = session.execute(\"SELECT keyspace_name FROM system_schema.keyspaces;\")\n\n  keyspace = next((x for x in rows if x.keyspace_name == '#{Cassandra.Keyspace.Name}'), None)\n\n  if keyspace != None:\n    print('#{Cassandra.Keyspace.Name} created successfully!')\n  else:\n    print('#{Cassandra.Keyspace.Name} was not created!')\n    exit(1)\nelse:\n  print('Keyspace #{Cassandra.Keyspace.Name} already exists.')"
+    },
+    "Parameters": [
+      {
+        "Id": "93076332-862f-44c5-b003-f8d6c9138d2b",
+        "Name": "Cassandra.Server.Name",
+        "Label": "Server Name",
+        "HelpText": "Hostname or IP address of the Cassandra database server.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "8abf47c6-eec5-428d-be90-4b4443295867",
+        "Name": "Cassandra.Server.Port",
+        "Label": "Port",
+        "HelpText": "Port number that the Cassandra server is listening on.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "5630dc27-80d2-421c-bb99-a61b2e6bd439",
+        "Name": "Cassandra.User.Name",
+        "Label": "(Optional) Username",
+        "HelpText": "Username of the account that can create databases.  Leave blank if not using Username/Password authentication.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "1e7e73db-ca36-4bd6-9c5a-3f49506c7adf",
+        "Name": "Cassandra.User.Password",
+        "Label": "(Optional) Password",
+        "HelpText": "Password for the user account that can create databases.  Leave blank if not using Username/Password authentication.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "484d22fc-4a84-4459-ac4e-166731432709",
+        "Name": "Cassandra.Server.Mode",
+        "Label": "Server mode",
+        "HelpText": "The mode in which the Cassandra server is operating.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "NetworkTopologyStrategy|Network Topology Strategy\nSimpleStrategy|Simple Strategy"
+        }
+      },
+      {
+        "Id": "b2c433be-66bb-4ee0-9246-59e62818b7bb",
+        "Name": "Cassandra.Keyspace.Name",
+        "Label": "Keyspace",
+        "HelpText": "Name of the Keyspace to create.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "73a696ca-26e3-4069-852a-3be63d5bd090",
+        "Name": "Cassandra.Replicas.Number",
+        "Label": "Number of replicas",
+        "HelpText": "The number of replicas to create.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-10-19T18:44:17.629Z",
+      "OctopusVersion": "2021.2.7697",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "twerthi",
+    "Category": "cassandra"
+  }
