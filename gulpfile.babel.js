@@ -106,6 +106,7 @@ function humanize(categoryId) {
     case 'azure-keyvault': return 'Azure Key Vault';
     case 'azure-site-extensions': return 'Azure Site Extensions';
     case 'azureFunctions': return 'Azure Functions';
+    case 'cassandra': return 'Cassandra';
     case 'chef': return 'Chef';
     case 'clickonce': return 'ClickOnce';
     case 'cyberark': return 'CyberArk';
