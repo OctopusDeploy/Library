@@ -89,7 +89,7 @@ export default class TemplateItem extends React.Component {
               <TemplateParameters parameters={this.state.template.Parameters} />
               <TemplateBody actionType={this.state.template.ActionType}
                   scriptSyntax={this.state.template.Properties['Octopus.Action.Script.Syntax'] || ''}
-                  templateBody={this.state.template.Properties['Octopus.Action.Script.ScriptBody'] || this.state.template.Properties['Octopus.Action.Email.Body']}
+                  templateBody={this.state.template.Properties['Octopus.Action.Script.ScriptBody'] || this.state.template.Properties['Octopus.Action.Email.Body'] || this.state.template.Properties['Octopus.Action.Azure.ResourceGroupTemplate'] || this.state.template.Properties['Octopus.Action.KubernetesContainers.CustomResourceYaml']}
               />
             </div>
             <div className="column third">

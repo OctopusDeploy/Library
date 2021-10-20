@@ -30,15 +30,34 @@ export default class TemplateBody extends React.Component {
   render() {
     var header = '';
     var description = '';
-
+    var language = '';
+    var templateType = 'script';
+    
     switch (this.props.actionType) {
-      case 'Octopus.Script':
+      case 'Octopus.AwsRunScript':
       case 'Octopus.AzurePowerShell':
+      case 'Octopus.GoogleCloudScripting':
+      case 'Octopus.Script':
+      case 'Octopus.KubernetesRunScript':
+        language = this.props.scriptSyntax;
         header = 'Script body';
-        description = 'Steps based on this template will execute the following <em>' + this.props.scriptSyntax + '</em> script.';
+        description = 'Steps based on this template will execute the following <em>' + language + '</em> script.';
         break;
+      case 'Octopus.AzureResourceGroup':
+        language = 'json';
+        header = 'ARM template';
+        templateType = 'JSON source';
+        description = 'Steps based on this template will deploy the following template source.';
+        break;
+      case 'Octopus.KubernetesDeployRawYaml':
+        language = 'yaml';
+        header = 'YAML body';
+        templateType = 'YAML source';
+        description = 'Steps based on this template will deploy the following YAML source.';
+        break;    
       case 'Octopus.Email':
         header = 'Email body';
+        templateType = 'Email source';
         description = 'Steps based on this template will render the email body below.';
         break;
       default:
@@ -53,13 +72,13 @@ export default class TemplateBody extends React.Component {
           <a className="showHideScript"
               onClick={this.toggleTemplateBody.bind(this)}
           >
-            {this.state.showTemplateBody ? 'Hide' : 'Show '} script
+            {this.state.showTemplateBody ? 'Hide' : 'Show'} {templateType}
           </a>
         </div>
         <div className="templateContent"
             style={style}
         >
-          <SyntaxHighlighter language={this.props.scriptSyntax}
+          <SyntaxHighlighter language={language}
               style={solarizedLight}
           >
             {this.props.templateBody}
