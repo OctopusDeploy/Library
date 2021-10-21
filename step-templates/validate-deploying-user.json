@@ -1,0 +1,54 @@
+{
+    "Id": "22c55424-bdcb-44aa-a3a1-978e607f6e2f",
+    "Name": "validate-deploying-user",
+    "Description": "Verifies current deploying user didn't deploy previously to specified environment.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.RunOnServer": "false",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "$releaseId = $OctopusParameters[\"Octopus.Release.Id\"]\n$currentDeployerId = $OctopusParameters[\"Octopus.Deployment.CreatedBy.Id\"]\n$userName = $OctopusParameters[\"Octopus.Deployment.CreatedBy.Username\"]\n$environmentId = $OctopusParameters[\"Octopus.Environment.Id\"]\n$spaceId = $OctopusParameters[\"Octopus.Space.Id\"]\n\n$header = @{ \"X-Octopus-ApiKey\" = $octopusAPIKey }\n\n$deploymentDetails = (Invoke-RestMethod -Method Get -Uri \"$octopusURL/api/$($spaceId)/releases/$($releaseId)/deployments/\" -Headers $header)\n\n# Get details for deployment to preceding environment\n$allEnvironments = (Invoke-RestMethod -Method Get -Uri \"$octopusURL/api/$($spaceId)/environments\" -Headers $header)\n$environmentItem = $allEnvironments.Items | where-object { $_.Name -eq $precedingEnvironment }\n$environmentId = $environmentItem.Id\n\n# Load all deploys to the previous environment\n$environmentDeploys = $deploymentDetails.Items | Where-Object {$_.EnvironmentId -eq $environmentId}\n\n# Iterate deployments to the previous environment to validate current deployer\nforeach($prevdeployment in $environmentDeploys)\n    {\n    \tif($prevDeployment.Id -eq $OctopusParameters[\"Octopus.Deployment.Id\"])\n        {continue}\n    \telse\n        {\n    \t\tif($prevdeployment.DeployedById -eq $currentDeployerId )\n        \t{\n            \tWrite-Highlight \"$userName previously deployed this project to $precedingEnvironment - deployment cancelled.\"\n            \tThrow \"$userName previously deployed this project to $precedingEnvironment - deployment cancelled.\"\n        \t}\n        }\n    }"
+    },
+    "Parameters": [
+      {
+        "Id": "e99ae8d8-f63c-45b5-967c-703cc89e620c",
+        "Name": "octopusURL",
+        "Label": "URL for target Octopus instance",
+        "HelpText": null,
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "781b3394-138e-4aa5-bd26-5a835563bf88",
+        "Name": "octopusAPIKey",
+        "Label": "API Key for target Octopus instance",
+        "HelpText": null,
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "a05c4f99-ae6e-48ea-a11e-2cb3b538bf7e",
+        "Name": "precedingEnvironment",
+        "Label": "Environment to validate deployer against",
+        "HelpText": null,
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-10-21T17:57:36.637Z",
+      "OctopusVersion": "2021.1.7665",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "Your GitHub Username",
+    "Category": "other"
+  }
