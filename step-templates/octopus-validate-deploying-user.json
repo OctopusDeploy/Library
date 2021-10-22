@@ -1,0 +1,54 @@
+{
+  "Id": "bbcf1894-9cf7-4968-a3e4-3bff08d8c75b",
+  "Name": "Octopus - Validate Deploying User",
+  "Description": "Verifies current deploying user didn't deploy previously to specified environment.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$releaseId = $OctopusParameters[\"Octopus.Release.Id\"]\n$currentDeployerId = $OctopusParameters[\"Octopus.Deployment.CreatedBy.Id\"]\n$userName = $OctopusParameters[\"Octopus.Deployment.CreatedBy.Username\"]\n$environmentId = $OctopusParameters[\"Octopus.Environment.Id\"]\n$spaceId = $OctopusParameters[\"Octopus.Space.Id\"]\n$octopusURL = $OctopusParameters[\"ovdu_octopusURL\"]\n$octopusAPIKey = $OctopusParameters[\"ovdu_octopusAPIKey\"]\n$precedingEnvironment = $OctopusParameters[\"ovdu_precedingEnvironment\"]\n\n$header = @{ \"X-Octopus-ApiKey\" = $octopusAPIKey }\n\n$deploymentDetails = (Invoke-RestMethod -Method Get -Uri \"$octopusURL/api/$($spaceId)/releases/$($releaseId)/deployments/\" -Headers $header)\n\n# Get details for deployment to preceding environment\n$allEnvironments = (Invoke-RestMethod -Method Get -Uri \"$octopusURL/api/$($spaceId)/environments\" -Headers $header)\n$environmentItem = $allEnvironments.Items | where-object { $_.Name -eq $precedingEnvironment }\n$environmentId = $environmentItem.Id\n\n# Load all deploys to the previous environment\n$environmentDeploys = $deploymentDetails.Items | Where-Object {$_.EnvironmentId -eq $environmentId}\n\n# Iterate deployments to the previous environment to validate current deployer\nforeach($prevdeployment in $environmentDeploys)\n    {\n    \tif($prevDeployment.Id -eq $OctopusParameters[\"Octopus.Deployment.Id\"])\n        {continue}\n    \telse\n        {\n    \t\tif($prevdeployment.DeployedById -eq $currentDeployerId )\n        \t{\n            \tWrite-Highlight \"$userName previously deployed this project to $precedingEnvironment - deployment cancelled.\"\n            \tThrow \"$userName previously deployed this project to $precedingEnvironment - deployment cancelled.\"\n        \t}\n        }\n    }"
+  },
+  "Parameters": [
+    {
+      "Id": "e99ae8d8-f63c-45b5-967c-703cc89e620c",
+      "Name": "ovdu_octopusURL",
+      "Label": "Octopus Base Url",
+      "HelpText": "The base url of your Octopus Deploy instance.  Example: https://samples.octopus.app",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "781b3394-138e-4aa5-bd26-5a835563bf88",
+      "Name": "ovdu_octopusAPIKey",
+      "Label": "Octopus Api Key",
+      "HelpText": "The API key of a user in Octopus Deploy who has permissions to manage releases.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "a05c4f99-ae6e-48ea-a11e-2cb3b538bf7e",
+      "Name": "ovdu_precedingEnvironment",
+      "Label": "Environment to validate deployer against",
+      "HelpText": "The environment preceding the controlled environment where if the user deployed this release, it will fail in this environment",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-10-22T15:08:53.042Z",
+    "OctopusVersion": "2021.1.7665",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "handplaned",
+  "Category": "octopus"
+}
