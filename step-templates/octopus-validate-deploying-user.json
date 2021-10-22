@@ -1,5 +1,5 @@
 {
-  "Id": "29a7ff3c-2796-4cbf-a08a-0ecc1a89b4f2",
+  "Id": "bbcf1894-9cf7-4968-a3e4-3bff08d8c75b",
   "Name": "Octopus - Validate Deploying User",
   "Description": "Verifies current deploying user didn't deploy previously to specified environment.",
   "ActionType": "Octopus.Script",
@@ -10,7 +10,7 @@
     "Octopus.Action.RunOnServer": "false",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "$releaseId = $OctopusParameters[\"Octopus.Release.Id\"]\n$currentDeployerId = $OctopusParameters[\"Octopus.Deployment.CreatedBy.Id\"]\n$userName = $OctopusParameters[\"Octopus.Deployment.CreatedBy.Username\"]\n$environmentId = $OctopusParameters[\"Octopus.Environment.Id\"]\n$spaceId = $OctopusParameters[\"Octopus.Space.Id\"]\n$octopusURL = $ovdu_octopusURL\n$octopusAPIKey = $ovdu_octopusAPIKey\n$precedingEnvironment = $ovdu_precedingEnvironment\n\n$header = @{ \"X-Octopus-ApiKey\" = $octopusAPIKey }\n\n$deploymentDetails = (Invoke-RestMethod -Method Get -Uri \"$octopusURL/api/$($spaceId)/releases/$($releaseId)/deployments/\" -Headers $header)\n\n# Get details for deployment to preceding environment\n$allEnvironments = (Invoke-RestMethod -Method Get -Uri \"$octopusURL/api/$($spaceId)/environments\" -Headers $header)\n$environmentItem = $allEnvironments.Items | where-object { $_.Name -eq $precedingEnvironment }\n$environmentId = $environmentItem.Id\n\n# Load all deploys to the previous environment\n$environmentDeploys = $deploymentDetails.Items | Where-Object {$_.EnvironmentId -eq $environmentId}\n\n# Iterate deployments to the previous environment to validate current deployer\nforeach($prevdeployment in $environmentDeploys)\n    {\n    \tif($prevDeployment.Id -eq $OctopusParameters[\"Octopus.Deployment.Id\"])\n        {continue}\n    \telse\n        {\n    \t\tif($prevdeployment.DeployedById -eq $currentDeployerId )\n        \t{\n            \tWrite-Highlight \"$userName previously deployed this project to $precedingEnvironment - deployment cancelled.\"\n            \tThrow \"$userName previously deployed this project to $precedingEnvironment - deployment cancelled.\"\n        \t}\n        }\n    }"
+    "Octopus.Action.Script.ScriptBody": "$releaseId = $OctopusParameters[\"Octopus.Release.Id\"]\n$currentDeployerId = $OctopusParameters[\"Octopus.Deployment.CreatedBy.Id\"]\n$userName = $OctopusParameters[\"Octopus.Deployment.CreatedBy.Username\"]\n$environmentId = $OctopusParameters[\"Octopus.Environment.Id\"]\n$spaceId = $OctopusParameters[\"Octopus.Space.Id\"]\n$octopusURL = $OctopusParameters[\"ovdu_octopusURL\"]\n$octopusAPIKey = $OctopusParameters[\"ovdu_octopusAPIKey\"]\n$precedingEnvironment = $OctopusParameters[\"ovdu_precedingEnvironment\"]\n\n$header = @{ \"X-Octopus-ApiKey\" = $octopusAPIKey }\n\n$deploymentDetails = (Invoke-RestMethod -Method Get -Uri \"$octopusURL/api/$($spaceId)/releases/$($releaseId)/deployments/\" -Headers $header)\n\n# Get details for deployment to preceding environment\n$allEnvironments = (Invoke-RestMethod -Method Get -Uri \"$octopusURL/api/$($spaceId)/environments\" -Headers $header)\n$environmentItem = $allEnvironments.Items | where-object { $_.Name -eq $precedingEnvironment }\n$environmentId = $environmentItem.Id\n\n# Load all deploys to the previous environment\n$environmentDeploys = $deploymentDetails.Items | Where-Object {$_.EnvironmentId -eq $environmentId}\n\n# Iterate deployments to the previous environment to validate current deployer\nforeach($prevdeployment in $environmentDeploys)\n    {\n    \tif($prevDeployment.Id -eq $OctopusParameters[\"Octopus.Deployment.Id\"])\n        {continue}\n    \telse\n        {\n    \t\tif($prevdeployment.DeployedById -eq $currentDeployerId )\n        \t{\n            \tWrite-Highlight \"$userName previously deployed this project to $precedingEnvironment - deployment cancelled.\"\n            \tThrow \"$userName previously deployed this project to $precedingEnvironment - deployment cancelled.\"\n        \t}\n        }\n    }"
   },
   "Parameters": [
     {
@@ -45,7 +45,7 @@
     }
   ],
   "$Meta": {
-    "ExportedAt": "2021-10-22T13:32:38.384Z",
+    "ExportedAt": "2021-10-22T15:08:53.042Z",
     "OctopusVersion": "2021.1.7665",
     "Type": "ActionTemplate"
   },
