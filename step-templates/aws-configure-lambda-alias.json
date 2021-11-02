@@ -1,0 +1,89 @@
+{
+  "Id": "5a98a4ba-55ee-4200-aa80-df330f377a6a",
+  "Name": "AWS - Configure Lambda Alias",
+  "Description": "Configures an AWS Lambda Alias.  Allows you to specify how much traffic is routed to a specific version of the Lambda.\n\n**Please Note:** Your AWS Lambda function **MUST** have at least one published version for this step to work.\n\nThis step uses the following AWS CLI commands to deploy the AWS Lambda.  You will be required to install the AWS CLI on your server/worker for this to work.  The AWS CLI is pre-installed on the [dynamic workers](https://octopus.com/docs/infrastructure/workers/dynamic-worker-pools) in Octopus Cloud as well as the provided docker containers for [Execution Containers](https://octopus.com/docs/deployment-process/execution-containers-for-workers).\n\n- [create-alias](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/create-alias.html)\n- [get-alias](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/get-alias.html)\n- [get-function](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/get-function.html)\n- [list-versions-by-function](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/list-versions-by-function.html)\n- [update-alias](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/update-alias.html)",
+  "ActionType": "Octopus.AwsRunScript",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "False",
+    "Octopus.Action.AwsAccount.Variable": "#{AWS.Lambda.Account}",
+    "Octopus.Action.Aws.Region": "#{AWS.Lambda.Region}",
+    "Octopus.Action.Script.ScriptBody": "$functionName = $OctopusParameters[\"AWS.Lambda.Function.Name\"]\n$functionAliasName = $OctopusParameters[\"AWS.Lambda.Alias.Name\"]\n$functionAliasPercent = $OctopusParameters[\"AWS.Lambda.Alias.Percent\"]\n$functionVersion = $OctopusParameters[\"AWS.Lambda.Alias.FunctionVersion\"]\n\nif ([string]::IsNullOrWhiteSpace($functionName))\n{\n\tWrite-Error \"The parameter Function Name is required.\"\n    Exit 1\n}\n\nif ([string]::IsNullOrWhiteSpace($functionAliasName))\n{\n\tWrite-Error \"The parameter Alias Name is required.\"\n    Exit 1\n}\n\nif ([string]::IsNullOrWhiteSpace($functionVersion))\n{\n\tWrite-Error \"The parameter Function Version is required.\"\n    Exit 1\n}\n\nif ([string]::IsNullOrWhiteSpace($functionAliasPercent))\n{\n\tWrite-Error \"The parameter Alias Percent is required.\"\n    Exit 1\n}\n\n$newVersionPercent = [int]$functionAliasPercent\n    \nif ($newVersionPercent -le 0 -or $newVersionPercent -gt 100)\n{\n    Write-Error \"The parameter Alias Percent must be between 1 and 100.\"\n    exit 1\n}\n\nWrite-Host \"Function Name: $functionName\"\nWrite-Host \"Function Version: $functionVersion\"\nWrite-Host \"Function Alias Name: $functionAliasName\"\nWrite-Host \"Function Alias Percent: $functionAliasPercent\"\n\n$versionToUpdateTo = $functionVersion\nif ($functionVersion.ToLower().Trim() -eq \"latest\" -or $functionVersion.ToLower().Trim() -eq \"previous\")\n{\n\tWrite-Highlight \"The function version specified is $functionVersion, attempting to find the specific version number.\"\n    $versionOutput = aws lambda list-versions-by-function --function-name \"$functionName\" --no-paginate\n    $versionOutput = $versionOutput | ConvertFrom-JSON\n    $versionList = @($versionOutput.Versions)\n    \n    if ($functionVersion.ToLower().Trim() -eq \"previous\" -and $versionList.Count -gt 2)\n    {\n    \t$versionArrayIndex = $versionList.Count - 2\n    }\n    else\n    {\n    \t$versionArrayIndex = $versionList.Count - 1\n    }\n    \n    $versionToUpdateTo = $versionList[$versionArrayIndex].Version\n    Write-Highlight \"The alias will update to version $versionToUpdateTo\"         \n}\n\ntry\n{\n  Write-Host \"Publish set to yes with a function alias specified.  Attempting to find existing alias.\"\n  $aliasInformation = aws lambda get-alias --function-name \"$functionName\" --name \"$functionAliasName\"\n\n  Write-Host \"The exit code from the alias lookup was $LASTEXITCODE\"\n  if ($LASTEXITCODE -eq 255 -or $LASTEXITCODE -eq 254)\n  {\n  \t  Write-Highlight \"The function's alias $functionAliasName does not exist.\"\n      Write-Host \"If you see an error right here you can safely ignore that.\"\n\t  $aliasInformation = $null\n  }   \n  else\n  {\n\t  Write-Highlight \"The function's alias $functionAliasName already exists.\"\n\t  $aliasInformation = $aliasInformation | ConvertFrom-JSON\n\t  Write-Host $aliasInformation\n  }  \n}\ncatch\n{\n  Write-Host \"The alias specified $functionAliasName does not exist for $functionName.  Will create a new alias with that name.\"\n  $aliasInformation = $null\n}\n\nif ($null -ne $aliasInformation)\n{\n  \tWrite-Host \"Comparing the existing alias version $($aliasInformation.FunctionVersion) with the the published version $versionToUpdateTo\"\n                    \n   \tif ($aliasInformation.FunctionVersion -ne $versionToUpdateTo)\n    {\n    \tWrite-Host \"The alias $functionAliasName version $($aliasInformation.FunctionVersion) does not equal the published version $versionToUpdateTo\"\n            \n        if ($newVersionPercent -eq 100)\n        {\n         \tWrite-Highlight \"The percent for the new version of the function is 100%, updating the alias $functionAliasName to function version $versionToUpdateTo\"\n           \t$newAliasInformation = aws lambda update-alias --function-name \"$functionName\" --name \"$functionAliasName\" --function-version \"$versionToUpdateTo\" --routing-config \"AdditionalVersionWeights={}\"\n        }\n        else\n        {              \t\n            $newVersionPercent = $newVersionPercent / [double]100                       \n                \n            Write-Highlight \"Updating the alias $functionAliasName so $functionAliasPercent of all traffic is routed to $versionToUpdateTo\"\n\t\t\t  \n   \t        $newAliasInformation = aws lambda update-alias --function-name \"$functionName\" --name \"$functionAliasName\" --routing-config \"AdditionalVersionWeights={\"\"$versionToUpdateTo\"\"=$newVersionPercent}\"\n        }           \n    }\n    elseif ($newVersionPercent -eq 100)\n    {\n    \tWrite-Highlight \"The alias $functionAliasName is already pointed to $versionToUpdateTo and the percent sent in is 100, updating the function so all traffic is routed to that version.\"\n        $newAliasInformation = aws lambda update-alias --function-name \"$functionName\" --name \"$functionAliasName\" --routing-config \"AdditionalVersionWeights={}\"\n    }\n    else\n    {\n   \t\tWrite-Highlight \"The alias $functionAliasName is already pointed to $versionToUpdateTo.  Leaving as is.\"\n    }\n}\nelse\n{\n   \tWrite-Highlight \"Creating the alias $functionAliasName with the version $versionToUpdateTo\"\n \t$newAliasInformation = aws lambda create-alias --function-name \"$functionName\" --name \"$functionAliasName\" --function-version \"$versionToUpdateTo\"\n}\n\nif ($null -ne $newAliasInformation)\n{\n\tWrite-Host ($newAliasInformation | ConvertFrom-JSON)\n}\n\nWrite-Highlight \"The alias has finished updating.\""
+  },
+  "Parameters": [
+    {
+      "Id": "261c7c1d-d3b2-4c73-9d81-00cba3c97842",
+      "Name": "AWS.Lambda.Function.Name",
+      "Label": "Function Name",
+      "HelpText": "Required.\n\nThe name of the function the alias will be attached to.  See [documentation](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/create-function.html#options)\n\nExamples:\n- Function name - my-function .\n- Function ARN - arn:aws:lambda:us-west-2:123456789012:function:my-function .\n- Partial ARN - 123456789012:function:my-function .\n\nThe length constraint applies only to the full ARN. If you specify only the function name, it is limited to 64 characters in length.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a0c0d1ba-03a8-42e6-b275-b8991f4573af",
+      "Name": "AWS.Lambda.Account",
+      "Label": "AWS Account",
+      "HelpText": "Required.\n\nThe AWS Account with permissions to create / update AWS Lambdas.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AmazonWebServicesAccount"
+      }
+    },
+    {
+      "Id": "8eb17fdf-4b22-4a4e-9105-459cca33cca2",
+      "Name": "AWS.Lambda.Region",
+      "Label": "Region",
+      "HelpText": "Required.\n\nThe region where the function is in.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "us-east-2|US East (Ohio)\nus-east-1|US East (N. Virginia)\nus-west-1|US West (N. California)\nus-west-2|US West (Oregon)\naf-south-1|Africa (Cape Town)\nap-east-1|Asia Pacific (Hong Kong)\nap-south-1|Asia Pacific (Mumbai)\nap-northeast-3|Asia Pacific (Osaka-Local)\nap-northeast-2|Asia Pacific (Seoul)\nap-southeast-1|Asia Pacific (Singapore)\nap-southeast-2|Asia Pacific (Sydney)\nap-northeast-1|Asia Pacific (Tokyo)\nca-central-1|Canada (Central)\neu-central-1|Europe (Frankfurt)\neu-west-1|Europe (Ireland)\neu-west-2|Europe (London)\neu-south-1|Europe (Milan)\neu-west-3|Europe (Paris)\neu-north-1|Europe (Stockholm)\nme-south-1|Middle East (Bahrain)\nsa-east-1|South America (São Paulo)"
+      }
+    },
+    {
+      "Id": "ee765e89-3807-4422-9fe4-b695b2e8a88e",
+      "Name": "AWS.Lambda.Alias.Name",
+      "Label": "Alias Name",
+      "HelpText": "Required.\n\nThe [alias](https://docs.aws.amazon.com/lambda/latest/dg/versioning-aliases.html) for a Lambda function version. Use aliases to provide clients with a function identifier that you can update to invoke a different version.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3b382f4a-556c-4303-9844-993b3df18830",
+      "Name": "AWS.Lambda.Alias.Percent",
+      "Label": "Alias Version Percent",
+      "HelpText": "Required.\n\nThe percent (between 0 and 100) of traffic to send to the version.\n\n- If the alias does not exist, this parameter is ignored and 100% of traffic is sent to the new alias.\n- If the alias exists and the function version is the same as the specified version no updates are performed.\n- If the alias exists and the value is 100, the alias is updated to the version specified in the `Function Version` parameter and all traffic will be routed to that.\n- If the alias exists and the value is less than 100, the alias function is updated to send that percent of traffic to the version specified in the `Function Version` parameter.\n\n**Please note:** Existing percentages will be automatically updated.  For example, the alias is configured to send 100% of the traffic to version 3, and you provide 20 for version 4.  Version 3 will be automatically adjusted to get 80% of the traffic and version 4 will get 20% of the traffic.",
+      "DefaultValue": "100",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ff3335b7-8b39-45c4-878d-4158412d65dc",
+      "Name": "AWS.Lambda.Alias.FunctionVersion",
+      "Label": "Function Version",
+      "HelpText": "Required.\n\nThe function version to route traffic to for this alias.  Please note the function version <> to the package version.  The options are:\n\n- **Latest**: This step will find the most recent version of the function and use that.\n- **Previous**: This step will find the second to the most recent version of the function and use that.\n- **[Number]**: A specific version number to assign to the alias.\n\nIf you are using the community step template [AWS - Deploy Lambda Function](https://library.octopus.com/step-templates/9b5ee984-bdd2-49f0-a78a-07e21e60da8a/actiontemplate-aws-deploy-lambda-function), that sets the output variable `PublishedVersion` you can leverage.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AwsRunScript",
+  "$Meta": {
+    "ExportedAt": "2021-11-01T14:05:12.591Z",
+    "OctopusVersion": "2021.3.7082",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "bobjwalker",
+  "Category": "aws"
+}
