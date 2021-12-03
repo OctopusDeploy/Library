@@ -6,7 +6,7 @@
   "Version": 8,
   "Properties": {
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "$offlineHtml = Join-Path $OctopusParameters[\"InstallationFolder\"] $OctopusParameters[\"AppOfflineFileName\"]\n$onlineHtml = Join-Path $OctopusParameters[\"InstallationFolder\"] $OctopusParameters[\"AppOnlineFileName\"]\n\n#If neither file exists, throw a fit\nif ($OctopusParameters[\"CheckForFile\"] -and !(Test-Path($offlineHtml)) -and !(Test-Path($onlineHtml)))\n{\n\tWrite-Error \"Missing the online/offline files!\"\n    throw\n}\n\n\nif (\"#{ChangeMode}\" -eq \"Online\")\n{\n    #Offline exists and so does online - remove offline\n    if ((Test-Path($offlineHtml)) -and (Test-Path($onlineHtml)))\n    {\n        Remove-Item $offlineHtml\n    }\n    \n    #Offline exists and online doesn't - move offline to online\n    if ((Test-Path($offlineHtml)) -and !(Test-Path($onlineHtml)))\n    {\n        Move-Item $offlineHtml $onlineHtml\n    }\n}\n\nif (\"#{ChangeMode}\" -eq \"Offline\")\n{\n    #Online exists and offline doesn't - move online to offline\n    if ((Test-Path($onlineHtml)) -and !(Test-Path($offlineHtml)))\n    {\n        Move-Item $onlineHtml $offlineHtml\n    }\n}",
+    "Octopus.Action.Script.ScriptBody": "$offlineHtml = Join-Path $OctopusParameters[\"InstallationFolder\"] $OctopusParameters[\"AppOfflineFileName\"]\n$onlineHtml = Join-Path $OctopusParameters[\"InstallationFolder\"] $OctopusParameters[\"AppOnlineFileName\"]\n\n#If neither file exists, throw a fit\nif ($OctopusParameters[\"ChangeAppOffline.CheckForFile\"] -eq $True -and !(Test-Path($offlineHtml)) -and !(Test-Path($onlineHtml)))\n{\n\tWrite-Error \"Missing both online and offline files!\"\n    return\n}\n\n\nif (\"#{ChangeMode}\" -eq \"Online\")\n{\n    #Offline exists and so does online - remove offline\n    if ((Test-Path($offlineHtml)) -and (Test-Path($onlineHtml)))\n    {\n        Remove-Item $offlineHtml\n    }\n    \n    #Offline exists and online doesn't - move offline to online\n    if ((Test-Path($offlineHtml)) -and !(Test-Path($onlineHtml)))\n    {\n        Move-Item $offlineHtml $onlineHtml\n    }\n}\n\nif (\"#{ChangeMode}\" -eq \"Offline\")\n{\n    #Online exists and offline doesn't - move online to offline\n    if ((Test-Path($onlineHtml)) -and !(Test-Path($offlineHtml)))\n    {\n        Move-Item $onlineHtml $offlineHtml\n    }\n}"
   },
   "SensitiveProperties": {},
   "Parameters": [
@@ -48,9 +48,9 @@
       }
     },
     {
-      "Name": "CheckForFile",
+      "Name": "ChangeAppOffline.CheckForFile",
       "Label": "",
-      "HelpText": "Check that either of the files exist first",
+      "HelpText": "Check that at least one of the files exists first",
       "DefaultValue": "False",
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
