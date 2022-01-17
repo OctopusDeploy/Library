@@ -1,7 +1,7 @@
 'use strict';
 
 import React from 'react';
-import marked from 'marked';
+import {marked} from 'marked';
 import PropTypes from 'prop-types';
 import DOMPurify from 'isomorphic-dompurify';
 
@@ -15,7 +15,7 @@ export default class TemplateParameters extends React.Component {
 
   rawMarkup(text) {
     let purifiedText = DOMPurify.sanitize(text);
-    let markup = marked(purifiedText || '');
+    let markup = marked.parse(purifiedText || '');
     return { __html: markup };
   }
 
