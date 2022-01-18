@@ -5,7 +5,8 @@ import log from "fancy-log";
 import gulpLoadPlugins from 'gulp-load-plugins';
 import browserSync from 'browser-sync';
 import LiveServer from 'gulp-live-server';
-import sass from 'gulp-sass';
+import gulpSass from "gulp-sass";
+import nodeSass from "node-sass";
 import concat from 'gulp-concat';
 import insert from 'gulp-insert';
 import del from 'del';
@@ -31,6 +32,7 @@ import eventStream from 'event-stream';
 import fs from 'fs';
 import jsonlint from 'gulp-jsonlint';
 
+const sass = gulpSass(nodeSass);
 const clientDir = 'app';
 const serverDir = 'server';
 
