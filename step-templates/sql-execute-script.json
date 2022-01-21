@@ -3,10 +3,10 @@
   "Name": "SQL - Execute Script",
   "Description": "Execute a SQL script",
   "ActionType": "Octopus.Script",
-  "Version": 5,
+  "Version": 6,
   "CommunityActionTemplateId": null,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "$connection = New-Object System.Data.SqlClient.SqlConnection\n$connection.ConnectionString = $OctopusParameters['ConnectionString']\n$continueOnError = $($($OctopusParameters['ContinueOnError']).ToLower() -eq 'true')\nRegister-ObjectEvent -inputobject $connection -eventname InfoMessage -action {\n    write-host $event.SourceEventArgs\n} | Out-Null\n\nfunction Execute-SqlQuery($query) {\n    $queries = [System.Text.RegularExpressions.Regex]::Split($query, \"^\\s*GO\\s*`$\", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline)\n\n    $queries | ForEach-Object {\n        $q = $_\n        if ((-not [String]::IsNullOrWhiteSpace($q)) -and ($q.Trim().ToLowerInvariant() -ne \"go\")) {            \n            $command = $connection.CreateCommand()\n            $command.CommandText = $q\n            $command.CommandTimeout = $OctopusParameters['CommandTimeout']\n            $command.ExecuteNonQuery() | Out-Null\n        }\n    }\n\n}\n\n$handler = [System.Data.SqlClient.SqlInfoMessageEventHandler] {param($sender, $event) Write-Verbose $event.Message }\n\ntry {\n\t\n    Write-Host \"Attach InfoMessage event handler\"\n\t$connection.add_InfoMessage($handler)\n    \n\tWrite-Host \"Connecting\"\n    $connection.Open()\n\n    Write-Host \"Executing script\"\n    Execute-SqlQuery -query $OctopusParameters['SqlScript']\n}\ncatch {\n\tif ($continueOnError) {\n\t\tWrite-Host $_.Exception.Message\n\t}\n\telse {\n\t\tthrow\n\t}\n}\nfinally {\n\t\n    Write-Host \"Detach InfoMessage event handler\"\n\t$connection.remove_InfoMessage($handler)\n    Write-Host \"Closing connection\"\n    $connection.Dispose()\n}",
+    "Octopus.Action.Script.ScriptBody": "# Parameters\n$ConnectionString = $OctopusParameters[\"ConnectionString\"]\n$ContinueOnError = $OctopusParameters[\"ContinueOnError\"] -ieq \"True\"\n$SqlQuery = $OctopusParameters[\"SqlScript\"]\n$CommandTimeout = $OctopusParameters[\"CommandTimeout\"]\n$CaptureOutputToVariables = $OctopusParameters[\"CaptureOutputToVariables\"] -ieq \"True\"\n\n# Local Variables\n$connection = New-Object System.Data.SqlClient.SqlConnection\n$connection.ConnectionString = $ConnectionString\n$StepName = $OctopusParameters[\"Octopus.Step.Name\"]\n\n$global:outputs = @()\n\nRegister-ObjectEvent -InputObject $connection -EventName InfoMessage -Action {\n    Write-Output $event.SourceEventArgs\n} | Out-Null\n\nfunction Execute-SqlQuery($SqlQuery) {\n    $queries = [System.Text.RegularExpressions.Regex]::Split($SqlQuery, \"^s*GOs*`$\", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline)\n\n    $queries | ForEach-Object {\n        $query = $_\n        if ((-not [String]::IsNullOrWhiteSpace($query)) -and ($query.Trim() -ine \"GO\")) {            \n            $command = $connection.CreateCommand()\n            $command.CommandText = $query\n            $command.CommandTimeout = $CommandTimeout\n            $command.ExecuteNonQuery() | Out-Null\n        }\n    }\n}\n\n$handler = [System.Data.SqlClient.SqlInfoMessageEventHandler] { param($sender, $event) \n    $eventMessage = $event.Message\n    Write-Verbose $eventMessage\n    if ($CaptureOutputToVariables -eq $True) {\n        $global:outputs += $eventMessage\n    }\n}\n\ntry {\n\t\n    Write-Output \"Attach InfoMessage event handler\"\n    $connection.add_InfoMessage($handler)\n    \n    Write-Output \"Connecting\"\n    $connection.Open()\n\n    Write-Output \"Executing script\"\n    Execute-SqlQuery -SqlQuery $SqlQuery\n}\ncatch {\n    if ($ContinueOnError) {\n        Write-Output \"Error: $($_.Exception.Message)\"\n    }\n    else {\n        throw\n    }\n}\nfinally {\n    if ($null -ne $connection) {\n        Write-Output \"Detach InfoMessage event handler\"\n        $connection.remove_InfoMessage($handler)\n        Write-Output \"Closing connection\"\n        $connection.Dispose()\n    }\n}\n\nif ($CaptureOutputToVariables -eq $True) {\n    Write-Output \"Capture output to variables is true\"\n    Write-Output \"Output Count: $($global:outputs.Length)\"\n    if ($global:outputs.Length -gt 0) {\n        Write-Verbose \"Setting Octopus output variables\"\n        for ($i = 0; $i -lt $global:outputs.Length; $i++) {\n            $variableName = \"SQLOutput-$($i+1)\"\n            $variableValue = $global:outputs[$i]\n            Set-OctopusVariable -Name $variableName -Value $variableValue\n            Write-Verbose \"Created output variable: ##{Octopus.Action[$StepName].Output.$variableName}\"\n        }\n    }\n    else {\n        Write-Verbose \"No Octopus output variables to set\"\n    }\n}",
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline"
   },
@@ -19,8 +19,7 @@
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
-      },
-      "Links": {}
+      }
     },
     {
       "Id": "ec5a5223-3415-4cda-a888-3655f2b3e98c",
@@ -30,8 +29,7 @@
       "DefaultValue": "PRINT 'Hello from SQL'",
       "DisplaySettings": {
         "Octopus.ControlType": "MultiLineText"
-      },
-      "Links": {}
+      }
     },
     {
       "Id": "1360f453-ad5b-4cc9-bf56-c565f62e2542",
@@ -41,8 +39,7 @@
       "DefaultValue": "False",
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
-      },
-      "Links": {}
+      }
     },
     {
       "Id": "d2f77e7a-a3d2-453c-a784-e3587db28e12",
@@ -52,15 +49,24 @@
       "DefaultValue": "30",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
-      },
-      "Links": {}
+      }
+    },
+    {
+      "Id": "90b930a8-39d9-43a2-991d-e2a7d374d30b",
+      "Name": "CaptureOutputToVariables",
+      "Label": "Capture SQL Output to Variable(s)",
+      "HelpText": "If set to true, output received from each command (via the `SqlInfoMessageEventHandler`) will be added to an Octopus [output variable](https://octopus.com/docs/projects/variables/output-variables) named **SQLOutput**, and will be suffixed with a number corresponding to the command that generated the output. The default is `False`.\n\nExample:\n\n1. `#{Octopus.Action[STEP NAME].Output.SQLOutput-1}`\n2. `#{Octopus.Action[STEP NAME].Output.SQLOutput-2}`",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
     }
   ],
-  "LastModifiedOn": "2017-12-12T10:43:07+00:00",
-  "LastModifiedBy": "prebenh",
+  "LastModifiedOn": "2022-01-21T11:31:23.426Z",
+  "LastModifiedBy": "harrisonmeister",
   "$Meta": {
-    "ExportedAt": "2017-12-13T10:43:07.699Z",
-    "OctopusVersion": "4.1.1",
+    "ExportedAt": "2022-01-21T11:31:23.426Z",
+    "OctopusVersion": "2021.3.12033",
     "Type": "ActionTemplate"
   },
   "Category": "sql"
