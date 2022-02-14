@@ -3,13 +3,13 @@
   "Name": "Testery - Create Test Run",
   "Description": "Run tests in the Testery platform. For more information, visit https://testery.io/.",
   "ActionType": "Octopus.Script",
-  "Version": 24,
+  "Version": 25,
   "CommunityActionTemplateId": null,
   "Packages": [],
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "try {$pipCmd = get-command pip} catch {}\nif (!($pipCmd)) {\n\tFail-Step \"This step template requires Python 3.6 or greater and pip to be installed. Python is available at https://www.python.org/downloads/\"\n}\n\npip install testery --upgrade\n\nif (\"${TesteryIncludeTags}\" -eq \"\") {\n\techo testery create-test-run --git-ref \"${TesteryGitReference}\" --token \"${TesteryToken}\" --project \"${TesteryProjectName}\" --environment \"${TesteryEnvironment}\" --build-id \"${TesteryBuildId}\" --include-all-tags\n    testery create-test-run --git-ref \"${TesteryGitReference}\" --token \"${TesteryToken}\" --project \"${TesteryProjectName}\" --environment \"${TesteryEnvironment}\" --build-id \"${TesteryBuildId}\" --include-all-tags\n} else {\n\techo testery create-test-run --git-ref \"${TesteryGitReference}\" --token \"${TesteryToken}\" --project \"${TesteryProjectName}\" --environment \"${TesteryEnvironment}\" --build-id \"${TesteryBuildId}\" --include-tags \"${TesteryIncludeTags}\"\n    testery create-test-run --git-ref \"${TesteryGitReference}\" --token \"${TesteryToken}\" --project \"${TesteryProjectName}\" --environment \"${TesteryEnvironment}\" --build-id \"${TesteryBuildId}\" --include-tags \"${TesteryIncludeTags}\"\n}\n\n"
+    "Octopus.Action.Script.ScriptBody": "try {$pipCmd = get-command pip} catch {}\nif (!($pipCmd)) {\n\tFail-Step \"This step template requires Python 3.6 or greater and pip to be installed. Python is available at https://www.python.org/downloads/\"\n}\n\npip install testery --upgrade --disable-pip-version-check --no-warn-script-location -qqq\n\n$TesteryCommand = \"testery create-test-run --token `\"${TesteryToken}`\" --project `\"${TesteryProjectName}`\" --environment `\"${TesteryEnvironment}`\"\"\n\nif (\"${TesteryIncludeTags}\" -eq \"\") {\n\t$TesteryCommand = $TesteryCommand + \" --include-all-tags\"\n} else {\n\t$TesteryCommand = $TesteryCommand + \" --include-tags `\"${TesteryIncludeTags}`\"\"\n}\n\nif (\"${TesteryLatestDeploy}\") {\n\t$TesteryCommand = $TesteryCommand + \" --latest-deploy\"\n}\n\nif (\"${TesteryGitReference}\" -ne \"\") {\n\t$TesteryCommand = $TesteryCommand + \" --git-ref `\"${TesteryGitReference}`\"\"\n}\n\nif (\"${TesteryBuildId}\" -ne \"\") {\n\t$TesteryCommand = $TesteryCommand + \" --build-id `\"${TesteryBuildId}`\"\"\n}\n\nif (\"${TesteryWaitForResults}\") {\n\t$TesteryCommand = $TesteryCommand + \" --wait-for-results\"\n}\n\nif (\"${TesteryFailOnFailure}\") {\n\t$TesteryCommand = $TesteryCommand + \" --fail-on-failure\"\n}\n\n\necho $TesteryCommand\nInvoke-Expression $TesteryCommand"
   },
   "Parameters": [
     {
@@ -73,6 +73,36 @@
       }
     },
     {
+      "Id": "c8af7536-23d8-44c1-82e0-13325d9b3d06",
+      "Name": "TesteryLatestDeploy",
+      "Label": "Latest Deploy",
+      "HelpText": "When set, Testery will run the latest version of the tests that has been deployed using the Create Deploy command. Optionally use this instead of Git Ref.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "7ad3f9db-398a-470e-861a-1c93e4f4ea46",
+      "Name": "TesteryFailOnFailure",
+      "Label": "Fail on Failure",
+      "HelpText": "When set, this step will fail if there are any failing tests.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "59391562-5601-4c8b-a117-1fc29d71d91d",
+      "Name": "TesteryWaitForResults",
+      "Label": "Wait for Results",
+      "HelpText": "When set, this step will wait for the test run to be complete before continuing.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
       "Id": "ae843e0f-a189-411e-94e8-cc8d92c7373a",
       "Name": "TesteryApiUrl",
       "Label": "Testery API URL",
@@ -83,12 +113,13 @@
       }
     }
   ],
+  "StepPackageId": "Octopus.Script",
   "$Meta": {
-    "ExportedAt": "2020-09-29T12:34:40.540Z",
-    "OctopusVersion": "2020.4.2",
+    "ExportedAt": "2022-02-14T18:39:12.429Z",
+    "OctopusVersion": "2022.1.890",
     "Type": "ActionTemplate"
   },
-  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
-  "LastModifiedBy": "bobjwalker",
+  "LastModifiedOn": "2022-02-14T18:39:12.429+00:00",
+  "LastModifiedBy": "harbertc",
   "Category": "testery"
 }
