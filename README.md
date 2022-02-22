@@ -27,3 +27,5 @@ When reviewing a PR, keep the following things in mind:
 * If a new `Category` has been created:
    * An image with the name `{categoryname}.png` must be present under the `step-templates/logos` folder
    * The `switch` in the `humanize` function in [`gulpfile.babel.js`](https://github.com/OctopusDeploy/Library/blob/master/gulpfile.babel.js#L92) must have a `case` statement corresponding to it
+
+---dummy commit---
