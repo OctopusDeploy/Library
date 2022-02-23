@@ -1,9 +1,8 @@
 step "Notify #octopus-library on Slack" {
     condition = "Always"
 
-    action "Notify #octopus-library on Slack" {
+    action {
         properties = {
-            Octopus.Action.RunOnServer = "true"
             Octopus.Action.Template.Id = "ActionTemplates-404"
             Octopus.Action.Template.Version = "12"
             ssn_Channel = "#{SlackChannel}"
@@ -21,7 +20,7 @@ step "Notify #octopus-library on Slack" {
             ssn_Title = "Deployment started"
             ssn_Username = "Octopus Deploy"
         }
-
+        worker_pool = "Hosted Windows 2019"
     }
 }
 
@@ -29,10 +28,11 @@ step "Clear Staging slot" {
     condition = "Always"
     start_trigger = "StartWithPrevious"
 
-    action "Clear Staging slot" {
+    action {
         action_type = "Octopus.AzurePowerShell"
         properties = {
             Octopus.Action.Azure.AccountId = "Team Steps - Production Service Principal"
+            Octopus.Action.RunOnServer = "false"
             Octopus.Action.Script.ScriptBody = <<-EOT
                 #Remove the staging slot if it exists
                 Remove-AzureRmWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging -Force
@@ -43,7 +43,6 @@ step "Clear Staging slot" {
             Octopus.Action.Script.ScriptSource = "Inline"
             Octopus.Action.Script.Syntax = "PowerShell"
         }
-
     }
 }
 
@@ -52,8 +51,7 @@ step "Deploy Octopus.Library " {
         Octopus.Action.TargetRoles = "octopus-library"
     }
 
-
-    action "Deploy Octopus.Library " {
+    action {
         action_type = "Octopus.AzureWebApp"
         properties = {
             Octopus.Action.Azure.DeploymentSlot = "#{AzureSlotName}"
@@ -64,9 +62,9 @@ step "Deploy Octopus.Library " {
             Octopus.Action.Package.DownloadOnTentacle = "False"
             Octopus.Action.Package.FeedId = "Octopus Server (built-in)"
             Octopus.Action.Package.PackageId = "Octopus.Library"
+            Octopus.Action.RunOnServer = "false"
             Octopus.Action.SubstituteInFiles.TargetFiles = "views\\index.pug"
         }
-
 
         packages {
             acquisition_location = "Server"
@@ -75,7 +73,6 @@ step "Deploy Octopus.Library " {
             properties = {
                 SelectionMode = "immediate"
             }
-
         }
     }
 }
@@ -85,8 +82,7 @@ step "Deploy Octopus.Library (new App Service Step)" {
         Octopus.Action.TargetRoles = "octopus-library"
     }
 
-
-    action "Deploy Octopus.Library (new App Service Step)" {
+    action {
         action_type = "Octopus.AzureAppService"
         is_disabled = true
         properties = {
@@ -96,9 +92,9 @@ step "Deploy Octopus.Library (new App Service Step)" {
             Octopus.Action.Package.DownloadOnTentacle = "False"
             Octopus.Action.Package.FeedId = "Octopus Server (built-in)"
             Octopus.Action.Package.PackageId = "Octopus.Library"
+            Octopus.Action.RunOnServer = "false"
             Octopus.Action.SubstituteInFiles.TargetFiles = "views\\index.pug"
         }
-
         worker_pool_variable = ""
 
         packages {
@@ -108,29 +104,26 @@ step "Deploy Octopus.Library (new App Service Step)" {
             properties = {
                 SelectionMode = "immediate"
             }
-
         }
     }
 }
 
 step "HTTP - Invoke URL" {
 
-    action "HTTP - Invoke URL" {
+    action {
         properties = {
-            Octopus.Action.RunOnServer = "true"
             Octopus.Action.Template.Id = "ActionTemplates-102"
             Octopus.Action.Template.Version = "2"
             url = "#{LibrarySiteWithSlotUrl}"
         }
-
+        worker_pool = "Hosted Windows 2019"
     }
 }
 
 step "Notify #octopus-library of manual intervention" {
 
-    action "Notify #octopus-library of manual intervention" {
+    action {
         properties = {
-            Octopus.Action.RunOnServer = "true"
             Octopus.Action.Template.Id = "ActionTemplates-404"
             Octopus.Action.Template.Version = "12"
             ssn_Channel = "#{SlackChannel}"
@@ -153,14 +146,14 @@ step "Notify #octopus-library of manual intervention" {
             ssn_Title = "Confirm changes on Staging slot"
             ssn_Username = "Octopus Deploy"
         }
-
+        worker_pool = "Hosted Windows 2019"
     }
 }
 
 step "Confirm changes on Staging slot" {
     start_trigger = "StartWithPrevious"
 
-    action "Confirm changes on Staging slot" {
+    action {
         action_type = "Octopus.Manual"
         properties = {
             Octopus.Action.Manual.BlockConcurrentDeployments = "False"
@@ -171,66 +164,63 @@ step "Confirm changes on Staging slot" {
                 
                 #{Octopus.Release.Notes}
             EOT
+            Octopus.Action.RunOnServer = "false"
         }
-
     }
 }
 
 step "Swap Staging slot to Production" {
 
-    action "Swap Staging slot to Production" {
+    action {
         action_type = "Octopus.AzurePowerShell"
         properties = {
             Octopus.Action.Azure.AccountId = "Team Steps - Production Service Principal"
+            Octopus.Action.RunOnServer = "false"
             Octopus.Action.Script.ScriptBody = "Switch-AzureRmWebAppSlot -SourceSlotName Staging -DestinationSlotName Production -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName}"
             Octopus.Action.Script.ScriptSource = "Inline"
             Octopus.Action.Script.Syntax = "PowerShell"
         }
-
     }
 }
 
 step "HTTP - Invoke URL - Production" {
     start_trigger = "StartWithPrevious"
 
-    action "HTTP - Invoke URL - Production" {
+    action {
         properties = {
-            Octopus.Action.RunOnServer = "true"
             Octopus.Action.Template.Id = "ActionTemplates-102"
             Octopus.Action.Template.Version = "2"
             url = "#{LibrarySiteUrl}"
         }
-
+        worker_pool = "Hosted Windows 2019"
     }
 }
 
 step "GitHub - Create Release" {
 
-    action "GitHub - Create Release" {
+    action {
         properties = {
             commitId = "master"
             draft = "false"
             gitHubApiKey = "#{GitHubApiKey}"
             gitHubRepository = "#{GitHubRepository}"
             gitHubUsername = "#{GitHubOwner}"
-            Octopus.Action.RunOnServer = "true"
             Octopus.Action.Template.Id = "ActionTemplates-61"
             Octopus.Action.Template.Version = "4"
             preRelease = "false"
             releaseNotes = "#{Octopus.Release.Notes}"
             versionNumber = "#{Octopus.Release.Number}"
         }
-
+        worker_pool = "Hosted Windows 2019"
     }
 }
 
 step "GitHub - Clean vNext Milestone" {
     start_trigger = "StartWithPrevious"
 
-    action "GitHub - Clean vNext Milestone" {
+    action {
         action_type = "Octopus.Script"
         properties = {
-            Octopus.Action.RunOnServer = "true"
             Octopus.Action.Script.ScriptBody = <<-EOT
                 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
                 
@@ -284,16 +274,15 @@ step "GitHub - Clean vNext Milestone" {
             Octopus.Action.Script.ScriptSource = "Inline"
             Octopus.Action.Script.Syntax = "PowerShell"
         }
-
+        worker_pool = "Hosted Windows 2019"
     }
 }
 
 step "Notify #octopus-library of deployment result" {
     condition = "Always"
 
-    action "Notify #octopus-library of deployment result" {
+    action {
         properties = {
-            Octopus.Action.RunOnServer = "true"
             Octopus.Action.Template.Id = "ActionTemplates-404"
             Octopus.Action.Template.Version = "12"
             ssn_Channel = "#{SlackChannel}"
@@ -304,6 +293,6 @@ step "Notify #octopus-library of deployment result" {
             ssn_Title = "Deployment *#{if Octopus.Deployment.Error}failed#{/if}#{unless Octopus.Deployment.Error}succeeded#{/unless}*"
             ssn_Username = "Octopus Deploy"
         }
-
+        worker_pool = "Hosted Windows 2019"
     }
 }
