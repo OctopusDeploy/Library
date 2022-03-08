@@ -1,0 +1,58 @@
+{
+  "Id": "e66e53de-aef8-4baf-ab9b-e55e059f4411",
+  "Name": "Kubernetes - kustomize template deployment",
+  "Description": "Load package with kubernetes configuration and deploy to cluster with kustomize evaluation.",
+  "ActionType": "Octopus.KubernetesRunScript",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "1abe4ad7-d426-4e7c-b6d5-1b146fbacf79",
+      "Name": "DeploymentConfiguration",
+      "PackageId": null,
+      "FeedId": "feeds-builtin",
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "DeploymentConfiguration",
+        "Purpose": ""
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "# kubectl is required\nif ! [ -x \"$(command -v kubectl)\" ]; then\n\tfail_step 'kubectl command not found'\nfi\n\nREFERENCED_PACKAGE_NAME=\"DeploymentConfiguration\"\nKUSTOMIZE_OVERLAY_PATH=$(get_octopusvariable \"KustomizeOverlayPath\")\n\necho \"Referenced package name:$REFERENCED_PACKAGE_NAME\"\necho \"Overlay path: $KUSTOMIZE_OVERLAY_PATH\"\n\nPACKAGE_LOCATION=$(get_octopusvariable \"Octopus.Action.Package[\"$REFERENCED_PACKAGE_NAME\"].ExtractedPath\")\necho \"Extracted package locaion: $PACKAGE_LOCATION\"\n\ncd $PACKAGE_LOCATION\nkubectl apply -k $KUSTOMIZE_OVERLAY_PATH"
+  },
+  "Parameters": [
+    {
+      "Id": "f0001e7b-0af8-47f5-8f2d-49e81d1a18e5",
+      "Name": "DeploymentConfiguration",
+      "Label": "Deployment configuration package",
+      "HelpText": "Deployment configuration package.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "56502ffe-f96d-48a0-9b5d-d9647c86f67c",
+      "Name": "KustomizeOverlayPath",
+      "Label": "Kustomize path to deploy",
+      "HelpText": null,
+      "DefaultValue": "overlay/environment/dev",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.KubernetesRunScript",
+  "$Meta": {
+    "ExportedAt": "2022-03-08T14:34:15.557Z",
+    "OctopusVersion": "2021.3.12258",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "tunkl",
+  "Category": "k8s"
+}
