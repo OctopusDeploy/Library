@@ -1,0 +1,125 @@
+{
+    "Id": "acbb0a58-e176-4309-8a1f-a0296214d4a4",
+    "Name": "GCP - gcloud run deploy (bash)",
+    "Description": "[gcloud run deploy](https://cloud.google.com/sdk/gcloud/reference/run/deploy) - deploy a container to Cloud Run",
+    "ActionType": "Octopus.GoogleCloudScripting",
+    "Author": "ryanrousseau",
+    "Version": 1,
+    "Packages": [
+        {
+            "Id": "42ba13b1-0b02-48e1-a880-49f2b00ef1a5",
+            "Name": "GCloudRunDeploy.Container",
+            "PackageId": null,
+            "FeedId": null,
+            "AcquisitionLocation": "NotAcquired",
+            "Properties": {
+                "Extract": "True",
+                "SelectionMode": "deferred",
+                "PackageParameterName": "GCloudRunDeploy.Container",
+                "Purpose": ""
+            }
+        }
+    ],
+    "Properties": {
+        "Octopus.Action.Script.ScriptSource": "Inline",
+        "Octopus.Action.Script.Syntax": "Bash",
+        "Octopus.Action.Script.ScriptBody": "account=$(get_octopusvariable \"GCloudRunDeploy.Account\")\nproject=$(get_octopusvariable \"GCloudRunDeploy.Project\")\nregion=$(get_octopusvariable \"GCloudRunDeploy.Region\")\n\nservice=$(get_octopusvariable \"GCloudRunDeploy.Service\")\nimage=$(get_octopusvariable \"Octopus.Action.Package[GCloudRunDeploy.Container].Image\")\nadditionalParams=$(get_octopusvariable \"GCloudRunDeploy.AdditionalParameters\")\nprintCommand=$(get_octopusvariable \"GCloudRunDeploy.PrintCommand\")\n\nif [ \"$account\" = \"\" ] ; then\n    fail_step \"'Account' is a required parameter for this step.\"\nfi\n\nif [ \"$project\" = \"\" ] ; then\n    fail_step \"'Project' is a required parameter for this step.\"\nfi\n\nif [ \"$region\" = \"\" ] ; then\n    fail_step \"'Region' is a required parameter for this step.\"\nfi\n\nif [ \"$service\" = \"\" ] ; then\n    fail_step \"'Service' is a required parameter for this step.\"\nfi\n\nif [ \"$printCommand\" = \"True\" ] ; then\n    set -x\nfi\n\ngcloud run deploy $service --image=$image ${additionalParams:+ $additionalParams}",
+        "Octopus.Action.GoogleCloud.UseVMServiceAccount": "False",
+        "Octopus.Action.GoogleCloudAccount.Variable": "#{GCloudRunDeploy.Account}",
+        "Octopus.Action.GoogleCloud.ImpersonateServiceAccount": "False",
+        "Octopus.Action.GoogleCloud.Project": "#{GCloudRunDeploy.Project}",
+        "Octopus.Action.GoogleCloud.Region": "#{GCloudRunDeploy.Region}",
+        "Octopus.Action.GoogleCloud.Zone": "#{GCloudRunDeploy.Zone}"
+    },
+    "Parameters": [
+        {
+            "Id": "cc0f6d96-8ae8-49c7-a98e-2c6ec49be818",
+            "Name": "GCloudRunDeploy.Container",
+            "Label": "Container",
+            "HelpText": "The container to deploy to Cloud Run.\n\n**This step only uses the container image and tag to provide a Release specific value to pass to the `gcloud run deploy` command.** Please make sure that the chosen container is accessible by Google Cloud and the appropriate service accounts.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Package"
+            }
+        },
+        {
+            "Id": "7225abe8-e8c0-4c70-b077-e0e603caf330",
+            "Name": "GCloudRunDeploy.Account",
+            "Label": "Account",
+            "HelpText": "Google Cloud Account to use for the command.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "GoogleCloudAccount"
+            }
+        },
+        {
+            "Id": "7ae8e5b2-2792-415f-b53a-f38ee3a0d605",
+            "Name": "GCloudRunDeploy.Project",
+            "Label": "Project",
+            "HelpText": "Google Cloud project to use with the command.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "54794e4f-8681-4198-8157-226909dce509",
+            "Name": "GCloudRunDeploy.Region",
+            "Label": "Region",
+            "HelpText": "Google  Cloud region to use with the command. This is used by the underlying Octopus step and not passed to the `gcloud run deploy` command.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "56ae0926-0f3b-416d-beea-162a02f5f5c0",
+            "Name": "GCloudRunDeploy.Zone",
+            "Label": "Zone",
+            "HelpText": "Google Cloud zone to use with the command.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "f71d5a0e-215b-4eda-a70d-589313deadd5",
+            "Name": "GCloudRunDeploy.Service",
+            "Label": "Service",
+            "HelpText": "ID of the service or fully qualified identifier for the service. To set the service attribute:\n\n* provide the argument SERVICE on the command line;\n* specify the service name from an interactive prompt.\n",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "7425e1db-79a5-4328-8d4b-5f9378e6539c",
+            "Name": "GCloudRunDeploy.AdditionalParameters",
+            "Label": "Additional Parameters",
+            "HelpText": "Provide any additional parameters per [the documentation](https://cloud.google.com/sdk/gcloud/reference/run/deploy).\n\nExample: `--platform=managed --region=us-central1 --allow-unauthenticated`",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "c20cdbad-f023-4a47-87a4-d17eee59c3c0",
+            "Name": "GCloudRunDeploy.PrintCommand",
+            "Label": "Print Command?",
+            "HelpText": "Prints the command in the logs using set -x. This will cause a warning when the step runs.",
+            "DefaultValue": "False",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Checkbox"
+            }
+        }
+    ],
+    "StepPackageId": "Octopus.GoogleCloudScripting",
+    "$Meta": {
+        "ExportedAt": "2022-03-17T19:46:39.101Z",
+        "OctopusVersion": "2022.2.387-hotfix.903",
+        "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "ryanrousseau",
+    "Category": "google-cloud",
+    "MinimumServerVersion": "2021.2.0"
+}
