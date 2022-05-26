@@ -1,6 +1,6 @@
-'use strict';
+"use strict";
 
-import uuid from 'node-uuid';
+import uuid from "node-uuid";
 
 let _callbacks = {};
 
@@ -12,11 +12,11 @@ const AppDispatcher = {
   },
 
   dispatch(payload) {
-    for(var id in _callbacks) {
+    for (var id in _callbacks) {
       var callback = _callbacks[id];
       callback(payload);
     }
-  }
+  },
 };
 
 export default AppDispatcher;

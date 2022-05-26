@@ -1,18 +1,18 @@
-'use strict';
+"use strict";
 
-import {EventEmitter} from 'events';
-import _ from 'underscore';
-import SlugMaker from './../services/SlugMaker';
-import AppDispatcher from './../dispatcher.js';
+import { EventEmitter } from "events";
+import _ from "underscore";
+import SlugMaker from "./../services/SlugMaker";
+import AppDispatcher from "./../dispatcher.js";
 
-const CHANGE_EVENT = 'change';
+const CHANGE_EVENT = "change";
 
 let _templates = [];
 let _indexedTemplates = [];
 
 function receiveTemplates(templates) {
   _templates = templates;
-  _indexedTemplates = _.indexBy(_templates, 'Id');
+  _indexedTemplates = _.indexBy(_templates, "Id");
 }
 
 class LibraryStore extends EventEmitter {
@@ -34,7 +34,7 @@ class LibraryStore extends EventEmitter {
 
   //Required so we can handle old urls without stable ids
   getByFriendlySlug(slug) {
-    return this.getItems().filter(t =>  SlugMaker.make(t.Name) === slug)[0];
+    return this.getItems().filter((t) => SlugMaker.make(t.Name) === slug)[0];
   }
 
   addChangeListener(callback) {
@@ -50,12 +50,11 @@ let storeObj = new LibraryStore();
 
 storeObj.dispatchToken = AppDispatcher.register((action) => {
   switch (action.actionType) {
-    case 'READ_SUCCESS':
+    case "READ_SUCCESS":
       receiveTemplates(action.templates);
       storeObj.emitChange();
       break;
     default:
-
   }
 });
 

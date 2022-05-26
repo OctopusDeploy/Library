@@ -1,9 +1,9 @@
-'use strict';
+"use strict";
 
-import React from 'react';
-import PropTypes from 'prop-types';
+import React from "react";
+import PropTypes from "prop-types";
 
-const displayName = 'octopus-library-search-box';
+const displayName = "octopus-library-search-box";
 
 export default class SearchBox extends React.Component {
   constructor() {
@@ -16,13 +16,11 @@ export default class SearchBox extends React.Component {
   }
 
   handleSearchFilterChange() {
-    this.props.handleUserInput(
-      this._searchFilter.value
-    );
+    this.props.handleUserInput(this._searchFilter.value);
   }
 
   render() {
-    let placeholder = 'Search ' + this.props.templateCount + ' community contributed templates...';
+    let placeholder = "Search " + this.props.templateCount + " community contributed templates...";
     return (
       <section className="template-search">
         <div className="container">
@@ -30,19 +28,14 @@ export default class SearchBox extends React.Component {
             <div className="column two-thirds">
               <div className="search-box">
                 <div className="search-input">
-                  <input autoFocus
-                      onChange={this.handleSearchFilterChange}
-                      placeholder={placeholder}
-                      ref={(c) => this._searchFilter = c}
-                      type="text"
-                      value={this.props.filterText}
-                  />
+                  <input autoFocus onChange={this.handleSearchFilterChange} placeholder={placeholder} ref={(c) => (this._searchFilter = c)} type="text" value={this.props.filterText} />
                 </div>
               </div>
             </div>
             <div className="column third">
               <p className="tutorial">
-                <strong>Be part of it!</strong><br /> Submit templates, report issues and send patches at the GitHub <a href="https://github.com/OctopusDeploy/Library">project site</a>.
+                <strong>Be part of it!</strong>
+                <br /> Submit templates, report issues and send patches at the GitHub <a href="https://github.com/OctopusDeploy/Library">project site</a>.
               </p>
             </div>
           </div>
@@ -55,12 +48,12 @@ export default class SearchBox extends React.Component {
 SearchBox.propTypes = {
   filterText: PropTypes.string,
   handleUserInput: PropTypes.any,
-  templateCount: PropTypes.number
+  templateCount: PropTypes.number,
 };
 
 SearchBox.defaultProps = {
-  filterText: '',
-  templateCount: 0
+  filterText: "",
+  templateCount: 0,
 };
 
 SearchBox.displayName = displayName;

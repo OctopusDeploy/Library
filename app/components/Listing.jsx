@@ -1,18 +1,18 @@
-'use strict';
+"use strict";
 
-import React from 'react';
-import PropTypes from 'prop-types';
+import React from "react";
+import PropTypes from "prop-types";
 
-import SearchBox from './SearchBox';
-import TemplateList from './TemplateList';
-import LibraryStore from './../stores/LibraryStore';
+import SearchBox from "./SearchBox";
+import TemplateList from "./TemplateList";
+import LibraryStore from "./../stores/LibraryStore";
 
-const displayName = 'octopus-library-listing';
+const displayName = "octopus-library-listing";
 
 export default class Listing extends React.Component {
   constructor(props) {
     super(props);
-    this.state = {filterText: (this.props.params.searchTerm || ''), templates: LibraryStore.getItems()};
+    this.state = { filterText: this.props.params.searchTerm || "", templates: LibraryStore.getItems() };
 
     this._handleUserInput = this._handleUserInput.bind(this);
   }
@@ -27,37 +27,32 @@ export default class Listing extends React.Component {
 
   _onChange() {
     this.setState({
-      templates: LibraryStore.getItems()
+      templates: LibraryStore.getItems(),
     });
   }
 
   _handleUserInput(filterText) {
     this.setState({
-      filterText: filterText
+      filterText: filterText,
     });
   }
 
   render() {
     return (
       <div>
-        <SearchBox filterText={this.state.filterText}
-            handleUserInput={this._handleUserInput}
-            templateCount={this.state.templates.length}
-        />
-        <TemplateList filterText={this.state.filterText}
-            templateList={this.state.templates}
-        />
+        <SearchBox filterText={this.state.filterText} handleUserInput={this._handleUserInput} templateCount={this.state.templates.length} />
+        <TemplateList filterText={this.state.filterText} templateList={this.state.templates} />
       </div>
     );
   }
 }
 
 Listing.propTypes = {
-  params: PropTypes.object
+  params: PropTypes.object,
 };
 
 Listing.defaultProps = {
-  params: {}
+  params: {},
 };
 
 Listing.displayName = displayName;

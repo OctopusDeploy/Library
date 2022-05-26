@@ -1,13 +1,13 @@
-'use strict';
+"use strict";
 
-import React from 'react';
-import PropTypes from 'prop-types';
+import React from "react";
+import PropTypes from "prop-types";
 
-import FacebookButton from './SocialButtons/FacebookButton';
-import GoogleButton from './SocialButtons/GoogleButton';
-import TwitterButton from './SocialButtons/TwitterButton';
+import FacebookButton from "./SocialButtons/FacebookButton";
+import GoogleButton from "./SocialButtons/GoogleButton";
+import TwitterButton from "./SocialButtons/TwitterButton";
 
-const displayName = 'octopus-library-template-social-buttons';
+const displayName = "octopus-library-template-social-buttons";
 
 export default class SocialButtons extends React.Component {
   constructor(props) {
@@ -26,11 +26,11 @@ export default class SocialButtons extends React.Component {
 }
 
 SocialButtons.propTypes = {
-  url: PropTypes.string
+  url: PropTypes.string,
 };
 
 SocialButtons.defaultProps = {
-  url: ''
+  url: "",
 };
 
 SocialButtons.displayName = displayName;
