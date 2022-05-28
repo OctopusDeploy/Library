@@ -1,0 +1,55 @@
+{
+    "Id": "17f180d0-aa3c-45ed-9a4a-d6ae2af06410",
+    "Name": "Pingdom - Pause or Resume Uptime Check",
+    "Description": "Pauses or resumes a Pingdom check. \nSupports the Pingdom API Version 3.1.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = \"tls12, tls11, tls\"\n$token = \"$($pingdomToken):\"\n\n$encodedToken = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($token))\n\n$basicAuthValue = \"Basic $encodedToken\"\n\n$Headers = @{\n    Authorization = $basicAuthValue\n}\n\n$url = \"https://api.pingdom.com/api/checks/$pingdomCheckId\"\n$actionBody = \"paused=\" + ($pingdomAction -eq \"pause\").tostring().tolower()\n\n$checkResult = Invoke-WebRequest -Uri $url -Headers $Headers -UseBasicParsing | ConvertFrom-Json\n\nWrite-Host \"Attempting to\" $pingdomAction.tolower() \"check\" $pingdomCheckId \"-\" $checkResult.check.name\n$result = Invoke-WebRequest -Uri $url -Headers $Headers -Method Put -Body $actionBody -UseBasicParsing | ConvertFrom-Json\nWrite-Host $result.message",
+      "Octopus.Action.Script.ScriptSource": "Inline"
+    },
+    "Parameters": [
+      {
+        "Id": "ce8f9653-27df-472c-a16d-06847153a405",
+        "Name": "pingdomToken",
+        "Label": "API Token",
+        "HelpText": "#### Get A Token\n\n1. Navigate to the [Pingdom API](https://my.pingdom.com/app/api-tokens) page within the Pingdom web app.\n2. Click **Add API token**\n3. Name your token\n4. Choose `Read-Write access` for _Access Level_\n5. Click **Generate token**\n\nCopy the token into this parameter. \n\n_Note_: The token does not expire, and can be used across multiple steps and Projects.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "8b239f03-2aa8-4ca6-9b1f-a5e3b08244bc",
+        "Name": "pingdomCheckId",
+        "Label": "Check Id",
+        "HelpText": "Check `Id` to be paused or resumed\n\nThis can be retrieved from the URL when viewing the _check_ from within the Pingdom web app.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "229153dc-6851-4c4a-b55a-435a04a48c58",
+        "Name": "pingdomAction",
+        "Label": "Action",
+        "HelpText": null,
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "pause|Pause\nresume|Resume"
+        }
+      }
+    ],
+    "StepPackageId": "Octopus.Script",
+    "$Meta": {
+      "ExportedAt": "2022-05-28T22:56:59.427Z",
+      "OctopusVersion": "2022.1.2495",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "aallen90",
+    "Category": "pingdom"
+  }
