@@ -112,3 +112,15 @@ node dist/server.js
 ```
 
 Once you are happy with your changes, push them to your fork and create a pull request from the GitHub site.
+
+### Code Cleanup
+To keep everything nice and tidy, [ESLint](https://eslint.org/) and [Prettier](https://prettier.io/) are used to enforce a consistent code styling throughout the project. If you are using VSCode, install the ESLint extension and make sure the following setting is enabled:
+```
+{
+  "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": true
+  }
+}
+```
+
+You can also run `npm run lint:fix` to solve any errors and warnings.

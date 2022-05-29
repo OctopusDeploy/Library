@@ -1,19 +1,17 @@
-'use strict';
+"use strict";
 
-import _ from 'underscore';
+import _ from "underscore";
 
-import StepTemplates from './step-templates.json';
-
+import StepTemplates from "./step-templates.json";
 
 class LibraryDb {
-
   constructor() {
     this._items = _.chain(StepTemplates.items)
-      .map(function(t) {
+      .map(function (t) {
         if (t.Properties) {
-          var script = t.Properties['Octopus.Action.Script.ScriptBody'];
+          var script = t.Properties["Octopus.Action.Script.ScriptBody"];
           if (script) {
-            t.Properties['Octopus.Action.Script.ScriptBody'] = script.replace(/(\r\n)/gm, '\n');
+            t.Properties["Octopus.Action.Script.ScriptBody"] = script.replace(/(\r\n)/gm, "\n");
           }
         }
 
@@ -34,17 +32,17 @@ class LibraryDb {
           Logo: t.Logo,
           MaximumServerVersion: t.MaximumServerVersion,
           MinimumServerVersion: t.MinimumServerVersion,
-          "$Meta": {
-            Type: "ActionTemplate"
-          }
-        }
+          $Meta: {
+            Type: "ActionTemplate",
+          },
+        };
       })
-      .sortBy(function(t) {
+      .sortBy(function (t) {
         return t.Name.toLowerCase();
       })
       .value();
 
-    this._all = _.indexBy(this._items, 'Id');
+    this._all = _.indexBy(this._items, "Id");
   }
 
   list(cb) {

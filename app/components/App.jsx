@@ -1,14 +1,14 @@
-'use strict';
+"use strict";
 
-import React from 'react';
-import RouteHandler from 'react-router';
-import PropTypes from 'prop-types';
+import React from "react";
+import RouteHandler from "react-router";
+import PropTypes from "prop-types";
 
-import Header from './Header';
-import Listing from './Listing';
-import Footer from './Footer';
+import Header from "./Header";
+import Listing from "./Listing";
+import Footer from "./Footer";
 
-const displayName = 'octopus-library';
+const displayName = "octopus-library";
 
 export default class App extends React.Component {
   constructor(props) {
@@ -21,9 +21,7 @@ export default class App extends React.Component {
         <div className="wrapper">
           <Header />
           <div className="content">
-            <section>
-              {this.props.children || <Listing />}
-            </section>
+            <section>{this.props.children || <Listing />}</section>
           </div>
         </div>
         <Footer />
@@ -35,9 +33,9 @@ export default class App extends React.Component {
 App.displayName = displayName;
 
 App.propTypes = {
-  children: PropTypes.object
+  children: PropTypes.object,
 };
 
 App.defaultProps = {
-  children: {}
+  children: {},
 };
