@@ -1,0 +1,64 @@
+{
+  "Id": "de1fb4d2-5cc7-43cc-8dfc-633d63e97c92",
+  "Name": "Octopus - Support Export",
+  "Description": "This step template will take an already exported project on your server and do the following:\n- Change all sensitive variables to plain text variables, and the values will become \"Sensitive Variable Was Here\"\n- All accounts will have their details nulled out\n- All certificates will have junk data put into their json\n\nAfter the above is complete, the modified zip file will be attached to the task that you can download and send to support. Please remember, support will still need the password you used to create the original export, but now there will be no sensitive data available.\n\nNOTE: This step template currently DOES NOT purge any Tenant variables. If you have any Tenants connected to this project with variables you are concerned about sharing, you will need to import the modified zip into a blank space and remove the values, and re-export for now. This functionality will come in a future update to the step template.\n\n**NOTE: This template only works on Octopus Server 2021.1 and above, as it requires project import/export to be available.**",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "Add-Type -AssemblyName System.Web\n\n#Gathering Parameters\n[string]$SpaceName = $OctopusParameters[\"SupportExportSpaceName\"]\n[string]$APIKey = $OctopusParameters[\"SupportExportAPIKey\"]\n[string]$serverTaskId = $OctopusParameters[\"SupportExportTaskID\"]\n[string]$OctopusURL = $OctopusParameters[\"SupportExportServerURL\"]\n\nif ([string]::IsNullOrEmpty($SpaceName)){\n\tWrite-Error \"You did not supply a space name. The space name is required.\"\n    exit\n}\nif ([string]::IsNullOrEmpty($APIKey)){\n\tWrite-Error \"You did not supply an API Key. An API Key is required.\"\n    exit\n}\nif ([string]::IsNullOrEmpty($serverTaskId)){\n\tWrite-Error \"You did not supply the task ID of the export task you want to be scrubbed. This parameter is required.\"\n    exit\n}\n\n#If the Server URL parameter was empty, use the ServerURI if it exists, if not, use the BaseURL, which could result in a failed connection in some environments so it's a last resort.\nif ([string]::IsNullOrEmpty($OctopusURL))\n{\n    if ([string]::IsNullOrEmpty(\"#{Octopus.Web.ServerUri}\")){\n         $OctopusURL = \"#{Octopus.Web.BaseUrl}\"\n    }\n    else{\n         $OctopusURL = \"#{Octopus.Web.ServerUri}\"\n    }\n}\n$header = @{ \"X-Octopus-ApiKey\" = $APIKey }\n$fileDownloadPath = \"#{env:OctopusCalamariWorkingDirectory}\"\n\n#Junk Certificate to overwrite the exported certs with\n$junkCert = @\"\n {\n  \"CertificateData\": \"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|AAAAAAAAAAAAAAAAAAAAAA==\",\n  \"Password\": null,\n  \"CertificateMetadata\": {\n    \"Type\": \"Valid\",\n    \"CertificateDataFormat\": \"Pem\",\n    \"HasPrivateKey\": false,\n    \"RootCertificate\": {\n      \"Version\": 3,\n      \"SerialNumber\": \"01\",\n      \"SignatureAlgorithmName\": \"SHA-1withRSA\",\n      \"NotBefore\": \"2014-01-28T15:36:55-05:00\",\n      \"NotAfter\": \"2024-01-26T15:36:55-05:00\",\n      \"SubjectName\": \"CN=www.dimi.fr,O=Internet Widgits Pty Ltd,ST=Some-State,C=FR\",\n      \"IssuerName\": \"E=dimi@dimi.fr,CN=Dimi CA,OU=NSBU,O=Dimi,L=Paris,ST=Some-State,C=FR\",\n      \"Thumbprint\": \"AD42744CC010C079D9CC08A17A45414C8140B1E7\",\n      \"SubjectAlternativeNames\": []\n    },\n    \"CertificateChain\": []\n  }\n  }\n\n\n\"@\n$junkCert = $junkCert | ConvertFrom-Json\n\nWrite-Host \"Getting the space information\"\n$spaceList = Invoke-RestMethod -Method Get -Uri \"$OctopusUrl/api/spaces?skip=0&take=10&partialName=$([System.Web.HTTPUtility]::UrlEncode($spaceName))\" -Headers $header\n$space = $spaceList.Items | Where-Object {$_.Name -eq $spaceName}\n$spaceId = $space.Id\n\n#Getting artifact from the export task\n$artifactList = Invoke-RestMethod -Method Get -Uri \"$OctopusUrl/api/$spaceId/artifacts?regarding=$serverTaskId\" -Headers $header\n$artifact = $artifactList.Items | Where-Object {$_.Filename -like \"*Octopus-Export*\"}\n$fullname = $artifact.Filename\n$artifactId = $artifact.Id\nWrite-Host \"Found $artifactId that matches expected file name Octopus-Export\"\n\nWrite-Host \"Getting file content\"\nInvoke-RestMethod -Method Get -Uri \"$OctopusUrl/api/$spaceId/artifacts/$artifactId/content\" -Headers $header -OutFile \"$($filedownloadpath)\\$($fullname)\"\nWrite-Host \"File content written to $fileDownloadPath\"\n\n$ExportFile = \"$($filedownloadpath)\\$($fullname)\"\n\n$OriginalFileName = (Get-Item $ExportFile).BaseName\n$Path = \"$($fileDownloadPath)\\export\"\nExpand-Archive -Path $ExportFile -DestinationPath $Path\n$SearchInFilesWithFileNameMatching = \"variableset-*\"\n$TextToSearchFor = @(\"Sensitive*\",\"AzureAccount\",\"AmazonWebServicesAccount\",\"GoogleCloudAccount\",\"Certificate\")\n$PathArray = @()\n\n\nforeach ($text in $TextToSearchFor){\n    Get-ChildItem $Path | Where-Object {$_.Name -match $SearchInFilesWithFileNameMatching} | Where-Object { $_.Attributes -ne \"Directory\"} |\n    ForEach-Object {\n        If (Get-Content $_.FullName | Select-String -Pattern $text) {\n            $PathArray += $_.FullName\n        }\n    }\n}\n\n\nforeach ($file in $pathArray) {\n    $variableSnapshot = Get-Content -Path $file | ConvertFrom-Json\n    foreach ($variable in $variableSnapshot.Variables) {\n        #Check if the variable is a sensitive variable and make it a string and put junk there\n        if ($variable.Type -eq \"Sensitive\"){\n            $variable.Type = \"String\"\n            $variable.Value = \"Sensitive Variable Was Here\"        \n        }\n        #Check if the variable is an account, if so, null out everything but the account type and save the json back\n        if (($variable.Type -eq \"AzureAccount\") -or ($variable.Type -eq \"AmazonWebServicesAccount\") -or ($variable.Type -eq\"GoogleCloudAccount\")){\n           \n            if (Test-Path -Path \"$($Path)\\$($variable.value).json\"){\n                $tempJson = Get-Content -Path \"$($Path)\\$($variable.value).json\"\n                $tempJson = $tempJson | ConvertFrom-Json\n                foreach ($item in $tempJson.Details){\n                    $item.PSObject.Properties | ForEach-Object {\n                        if ($_.Name -ne \"AccountType\"){\n                            if ($_.Value -ne $null){\n                                $_.Value = $null\n                            }\n                        }\n                    }\n                }\n                $tempJson = $tempJson | ConvertTo-Json -Depth 10\n                Set-Content -Path \"$($Path)\\$($variable.value).json\" -Value $tempJson\n            }\n        }\n\n        #Check if the variable is a certificate, if so, make it equal to the junk cert that we created in the beginning\n        if ($variable.Type -eq \"Certificate\"){\n            \n            if (Test-Path -Path \"$($Path)\\$($variable.value).json\"){\n                $tempJson = Get-Content -Path \"$($Path)\\$($variable.value).json\"\n                $tempJson = $tempJson | ConvertFrom-Json\n\n                #overwriting pertinent data with junk\n                $tempJson.CertificateData = $junkCert.CertificateData\n                $tempJson.Password = $junkCert.Password\n                $tempJson.CertificateMetadata = $junkCert.CertificateMetadata\n\n\n                $tempJson = $tempJson | ConvertTo-Json -Depth 10\n                Set-Content -Path \"$($Path)\\$($variable.value).json\" -Value $tempJson\n\n            }\n        }\n    }\n    $variableSnapshot | ConvertTo-Json -Depth 100 | Out-File $file -Encoding UTF8\n}\n            \n            \n\nCompress-Archive -Path $Path\\* -DestinationPath \"$($fileDownloadPath)\\$($OriginalFileName)-Modified.zip\"\nRemove-Item $Path -Recurse\n\nNew-OctopusArtifact -Path \"$($fileDownloadPath)\\$($OriginalFileName)-Modified.zip\" -Name \"$($OriginalFileName)-Modified.zip\""
+  },
+  "Parameters": [
+    {
+      "Id": "4833547d-71c7-4b60-bf3e-1bdfb2847f26",
+      "Name": "SupportExportSpaceName",
+      "Label": "Space Name",
+      "HelpText": "The Space that has the project and export task that you want to be scrubbed.",
+      "DefaultValue": "Default",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2aaa1afe-bad9-4eae-b79b-467fd4a19ec5",
+      "Name": "SupportExportAPIKey",
+      "Label": "API Key",
+      "HelpText": "API Key that has access to the project and task.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "68874953-98d4-4c45-8046-90208330e0c8",
+      "Name": "SupportExportTaskID",
+      "Label": "Task ID",
+      "HelpText": "Task ID of the export you want to be scrubbed",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d075d988-210a-4239-b3e3-1923679762c8",
+      "Name": "SupportExportServerURL",
+      "Label": "ServerURL",
+      "HelpText": "This will default to the Defined Server URI in Configuration->Nodes. In some cases, you might want to define the URL that you want the API call to run against rather than letting the default value be used. If you get a connection issue, try defining a known good URL here.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2022-06-01T15:54:33.140Z",
+    "OctopusVersion": "2022.1.2584",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "millerjn21",
+  "Category": "octopus"
+}
