@@ -7,97 +7,87 @@
     "Author": "twerthi",
     "Packages": [],
     "Properties": {
-        "Octopus.Action.Script.ScriptSource": "Inline",
-        "Octopus.Action.Script.Syntax": "PowerShell",
-        "Octopus.Action.Script.ScriptBody": "# Define functions\nfunction Get-ModuleInstalled \n{\n    # Define parameters\n    param(\n        $PowerShellModuleName\n    )\n\n    # Check to see if the module is installed\n    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))\n    {\n        # It is installed\n        return $true\n    }\n    else\n    {\n        # Module not installed\n        return $false\n    }\n}\n\nfunction Install-PowerShellModule\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName,\n        $LocalModulesPath\n    )\n\n\t# Check to see if the package provider has been installed\n    if ((Get-NugetPackageProviderNotInstalled) -ne $false)\n    {\n    \t# Display that we need the nuget package provider\n        Write-Host \"Nuget package provider not found, installing ...\"\n        \n        # Install Nuget package provider\n        Install-PackageProvider -Name Nuget -Force\n    }\n\n\t# Save the module in the temporary location\n    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force\n}\n\nfunction Get-NugetPackageProviderNotInstalled\n{\n\t# See if the nuget package provider has been installed\n    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))\n}\n\nfunction Get-UserInRole\n{\n\t# Define parameters\n    param ($UserHostname,\n    $Username,\n    $RoleHostName,\n    $RoleName)\n    \n\t# Execute query\n    $grants = Invoke-SqlQuery \"SHOW GRANTS FOR '$Username'@'$UserHostName';\"\n\n    # Loop through Grants\n    foreach ($grant in $grants.ItemArray)\n    {\n        # Check grant\n        if ($grant -eq \"GRANT $RoleName TO '$Username'@'$UserHostName'\")\n        {\n            # They're in the group\n            return $true\n        }\n    }\n\n    # Not found\n    return $false\n}\n\n# Define PowerShell Modules path\n$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName\n$env:PSModulePath = \"$LocalModules$([System.IO.Path]::PathSeparator)$env:PSModulePath\"\n$PowerShellModuleName = \"SimplySql\"\n\n# Set secure protocols\n[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12\n\n# Check to see if SimplySql module is installed\nif ((Get-ModuleInstalled -PowerShellModuleName $PowerShellModuleName) -ne $true)\n{\n    # Tell user what we're doing\n    Write-Output \"PowerShell module $PowerShellModuleName is not installed, downloading temporary copy ...\"\n\n    # Install temporary copy\n    Install-PowerShellModule -PowerShellModuleName $PowerShellModuleName -LocalModulesPath $LocalModules\n}\n\n# Display\nWrite-Output \"Importing module $PowerShellModuleName ...\"\n\n# Check to see if it was downloaded\nif ((Test-Path -Path \"$LocalModules\\$PowerShellModuleName\") -eq $true)\n{\n\t# Use specific location\n    $PowerShellModuleName = \"$LocalModules\\$PowerShellModuleName\"\n}\n\n# Declare initial connection string\n$connectionString = \"Server=$addMariaDBServerName;Port=$addMariaDBServerPort;\"\n\n# Update the connection string based on authentication method\nswitch ($mariaDbAuthenticationMethod) {\n    \"awsiam\" {\n        # Region is part of the RDS endpoint, extract\n        $region = ($addMariaDBServerName.Split(\".\"))[2]\n\n        Write-Host \"Generating AWS IAM token ...\"\n        $addLoginPasswordWithAddRoleRights = (aws rds generate-db-auth-token --hostname $addMariaDBServerName --region $region --port $addMariaDBServerPort --username $addLoginWithAddRoleRights)\n        \n        # Append remaining portion of connection string\n        $connectionString += \";Uid=$addLoginWithAddRoleRights;Pwd=`\"$addLoginPasswordWithAddRoleRights`\";\"\n\n        break\n    }\n    \"usernamepassword\" {\n        # Append remaining portion of connection string\n        $connectionString += \";Uid=$addLoginWithAddRoleRights;Pwd=`\"$addLoginPasswordWithAddRoleRights`\";\"\n        \n        break    \n    }\n}\n\n# Import the module\nImport-Module -Name $PowerShellModuleName\n\ntry\n{\n    # Connect to MySQL\n    Open-MySqlConnection -ConnectionString $connectionString\n\n    # See if database exists\n    $userInRole = Get-UserInRole -UserHostname $addUserHostname -Username $addUsername -RoleName $addRoleName\n\n    if ($userInRole -eq $false)\n    {\n        # Create database\n        Write-Output \"Adding user $addUsername@$addUserHostName to role $addRoleName ...\"\n        $executionResults = Invoke-SqlUpdate \"GRANT $addRoleName TO '$addUsername'@'$addUserHostName';\"\n\n        # See if it was created\n        $userInRole = Get-UserInRole -UserHostname $addUserHostname -Username $addUsername -RoleName $addRoleName\n            \n        # Check array\n        if ($userInRole -eq $true)\n        {\n            # Success\n            Write-Output \"$addUserName@$addUserHostName added to $addRoleName successfully!\"\n        }\n        else\n        {\n            # Failed\n            Write-Error \"Failure adding $addUserName@$addUserHostName to $addRoleName!\"\n        }\n    }\n    else\n    {\n    \t# Display message\n        Write-Output \"User $addUsername@$addUserHostName is already in role $addRoleName\"\n    }\n}\nfinally\n{\n    Close-SqlConnection\n}\n\n\n"
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Define functions\nfunction Get-ModuleInstalled \n{\n    # Define parameters\n    param(\n        $PowerShellModuleName\n    )\n\n    # Check to see if the module is installed\n    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))\n    {\n        # It is installed\n        return $true\n    }\n    else\n    {\n        # Module not installed\n        return $false\n    }\n}\n\nfunction Install-PowerShellModule\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName,\n        $LocalModulesPath\n    )\n\n\t# Check to see if the package provider has been installed\n    if ((Get-NugetPackageProviderNotInstalled) -ne $false)\n    {\n    \t# Display that we need the nuget package provider\n        Write-Host \"Nuget package provider not found, installing ...\"\n        \n        # Install Nuget package provider\n        Install-PackageProvider -Name Nuget -Force\n    }\n\n\t# Save the module in the temporary location\n    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force\n}\n\nfunction Get-NugetPackageProviderNotInstalled\n{\n\t# See if the nuget package provider has been installed\n    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))\n}\n\nfunction Get-UserInRole\n{\n\t# Define parameters\n    param ($UserHostname,\n    $Username,\n    $RoleHostName,\n    $RoleName)\n    \n\t# Execute query\n    $grants = Invoke-SqlQuery \"SHOW GRANTS FOR '$Username'@'$UserHostName';\"\n\n    # Loop through Grants\n    foreach ($grant in $grants.ItemArray)\n    {\n        # Check grant\n        if ($grant -eq \"GRANT $RoleName TO '$Username'@'$UserHostName'\")\n        {\n            # They're in the group\n            return $true\n        }\n    }\n\n    # Not found\n    return $false\n}\n\n# Define PowerShell Modules path\n$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName\n$env:PSModulePath = \"$LocalModules$([System.IO.Path]::PathSeparator)$env:PSModulePath\"\n$PowerShellModuleName = \"SimplySql\"\n\n# Set secure protocols\n[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12\n\n# Check to see if SimplySql module is installed\nif ((Get-ModuleInstalled -PowerShellModuleName $PowerShellModuleName) -ne $true)\n{\n    # Tell user what we're doing\n    Write-Output \"PowerShell module $PowerShellModuleName is not installed, downloading temporary copy ...\"\n\n    # Install temporary copy\n    Install-PowerShellModule -PowerShellModuleName $PowerShellModuleName -LocalModulesPath $LocalModules\n}\n\n# Display\nWrite-Output \"Importing module $PowerShellModuleName ...\"\n\n# Check to see if it was downloaded\nif ((Test-Path -Path \"$LocalModules\\$PowerShellModuleName\") -eq $true)\n{\n\t# Use specific location\n    $PowerShellModuleName = \"$LocalModules\\$PowerShellModuleName\"\n}\n\n# Import the module\nImport-Module -Name $PowerShellModuleName\n\n# Create credential object for the connection\n$SecurePassword = ConvertTo-SecureString $addLoginPasswordWithAddRoleRights -AsPlainText -Force\n$ServerCredential = New-Object System.Management.Automation.PSCredential ($addLoginWithAddRoleRights, $SecurePassword)\n\ntry\n{\n\t# Connect to MySQL\n    Open-MySqlConnection -Server $addMariaDBServerName -Credential $ServerCredential -Port $addMariaDBServerPort\n\n    # See if database exists\n    $userInRole = Get-UserInRole -UserHostname $addUserHostname -Username $addUsername -RoleName $addRoleName\n\n    if ($userInRole -eq $false)\n    {\n        # Create database\n        Write-Output \"Adding user $addUsername@$addUserHostName to role $addRoleName ...\"\n        $executionResults = Invoke-SqlUpdate \"GRANT $addRoleName TO '$addUsername'@'$addUserHostName';\"\n\n        # See if it was created\n        $userInRole = Get-UserInRole -UserHostname $addUserHostname -Username $addUsername -RoleName $addRoleName\n            \n        # Check array\n        if ($userInRole -eq $true)\n        {\n            # Success\n            Write-Output \"$addUserName@$addUserHostName added to $addRoleName successfully!\"\n        }\n        else\n        {\n            # Failed\n            Write-Error \"Failure adding $addUserName@$addUserHostName to $addRoleName!\"\n        }\n    }\n    else\n    {\n    \t# Display message\n        Write-Output \"User $addUsername@$addUserHostName is already in role $addRoleName\"\n    }\n}\nfinally\n{\n    Close-SqlConnection\n}\n\n\n"
     },
     "Parameters": [
-        {
-            "Id": "776dd654-cad2-4f74-84ba-e90303ee3be0",
-            "Name": "addMariaDBServerName",
-            "Label": "MariaDB Server name",
-            "HelpText": "Name of the MariaDB database server",
-            "DefaultValue": "",
-            "DisplaySettings": {
-                "Octopus.ControlType": "SingleLineText"
-            }
-        },
-        {
-            "Id": "f8a13303-ce7b-440b-b8b0-fae820190d84",
-            "Name": "addMariaDBServerPort",
-            "Label": "Port",
-            "HelpText": "Port the MariaDB listens on.",
-            "DefaultValue": "3306",
-            "DisplaySettings": {
-                "Octopus.ControlType": "SingleLineText"
-            }
-        },
-        {
-            "Id": "95a61667-548f-4c47-81de-7303afb40d3e",
-            "Name": "addLoginWithAddRoleRights",
-            "Label": "Login name",
-            "HelpText": "Login name of a user that can add roles to other users.",
-            "DefaultValue": "",
-            "DisplaySettings": {
-                "Octopus.ControlType": "SingleLineText"
-            }
-        },
-        {
-            "Id": "4b35c280-b46f-4226-ab31-2011bba172fd",
-            "Name": "addLoginPasswordWithAddRoleRights",
-            "Label": "Login password",
-            "HelpText": "Password for the login account.",
-            "DefaultValue": "",
-            "DisplaySettings": {
-                "Octopus.ControlType": "Sensitive"
-            }
-        },
-        {
-            "Id": "de4402a0-59e8-43e7-a9ce-cbe3f6339e1a",
-            "Name": "addUsername",
-            "Label": "User name",
-            "HelpText": "Name of the user to add the role to.",
-            "DefaultValue": "",
-            "DisplaySettings": {
-                "Octopus.ControlType": "SingleLineText"
-            }
-        },
-        {
-            "Id": "ef45125b-c9f2-48ef-a3be-545997fe278a",
-            "Name": "addUserHostname",
-            "Label": "User Hostname",
-            "HelpText": "Hostname of the user.",
-            "DefaultValue": "",
-            "DisplaySettings": {
-                "Octopus.ControlType": "SingleLineText"
-            }
-        },
-        {
-            "Id": "af289a41-cacd-427b-82d8-be8563342d7c",
-            "Name": "addRoleName",
-            "Label": "Role name",
-            "HelpText": "Name of the role to add to the user.",
-            "DefaultValue": "",
-            "DisplaySettings": {
-                "Octopus.ControlType": "SingleLineText"
-            }
-        },
-        {
-            "Id": "0d29c6ce-724c-47bc-a4ef-42b123cf02bb",
-            "Name": "mariaDbAuthenticationMethod",
-            "Label": "Authentication Method",
-            "HelpText": "Method used to authenticate to the MariaDB server.",
-            "DefaultValue": "usernamepassword",
-            "DisplaySettings": {
-                "Octopus.ControlType": "Select",
-                "Octopus.SelectOptions": "awsiam|AWS EC2 IAM Role\nusernamepassword|Username\\Password"
-            }
+      {
+        "Id": "b6384c33-5196-40a4-b67f-f904eccbd795",
+        "Name": "addMariaDBServerName",
+        "Label": "MariaDB Server name",
+        "HelpText": "Name of the MariaDB database server",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
         }
+      },
+      {
+        "Id": "6b8a13d6-7b7a-4cf2-8864-26b0c922a27f",
+        "Name": "addMariaDBServerPort",
+        "Label": "Port",
+        "HelpText": "Port the MariaDB listens on.",
+        "DefaultValue": "3306",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "a8582fbc-4272-4098-8a99-6a28c9259958",
+        "Name": "addLoginWithAddRoleRights",
+        "Label": "Login name",
+        "HelpText": "Login name of a user that can add roles to other users.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "d8e07293-a942-4ab3-9ef2-59092cc1fdc6",
+        "Name": "addLoginPasswordWithAddRoleRights",
+        "Label": "Login password",
+        "HelpText": "Password for the login account.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "846984d9-3661-4938-9cd7-c6e2daa87c43",
+        "Name": "addUsername",
+        "Label": "User name",
+        "HelpText": "Name of the user to add the role to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "ab3c26b1-d64b-4257-bd88-0b316ae21655",
+        "Name": "addUserHostname",
+        "Label": "User Hostname",
+        "HelpText": "Hostname of the user.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+    {
+        "Id": "0d29c6ce-724c-47bc-a4ef-42b123cf02bb",
+        "Name": "mariaDbAuthenticationMethod",
+        "Label": "Authentication Method",
+        "HelpText": "Method used to authenticate to the MariaDB server.",
+        "DefaultValue": "usernamepassword",
+        "DisplaySettings": {
+            "Octopus.ControlType": "Select",
+            "Octopus.SelectOptions": "awsiam|AWS EC2 IAM Role\nusernamepassword|Username\\Password"
+        }
+    }
     ],
     "LastModifiedBy": "coryreid",
     "StepPackageId": "Octopus.Script",
     "$Meta": {
-        "ExportedAt": "2022-07-12T19:48:57.037Z",
+        "ExportedAt": "2022-07-12T19:52:36.677Z",
         "OctopusVersion": "2022.3.2617-hotfix.4278",
         "Type": "ActionTemplate"
     },
