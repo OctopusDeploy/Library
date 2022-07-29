@@ -1,0 +1,120 @@
+{
+    "Id": "2bd3b8ef-35b4-43e9-b6de-8e0c515f3f10",
+    "Name": "SQL - Execute SQL Script Files",
+    "Description": "Executes SQL script file(s) against the specified database using the `SQLServer` Powershell Module.  This template includes an `Authentication` selector and supports SQL Authentication, Windows Authentication, and Azure Managed Identity.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [
+      {
+        "Id": "8473acaf-aaeb-4c23-923a-91f664290f16",
+        "Name": "template.Package",
+        "PackageId": null,
+        "FeedId": "Feeds-1221",
+        "AcquisitionLocation": "Server",
+        "Properties": {
+          "Extract": "True",
+          "SelectionMode": "deferred",
+          "PackageParameterName": "template.Package",
+          "Purpose": ""
+        }
+      }
+    ],
+    "Properties": {
+      "Octopus.Action.Script.ScriptBody": "function Get-ModuleInstalled\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName\n    )\n\n    # Check to see if the module is installed\n    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))\n    {\n        # It is installed\n        return $true\n    }\n    else\n    {\n        # Module not installed\n        return $false \n    }\n}\n\nfunction Get-NugetPackageProviderNotInstalled\n{\n\t# See if the nuget package provider has been installed\n    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))\n}\n\nfunction Install-PowerShellModule\n{\n    # Define parameters\n    param(\n        $PowerShellModuleName,\n        $LocalModulesPath\n    )\n    \n    # Set TLS order\n    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12\n\n\t# Check to see if the package provider has been installed\n    if ((Get-NugetPackageProviderNotInstalled) -ne $false)\n    {\n    \t# Display that we need the nuget package provider\n        Write-Host \"Nuget package provider not found, installing ...\"\n        \n        # Install Nuget package provider\n        Install-PackageProvider -Name Nuget -Force\n    }\n\n\t# Save the module in the temporary location\n    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force\n\n}\n\n\nfunction Invoke-ExecuteSQLScript {\n\n    [CmdletBinding()]\n    param\n    (\n        [parameter(Mandatory = $true, Position = 0)]\n        [ValidateNotNullOrEmpty()]\n        [string]\n        $serverInstance,\n\n        [parameter(Mandatory = $true, Position = 1)]\n        [ValidateNotNullOrEmpty()]\n        [string]\n        $dbName,\n\n        [string]\n        $Authentication,\n\n        [string]\n        $SQLScripts\n    )\n\n\n    # Check to see if SqlServer module is installed\n    if ((Get-ModuleInstalled -PowerShellModuleName \"SqlServer\") -ne $true)\n    {\n    \t# Display message\n        Write-Output \"PowerShell module SqlServer not present, downloading temporary copy ...\"\n\n        # Download and install temporary copy\n        Install-PowerShellModule -PowerShellModuleName \"SqlServer\" -LocalModulesPath $LocalModules\n    }\n\n    # Display\n    Write-Output \"Importing module SqlServer ...\"\n\n    # Import the module\n    Import-Module -Name \"SqlServer\"\n            \n    foreach ($SQLScript in $SQLScripts.Split(\"`n\"))\n    {\n    \ttry \n        {\n\t\t\t$scripts = (Get-ChildItem -Path \"$($OctopusParameters['Octopus.Action.Package[template.Package].ExtractedPath'])\" | Where-Object {$_.Name -eq $SQLScript})\n\n            foreach ($script in $scripts)\n            {\n            \t$sr = New-Object System.IO.StreamReader($script.FullName)\n                $scriptContent = $sr.ReadToEnd()\n                \n                # Execute based on selected authentication method\n                switch ($Authentication)\n                {\n                \t\"AzureADManaged\"\n                    {\n          \t\t\t\t# Get login token\n          \t\t\t\tWrite-Host \"Authenticating with Azure Managed Identity ...\"\n                        \n        \t\t\t\t$response = Invoke-WebRequest -Uri 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fdatabase.windows.net%2F' -Method GET -Headers @{Metadata=\"true\"}\n\t\t\t\t        $content = $response.Content | ConvertFrom-Json\n        \t\t\t\t$AccessToken = $content.access_token\n\n          \t\t\t\tInvoke-SqlCmd -Query $scriptContent -ServerInstance $serverInstance -AccessToken $AccessToken -Database $dbName\n                        \n                        break\n                    }\n                    \"SqlAuthentication\"\n                    {\n                    \tWrite-Host \"Authentication with SQL Authentication ...\"\n                        Invoke-SqlCmd -Query $scriptContent -ServerInstance $serverInstance -Username $username -Password $password -Database $dbName\n                        \n                        break\n                    }\n                    \"WindowsIntegrated\"\n                    {\n                    \tWrite-Host \"Authenticating with Windows Authentication ...\"\n                        Invoke-SqlCmd -Query $scriptContent -ServerInstance $serverInstance -Database $dbName\n                    }\n                }\n                \n                \n                $sr.Close()\n\n\t\t\t\twrite-verbose (\"Executed manual script - {0}\" -f $script.Name)\n            }\n        }\n        catch \n        {\n        \tWrite-Error $_.Exception\n        }\n    }\n}\n\n# Define PowerShell Modules path\n$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName\n$env:PSModulePath = \"$LocalModules$([System.IO.Path]::PathSeparator)$env:PSModulePath\"\n\nif (Test-Path Variable:OctopusParameters)\n{\n        Write-Verbose \"Locating scripts from the literal entry of Octopus Parameter SQLScripts\"\n        $ScriptsToExecute = $OctopusParameters[\"SQLScripts\"]\n        \n        Invoke-ExecuteSQLScript -serverInstance $OctopusParameters[\"serverInstance\"] `\n                                -dbName $OctopusParameters[\"dbName\"] `\n                                -Authentication $OctopusParameters[\"Authentication\"] `\n                                -SQLScripts $ScriptsToExecute\n}",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.RunOnServer": "false"
+    },
+    "Parameters": [
+      {
+        "Id": "1f2b60c9-b85c-4c23-a313-fc18e82cd500",
+        "Name": "serverInstance",
+        "Label": "Server Instance Name",
+        "HelpText": "The SQL Server Instance name",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "9884b8c1-01a0-4c6f-97b1-ff5146fa0836",
+        "Name": "dbName",
+        "Label": "Database Name",
+        "HelpText": "The database name",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "05dc20d9-f75c-4971-9efb-e9aaad82a3a9",
+        "Name": "Authentication",
+        "Label": "Authentication",
+        "HelpText": "The authentication method",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "SqlAuthentication|SQL Authentication\nWindowsIntegrated|Windows Integrated\nAzureADManaged|Azure Active Directory Managed Identity"
+        }
+      },
+      {
+        "Id": "4c2fc1b4-bdd0-4a9a-adb1-da1e818e62bc",
+        "Name": "Username",
+        "Label": "Username",
+        "HelpText": "The username to use to connect (only applies with SqlAuthentication selected)",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "819f9b19-042d-42d8-9d19-5f5bf28c06b7",
+        "Name": "Password",
+        "Label": "Password",
+        "HelpText": "The password to use to connect (only applies with SqlAuthentication selected)",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "dd22f955-8317-4d58-8173-fc7d44df1192",
+        "Name": "SQLScripts",
+        "Label": "SQL Scripts",
+        "HelpText": "Full path to each script name on a new line\nWildcards are accepted, eg. C:\\Scripts\\*.sql, C:\\Scripts\\Deploy*.sql",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "MultiLineText"
+        }
+      },
+      {
+        "Id": "eac66c87-d6c7-4a8d-9fd6-85ea8134e14c",
+        "Name": "DacpacPackageExtractStepName",
+        "Label": "DACPAC Package Extract Step Name",
+        "HelpText": "Optional: The step in which the DACPAC package was installed. Can be left as blank if SQLScripts is a hardcoded value.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "StepName"
+        }
+      },
+      {
+        "Id": "3bfed638-6649-438f-a02b-353e36a63c87",
+        "Name": "template.Package",
+        "Label": "Package",
+        "HelpText": "Package containing the SQL scripts to be executed.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Package"
+        }
+      }
+    ],
+    "StepPackageId": "Octopus.Script",
+    "$Meta": {
+      "ExportedAt": "2022-07-29T19:34:49.064Z",
+      "OctopusVersion": "2022.3.5513-hotfix.6004",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "twerthi",
+    "Category": "sql"
+  }
