@@ -1,0 +1,96 @@
+{
+    "Id": "ba43c3a7-fb77-4377-a1e2-e7918fb6df0b",
+    "Name": "SQL - Create Database If Not Exists Enhanced",
+    "Description": "Creates a database if the database does not exist without using SMO. ",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Initialize variables\n$connectionString = \"\"\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n\n# Determine authentication method\nswitch ($createAuthenticationMethod)\n{\n\t\"AzureADManaged\"\n    {\n    \tWrite-Host \"Using Azure Managed Identity authentication ...\"\n        $connectionString = \"Server=$createSqlServer;Database=master;\"\n        #$token = Invoke-RestMethod -Method GET -Uri \"http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://ossrdbms-aad.database.windows.net\" -Headers @{\"MetaData\" = \"true\"}\n        $response = Invoke-WebRequest -Uri 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fdatabase.windows.net%2F' -Method GET -Headers @{Metadata=\"true\"}\n        $content = $response.Content | ConvertFrom-Json\n        $AccessToken = $content.access_token\n        \n        $sqlConnection.AccessToken = $AccessToken\n        break\n    }\n    \"SqlAuthentication\"\n    {\n    \tWrite-Host \"Using Sql account authentication ...\"\n        $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n        break\n    }\n    \"WindowsIntegrated\"\n    {\n    \tWrite-Host \"Using Windows Integrated authentication ...\"\n        $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n        break\n    }\n}\n\n\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n$command.CommandTimeout = $createCommandTimeout\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedDatabaseName = $createDatabaseName.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create for $createDatabaseName\"\n$command.CommandText = \"IF NOT EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')\n        create database [$createDatabaseName]\"\n        \nif (![string]::IsNullOrEmpty($createAzureEdition))\n{\n\t$command.CommandText += (\"`r`n (EDITION = '{0}');\" -f $createAzureEdition)\n}\n\n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createDatabaseName\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+    },
+    "Parameters": [
+      {
+        "Id": "4a30febf-479b-4427-a382-04a84183e1ae",
+        "Name": "createSqlServer",
+        "Label": "SQL Server",
+        "HelpText": "The SQL Server to perform the work on",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "9cfe1756-9e7d-4670-af75-1bb4a1899ce1",
+        "Name": "createAuthenticationMethod",
+        "Label": "Authentication Method",
+        "HelpText": "Select the method for authentication to the SQL Server.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "AzureADManaged|Azure Active Directory Managed Identity\nSqlAuthentication|SQL Authentication\nWindowsIntegrated|Windows Integrated"
+        }
+      },
+      {
+        "Id": "ba759a10-c230-4530-855a-2d7e210fe822",
+        "Name": "createSqlLoginUserWhoHasCreateUserRights",
+        "Label": "SQL Login",
+        "HelpText": "The login of the user who has permissions to create a database.\n\nLeave blank for integrated security",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0519fc45-e342-4982-beea-ab5123cad39b",
+        "Name": "createSqlLoginPasswordWhoHasRights",
+        "Label": "SQL Password",
+        "HelpText": "The password of the user who has permissions to create SQL Logins\n\nLeave blank for integrated security",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "0662b998-acf3-425d-8fff-abd93a4a038d",
+        "Name": "createDatabaseName",
+        "Label": "Database to create",
+        "HelpText": "The name of the database to create",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "4617d70a-fb52-4b1b-95f1-07929e47e7c0",
+        "Name": "createCommandTimeout",
+        "Label": "Command timeout",
+        "HelpText": "Number of seconds before throwing a timeout error.",
+        "DefaultValue": "30",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "7be71f0c-4df5-4f41-9b2f-3a29800a2e00",
+        "Name": "createAzureEdition",
+        "Label": "Azure database edition",
+        "HelpText": "Defines the database edition for Azure SQL Databases, leave blank if not using Azure.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "basic|Basic Edition\nstandard|Standard Edition\npremium|Premium Edition\ngeneralpurpose|General Purpose Edition\nbusinesscritical|Business Critical Edition\nhyperscale|Hyperscale Edition"
+        }
+      }
+    ],
+    "StepPackageId": "Octopus.Script",
+    "$Meta": {
+      "ExportedAt": "2022-07-29T19:31:49.538Z",
+      "OctopusVersion": "2022.3.5513-hotfix.6004",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "twerthi",
+    "Category": "sql"
+  }
