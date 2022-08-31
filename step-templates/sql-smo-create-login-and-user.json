@@ -3,15 +3,16 @@
   "Name": "SQL - Create Database Login and User using SMO",
   "Description": "Requires SMO to be installed on the machine where this step will be run.",
   "ActionType": "Octopus.Script",
-  "Version": 8,
+  "Version": 9,
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName('Microsoft.SqlServer.SMO') | out-null\r\n\r\ntry\r\n{\r\n    $server = New-Object ('Microsoft.SqlServer.Management.Smo.Server') $SqlServer\r\n    \r\n    $server.ConnectionContext.LoginSecure = $true\r\n\r\n    if(!$server.Databases.Contains($SqlDatabase))\r\n    {\r\n        throw \"Server $SqlServer does not contain a database named $SqlDatabase\"\r\n    }\r\n\r\n    if ($server.Logins.Contains($LoginName))\r\n    {\r\n        Write-Host \"Login $LoginName already exists in the server $SqlServer\"\r\n    }\r\n    else\r\n    {\r\n        Write-Host \"Login $LoginName does not exist, creating\"\r\n        $login = New-Object -TypeName Microsoft.SqlServer.Management.Smo.Login -ArgumentList $SqlServer, $LoginName\r\n        $login.LoginType = [Microsoft.SqlServer.Management.Smo.LoginType]::WindowsUser\r\n        $login.PasswordExpirationEnabled = $false\r\n        $login.Create()\r\n        Write-Host \"Login $LoginName created successfully.\"\r\n    }\r\n\r\n    $database = $server.Databases[$SqlDatabase]\r\n\r\n    if ($database.Users[$LoginName])\r\n    {\r\n        Write-Host \"User $LoginName already exists in the database $SqlDatabase\"\r\n    }\r\n    else\r\n    {\r\n        Write-Host \"User $LoginName does not exist in the database $SqlDatabase, creating.\"\r\n        $dbUser = New-Object -TypeName Microsoft.SqlServer.Management.Smo.User -ArgumentList $database, $LoginName\r\n        $dbUser.Login = $LoginName\r\n        $dbUser.Create()\r\n        Write-Host \"User $LoginName created successfully in the database $SqlDatabase.\"\r\n    }\r\n\r\n    if($SqlRole -ne $null)\r\n    {\r\n        $sqlRoles = $SqlRole.Split(\",\")\r\n            \r\n        # Remove the user from any roles which aren't specified in the $SqlRole parameter if they are a member\r\n        $database.Users[$LoginName].EnumRoles() | ForEach {\r\n            if (!$sqlRoles.Contains($_)) {\r\n                $dbRole = $database.Roles[$_]\r\n                $dbRole.DropMember($LoginName)\r\n                $dbRole.Alter()\r\n                Write-Host \"User $LoginName removed from $_ role in the database $SqlDatabase.\"\r\n            }\r\n        }\r\n            \r\n        # Add the user to any roles which are specified in the $SqlRole parameter if they are not already a member\r\n        $sqlRoles | ForEach {\r\n            $dbRole = $database.Roles[$_]\r\n            if(!$dbRole)  { throw \"Database $SqlDatabase does not contain a role named $_\" }\r\n\r\n            if (!$dbRole.EnumMembers().Contains($LoginName))\r\n            {\r\n                $dbRole.AddMember($LoginName)\r\n                $dbRole.Alter()\r\n                Write-Host \"User $LoginName successfully added to $_ role in the database $SqlDatabase.\"\r\n            }\r\n        }\r\n    }\r\n}\r\ncatch\r\n{\r\n    $error[0] | format-list -force\r\n    Exit 1\r\n}",
+    "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName('Microsoft.SqlServer.SMO') | out-null\r\n\r\ntry\r\n{\r\n    $server = New-Object ('Microsoft.SqlServer.Management.Smo.Server') $SMO_SqlServer\r\n    \r\n    $server.ConnectionContext.LoginSecure = $true\r\n\r\n    if(!$server.Databases.Contains($SMO_SqlDatabase))\r\n    {\r\n        throw \"Server $SMO_SqlServer does not contain a database named $SMO_SqlDatabase\"\r\n    }\r\n\r\n    if ($server.Logins.Contains($SMO_LoginName))\r\n    {\r\n        Write-Host \"Login $SMO_LoginName already exists in the server $SMO_SqlServer\"\r\n    }\r\n    else\r\n    {\r\n        Write-Host \"Login $SMO_LoginName does not exist, creating\"\r\n        $login = New-Object -TypeName Microsoft.SqlServer.Management.Smo.Login -ArgumentList $SMO_SqlServer, $SMO_LoginName\r\n        $login.LoginType = [Microsoft.SqlServer.Management.Smo.LoginType]::WindowsUser\r\n        $login.PasswordExpirationEnabled = $false\r\n        $login.Create()\r\n        Write-Host \"Login $SMO_LoginName created successfully.\"\r\n    }\r\n\r\n    $database = $server.Databases[$SMO_SqlDatabase]\r\n\r\n    if ($database.Users[$SMO_LoginName])\r\n    {\r\n        Write-Host \"User $SMO_LoginName already exists in the database $SMO_SqlDatabase\"\r\n    }\r\n    else\r\n    {\r\n        Write-Host \"User $SMO_LoginName does not exist in the database $SMO_SqlDatabase, creating.\"\r\n        $dbUser = New-Object -TypeName Microsoft.SqlServer.Management.Smo.User -ArgumentList $database, $SMO_LoginName\r\n        $dbUser.Login = $SMO_LoginName\r\n        $dbUser.Create()\r\n        Write-Host \"User $SMO_LoginName created successfully in the database $SMO_SqlDatabase.\"\r\n    }\r\n\r\n    if($SMO_SqlRole -ne $null)\r\n    {\r\n        $SMO_SqlRoles = $SMO_SqlRole.Split(\",\")\r\n            \r\n        # Remove the user from any roles which aren't specified in the $SMO_SqlRole parameter if they are a member\r\n        $database.Users[$SMO_LoginName].EnumRoles() | ForEach {\r\n            if (!$SMO_SqlRoles.Contains($_)) {\r\n                $dbRole = $database.Roles[$_]\r\n                $dbRole.DropMember($SMO_LoginName)\r\n                $dbRole.Alter()\r\n                Write-Host \"User $SMO_LoginName removed from $_ role in the database $SMO_SqlDatabase.\"\r\n            }\r\n        }\r\n            \r\n        # Add the user to any roles which are specified in the $SMO_SqlRole parameter if they are not already a member\r\n        $SMO_SqlRoles | ForEach {\r\n            $dbRole = $database.Roles[$_]\r\n            if(!$dbRole)  { throw \"Database $SMO_SqlDatabase does not contain a role named $_\" }\r\n\r\n            if (!$dbRole.EnumMembers().Contains($SMO_LoginName))\r\n            {\r\n                $dbRole.AddMember($SMO_LoginName)\r\n                $dbRole.Alter()\r\n                Write-Host \"User $SMO_LoginName successfully added to $_ role in the database $SMO_SqlDatabase.\"\r\n            }\r\n        }\r\n    }\r\n}\r\ncatch\r\n{\r\n    $error[0] | format-list -force\r\n    Exit 1\r\n}",
     "Octopus.Action.Script.Syntax": "PowerShell"
   },
   "SensitiveProperties": {},
   "Parameters": [
     {
-      "Name": "SqlServer",
+      "Id": "24633e35-94cb-4b69-befe-0ef2616c3071",
+      "Name": "SMO_SqlServer",
       "Label": "Database Server Name",
       "HelpText": "Name of the to create the login for.",
       "DefaultValue": "",
@@ -20,7 +21,8 @@
       }
     },
     {
-      "Name": "SqlDatabase",
+      "Id": "b79baa48-af97-4ee0-bf79-822fbd529636",
+      "Name": "SMO_SqlDatabase",
       "Label": "Database Name",
       "HelpText": "Name of the database. The created Login and User will get the role dbowner by defaultfor this database.",
       "DefaultValue": null,
@@ -29,7 +31,8 @@
       }
     },
     {
-      "Name": "LoginName",
+      "Id": "d189015a-237d-46eb-839b-84c3572c40d1",
+      "Name": "SMO_LoginName",
       "Label": "Windows Login Name",
       "HelpText": "The login name to create a login and user in the database for. In our projects we use integrated security - you should too.",
       "DefaultValue": null,
@@ -38,7 +41,8 @@
       }
     },
     {
-      "Name": "SqlRole",
+      "Id": "9bf187dd-bcf1-4fba-a5b0-2bcddde7ef73",
+      "Name": "SMO_SqlRole",
       "Label": "Database Role Names",
       "HelpText": "We default to `db_owner`, you might want to change this to suit your needs. You may specify multiple roles separated by a comma (e.g. `db_datareader,db_datawriter`)",
       "DefaultValue": "db_owner",
@@ -47,10 +51,10 @@
       }
     }
   ],
-  "LastModifiedOn": "2017-07-18T16:33:24.214+00:00",
-  "LastModifiedBy": "trevorpilley",
+  "LastModifiedOn": "2022-08-30T13:37:42.214+00:00",
+  "LastModifiedBy": "thomasdc",
   "$Meta": {
-    "ExportedAt": "2017-07-18T16:33:24.214Z",
+    "ExportedAt": "2022-08-30T13:37:42.214Z",
     "OctopusVersion": "3.12.5",
     "Type": "ActionTemplate"
   },
