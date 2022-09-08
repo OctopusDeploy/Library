@@ -3,11 +3,11 @@
   "Name": "Microsoft Teams - Post a message",
   "Description": "Posts a message to Microsoft Teams using a general webhook.",
   "ActionType": "Octopus.Script",
-  "Version": 20,
+  "Version": 21,
   "CommunityActionTemplateId": null,
   "Packages": [],
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n# Helper functions\nfunction Retry-Command {\n    [CmdletBinding()]\n    Param(\n        [Parameter(Position=0, Mandatory=$true)]\n        [scriptblock]$ScriptBlock,\n \n        [Parameter(Position=1, Mandatory=$false)]\n        [int]$Maximum = 5,\n\n        [Parameter(Position=2, Mandatory=$false)]\n        [int]$Delay = 100\n    )\n\n    Begin {\n        $count = 0\n    }\n\n    Process {\n    \t$ex=$null\n        do {\n            $count++\n            \n            try {\n                Write-Verbose \"Attempt $count of $Maximum\"\n                $ScriptBlock.Invoke()\n                return\n            } catch {\n                $ex = $_\n                Write-Warning \"Error occurred executing command (on attempt $count of $Maximum): $($ex.Exception.Message)\"\n                Start-Sleep -Milliseconds $Delay\n            }\n        } while ($count -lt $Maximum)\n\n        # Throw an error after $Maximum unsuccessful invocations. Doesn't need\n        # a condition, since the function returns upon successful invocation.\n        throw \"Execution failed (after $count attempts): $($ex.Exception.Message)\"\n    }\n}\n# End Helper functions\n[int]$timeoutSec = $null\n[int]$maximum = 1\n[int]$delay = 100\n\nif(-not [int]::TryParse($OctopusParameters['Timeout'], [ref]$timeoutSec)) { $timeoutSec = 60 }\n\n\nIf ($OctopusParameters[\"TeamsPostMessage.RetryPosting\"] -eq $True) {\n\tif(-not [int]::TryParse($OctopusParameters['RetryCount'], [ref]$maximum)) { $maximum = 1 }\n\tif(-not [int]::TryParse($OctopusParameters['RetryDelay'], [ref]$delay)) { $delay = 100 }\n\t\n    Write-Verbose \"Setting maximum retries to $maximum using a $delay ms delay\"\n}\n\n$payload = @{\n    title = $OctopusParameters['Title']\n    text = $OctopusParameters['Body'];\n    themeColor = $OctopusParameters['Color'];\n}\n\nRetry-Command -Maximum $maximum -Delay $delay -ScriptBlock {\n\t$Response = Invoke-RestMethod -Method POST -Uri $OctopusParameters['HookUrl'] -Body ($payload | ConvertTo-Json -Depth 4) -ContentType 'application/json; charset=utf-8' -TimeoutSec $timeoutSec\n    Write-Verbose \"Response: $Response\"\n}",
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n# Helper functions\nfunction Retry-Command {\n    [CmdletBinding()]\n    Param(\n        [Parameter(Position=0, Mandatory=$true)]\n        [scriptblock]$ScriptBlock,\n \n        [Parameter(Position=1, Mandatory=$false)]\n        [int]$Maximum = 5,\n\n        [Parameter(Position=2, Mandatory=$false)]\n        [int]$Delay = 100\n    )\n\n    Begin {\n        $count = 0\n    }\n\n    Process {\n    \t$ex=$null\n        do {\n            $count++\n            \n            try {\n                Write-Verbose \"Attempt $count of $Maximum\"\n                $ScriptBlock.Invoke()\n                return\n            } catch {\n                $ex = $_\n                Write-Warning \"Error occurred executing command (on attempt $count of $Maximum): $($ex.Exception.Message)\"\n                Start-Sleep -Milliseconds $Delay\n            }\n        } while ($count -lt $Maximum)\n\n        # Throw an error after $Maximum unsuccessful invocations. Doesn't need\n        # a condition, since the function returns upon successful invocation.\n        throw \"Execution failed (after $count attempts): $($ex.Exception.Message)\"\n    }\n}\n# End Helper functions\n[int]$timeoutSec = $null\n[int]$maximum = 1\n[int]$delay = 100\n\nif(-not [int]::TryParse($OctopusParameters['Timeout'], [ref]$timeoutSec)) { $timeoutSec = 60 }\n\n\nIf ($OctopusParameters[\"TeamsPostMessage.RetryPosting\"] -eq $True) {\n\tif(-not [int]::TryParse($OctopusParameters['RetryCount'], [ref]$maximum)) { $maximum = 1 }\n\tif(-not [int]::TryParse($OctopusParameters['RetryDelay'], [ref]$delay)) { $delay = 100 }\n\t\n    Write-Verbose \"Setting maximum retries to $maximum using a $delay ms delay\"\n}\n\n$payload = @{\n    title = $OctopusParameters['Title']\n    text = $OctopusParameters['Body'];\n    themeColor = $OctopusParameters['Color'];\n}\n\nRetry-Command -Maximum $maximum -Delay $delay -ScriptBlock {\n\t$Response = Invoke-RestMethod -Method POST -Uri $OctopusParameters['HookUrl'] -Body ($payload | ConvertTo-Json -Depth 4) -ContentType 'application/json; charset=utf-8' -TimeoutSec $timeoutSec -UseBasicParsing\n    Write-Verbose \"Response: $Response\"\n}",
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline"
   },
@@ -93,10 +93,10 @@
       }
     }
   ],
-  "LastModifiedBy": "harrisonmeister",
+  "LastModifiedBy": "twerthi",
   "$Meta": {
-    "ExportedAt": "2021-10-12T08:35:42.389Z",
-    "OctopusVersion": "2021.2.7650",
+    "ExportedAt": "2022-09-08T18:14:05.001Z",
+    "OctopusVersion": "2022.2.8136",
     "Type": "ActionTemplate"
   },
   "Category": "microsoft-teams"
