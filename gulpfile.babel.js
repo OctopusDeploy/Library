@@ -157,6 +157,8 @@ function humanize(categoryId) {
       return "GitLab";
     case "google-cloud":
       return "Google Cloud";
+    case "grate":
+      return "Grate";
     case "hashicorp-vault":
       return "HashiCorp Vault";
     case "hipchat":

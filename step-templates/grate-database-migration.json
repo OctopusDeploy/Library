@@ -1,0 +1,231 @@
+{
+    "Id": "ca23d18f-ab03-403d-bfb8-3ff74d3ddab3",
+    "Name": "grate Database Migrations",
+    "Description": "Database migrations using [grate](https://github.com/erikbra/grate).\nWith this template you can either include grate with your package or use the `Download grate?` feature to download it at deploy time.  If you're downloading, you can choose the version by specifying it in the `Version of grate`.\n\nNOTE: \n - AWS EC2 IAM Role authentication requires the AWS CLI be installed.\n - To run on Linux, the machine must have both PowerShell Core and .NET Core 3.1 installed.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [
+      {
+        "Id": "e0d1bcb0-4a7e-41dc-ab53-2799d6f2b051",
+        "Name": "gratePackage",
+        "PackageId": null,
+        "FeedId": null,
+        "AcquisitionLocation": "Server",
+        "Properties": {
+          "Extract": "True",
+          "SelectionMode": "deferred",
+          "PackageParameterName": "gratePackage",
+          "Purpose": ""
+        }
+      }
+    ],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Configure template\n\n# Check to see if $IsWindows is available\nif ($null -eq $IsWindows)\n{\n\tWrite-Host \"Determining Operating System...\"\n    switch ([System.Environment]::OSVersion.Platform)\n    {\n    \t\"Win32NT\"\n        {\n        \t# Set variable\n            $IsWindows = $true\n            $IsLinux = $false\n        }\n        \"Unix\"\n        {\n        \t$IsWindows = $false\n            $IsLinux = $true\n        }\n    }\n}\n\n# Define parameters\n$grateExecutable = \"\"\n$grateOutputPath = [System.IO.Path]::Combine($OctopusParameters[\"Octopus.Action.Package[gratePackage].ExtractedPath\"], \"output\")\n$grateSsl = [System.Convert]::ToBoolean($grateSsl)\n\n# Determines latest version of github repo\nFunction Get-LatestVersionNumber\n{\n    # Define parameters\n    param ($GitHubRepository)\n        \n    # Define local variables\n    $releases = \"https://api.github.com/repos/$GitHubRepository/releases\"\n    \n    # Get latest version\n    Write-Host \"Determining latest release ($releases) ...\"\n    \n    $tags = (Invoke-WebRequest $releases -UseBasicParsing | ConvertFrom-Json)\n    \n    # Find the latest version with a downloadable asset\n    foreach ($tag in $tags)\n    {\n        if ($tag.assets.Count -gt 0)\n        {\n            #return $tag.assets.browser_download_url\n            return $tag.tag_name\n        }\n    }\n\n    # Return the version\n    return $null    \n}\n\n# Change the location to the extract path\nSet-Location -Path $OctopusParameters[\"Octopus.Action.Package[gratePackage].ExtractedPath\"]\n\n# Check to see if download is specified\nif ([System.Boolean]::Parse($grateDownloadNuget))\n{\n    # Set secure protocols\n    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12\n\n\t# Check to see if version number specified\n    if ([string]::IsNullOrEmpty($grateNugetVersion))\n    {\n    \t# Get the latest version number\n        $grateNugetVersion = Get-LatestVersionNumber -GitHubRepository \"erikbra/grate\"\n    }\n\n    # Check for download folder\n    if ((Test-Path -Path \"$PSSCriptRoot/grate\") -eq $false)\n    {\n        # Create the folder\n        New-Item -ItemType Directory -Path \"$PSSCriptRoot/grate\"\n    }\n    \n    # Download nuget package    \n    Write-Output \"Downloading https://github.com/erikbra/grate/releases/download/$grateNugetVersion/grate-dotnet-tool-$grateNugetVersion.zip ...\"\n    Invoke-WebRequest -Uri \"https://github.com/erikbra/grate/releases/download/$grateNugetVersion/grate-dotnet-tool-$grateNugetVersion.zip\" -OutFile \"$PSSCriptRoot\\grate\\grate-dotnet-tool-$grateNugetVersion.zip\"\n    \n    Expand-Archive -Path \"$PSSCriptRoot/grate/grate-dotnet-tool-$grateNugetVersion.zip\" -DestinationPath \"$PSSCriptRoot/grate\"\n\n    # Change file extension\n    $nugetPackage = Get-ChildItem -Path \"$PSSCriptRoot/grate/grate.$grateNugetVersion.nupkg\"\n    $nugetPackage | Rename-Item -NewName $nugetPackage.Name.Replace(\".nupkg\", \".zip\")\n    \n    # Extract the package\n    Write-Output \"Extracting grate.$grateNugetVersion.nupkg ...\"\n    Expand-Archive -Path \"$PSSCriptRoot/grate/grate.$grateNugetVersion.zip\" -DestinationPath \"$PSSCriptRoot/grate\"\n}\n\nif ([string]::IsNullOrWhitespace($grateExecutable))\n{\n\t# Look for just grate.dll\n    $grateExecutable = Get-ChildItem -Path $PSSCriptRoot -Recurse | Where-Object {$_.Name -eq \"grate.dll\"}\n}\n\nif ([string]::IsNullOrWhitespace($grateExecutable))\n{\n    # Couldn't find grate\n    Write-Error \"Couldn't find the grate executable!\"\n}\n\n# Build the arguments\n$grateSwitches = @()\n\n# Update the connection string based on authentication method\nswitch ($grateAuthenticationMethod)\n{\n    \"awsiam\"\n    {\n        # Region is part of the RDS endpoint, extract\n        $region = ($grateServerName.Split(\".\"))[2]\n\n        Write-Host \"Generating AWS IAM token ...\"\n        $grateUserPassword = (aws rds generate-db-auth-token --hostname $grateServerName --region $region --port $grateServerPort --username $grateUserName)       \n        $grateUserInfo = \"Uid=$grateUserName;Pwd=$grateUserPassword;\"\n\n        break\n    }\n\t\n    \"azuremanagedidentity\"\n    {\n    \t# SQL Server driver doesn't assign password\n        if ($grateDatabaseServerType -ne \"sqlserver\")\n        {\n          # Get login token\n          Write-Host \"Generating Azure Managed Identity token ...\"\n          $token = Invoke-RestMethod -Method GET -Uri \"http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://ossrdbms-aad.database.windows.net\" -Headers @{\"MetaData\" = \"true\"}\n\n          $grateUserPassword = $token.access_token\n          $grateUserInfo = \"Uid=$grateUserName;Pwd=$grateUserPassword;\"\n        }\n        \n        break\n    }\n\n    \"gcpserviceaccount\"\n    {\n        # Define header\n        $header = @{ \"Metadata-Flavor\" = \"Google\"}\n\n        # Retrieve service accounts\n        $serviceAccounts = Invoke-RestMethod -Method Get -Uri \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/\" -Headers $header\n\n        # Results returned in plain text format, get into array and remove empty entries\n        $serviceAccounts = $serviceAccounts.Split([Environment]::NewLine, [StringSplitOptions]::RemoveEmptyEntries)\n\n        # Retreive the specific service account assigned to the VM\n        $serviceAccount = $serviceAccounts | Where-Object {$_.Contains(\"iam.gserviceaccount.com\") }\n\n\t\tWrite-Host \"Generating GCP IAM token ...\"\n        # Retrieve token for account\n        $token = Invoke-RestMethod -Method Get -Uri \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/$serviceAccount/token\" -Headers $header\n        $grateUserPassword = $token.access_token\n        \n        # Append remaining portion of connection string\n        $grateUserInfo = \"Uid=$grateUserName;Pwd=$grateUserPassword;\"\n    }\n\n\n    \"usernamepassword\"\n    {\n    \t# Append remaining portion of connection string\n        $grateUserInfo = \"Uid=$grateUserName;Pwd=$grateUserPassword;\"\n\n\t\tbreak    \n\t}\n\n    \"windowsauthentication\"\n    {\n      # Append remaining portion of connection string\n\t  $grateUserInfo = \"integrated security=true;\"\n      \n      # Append username (required for non\n      $grateUserInfo += \"Uid=$grateUserName;\"\n    }\n    \n}\n\n\n# Configure connnection string based on technology\nswitch ($grateDatabaseServerType)\n{\n    \"sqlserver\"\n    {\n        # Check to see if port has been defined\n        if (![string]::IsNullOrEmpty($grateServerPort))\n        {\n            # Append to servername\n            $grateServerName += \",$grateServerPort\"\n\n            # Empty the port\n            $grateServerPort = [string]::Empty\n        }\n    }\n    \"mysql\"\n    {\n    \t# Use the MySQL client\n        $grateDatabaseServerType = \"mariadb\"\n        $grateServerPort = \"Port=$grateServerPort;Allow User Variables=true;\"\n    }\n    default\n    {\n        $grateServerPort = \"Port=$grateServerPort;Allow User Variables=true;\"\n    }\n}\n\n# Build base connection string\n$grateServerConnectionString = \"--connectionstring=`\"Server=$grateServerName;$grateServerPort $grateUserInfo Database=$grateDatabaseName;`\"\"\n\n# Check for SQL Server and Azure Managed Identity\nif (($grateDatabaseServerType -eq \"sqlserver\") -and ($grateAuthenticationMethod -eq \"azuremanagedidentity\"))\n{\n\t# Append AD component to connection string\n    $grateServerConnectionString += \"Authentication=Active Directory Default;\"\n}\n\nif ($grateSsl -eq $true)\n{\n\tif (($grateDatabaseServerType -eq \"mariadb\") -or ($grateDatabaseServerType -eq \"mysql\") -or ($grateDatabaseServerType -eq \"postgres\"))\n    {\n    \t# Add sslmode\n        $grateServerConnectionString += \"SslMode=Require;Trust Server Certificate=true;\"\n    }\n    elseif ($grateDatabaseServerType -eq \"sqlserver\")\n    {\n    \t$grateServerConnectionString += \"Trust Server Certificate=true;\"\n    }\n    else\n    {\n    \tWrite-Warning \"Invalid Database Server Type selection for SSL, ignoring setting.\"\n    }\n}\n\n$grateSwitches += $grateServerConnectionString\n\n$grateSwitches += \"--databasetype=$grateDatabaseServerType\"\n$grateSwitches += \"--silent\"\n\nif ([System.Boolean]::Parse($grateDryRun))\n{\n    $grateSwitches += \"--dryrun\"\n}\n\nif ([System.Boolean]::Parse($grateRecordOutput))\n{\n    $grateSwitches += \"--outputPath=$grateOutputPath\"\n    \n    # Check to see if path exists\n    if ((Test-Path -Path $grateOutputPath) -eq $false)\n    {\n    \t# Create folder\n        New-Item -Path $grateOutputPath -ItemType \"Directory\"\n    }\n}\n\n# Add transaction switch\n$grateSwitches += \"--transaction=$($grateWithTransaction.ToLower())\"\n\n# Add Command Timeout\nif (![string]::IsNullOrEmpty($grateCommandTimeout)){\n    $grateSwitches += \"--commandtimeout=$([int]$grateCommandTimeout)\"\n}\n\n# Add Baseline switch\nif ([System.Boolean]::Parse($grateBaseline)) {\n    $grateSwitches += \"--baseline\"\n}\n\n# Add SQL Files Directory parameter\nif (![string]::IsNullOrEmpty($grateSqlScriptFolder)) {\n    # Add up folder\n    $grateSwitches += \"--sqlfilesdirectory=$grateSqlScriptFolder\"\n}\n\n# Add log verbosity flag\nif (![string]::IsNullOrEmpty($grateLogVerbosity)) {\n    # Add up folder\n    $grateSwitches += \"--verbosity=$grateLogVerbosity\"\n}\n\n\n# Check for version\nif (![string]::IsNullOrEmpty($grateVersion))\n{\n    # Add version\n    $grateSwitches += \"--version=$grateVersion\"\n}\n\n# Display what's going to be run\nif (![string]::IsNullOrWhitespace($grateUserPassword))\n{\n\tWrite-Host \"Executing $($grateExecutable.FullName) with $($grateSwitches.Replace($grateUserPassword, \"****\"))\"\n}\nelse\n{\n\tWrite-Host \"Executing $($grateExecutable.FullName) with $($grateSwitches)\"\n}\n\n# Execute grate\nif ($grateExecutable.FullName.EndsWith(\".dll\"))\n{\n\t& dotnet $grateExecutable.FullName $grateSwitches\n}\nelse\n{\n\t& $grateExecutable.FullName $grateSwitches\n}\n\n# If the output path was specified, attach artifacts\nif ([System.Boolean]::Parse($grateRecordOutput))\n{    \n    # Zip up output folder content\n    Add-Type -Assembly 'System.IO.Compression.FileSystem'\n    \n    $zipFile = \"$($OctopusParameters[\"Octopus.Action.Package[gratePackage].ExtractedPath\"])/output.zip\"\n    \n\t[System.IO.Compression.ZipFile]::CreateFromDirectory($grateOutputPath, $zipFile)\n    New-OctopusArtifact -Path \"$zipFile\" -Name \"output.zip\"\n}\n"
+    },
+    "Parameters": [
+      {
+        "Id": "5d54012a-1f10-4b3c-bbfd-fe70bf843904",
+        "Name": "gratePackage",
+        "Label": "grate Package",
+        "HelpText": "The package containing the scripts for grate to deploy.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Package"
+        }
+      },
+      {
+        "Id": "57a43e61-86c0-46a3-8446-aacbb67cf596",
+        "Name": "grateServerName",
+        "Label": "Database Server Name",
+        "HelpText": "Name or IP address of the server being deployed to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "ba3705a1-e620-4fb1-b494-2b9e65fbb194",
+        "Name": "grateServerPort",
+        "Label": "Database Server Port",
+        "HelpText": "Port number for the database server.  Uses default server port if left blank.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "c3a7c802-babd-470b-8447-5f6159128b4c",
+        "Name": "grateAuthenticationMethod",
+        "Label": "Authentication Method",
+        "HelpText": "Method used to authenticate to the database server.",
+        "DefaultValue": "usernamepassword",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "awsiam|AWS EC2 IAM Role\nazuremanagedidentity|Azure Managed Identity\ngcpserviceaccount|GCP Service Account\nusernamepassword|Username\\Password\nwindowsauthentication|Windows Authentication"
+        }
+      },
+      {
+        "Id": "c955ad8c-9686-419c-a1cf-129ffbe0acb4",
+        "Name": "grateDatabaseName",
+        "Label": "Database Name",
+        "HelpText": "Name of the database to deploy to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0438580a-8825-40db-a782-569a35144f4b",
+        "Name": "grateSsl",
+        "Label": "Force SSL",
+        "HelpText": "Check this box for force connection string to use SSL.  Only applicable to MariaDB, MySQL, and PostgreSQL database types.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "e007d182-88f5-4e1f-906f-c85ff955c51e",
+        "Name": "grateVersion",
+        "Label": "Database Version",
+        "HelpText": "Version number of your database migration.  Default value is the version of the RoundhousE package.",
+        "DefaultValue": "#{Octopus.Action.Package[gratePackage].PackageVersion}",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "58ceec6b-f374-4c2e-83bb-fbd7ce26dc05",
+        "Name": "grateUsername",
+        "Label": "Database Username",
+        "HelpText": "Username of the account with sufficient permissions to execute scripts.  (Leave blank for Integrated Authentication.)",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "29f6bb35-c076-4b5d-98cf-8ee8494cb38b",
+        "Name": "grateUserPassword",
+        "Label": "Database User Password",
+        "HelpText": "Password for the Database Username account.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "5e5d68f1-fdc8-41ce-8cd3-ab082278218d",
+        "Name": "grateDatabaseServerType",
+        "Label": "Database Server Type",
+        "HelpText": "The database technology being deployed to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "mariadb|MariaDB\nmysql|MySQL\noracle|Oracle\npostgres|PostgreSQL\nsqlserver|SQL Server"
+        }
+      },
+      {
+        "Id": "67c016c3-d779-4300-b3d1-e11463bb9fc4",
+        "Name": "grateWithTransaction",
+        "Label": "Use Transaction?",
+        "HelpText": "Check this box if you want all scripts to be run within the same transaction.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "29a4f568-23f7-4bb2-a5ba-910b922c5406",
+        "Name": "grateDryRun",
+        "Label": "Dry Run?",
+        "HelpText": "Check this box if you want to perform a dry run.  Results are recorded and attached as deployment artifacts if you check Record Output.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "eaad7639-05d8-46ed-bab3-b72b8ad81d5a",
+        "Name": "grateRecordOutput",
+        "Label": "Record Output?",
+        "HelpText": "Check this box to record the output of the run.  Useful for gathering what would be changed for approval purposes.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "84b46c25-6762-44c2-8ec6-4ba30ff599f5",
+        "Name": "grateCommandTimeout",
+        "Label": "Command Timeout",
+        "HelpText": "Customizable command timeout (in seconds). Default is 60",
+        "DefaultValue": "60",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "3382a212-f467-409e-950b-317f05f59ea5",
+        "Name": "grateBaseline",
+        "Label": "Use Baseline",
+        "HelpText": "Check this box if you want grate to mark the scripts as run, but not to actually run anything against the database. [More information about this option can be found here](https://erikbra.github.io/grate/configuration-options/)",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "60dc1e2a-93ec-4bc9-abde-aacf6aeba0a7",
+        "Name": "grateSqlScriptFolder",
+        "Label": "SQL Script folder",
+        "HelpText": "Script location to use for grate (if not in the root of the package)",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "b792092e-e3c1-487b-8349-e17832506f12",
+        "Name": "grateLogVerbosity",
+        "Label": "Log Level",
+        "HelpText": "Configure log level when running Grate.",
+        "DefaultValue": "information",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "critical|Critical\ndebug|Debug\nerror|Error\ninformation|Information\nnone|None\ntrace|Trace\nwarning|Warning"
+        }
+      },
+      {
+        "Id": "b8a17064-900f-4d77-9354-e5de1d3057f0",
+        "Name": "grateDownloadNuget",
+        "Label": "Download grate?",
+        "HelpText": "Check this box if you want the template to download RoundhousE and use the downloaded version for deployment.  Requires .NET Core be installed on the machine executing the deployment.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "409bd29d-79cf-4209-a005-ce768714eb64",
+        "Name": "grateNugetVersion",
+        "Label": "Version of grate",
+        "HelpText": "Version of grate to download (used with Download grate option), leave blank for latest.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "StepPackageId": "Octopus.Script",
+    "$Meta": {
+      "ExportedAt": "2022-10-17T22:47:54.861Z",
+      "OctopusVersion": "2022.4.4910",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "twerthi",
+    "Category": "grate"
+  }
