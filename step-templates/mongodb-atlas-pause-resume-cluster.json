@@ -1,0 +1,85 @@
+{
+  "Id": "2339fa87-ba06-4014-b918-ec1bdc4690e4",
+  "Name": "MongoDB Atlas - Pause or Resume cluster",
+  "Description": "Allow the user to pause/resume the asked cluster.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Author": "claude-uceda",
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$cluster = $OctopusParameters[\"matlas-cluster-name\"]\n$project = $OctopusParameters[\"matlas-project-id\"]\n$check_delay_seconds = $OctopusParameters[\"matlas-check-delay-seconds\"]\n\n$login = $OctopusParameters[\"matlas-public-key\"]\n$secret = $OctopusParameters[\"matlas-private-key\"]\n\n$pause = [System.Convert]::ToBoolean($OctopusParameters[\"matlas-pause\"])\n$check_delay_seconds_nb = ($check_delay_seconds -as [int])\n\nfunction Check-Required($name, $value) {\n\tif($value -eq $null -or $value -eq ''){\n    \tWrite-Error -Message \"Missing parameter or invalid value for '$name'. ($value)\" -ErrorAction Stop\n    }\n}\n\nCheck-Required 'matlas-public-key' $login\nCheck-Required 'matlas-private-key' $secret\nCheck-Required 'matlas-project-id' $project\nCheck-Required 'matlas-cluster-name' $cluster\nCheck-Required 'matlas-check-delay-seconds' $check_delay_seconds_nb\n\n$action = \"Pausing\"\nif($pause -eq $false){\n\t$action = \"Resuming\"\n}\n\nWrite-Host \"$action $($project)/$($cluster) using $login.\"\n\n[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\nfunction Invoke-Api($uri, $method, $content) {\n\n\t$securedPassword = ConvertTo-SecureString -String $secret -AsPlainText -Force\t\n\t$credentials = New-Object System.Management.Automation.PSCredential ($login, $securedPassword)\n\n\ttry {\n\t\treturn Invoke-RestMethod -Uri $uri -Method $method -Credential $credentials -ContentType \"application/json\" -Body $content\n\t}\n\tcatch {\n\t\tWrite-Error -Message $_ -ErrorAction Stop\n\t}\n}\n\n\n$root = \"https://cloud.mongodb.com/api/atlas/v1.0\"\n$uri = New-Object System.Uri(\"$root/groups/$project/clusters/$cluster\")\n$data = Invoke-Api $uri \"GET\"\n\nif ($data.paused -ne $pause) {\t\n\t$value = $pause.ToString().ToLower()\n\t$data = Invoke-Api $uri \"PATCH\" \"{`\"paused`\": $value}\"\t\n\t\n\twhile ($data.stateName -eq \"REPAIRING\" -or $data.stateName -eq \"UPDATING\") {\n\n\t\tWrite-Host \"Waiting for change to be applied. Cluster status : $($data.stateName).\"\t\t\n\t\tStart-Sleep -s $check_delay_seconds_nb\t\n\t\t$data = Invoke-Api $uri \"GET\"\n\t}\t\n\n\tWrite-Host \"Change applied. $Cluster status : $($data.stateName).\"\n}\nelse {\n\t\n\t$action = If ($pause) { \"paused\" } Else { \"running\" }\n\tWrite-Host \"Cluster already $action, no change applied. $Cluster status : $($data.stateName).\"\n}\n"
+  },
+  "Parameters": [
+    {
+      "Id": "7b92df2e-5469-4e97-a379-ccfe6eb942d9",
+      "Name": "matlas-public-key",
+      "Label": "Public key",
+      "HelpText": "Mongo atlas public key",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "51ced2a8-b158-4c0e-9244-081d429a1814",
+      "Name": "matlas-private-key",
+      "Label": "Private key",
+      "HelpText": "Mongo atlas private key",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "3f62699d-32c3-4eb0-8925-f6ad2e288de9",
+      "Name": "matlas-project-id",
+      "Label": "Project id",
+      "HelpText": "Project/group id of the cluster.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "215ed2bf-a5fd-4860-9006-c2525f96815e",
+      "Name": "matlas-cluster-name",
+      "Label": "Cluster name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f1eb059b-d8e7-46c8-a084-77b0d3a872a4",
+      "Name": "matlas-pause",
+      "Label": "Action",
+      "HelpText": "If the cluster needs to be paused or resumed.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "True|Pause\nFalse|Resume"
+      }
+    },
+    {
+      "Id": "e1975200-57aa-4159-a1cc-bb1d5fbfca2e",
+      "Name": "matlas-check-delay-seconds",
+      "Label": "Status check delay",
+      "HelpText": "Delay in seconds between each statuses check.",
+      "DefaultValue": "15",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2022-10-03T10:51:25.583Z",
+    "OctopusVersion": "2020.6.5394",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "claude-uceda",
+  "Category": "mongodb"
+}
