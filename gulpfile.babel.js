@@ -6,7 +6,7 @@ import gulpLoadPlugins from "gulp-load-plugins";
 import browserSync from "browser-sync";
 import LiveServer from "gulp-live-server";
 import gulpSass from "gulp-sass";
-import nodeSass from "node-sass";
+import dartSass from "sass";
 import concat from "gulp-concat";
 import insert from "gulp-insert";
 import del from "del";
@@ -32,7 +32,7 @@ import eventStream from "event-stream";
 import fs from "fs";
 import jsonlint from "gulp-jsonlint";
 
-const sass = gulpSass(nodeSass);
+const sass = gulpSass(dartSass);
 const clientDir = "app";
 const serverDir = "server";
 
