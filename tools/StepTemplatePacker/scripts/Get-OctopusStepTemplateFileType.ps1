@@ -20,6 +20,10 @@ function Get-OctopusStepTemplateFileType
             return ".sh";
         }
 
+        "Python" {
+            return ".py";
+        }
+
         default {
             throw new-object System.NotImplementedException("Unhandled script syntax '$syntax'.");
         }
