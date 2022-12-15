@@ -3,13 +3,13 @@
     "Name": "SQL - Create Database If Not Exists Enhanced",
     "Description": "Creates a database if the database does not exist without using SMO. ",
     "ActionType": "Octopus.Script",
-    "Version": 2,
+    "Version": 3,
     "CommunityActionTemplateId": null,
     "Packages": [],
     "Properties": {
       "Octopus.Action.Script.ScriptSource": "Inline",
       "Octopus.Action.Script.Syntax": "PowerShell",
-      "Octopus.Action.Script.ScriptBody": "# Initialize variables\n$connectionString = \"\"\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n\n# Determine authentication method\nswitch ($createAuthenticationMethod)\n{\n\t\"AzureADManaged\"\n    {\n    \tWrite-Host \"Using Azure Managed Identity authentication ...\"\n        $connectionString = \"Server=$createSqlServer;Database=master;\"\n        \n        $response = Invoke-WebRequest -Uri 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fdatabase.windows.net%2F' -Method GET -Headers @{Metadata=\"true\"} -UseBasicParsing\n        $content = $response.Content | ConvertFrom-Json\n        $AccessToken = $content.access_token\n        \n        $sqlConnection.AccessToken = $AccessToken\n        break\n    }\n    \"SqlAuthentication\"\n    {\n    \tWrite-Host \"Using Sql account authentication ...\"\n        $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n        break\n    }\n    \"WindowsIntegrated\"\n    {\n    \tWrite-Host \"Using Windows Integrated authentication ...\"\n        $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n        break\n    }\n}\n\n\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n$command.CommandTimeout = $createCommandTimeout\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedDatabaseName = $createDatabaseName.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create for $createDatabaseName\"\n$command.CommandText = \"IF NOT EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')\n        create database [$createDatabaseName]\"\n        \nif (![string]::IsNullOrEmpty($createAzureEdition))\n{\n\t$command.CommandText += (\"`r`n (EDITION = '{0}');\" -f $createAzureEdition)\n}\n\n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createDatabaseName\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+      "Octopus.Action.Script.ScriptBody": "# Initialize variables\n$connectionString = \"\"\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n\n# Determine authentication method\nswitch ($createAuthenticationMethod)\n{\n\t\"AzureADManaged\"\n    {\n    \tWrite-Host \"Using Azure Managed Identity authentication ...\"\n        $connectionString = \"Server=$createSqlServer;Database=master;\"\n        \n        $response = Invoke-WebRequest -Uri 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fdatabase.windows.net%2F' -Method GET -Headers @{Metadata=\"true\"} -UseBasicParsing\n        $content = $response.Content | ConvertFrom-Json\n        $AccessToken = $content.access_token\n        \n        $sqlConnection.AccessToken = $AccessToken\n        break\n    }\n    \"SqlAuthentication\"\n    {\n    \tWrite-Host \"Using Sql account authentication ...\"\n        $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n        break\n    }\n    \"WindowsIntegrated\"\n    {\n    \tWrite-Host \"Using Windows Integrated authentication ...\"\n        $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n        break\n    }\n}\n\n\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n$command.CommandTimeout = $createCommandTimeout\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedDatabaseName = $createDatabaseName.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create for $createDatabaseName\"\n$command.CommandText = \"IF NOT EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')\n        create database [$createDatabaseName]\"\n        \nif (![string]::IsNullOrWhiteSpace($createAzureEdition))\n{\n\tWrite-Verbose \"Specifying Azure SqlDb Edition: $($createAzureEdition)\"\n\t$command.CommandText += (\"`r`n (EDITION = '{0}')\" -f $createAzureEdition)\n}\n\nif (![string]::IsNullOrWhiteSpace($createAzureBackupStorageRedundancy))\n{\n\tWrite-Verbose \"Specifying Azure Backup storage redundancy: $($createAzureBackupStorageRedundancy)\"\n\t$command.CommandText += (\"`r`n WITH BACKUP_STORAGE_REDUNDANCY='{0}'\" -f $createAzureBackupStorageRedundancy)\n}\n\n$command.CommandText += \";\"\n\n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createDatabaseName\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
     },
     "Parameters": [
       {
@@ -83,14 +83,25 @@
           "Octopus.ControlType": "Select",
           "Octopus.SelectOptions": "basic|Basic Edition\nstandard|Standard Edition\npremium|Premium Edition\ngeneralpurpose|General Purpose Edition\nbusinesscritical|Business Critical Edition\nhyperscale|Hyperscale Edition"
         }
+      },
+      {
+        "Id": "85c8ad9c-2515-45d5-b521-49d3518f2a15",
+        "Name": "createAzureBackupStorageRedundancy",
+        "Label": "Azure Backup Storage Redundacy",
+        "HelpText": "Defines the Azure [database backup storage redundancy](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-database-transact-sql?view=azuresqldb-current&tabs=sqlpool#backup_storage_redundancy). The default option is `GRS` when not specified. Leave blank if not using Azure.\n\nNote: `GZRS` is only available in a subset of Azure regions that have the current requirements: \n\n- Database cannot be a `Basic` edition.\n- Have a geo-paired region \n- Have multiple availability zones within both data centers (primary and secondary). ",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "LOCAL|Locally redundant storage (LRS)\nZONE|Zone-redundant storage (ZRS)\nGEO|Geo-redundant storage (GRS)\nGEOZONE|Geo-Zone Redundant Storage (GZRS)"
+        }
       }
     ],
     "StepPackageId": "Octopus.Script",
     "$Meta": {
-      "ExportedAt": "2022-07-29T19:31:49.538Z",
-      "OctopusVersion": "2022.3.5513-hotfix.6004",
+      "ExportedAt": "2022-12-15T11:00:58.312Z",
+      "OctopusVersion": "2023.1.4314",
       "Type": "ActionTemplate"
     },
-    "LastModifiedBy": "twerthi",
+    "LastModifiedBy": "harrisonmeister",
     "Category": "sql"
   }
