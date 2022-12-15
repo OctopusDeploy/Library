@@ -3,11 +3,11 @@
   "Name": "SQL - Create Database If Not Exists",
   "Description": "Creates a database if the database does not exist without using SMO.",
   "ActionType": "Octopus.Script",
-  "Version": 3,  
+  "Version": 4,  
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n$command.CommandTimeout = $createCommandTimeout\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedDatabaseName = $createDatabaseName.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create for $createDatabaseName\"\n$command.CommandText = \"IF NOT EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')\n        create database [$createDatabaseName]\"\n        \nif (![string]::IsNullOrEmpty($createAzureEdition))\n{\n\t$command.CommandText += (\"`r`n (EDITION = '{0}');\" -f $createAzureEdition)\n}\n\n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the account $createDatabaseName\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n$command.CommandTimeout = $createCommandTimeout\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedDatabaseName = $createDatabaseName.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create for $createDatabaseName\"\n$command.CommandText = \"IF NOT EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')\n        create database [$createDatabaseName]\"\n        \nif (![string]::IsNullOrWhiteSpace($createAzureEdition))\n{\n\tWrite-Verbose \"Specifying Azure SqlDb Edition: $($createAzureEdition)\"\n\t$command.CommandText += (\"`r`n (EDITION = '{0}')\" -f $createAzureEdition)\n}\n\nif (![string]::IsNullOrWhiteSpace($createAzureBackupStorageRedundancy))\n{\n\tWrite-Verbose \"Specifying Azure Backup storage redundancy: $($createAzureBackupStorageRedundancy)\"\n\t$command.CommandText += (\"`r`n WITH BACKUP_STORAGE_REDUNDANCY='{0}'\" -f $createAzureBackupStorageRedundancy)\n}\n\n$command.CommandText += \";\"\n\n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the database $createDatabaseName\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
   },
   "Parameters": [
     {
@@ -70,13 +70,24 @@
         "Octopus.ControlType": "Select",
         "Octopus.SelectOptions": "basic|Basic Edition\nstandard|Standard Edition\npremium|Premium Edition\ngeneralpurpose|General Purpose Edition\nbusinesscritical|Business Critical Edition\nhyperscale|Hyperscale Edition"
       }
+    },
+    {
+      "Id": "609fd91a-a39c-4117-a8c0-cc725083f694",
+      "Name": "createAzureBackupStorageRedundancy",
+      "Label": "Azure Backup Storage Redundacy",
+      "HelpText": "Defines the Azure [database backup storage redundancy](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-database-transact-sql?view=azuresqldb-current&tabs=sqlpool#backup_storage_redundancy). The default option is `GRS` when not specified. Leave blank if not using Azure.\n\nNote: `GZRS` is only available in a subset of Azure regions that have the current requirements: \n\n- Database cannot be a `Basic` edition.\n- Have a geo-paired region \n- Have multiple availability zones within both data centers (primary and secondary). ",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "LOCAL|Locally redundant storage (LRS)\nZONE|Zone-redundant storage (ZRS)\nGEO|Geo-redundant storage (GRS)\nGEOZONE|Geo-Zone Redundant Storage (GZRS)"
+      }
     }
   ],
-  "LastModifiedOn": "2019-06-17T17:24:39.877Z",
-  "LastModifiedBy": "OctopusBob",
+  "LastModifiedOn": "2022-12-15T11:00:58.312Z",
+  "LastModifiedBy": "harrisonmeister",
   "$Meta": {
-    "ExportedAt": "2019-06-17T17:24:39.877Z",
-    "OctopusVersion": "2019.5.10",
+    "ExportedAt": "2022-12-15T11:00:58.312Z",
+    "OctopusVersion": "2023.1.4314",
     "Type": "ActionTemplate"
   },
   "Category": "sql"
