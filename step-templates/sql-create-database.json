@@ -3,11 +3,11 @@
   "Name": "SQL - Create Database If Not Exists",
   "Description": "Creates a database if the database does not exist without using SMO.",
   "ActionType": "Octopus.Script",
-  "Version": 4,  
+  "Version": 5,  
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true){\n\tWrite-Host \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n\tWrite-Host \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n$sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n$sqlConnection.ConnectionString = $connectionString\n\n$command = $sqlConnection.CreateCommand()\n$command.CommandType = [System.Data.CommandType]'Text'\n$command.CommandTimeout = $createCommandTimeout\n\nWrite-Host \"Opening the connection to $createSqlServer\"\n$sqlConnection.Open()\n\n$escapedDatabaseName = $createDatabaseName.Replace(\"'\", \"''\")\n\nWrite-Host \"Running the if not exists then create for $createDatabaseName\"\n$command.CommandText = \"IF NOT EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')\n        create database [$createDatabaseName]\"\n        \nif (![string]::IsNullOrWhiteSpace($createAzureEdition))\n{\n\tWrite-Verbose \"Specifying Azure SqlDb Edition: $($createAzureEdition)\"\n\t$command.CommandText += (\"`r`n (EDITION = '{0}')\" -f $createAzureEdition)\n}\n\nif (![string]::IsNullOrWhiteSpace($createAzureBackupStorageRedundancy))\n{\n\tWrite-Verbose \"Specifying Azure Backup storage redundancy: $($createAzureBackupStorageRedundancy)\"\n\t$command.CommandText += (\"`r`n WITH BACKUP_STORAGE_REDUNDANCY='{0}'\" -f $createAzureBackupStorageRedundancy)\n}\n\n$command.CommandText += \";\"\n\n$command.ExecuteNonQuery()\n\nWrite-Host \"Successfully created the database $createDatabaseName\"\nWrite-Host \"Closing the connection to $createSqlServer\"\n$sqlConnection.Close()"
+    "Octopus.Action.Script.ScriptBody": "if ([string]::IsNullOrWhiteSpace($createSqlLoginUserWhoHasCreateUserRights) -eq $true) {\n    Write-Output \"No username found, using integrated security\"\n    $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"\n}\nelse {\n    Write-Output \"Username found, using SQL Authentication\"\n    $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"\n}\n\n\nfunction Retry-Command {\n    [CmdletBinding()]\n    Param(\n        [Parameter(Position = 0, Mandatory = $true)]\n        [scriptblock]$ScriptBlock,\n \n        [Parameter(Position = 1, Mandatory = $false)]\n        [int]$Maximum = 1,\n\n        [Parameter(Position = 2, Mandatory = $false)]\n        [int]$Delay = 100\n    )\n\n    Begin {\n        $count = 0\n    }\n\n    Process {\n        $ex = $null\n        do {\n            $count++\n            \n            try {\n                Write-Verbose \"Attempt $count of $Maximum\"\n                $ScriptBlock.Invoke()\n                return\n            }\n            catch {\n                $ex = $_\n                Write-Warning \"Error occurred executing command (on attempt $count of $Maximum): $($ex.Exception.Message)\"\n                Start-Sleep -Milliseconds $Delay\n            }\n        } while ($count -lt $Maximum)\n\n        # Throw an error after $Maximum unsuccessful invocations. Doesn't need\n        # a condition, since the function returns upon successful invocation.\n        throw \"Execution failed (after $count attempts): $($ex.Exception.Message)\"\n    }\n}\n\n[int]$maximum = 0\n[int]$delay = 100\n\nif (-not [int]::TryParse($createSqlDatabaseRetryAttempts, [ref]$maximum)) { $maximum = 0 }\n\n# We add 1 here as if retry attempts is 1, this means we make 2 attempts overall\n$maximum = $maximum + 1\n\nRetry-Command -Maximum $maximum -Delay $delay -ScriptBlock {\n\t\n    $sqlConnection = New-Object System.Data.SqlClient.SqlConnection\n    $sqlConnection.ConnectionString = $connectionString\n    try {\n        \n        $command = $sqlConnection.CreateCommand()\n        $command.CommandType = [System.Data.CommandType]'Text'\n        $command.CommandTimeout = $createCommandTimeout\n\n        Write-Output \"Opening the connection to $createSqlServer\"\n        $sqlConnection.Open()\n\n        $escapedDatabaseName = $createDatabaseName.Replace(\"'\", \"''\")\n\n        Write-Output \"Running the if not exists then create for $createDatabaseName\"\n        $command.CommandText = \"IF NOT EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')\n        create database [$createDatabaseName]\"\n        \n        if (![string]::IsNullOrWhiteSpace($createAzureEdition)) {\n            Write-Verbose \"Specifying Azure SqlDb Edition: $($createAzureEdition)\"\n            $command.CommandText += (\"`r`n (EDITION = '{0}')\" -f $createAzureEdition)\n        }\n\n        if (![string]::IsNullOrWhiteSpace($createAzureBackupStorageRedundancy)) {\n            Write-Verbose \"Specifying Azure Backup storage redundancy: $($createAzureBackupStorageRedundancy)\"\n            $command.CommandText += (\"`r`n WITH BACKUP_STORAGE_REDUNDANCY='{0}'\" -f $createAzureBackupStorageRedundancy)\n        }\n\n        $command.CommandText += \";\"\n\n        $result = $command.ExecuteNonQuery()\n        Write-Verbose \"ExecuteNonQuery result: $result\"\n\n        Write-Output \"Successfully executed the database creation script for $createDatabaseName\"\n    }\n\n    finally {\n        if ($null -ne $sqlConnection) {\n            Write-Output \"Closing the connection to $createSqlServer\"\n            $sqlConnection.Dispose()\n        }\n    }\n}"
   },
   "Parameters": [
     {
@@ -81,13 +81,23 @@
         "Octopus.ControlType": "Select",
         "Octopus.SelectOptions": "LOCAL|Locally redundant storage (LRS)\nZONE|Zone-redundant storage (ZRS)\nGEO|Geo-redundant storage (GRS)\nGEOZONE|Geo-Zone Redundant Storage (GZRS)"
       }
+    },
+    {
+      "Id": "a6506d8d-d9f2-41ae-a78b-e269d9a70632",
+      "Name": "createSqlDatabaseRetryAttempts",
+      "Label": "Retry database creation attempts",
+      "HelpText": "Defines if the database creation attempt should be retried one or more times. Default: `0` (e.g. no retry)",
+      "DefaultValue": "0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
     }
   ],
-  "LastModifiedOn": "2022-12-15T11:00:58.312Z",
+  "LastModifiedOn": "2023-01-11T13:24:28.274Z",
   "LastModifiedBy": "harrisonmeister",
   "$Meta": {
-    "ExportedAt": "2022-12-15T11:00:58.312Z",
-    "OctopusVersion": "2023.1.4314",
+    "ExportedAt": "2023-01-11T13:24:28.274Z",
+    "OctopusVersion": "2023.1.5972",
     "Type": "ActionTemplate"
   },
   "Category": "sql"
