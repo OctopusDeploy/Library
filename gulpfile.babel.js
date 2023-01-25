@@ -179,6 +179,8 @@ function humanize(categoryId) {
       return "JWT";
     case "k8s":
       return "Kubernetes";
+    case "keeper-secretsmanager":
+      return "Keeper Secrets Manager";
     case "launchdarkly":
       return "LaunchDarkly";
     case "lets-encrypt":
