@@ -7,7 +7,7 @@
 * Is the `.json` filename consistent with the name of the template?
 * Do scripts in the template validate required arguments and fail by returning a non-zero exit code when things go wrong?
 * Do scripts in the template produce worthwhile status messages as they execute?
-* Are you happy to contribute your template under the terms of the [license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE)? If you produced the template while working for your employer please obtain written permission from them before submitting it here.
+* Are you happy to contribute your template under the terms of the [license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE.txt)? If you produced the template while working for your employer please obtain written permission from them before submitting it here.
 * Are the default values of parameters validly applicable in other user's environments? Don't use the default values as examples if the user will have to change them
 * For how to deal with parameters and testing take a look at the article [Making great Octopus PowerShell step templates](https://www.daniellittle.xyz/making-great-octopus-powershell-step-templates/)
 * For another example of how to test your step template script body before submitting a PR take a look at this [gist](https://gist.github.com/JCapriotti/45639e06ba777ee974b1)
