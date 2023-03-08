@@ -126,7 +126,7 @@ export default class TemplateItem extends React.Component {
               <div className="column full">
                 <p className="faint">
                   Provided under the
-                  <a className="faint" href="https://github.com/OctopusDeploy/Library/blob/master/LICENSE">
+                  <a className="faint" href="https://github.com/OctopusDeploy/Library/blob/master/LICENSE.txt">
                     {" "}
                     Apache License version 2.0
                   </a>
