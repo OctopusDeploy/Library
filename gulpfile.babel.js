@@ -263,6 +263,8 @@ function humanize(categoryId) {
       return "RnHub";
     case "venafi":
       return "Venafi";
+    case "proxmox":
+      return "Proxmox";
     default:
       return categoryId[0].toUpperCase() + categoryId.substr(1).toLowerCase();
   }
