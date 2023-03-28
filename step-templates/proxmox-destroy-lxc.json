@@ -1,0 +1,104 @@
+{
+    "Id": "5facb9eb-5a33-4a67-a254-7ba938d0b5a4",
+    "Name": "Proxmox Destroy LXC Container",
+    "Description": "Destroys a Proxmox LXC container using the Proxmox API.\n\nRequires a Proxmox [API token](https://pve.proxmox.com/wiki/Proxmox_VE_API#API_Tokens) to authenticate to the Proxmox Server/Cluster",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Proxmox Connection Variables\n$ProxmoxHost = $OctopusParameters[\"Proxmox.Host\"];\n$ProxmoxPort = [int]$OctopusParameters[\"Proxmox.Port\"];\n$ProxmoxUser = $OctopusParameters[\"Proxmox.User\"];\n\n$ProxmoxNode = $OctopusParameters[\"Proxmox.Node\"];\n\n$ProxmoxTokenID = $OctopusParameters[\"Proxmox.TokenID\"];\n$ProxmoxToken = $OctopusParameters[\"Proxmox.Token\"];\n\n# LXC Variables\n$LXC_VMID = [int]$OctopusParameters[\"Proxmox.LXC.VMID\"];\n\n$BaseURL = \"https://$($ProxmoxHost):$($ProxmoxPort)/api2/json\"\n\n$header = @{\n\t\"Authorization\" = \"PVEAPIToken=$($ProxmoxUser)!$($ProxmoxTokenID)=$($ProxmoxToken)\"\n}\n\n\nWrite-Host \"Testing Connection To Proxmox Server/Cluster ...\"\n\ntry{\n\tInvoke-RestMethod -Method GET -uri \"$($BaseURL)\" -Headers $header | out-null\n}catch{\n\tthrow \"Couldn't Connect to the Proxmox Server/Cluster\"\n}\n\nWrite-Host \"Successfully Connected To Proxmox Server/Cluster\"\n\n$CheckLXCExists = Invoke-RestMethod -Method GET -uri \"$($BaseURL)/nodes/$($ProxmoxNode)/lxc/$($LXC_VMID)/status/current\" -Headers $header\n\nif($CheckLXCExists.data -eq $null){\n\tthrow \"The LXC container with vmid ($LXC_VMID) does not exist!\"\n}\n\n\n$LXC_Force = 0\ntry {\n  $Force = [System.Convert]::ToBoolean($OctopusParameters[\"Proxmox.LXC.Force\"])\n  \n  if($Force -eq $True){\n  \t$LXC_Force = 1\n  }\n  \n} catch {}\n\n$LXCDestroyAsyncTask = (Invoke-RestMethod -Method DELETE -uri \"$($BaseURL)/nodes/$($ProxmoxNode)/lxc/$($LXC_VMID)?force=$($LXC_Force)\" -Headers $header)\n\n$count = 1;\n$maxCount = 10;\n\n$TaskID = $LXCDestroyAsyncTask.Data;\n\nDO\n{\n    Write-Host \"Checking if LXC has finished Destroying..\"\n    $LXCSDestroyAsyncTaskStatus = (Invoke-RestMethod -Method GET -uri \"$($BaseURL)/nodes/$($ProxmoxNode)/tasks/$($TaskID)/status\" -Headers $header).data\n    \n    if($LXCSDestroyAsyncTaskStatus.status -eq \"stopped\"){\n    \tif($LXCSDestroyAsyncTaskStatus.exitstatus -ne \"OK\"){\n        \tWrite-Error \"LXC destroy task finished with error: $($LXCSDestroyAsyncTaskStatus.exitstatus)\"\n        }else{\n        \tWrite-Host \"LXC destroy task has successfully completed!\"\n        }\n        \n        break;\n    }\n    \n\tWrite-Host \"LXC destroy task has not finished yet, retring in 5 seconds..\"\n    Write-Host \"Task Status: $($LXCSDestroyAsyncTaskStatus.status)\"\n    sleep 5\n    \n    If($count -gt $maxCount) {\n      Write-Warning \"Task Timed out!\"\n      break;\n    }\n    $count++\n\n} While ($count -le $maxCount)\n"
+    },
+    "Parameters": [
+      {
+        "Id": "9f1a3789-a4fe-4fc4-9a66-78e73d384248",
+        "Name": "Proxmox.Host",
+        "Label": "Proxmox Host",
+        "HelpText": "The hostname or IP address of the Proxmox cluster/host",
+        "DefaultValue": "1.2.3.4",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "240b1180-7b10-48ac-90fb-796fc8eaaf41",
+        "Name": "Proxmox.Port",
+        "Label": "Proxmox Port",
+        "HelpText": "Port number for Proxmox Cluster/Host",
+        "DefaultValue": "8006",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "37d5fad7-2bd3-45da-b30c-62116f0b1940",
+        "Name": "Proxmox.User",
+        "Label": "Proxmox User Account",
+        "HelpText": "The Proxmox user account associated with the api token.",
+        "DefaultValue": "root@pam",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "72a89f72-2571-435b-b0f7-a383f08572b9",
+        "Name": "Proxmox.Node",
+        "Label": "Proxmox Node",
+        "HelpText": "The Proxmox node in the cluster.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "b33b88c3-3949-4563-91a2-4ae264bc2d7f",
+        "Name": "Proxmox.TokenID",
+        "Label": "Proxmox Token ID",
+        "HelpText": "This is token id that was used to create an API token in proxmox.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "eff9ca9b-b3ea-44e9-aa79-489d1d9161ee",
+        "Name": "Proxmox.Token",
+        "Label": "Proxmox API Token",
+        "HelpText": "The API Token secret key",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "f7be6495-cc3b-4492-bb1b-e8a178a36a91",
+        "Name": "Proxmox.LXC.VMID",
+        "Label": "LXC VM ID",
+        "HelpText": "The LXC VMID you want to destroy",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "94de0cbc-b722-4788-858f-fb2b32b57fd8",
+        "Name": "Proxmox.LXC.Force",
+        "Label": "Force Destroy LXC",
+        "HelpText": "Do you want to force destroy the LXC container even if its running",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      }
+    ],
+    "StepPackageId": "Octopus.Script",
+    "$Meta": {
+      "ExportedAt": "2023-03-16T12:26:59.412Z",
+      "OctopusVersion": "2023.2.2028",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "domrichardson",
+    "Category": "proxmox"
+  }
