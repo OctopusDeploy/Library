@@ -61,16 +61,12 @@ We also accept contributions to improve the [library.octopusdeploy.com](http://l
 
 ##### Pre-requisites
 
-To build the library site you need to have `nodejs` installed on your system. If you don't already have `gulp` installed globally, run the following:
+To build the library site you need to have `nodejs` installed on your system.
+
+Run the setup job to install `gulp` globally and install the npm dependencies:
 
 ```
-npm install -g gulp
-```
-
-Once you have `gulp` installed, run the below command from the root of the repository to install the build and runtime dependencies:
-
-```
-npm install
+npm run setup
 ```
 
 Congratulations, you are now ready to build and test the site locally.
