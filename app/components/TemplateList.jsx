@@ -23,9 +23,7 @@ export default class TemplateList extends React.Component {
           <h4 key={index + "." + item.Name + ".0"}>
             <Link to={`/step-templates/${item.Id}/${friendlySlug}`}>{item.Name}</Link>
           </h4>
-          <p className="faint">
-            Exported {formattedExportedAt} by <strong>{item.Author}</strong>
-          </p>
+          <p className="faint">{item.Description}</p>
         </li>
       );
     });
