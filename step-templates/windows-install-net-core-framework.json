@@ -1,0 +1,65 @@
+{
+  "Id": "e413e8c6-88a9-4b1c-95e5-4837d814ba95",
+  "Name": ".NET Core - Install .NET Core Framework",
+  "Description": "Installs .Net Core runtime or SDK using the [Microsoft install script](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-install-script).",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\" \nWrite-Host \"InstallLocation = $InstallLocation\"\nWrite-Host \"Channel = $Channel\"\nWrite-Host \"Quality = $Quality\"\nWrite-Host \"RuntimeOnly = $RuntimeOnly\"\n\n# download .net install script\n$MSScriptLocation = 'https://dot.net/v1/dotnet-install.ps1'\nInvoke-WebRequest -Uri $MSScriptLocation -OutFile 'dotnet-install.ps1'\n\nSet-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force  \nUnblock-File -Path ./dotnet-install.ps1  \n\n# install\nif ($RuntimeOnly) {\n\t./dotnet-install.ps1 -InstallDir $InstallLocation -Channel $Channel -Runtime 'dotnet' -Quality $Quality -NoPath\n}\nelse {\n\t./dotnet-install.ps1 -InstallDir $InstallLocation -Channel $Channel -Quality $Quality -NoPath\n}\n\nsetx DOTNET_ROOT $InstallLocation /m  \n\nif (-not $env:Path.Contains('DOTNET_ROOT')) {\n\t$finalPath = \"$($env:PATH);%DOTNET_ROOT%;\"\n\tsetx PATH $finalPath /m \n}"
+  },
+  "Parameters": [
+    {
+      "Id": "6fb450c7-608a-4563-97e5-2d9d93893e38",
+      "Name": "InstallLocation",
+      "Label": ".Net Install Location",
+      "HelpText": "The path to install .Net. Defaults to ```C:\\app\\dotnet```.",
+      "DefaultValue": "C:\\app\\dotnet",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e6fe2245-c97e-46e1-81ba-746399d7115a",
+      "Name": "Channel",
+      "Label": ".Net Channel",
+      "HelpText": "Specifies the source channel for the installation. The possible values are:\n\n- STS - the most recent Standard Term Support release\n- LTS - the most recent Long Term Support release (recommended)\n- Two-part version in A.B format, representing a specific release, for example, 3.1 or 6.0.\n- Three-part version in A.B.Cxx format, representing a specific SDK release, for example, 6.0.1xx or 6.0.2xx. Available since the 5.0 release.\n\nSee also https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-install-script for possible values",
+      "DefaultValue": "LTS",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8af066c1-2334-4969-b66d-f67d48f30aaf",
+      "Name": "Quality",
+      "Label": ".Net Build Quality",
+      "HelpText": "See https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-install-script for possible values",
+      "DefaultValue": "GA",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "daily|Daily\nsigned|Signed\nvalidated|Validated\npreview|Preview\nGA|General availability (recommended)"
+      }
+    },
+    {
+      "Id": "994a4eb5-9792-4ffe-a2ca-4256a32d2922",
+      "Name": "RuntimeOnly",
+      "Label": "Install Runtime Only",
+      "HelpText": "If true, installs .Net runtime.\nIf false, installs .Net SDK.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-05-16T11:09:48.764Z",
+    "OctopusVersion": "2022.3.10594",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "dandraka",
+  "Category": "dotnetcore"
+}
