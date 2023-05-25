@@ -32,6 +32,7 @@ step "clear-staging-slot" {
 
     action "clear-staging-slot-1" {
         action_type = "Octopus.AzurePowerShell"
+        is_disabled = true
         properties = {
             Octopus.Action.Azure.AccountId = "team-steps-production-service-principal"
             Octopus.Action.RunOnServer = "false"
@@ -44,6 +45,34 @@ step "clear-staging-slot" {
                 EOT
             Octopus.Action.Script.ScriptSource = "Inline"
             Octopus.Action.Script.Syntax = "PowerShell"
+        }
+    }
+}
+
+step "clear-staging-slot-az" {
+    name = "Clear Staging slot - az"
+
+    action {
+        action_type = "Octopus.AzurePowerShell"
+        properties = {
+            Octopus.Action.Azure.AccountId = "team-steps-production-service-principal"
+            Octopus.Action.Script.ScriptBody = <<-EOT
+                #Remove the staging slot if it exists
+                Remove-AzWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging -Force
+                
+                #Create the staging slot
+                New-AzWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging 
+                
+                EOT
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "PowerShell"
+            OctopusUseBundledTooling = "False"
+        }
+        worker_pool = "hosted-ubuntu"
+
+        container {
+            feed = "registered-dockerhub"
+            image = "octopusdeploy/worker-tools:ubuntu.22.04"
         }
     }
 }
@@ -181,12 +210,34 @@ step "swap-staging-slot-to-production" {
 
     action "swap-staging-slot-to-production-1" {
         action_type = "Octopus.AzurePowerShell"
+        is_disabled = true
         properties = {
             Octopus.Action.Azure.AccountId = "team-steps-production-service-principal"
             Octopus.Action.RunOnServer = "false"
             Octopus.Action.Script.ScriptBody = "Switch-AzureRmWebAppSlot -SourceSlotName Staging -DestinationSlotName Production -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName}"
             Octopus.Action.Script.ScriptSource = "Inline"
             Octopus.Action.Script.Syntax = "PowerShell"
+        }
+    }
+}
+
+step "swap-staging-slot-to-production-az" {
+    name = "Swap Staging slot to Production  - az"
+
+    action {
+        action_type = "Octopus.AzurePowerShell"
+        properties = {
+            Octopus.Action.Azure.AccountId = "team-steps-production-service-principal"
+            Octopus.Action.Script.ScriptBody = "Switch-AzWebAppSlot -SourceSlotName Staging -DestinationSlotName Production -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName}"
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "PowerShell"
+            OctopusUseBundledTooling = "False"
+        }
+        worker_pool = "hosted-ubuntu"
+
+        container {
+            feed = "registered-dockerhub"
+            image = "octopusdeploy/worker-tools:ubuntu.22.04"
         }
     }
 }
