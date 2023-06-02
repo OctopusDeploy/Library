@@ -1,0 +1,74 @@
+{
+  "Id": "ed168ccc-a9b1-4990-86a6-cb6606c88d02",
+  "Name": "Slack - Send Notification using Block Kit",
+  "Description": "Send a message notification to Slack using the Block Kit formatting. These messages will be limited to more basic formats (e.g., using functions and inputs probably won't work), but you still will be able to make much nicer looking messages this way with the ability to preview them using the [Block Kit Builder](https://app.slack.com/block-kit-builder).",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$payload = ($OctopusParameters['ssn_BlockObj'] | ConvertFrom-Json)\n$payload | Add-Member -MemberType NoteProperty -Name channel -Value $OctopusParameters['ssn_Channel']\n$payload | Add-Member -MemberType NoteProperty -Name username -Value $OctopusParameters['ssn_Username']\n$payload | Add-Member -MemberType NoteProperty -Name icon_url -Value $OctopusParameters['ssn_IconUrl']\n$payload | Add-Member -MemberType NoteProperty -Name link_names -Value \"true\"\n\ntry {\n\t[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12\n    if ($PSVersionTable.PSVersion.Major -ge 6)\n    {\n        Invoke-Restmethod -Method POST -Body ($payload | ConvertTo-Json -Depth 4) -Uri $OctopusParameters['ssn_HookUrl']\n    }\n    else\n    {\n        Invoke-Restmethod -Method POST -Body ($payload | ConvertTo-Json -Depth 4) -Uri $OctopusParameters['ssn_HookUrl'] -UseBasicParsing\n    }\n} catch {\n    Write-Host \"An error occurred while attempting to send Slack notification\"\n    Write-Host $_.Exception\n    Write-Host $_\n    throw\n}"
+  },
+  "Parameters": [
+    {
+      "Id": "b73ac3c2-1dc9-4196-9d87-71f03a0fb0fc",
+      "Name": "ssn_HookUrl",
+      "Label": "Hook URL",
+      "HelpText": "The Webhook URL provided by Slack In the Incoming Webhook settings. This will provide the channel, Icon, and Username for the message by default.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "c6c11feb-2613-4583-9fcf-3bc379936c11",
+      "Name": "ssn_Channel",
+      "Label": "Slack Channel",
+      "HelpText": "Which Slack channel to post notification to. *This will be ignored if using a webhook from an app.*",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "dba932f9-8a73-4628-9b6f-b5850c29fd46",
+      "Name": "ssn_Username",
+      "Label": "Username",
+      "HelpText": "The username shown in Slack against the notification. *This will be ignored if using a webhook from an app.*",
+      "DefaultValue": "Octopus Deploy",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9ca22abf-478c-4315-984f-681fa6d6c80c",
+      "Name": "ssn_IconUrl",
+      "Label": "Icon URL",
+      "HelpText": "The icon shown in Slack against the notification. *This will be ignored if using a webhook from an app.*",
+      "DefaultValue": "https://octopus.com/content/resources/favicon.png",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6a80e10f-d09f-4765-84ba-aed6a3ee2abc",
+      "Name": "ssn_BlockObj",
+      "Label": "Block Object",
+      "HelpText": "Paste the entire JSON object from the [Block Kit Builder](https://app.slack.com/block-kit-builder) here.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-06-02T20:17:55.244Z",
+    "OctopusVersion": "2023.3.1205-hotfix.1753",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "justin-newman",
+  "Category": "slack"
+}
