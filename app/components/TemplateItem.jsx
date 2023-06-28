@@ -18,7 +18,6 @@ import LibraryStore from "./../stores/LibraryStore";
 import Analytics from "./../services/Analytics.js";
 
 const displayName = "octopus-library-template-item";
-import slugMaker from "./../services/SlugMaker";
 
 export default class TemplateItem extends React.Component {
   constructor(props) {
@@ -96,7 +95,7 @@ export default class TemplateItem extends React.Component {
             </div>
             <div className="column third">
               <p className="tutorial">
-                To use this template in Octopus Deploy, copy the JSON below and paste it into the <em>Library > Step templates > Import</em> dialog.
+                To use this template in Octopus Deploy, copy the JSON below and paste it into the <em>Library &rarr; Step templates &rarr; Import</em> dialog.
               </p>
               <CopyToClipboard onCopy={this.handleCopied.bind(this)} text={this.toJson(this.state.template)}>
                 <button className={"button success full-width" + (this.state.copied ? " copied" : "")} type="button">

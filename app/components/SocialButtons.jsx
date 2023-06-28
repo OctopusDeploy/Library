@@ -18,6 +18,12 @@ export default class SocialButtons extends React.Component {
       <div className="social-buttons">
         <TwitterButton />
         <FacebookButton />
+        <button className="github-button" id="github-button">
+          <a href="https://github.com/OctopusDeploy/Library/issues/new" target="_blank">
+            <i className="fa fa-github fa-lg" />
+            &nbsp;Report issue
+          </a>
+        </button>
       </div>
     );
   }
