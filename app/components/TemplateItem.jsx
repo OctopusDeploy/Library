@@ -12,7 +12,6 @@ import CopyToClipboard from "react-copy-to-clipboard";
 
 import TemplateParameters from "./TemplateParameters";
 import TemplateBody from "./TemplateBody";
-import SocialButtons from "./SocialButtons";
 
 import LibraryStore from "./../stores/LibraryStore";
 import Analytics from "./../services/Analytics.js";
@@ -129,7 +128,14 @@ export default class TemplateItem extends React.Component {
                   </a>
                   .
                 </p>
-                <SocialButtons />
+                <div className="social-buttons">
+                  <button className="github-button" id="github-button">
+                    <a href="https://github.com/OctopusDeploy/Library/issues/new" target="_blank">
+                      <i className="fa fa-github fa-lg" />
+                      &nbsp;Report issue
+                    </a>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
