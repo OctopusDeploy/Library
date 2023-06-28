@@ -1,0 +1,248 @@
+{
+  "Id": "9e2fa6bc-0ce7-4dbe-b6f9-4d14d4877e42",
+  "Name": "AWS - Deploy Lambda Function using IAM Role auth",
+  "Description": "Deploys a Zip file to an AWS Lambda function using the IAM role configured on the machine.  \n\nThis step can perform variable substitution, however, the recommended approach to changing a lambda configuration per environment is to use [environment variables](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html)  \n\nThis step uses the following AWS CLI commands to deploy the AWS Lambda.  You will be required to install the AWS CLI on your server/worker for this to work.  The AWS CLI is pre-installed on the [dynamic workers](https://octopus.com/docs/infrastructure/workers/dynamic-worker-pools) in Octopus Cloud as well as the provided docker containers for [Execution Containers](https://octopus.com/docs/deployment-process/execution-containers-for-workers).\n\n- [create-function](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/create-function.html)\n- [get-function](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/get-function.html)\n- [publish-version](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/publish-version.html)\n- [tag-resource](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/tag-resource.html)\n- [untag-resource](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/untag-resource.html)\n- [update-function-code](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/update-function-code.html)\n- [update-function-configuration](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/update-function-configuration.html)\n\nThis step template is worker-friendly, you can pass in a package reference rather than having to reference a previous step that downloaded the package. This step requires **Octopus Deploy 2019.10.0** or higher.\n\n## Output Variables\n\nThis step template sets the following output variables:\n\n- `LambdaArn`: The ARN of the Lambda Function\n- `PublishedVersion`: The most recent version published (only set when Publish is set to `Yes`).",
+  "ActionType": "Octopus.AwsRunScript",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "8dbae499-5aa8-438e-a2fe-ae29fb8f0a39",
+      "Name": "AWS.Lambda.Package",
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "AWS.Lambda.Package",
+        "Purpose": ""
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "True",
+    "Octopus.Action.Aws.Region": "#{AWS.Lambda.Region}",
+    "Octopus.Action.Script.ScriptBody": "$functionName = $OctopusParameters[\"AWS.Lambda.FunctionName\"] \n$functionRole = $OctopusParameters[\"AWS.Lambda.FunctionRole\"]\n$functionRunTime = $OctopusParameters[\"AWS.Lambda.Runtime\"]\n$functionHandler = $OctopusParameters[\"AWS.Lambda.FunctionHandler\"]\n$functionMemorySize = $OctopusParameters[\"AWS.Lambda.MemorySize\"]\n$functionDescription = $OctopusParameters[\"AWS.Lambda.Description\"]\n$functionVPCSubnetId = $OctopusParameters[\"AWS.Lambda.VPCSubnetIds\"]\n$functionVPCSecurityGroupId = $OctopusParameters[\"AWS.Lambda.VPCSecurityGroupIds\"]\n$functionEnvironmentVariables = $OctopusParameters[\"AWS.Lambda.EnvironmentVariables\"]\n$functionEnvironmentVariablesKey = $OctopusParameters[\"AWS.Lambda.EnvironmentVariablesKey\"]\n$functionTimeout = $OctopusParameters[\"AWS.Lambda.FunctionTimeout\"]\n$functionTags = $OctopusParameters[\"AWS.Lambda.Tags\"]\n$functionFileSystemConfig = $OctopusParameters[\"AWS.Lambda.FileSystemConfig\"]\n$functionDeadLetterConfig = $OctopusParameters[\"AWS.Lambda.DeadLetterConfig\"]\n$functionTracingConfig = $OctopusParameters[\"AWS.Lambda.TracingConfig\"]\n$functionVersionNumber = $OctopusParameters[\"Octopus.Action.Package[AWS.Lambda.Package].PackageVersion\"]\n$functionPublishOption = $OctopusParameters[\"AWS.Lambda.Publish\"]\n\n$functionReleaseNumber = $OctopusParameters[\"Octopus.Release.Number\"]\n$functionRunbookRun = $OctopusParameters[\"Octopus.RunbookRun.Id\"]\n$stepName = $OctopusParameters[\"Octopus.Step.Name\"]\n\n$regionName = $OctopusParameters[\"AWS.Lambda.Region\"]\n$newArchiveFileName = \"$($OctopusParameters[\"Octopus.Action.Package[AWS.Lambda.Package].ExtractedPath\"])/$($OctopusParameters[\"Octopus.Action.Package[AWS.Lambda.Package].PackageId\"]).$($OctopusParameters[\"Octopus.Action.Package[AWS.Lambda.Package].PackageVersion\"]).zip\"\n\nif ([string]::IsNullOrWhiteSpace($functionName))\n{\n\tWrite-Error \"The parameter Function Name is required.\"\n    Exit 1\n}\n\nif ([string]::IsNullOrWhiteSpace($functionRole))\n{\n\tWrite-Error \"The parameter Role is required.\"\n    Exit 1\n}\n\nif ([string]::IsNullOrWhiteSpace($functionRunTime))\n{\n\tWrite-Error \"The parameter Run Time is required.\"\n    Exit 1\n}\n\nif ([string]::IsNullOrWhiteSpace($functionHandler))\n{\n\tWrite-Error \"The parameter Handler is required.\"\n    Exit 1\n}\n\nif ([string]::IsNullOrWhiteSpace($functionPublishOption))\n{\n\tWrite-Error \"The parameter Publish is required.\"\n    Exit 1\n}\n\nif ([string]::IsNullOrWhiteSpace($functionReleaseNumber) -eq $false)\n{\n    $deployVersionTag = \"Octopus-Release=$functionReleaseNumber\"\n}\nelse\n{\n\t$deployVersionTag = \"Octopus-Runbook-Run=$functionRunbookRun\"\n}\n\nWrite-Host \"Function Name: $functionName\"\nWrite-Host \"Function Role: $functionRole\"\nWrite-Host \"Function Runtime: $functionRunTime\"\nWrite-Host \"Function Handler: $functionHandler\"\nWrite-Host \"Function Memory Size: $functionMemorySize\"\nWrite-Host \"Function Description: $functionDescription\"\nWrite-Host \"Function Subnet Ids: $functionVPCSubnetId\"\nWrite-Host \"Function Security Group Ids: $functionVPCSecurityGroupId\"\nWrite-Host \"Function Environment Variables: $functionEnvironmentVariables\"\nWrite-Host \"Function Environment Variables Key: $functionEnvironmentVariablesKey\"\nWrite-Host \"Function Timeout: $functionTimeout\"\nWrite-Host \"Function Tags: $functionTags\"\nWrite-Host \"Function File System Config: $functionFileSystemConfig\"\nWrite-Host \"Function Dead Letter Config: $functionDeadLetterConfig\"\nWrite-Host \"Function Tracing Config: $functionTracingConfig\"\nWrite-Host \"Function file path: fileb://$newArchiveFileName\"\nWrite-Host \"Function Publish: $functionPublishOption\"\n\nWrite-Host \"Re-packaging archive ...\"\n\n# Repackage the files into a zip file\nCompress-Archive -Path \"$($OctopusParameters[\"Octopus.Action.Package[AWS.Lambda.Package].ExtractedPath\"])/*\" -DestinationPath $newArchiveFileName\n\nWrite-Host \"Attempting to find the function $functionName in the region $regionName\"\n$hasExistingFunction = $true\n\ntry\n{\n    $existingFunction = aws lambda get-function --function-name \"$functionName\" 2> $null\n    \n    Write-Host \"The exit code from the lookup was $LASTEXITCODE\"\n    if ($LASTEXITCODE -eq 255 -or $LASTEXITCODE -eq 254)\n    {\n    \t$hasExistingFunction = $false\n    }   \n    \n    $existingFunction = $existingFunction | ConvertFrom-Json\n}\ncatch\n{\n\tWrite-Host \"The function was not found\"\n\t$hasExistingFunction = $false\n}\n\nWrite-Host \"Existing functions: $hasExistingFunction\"\nWrite-Host $existingFunction\n\n$aliasInformation = $null\nif ($hasExistingFunction -eq $false)\n{\n\tWrite-Highlight \"Creating $functionName in $regionName\"    \n\t$functionInformation = aws lambda create-function --function-name \"$functionName\" --zip-file fileb://$newArchiveFileName --handler $functionHandler --runtime $functionRuntime --role $functionRole --memory-size $functionMemorySize\n}\nelse\n{\n\tWrite-Highlight \"Updating the $functionName code\"\n    $updatedConfig = aws lambda update-function-code --function-name \"$functionName\" --zip-file fileb://$newArchiveFileName\n    \n    Write-Highlight \"Waiting for update to complete ...\"\n    aws lambda wait function-updated --function-name \"$functionName\"\n    \n    Write-Highlight \"Updating the $functionName base configuration\"    \n    $functionInformation = aws lambda update-function-configuration --function-name \"$functionName\" --role $functionRole --handler $functionHandler --runtime $functionRuntime --memory-size $functionMemorySize\n    \n    Write-Highlight \"Waiting for base configuration update to complete ...\"\n    aws lambda wait function-updated --function-name \"$functionName\"\n}\n\n$functionInformation = $functionInformation | ConvertFrom-JSON\n$functionArn = $functionInformation.FunctionArn\n\nWrite-Host \"Function ARN: $functionArn\"\n\nif ([string]::IsNullOrWhiteSpace($functionEnvironmentVariables) -eq $false)\n{\n\tWrite-Highlight \"Environment variables specified, updating environment variables configuration for $functionName\"\n\t$environmentVariables = \"Variables={$functionEnvironmentVariables}\"\n    \n    if ([string]::IsNullOrWhiteSpace($functionEnvironmentVariablesKey) -eq $true)\n    {\n    \t$updatedConfig = aws lambda update-function-configuration --function-name \"$functionArn\" --environment \"$environmentVariables\"\n    }\n    else\n    {\n    \t$updatedConfig = aws lambda update-function-configuration --function-name \"$functionArn\" --environment \"$environmentVariables\" --kms-key-arn \"$functionEnvironmentVariablesKey\"\n    }\n    \n    Write-Highlight \"Waiting for environment variable update to complete ...\"\n    aws lambda wait function-updated --function-name \"$functionName\"\n}\n\nif ([string]::IsNullOrWhiteSpace($functionTimeout) -eq $false)\n{\n\tWrite-Highlight \"Timeout specified, updating timeout configuration for $functionName\"\n\t$updatedConfig = aws lambda update-function-configuration --function-name \"$functionArn\" --timeout \"$functionTimeout\"\n    \n    Write-Highlight \"Waiting for timeout upate to complete ...\"\n    aws lambda wait function-updated --function-name \"$functionName\"\n}\n\nif ([string]::IsNullOrWhiteSpace($functionTags) -eq $false)\n{\n\tWrite-Highlight \"Tags specified, updating tags configuration for $functionName\"\n\t$updatedConfig = aws lambda tag-resource --resource \"$functionArn\" --tags \"$functionTags\"\n}\n\nif ([string]::IsNullOrWhiteSpace($deployVersionTag) -eq $false)\n{\n\tWrite-Highlight \"Deploy version tag found with value of $deployVersionTag, updating tags configuration for $functionName\"\n    aws lambda untag-resource --resource \"$functionArn\" --tag-keys \"Octopus-Release\" \"Octopus-Runbook-Run\"\n\t$updatedConfig = aws lambda tag-resource --resource \"$functionArn\" --tags \"$deployVersionTag\"\n}\n\nif ([string]::IsNullOrWhiteSpace($functionVPCSubnetId) -eq $false -and [string]::IsNullOrWhiteSpace($functionVPCSecurityGroupId) -eq $false)\n{\n\tWrite-Highlight \"VPC subnets and security group specified, updating vpc configuration for $functionName\"\n\t$vpcConfig = \"SubnetIds=$functionVPCSubnetId,SecurityGroupIds=$functionVPCSecurityGroupId\"\n\t$updatedConfig = aws lambda update-function-configuration --function-name \"$functionArn\" --vpc-config \"$vpcConfig\"\n    \n    Write-Highlight \"Waiting for vpc configuration to complete ...\"\n    aws lambda wait function-updated --function-name \"$functionName\"\n}\n\nif ([string]::IsNullOrWhiteSpace($functionDescription) -eq $false)\n{\n\tWrite-Highlight \"Description specified, updating description configuration for $functionName\"\n\t$updatedConfig = aws lambda update-function-configuration --function-name \"$functionArn\" --description \"$functionDescription\"\n    \n    Write-Highlight \"Waiting for description configuration ...\"\n    aws lambda wait function-updated --function-name \"$functionName\"\n}\n\nif ([string]::IsNullOrWhiteSpace($functionFileSystemConfig) -eq $false)\n{\n\tWrite-Highlight \"File System Config specified, updating file system configuration for $functionName\"\n\t$updatedConfig = aws lambda update-function-configuration --function-name \"$functionArn\" --file-system-configs \"$functionFileSystemConfig\"\t\n    \n    Write-Highlight \"Wating for file system configuration update to complete ...\"\n    aws lambda wait function-updated --function-name \"$functionName\"\n}\n\nif ([string]::IsNullOrWhiteSpace($functionDeadLetterConfig) -eq $false)\n{\n\tWrite-Highlight \"Dead Letter specified, updating dead letter configuration for $functionName\"\n\t$updatedConfig = aws lambda update-function-configuration --function-name \"$functionArn\" --dead-letter-config \"$functionDeadLetterConfig\"\t\n    \n    Write-Highlight \"Waitng for Dead Letter configuration update to complete ...\"\n    aws lambda wait function-updated --function-name \"$functionName\"\n}\n\nif ([string]::IsNullOrWhiteSpace($functionTracingConfig) -eq $false)\n{\n\tWrite-Highlight \"Tracing config specified, updating tracing configuration for $functionName\"\n\t$updatedConfig = aws lambda update-function-configuration --function-name \"$functionArn\" --tracing-config \"$functionTracingConfig\"\t\n    \n    Write-Highlight \"Waiting for tracing configuration to complete ...\"\n    aws lambda wait function-updated --function-name \"$functionName\"\n}\n\nWrite-Host $updatedConfig | ConvertFrom-JSON\n\nif ($functionPublishOption -eq \"Yes\")\n{\n\tWrite-Highlight \"Publishing the function with the description $functionVersionNumber to create a snapshot of the current code and configuration of this function in AWS.\"\n\t$publishedVersion = aws lambda publish-version --function-name \"$functionArn\" --description \"$functionVersionNumber\"\n    \n    $publishedVersion = $publishedVersion | ConvertFrom-JSON\n    \n    Write-Highlight \"Setting the output variable 'Octopus.Action[$($stepName)].Output.PublishedVersion' to $($publishedVersion.Version)\"\n    Set-OctopusVariable -name \"PublishedVersion\" -value \"$($publishedVersion.Version)\"    \n}\n\nWrite-Highlight \"Setting the output variable 'Octopus.Action[$($stepName)].Output.LambdaArn' to $functionArn\"\nSet-OctopusVariable -name \"LambdaArn\" -value \"$functionArn\"\n\nWrite-Highlight \"AWS Lambda $functionName successfully deployed.\"",
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.EnabledFeatures": "Octopus.Features.JsonConfigurationVariables,Octopus.Features.SubstituteInFiles",
+    "Octopus.Action.Package.JsonConfigurationVariablesTargets": "#{AWS.Lambda.StructuredConfigurationVariables}",
+    "Octopus.Action.SubstituteInFiles.TargetFiles": "#{AWS.Lambda.SubstituteVariablesinTemplates}"
+  },
+  "Parameters": [
+    {
+      "Id": "1575a1fe-24df-4953-a27b-aec5d741245a",
+      "Name": "AWS.Lambda.FunctionName",
+      "Label": "Function Name",
+      "HelpText": "Required.\n\nThe name of the function to create or update.  See [documentation](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/create-function.html#options)\n\nExamples:\n- Function name - my-function .\n- Function ARN - arn:aws:lambda:us-west-2:123456789012:function:my-function .\n- Partial ARN - 123456789012:function:my-function .\n\nThe length constraint applies only to the full ARN. If you specify only the function name, it is limited to 64 characters in length.\n",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e1a04b5b-cd19-43cb-a8f3-925817d73272",
+      "Name": "AWS.Lambda.Region",
+      "Label": "Region",
+      "HelpText": "Required.\n\nThe region where the function will live.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "us-east-2|US East (Ohio)\nus-east-1|US East (N. Virginia)\nus-west-1|US West (N. California)\nus-west-2|US West (Oregon)\naf-south-1|Africa (Cape Town)\nap-east-1|Asia Pacific (Hong Kong)\nap-south-1|Asia Pacific (Mumbai)\nap-northeast-3|Asia Pacific (Osaka-Local)\nap-northeast-2|Asia Pacific (Seoul)\nap-southeast-1|Asia Pacific (Singapore)\nap-southeast-2|Asia Pacific (Sydney)\nap-northeast-1|Asia Pacific (Tokyo)\nca-central-1|Canada (Central)\neu-central-1|Europe (Frankfurt)\neu-west-1|Europe (Ireland)\neu-west-2|Europe (London)\neu-south-1|Europe (Milan)\neu-west-3|Europe (Paris)\neu-north-1|Europe (Stockholm)\nme-south-1|Middle East (Bahrain)\nsa-east-1|South America (São Paulo)"
+      }
+    },
+    {
+      "Id": "dd56868a-019f-4f3b-8231-72b8cce0d862",
+      "Name": "AWS.Lambda.Package",
+      "Label": "Package",
+      "HelpText": "Required.\n\nThe package containing the code you wish to deploy to the AWS Lambda function.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "15353fc5-0d45-40f7-a6ec-803371aa2fa9",
+      "Name": "AWS.Lambda.FunctionRole",
+      "Label": "Function Role",
+      "HelpText": "Required.\n\nThe Amazon Resource Name (ARN) of the function’s execution role.  This role must exist prior to this step is run.  See [documentation](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html) for more detail on creating an execution role.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6bb03f9d-5ed6-4e7d-8cd8-71620cd81281",
+      "Name": "AWS.Lambda.Runtime",
+      "Label": "Runtime",
+      "HelpText": "Required.\n\nThe runtime of the AWS Lambda.  See [documentation](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/create-function.html#options) for more details on what runtimes are supported.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "nodejs|nodejs\nnodejs4.3|nodejs4.3\nnodejs4.3-edge|nodejs4.3-edge\nnodejs6.10|nodejs6.10\nnodejs8.10|nodejs8.10\nnodejs10.x|nodejs10.x\nnodejs12.x|nodejs12.x\nnodejs14.x|nodejs14.x\njava8|java8\njava8.al2|java8.al2\njava11|java11\npython2.7|python2.7\npython3.6|python3.6\npython3.7|python3.7\npython3.8|python3.8\npython3.9|python3.9\ndotnetcore1.0|dotnetcore1.0\ndotnetcore2.0|dotnetcore2.0\ndotnetcore2.1|dotnetcore2.1\ndotnetcore3.1|dotnetcore3.1\ndotnet6|dotnet6\nnodejs4.3-edge|nodejs4.3-edge\ngo1.x|go1.x\nruby2.5|ruby2.5\nruby2.7|ruby2.7\nprovided|provided\nprovided.al2|provided.al2"
+      }
+    },
+    {
+      "Id": "385948fb-d456-415b-ab33-77896e53823b",
+      "Name": "AWS.Lambda.FunctionHandler",
+      "Label": "Handler",
+      "HelpText": "Required.\n\nThe name of the method within your code that Lambda calls to execute your function. The format includes the file name. It can also include namespaces and other qualifiers, depending on the runtime. For more information, see [Programming Model](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-features.html)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "de6cb1c3-1906-4f01-895e-634aad21540c",
+      "Name": "AWS.Lambda.MemorySize",
+      "Label": "Memory Size",
+      "HelpText": "Required.\n\nThe amount of memory that your function has access to. Increasing the function’s memory also increases its CPU allocation. The default value is 128 MB. The value must be a multiple of 64 MB.",
+      "DefaultValue": "128",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7a225558-f530-407c-90d5-419dbd3c9b8f",
+      "Name": "AWS.Lambda.Description",
+      "Label": "Description",
+      "HelpText": "Optional.\n\nA description of the function.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f0661cd1-6df2-4320-a41f-e8e7076a7518",
+      "Name": "AWS.Lambda.VPCSubnetIds",
+      "Label": "VPC Subnet Ids",
+      "HelpText": "Optional.\n\nFormat: `SubnetId1,SubnetId2`\n\nFor network connectivity to AWS resources in a VPC, specify a list of security groups and subnets in the VPC. When you connect a function to a VPC, it can only access resources and the internet through that VPC. For more information, see [VPC Settings](https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "92eb428e-6837-4c78-a7ce-a4d43fb3955b",
+      "Name": "AWS.Lambda.VPCSecurityGroupIds",
+      "Label": "VPC Security Group Ids",
+      "HelpText": "Optional.\n\nFormat: `SecurityGroupId1,SecurityGroupId2`\n\nFor network connectivity to AWS resources in a VPC, specify a list of security groups and subnets in the VPC. When you connect a function to a VPC, it can only access resources and the internet through that VPC. For more information, see [VPC Settings](https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "312fabde-f65d-49aa-99ab-c4eb41a5d9bb",
+      "Name": "AWS.Lambda.EnvironmentVariables",
+      "Label": "Environment Variables",
+      "HelpText": "Optional.\n\nFormat: `KeyName1=string,KeyName2=string`\n\nEnvironment variables that are accessible from function code during execution.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f38bc9ee-c221-4f41-b344-b78d29b3f1bc",
+      "Name": "AWS.Lambda.EnvironmentVariablesKey",
+      "Label": "Environment Variables Encryption Key",
+      "HelpText": "Optional.\n\nThe ARN of the AWS Key Management Service (AWS KMS) key that’s used to encrypt your function’s environment variables. If it’s not provided, AWS Lambda uses a default service key.\n",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e3432e86-c5c9-46ca-8bef-5f247938b285",
+      "Name": "AWS.Lambda.FunctionTimeout",
+      "Label": "Timeout",
+      "HelpText": "Optional.\n\nThe amount of time that Lambda allows a function to run before stopping it. The default is 3 seconds. The maximum allowed value is 900 seconds.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2b6e7aa2-512e-44e4-aad9-d16280752714",
+      "Name": "AWS.Lambda.Tags",
+      "Label": "Tags",
+      "HelpText": "Optional.\n\nFormat: `KeyName1=string,KeyName2=string`\n\nA list of tags to apply to the function.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a69663ca-02fa-4d1d-abd9-0f554fd78013",
+      "Name": "AWS.Lambda.FileSystemConfig",
+      "Label": "File System Config",
+      "HelpText": "Optional.\n\nFormat: `Arn=string,LocalMountPath=string`\n\nConnection settings for an Amazon EFS file system.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "17ff862b-2d83-4819-a5b5-6bae7c45b71a",
+      "Name": "AWS.Lambda.TracingConfig",
+      "Label": "Tracing Config",
+      "HelpText": "Optional.\n\nFormat: `Mode=string`\n\nSet Mode to Active to sample and trace a subset of incoming requests with AWS X-Ray.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "558e6e77-d9e4-483d-8f43-c1059e67cc60",
+      "Name": "AWS.Lambda.DeadLetterConfig",
+      "Label": "Dead Letter Config",
+      "HelpText": "Optional.\n\nFormat: `TargetArn=string`\n\nA dead letter queue configuration that specifies the queue or topic where Lambda sends asynchronous events when they fail processing. For more information, see [Dead Letter Queues](https://docs.aws.amazon.com/lambda/latest/dg/invocation-async.html#dlq).\n",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5ad9e9f4-48c3-4c3f-a34d-a0f14af4318a",
+      "Name": "AWS.Lambda.Publish",
+      "Label": "Publish",
+      "HelpText": "Required.\n\nCreates a [version](https://docs.aws.amazon.com/lambda/latest/dg/versioning-aliases.html) from the current code and configuration of a function. Use versions to create a snapshot of your function code and configuration that doesn’t change.\n\n**Important**: Lambda doesn’t publish a version if the function’s configuration and code haven’t changed since the last version. Use UpdateFunctionCode or UpdateFunctionConfiguration to update the function before publishing a version.",
+      "DefaultValue": "Yes",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Yes|Yes\nNo|No"
+      }
+    },
+    {
+      "Id": "50051025-3ec9-43b0-a752-b8b08d0d159e",
+      "Name": "AWS.Lambda.StructuredConfigurationVariables",
+      "Label": "Structured Configuration Variables",
+      "HelpText": "To ensure you get the correct path, preface all entries with\n`#{Octopus.Action.Package[AWS.Lambda.Package].ExtractedPath}/`\n\nTarget files need to be new line seperated, relative to the package contents. Extended wildcard syntax is supported. E.g., appsettings.json, Config\\*.xml, **\\specific-folder\\*.yaml. Learn more about Structured Configuration Variables and view examples.\n\nNote: To avoid unnecessary warnings, the default value is a blank space.",
+      "DefaultValue": " ",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "8363b78f-f808-4b73-bee1-7b60d9186abf",
+      "Name": "AWS.Lambda.SubstituteVariablesinTemplates",
+      "Label": "Substitute Variables in Templates",
+      "HelpText": "To ensure you get the correct path, preface all entries with\n`#{Octopus.Action.Package[AWS.Lambda.Package].ExtractedPath}/`\n\nA newline-separated list of file names to transform, relative to the package contents. Extended wildcard syntax is supported. E.g., Notes.txt, Config\\*.json, **\\specific-folder\\*.config.\nThis field supports extended template syntax. Conditional if and unless:\n`#{if MyVar}...#{/if}`\nIteration over variable sets or comma-separated values with each:\n`#{each mv in MyVar}...#{mv}...#{/each}`\n\nNote: To avoid unnecessary warnings, the default value is a blank space.",
+      "DefaultValue": " ",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AwsRunScript",
+  "$Meta": {
+    "ExportedAt": "2023-06-27T18:05:45.154Z",
+    "OctopusVersion": "2023.3.4135",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "aws"
+}
