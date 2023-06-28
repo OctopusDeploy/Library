@@ -30,11 +30,6 @@ export default class Footer extends React.Component {
                 </a>
               </li>
               <li>
-                <a href="https://plus.google.com/102650558422902813929">
-                  <i className="fa fa-google-plus fa-fw" />
-                </a>
-              </li>
-              <li>
                 <a href="http://feeds.feedburner.com/OctopusDeploy">
                   <i className="fa fa-rss fa-fw" />
                 </a>
