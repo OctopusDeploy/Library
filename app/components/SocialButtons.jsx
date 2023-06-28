@@ -4,7 +4,6 @@ import React from "react";
 import PropTypes from "prop-types";
 
 import FacebookButton from "./SocialButtons/FacebookButton";
-import GoogleButton from "./SocialButtons/GoogleButton";
 import TwitterButton from "./SocialButtons/TwitterButton";
 
 const displayName = "octopus-library-template-social-buttons";
@@ -17,7 +16,6 @@ export default class SocialButtons extends React.Component {
   render() {
     return (
       <div className="social-buttons">
-        <GoogleButton />
         <TwitterButton />
         <FacebookButton />
       </div>
