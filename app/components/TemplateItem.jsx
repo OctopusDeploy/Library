@@ -10,8 +10,6 @@ import PropTypes from "prop-types";
 
 import CopyToClipboard from "react-copy-to-clipboard";
 
-import ReactDisqusThread from "react-disqus-thread";
-
 import TemplateParameters from "./TemplateParameters";
 import TemplateBody from "./TemplateBody";
 import SocialButtons from "./SocialButtons";
@@ -133,8 +131,6 @@ export default class TemplateItem extends React.Component {
                   .
                 </p>
                 <SocialButtons />
-                <h3>Comments</h3>
-                <ReactDisqusThread identifier={slugMaker.make(this.state.template.Name)} shortname="octolibrary" />
               </div>
             </div>
           </div>
