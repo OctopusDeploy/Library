@@ -132,7 +132,7 @@ export default class TemplateItem extends React.Component {
                   <button className="github-button" id="github-button">
                     <a href={`https://github.com/OctopusDeploy/Library/issues/new?assignees=&labels=&projects=&template=bug-report.yml&title=Issue%20with%20${this.state.template.Name}&step-template=${this.state.template.Name}`} target="_blank">
                       <i className="fa fa-github fa-lg" />
-                      &nbsp;Report issue
+                      &nbsp;Report Issue
                     </a>
                   </button>
                 </div>
