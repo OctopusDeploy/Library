@@ -10,17 +10,13 @@ import PropTypes from "prop-types";
 
 import CopyToClipboard from "react-copy-to-clipboard";
 
-import ReactDisqusThread from "react-disqus-thread";
-
 import TemplateParameters from "./TemplateParameters";
 import TemplateBody from "./TemplateBody";
-import SocialButtons from "./SocialButtons";
 
 import LibraryStore from "./../stores/LibraryStore";
 import Analytics from "./../services/Analytics.js";
 
 const displayName = "octopus-library-template-item";
-import slugMaker from "./../services/SlugMaker";
 
 export default class TemplateItem extends React.Component {
   constructor(props) {
@@ -98,7 +94,7 @@ export default class TemplateItem extends React.Component {
             </div>
             <div className="column third">
               <p className="tutorial">
-                To use this template in Octopus Deploy, copy the JSON below and paste it into the <em>Library > Step templates > Import</em> dialog.
+                To use this template in Octopus Deploy, copy the JSON below and paste it into the <em>Library &rarr; Step templates &rarr; Import</em> dialog.
               </p>
               <CopyToClipboard onCopy={this.handleCopied.bind(this)} text={this.toJson(this.state.template)}>
                 <button className={"button success full-width" + (this.state.copied ? " copied" : "")} type="button">
@@ -132,9 +128,14 @@ export default class TemplateItem extends React.Component {
                   </a>
                   .
                 </p>
-                <SocialButtons />
-                <h3>Comments</h3>
-                <ReactDisqusThread identifier={slugMaker.make(this.state.template.Name)} shortname="octolibrary" />
+                <div className="social-buttons">
+                  <button className="github-button" id="github-button">
+                    <a href={`https://github.com/OctopusDeploy/Library/issues/new?assignees=&labels=&projects=&template=bug-report.yml&title=Issue%20with%20${this.state.template.Name}&step-template=${this.state.template.Name}`} target="_blank">
+                      <i className="fa fa-github fa-lg" />
+                      &nbsp;Report Issue
+                    </a>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
