@@ -197,6 +197,8 @@ function humanize(categoryId) {
       return "Microsoft Teams";
     case "mongodb":
       return "MongoDB";
+    case "mulesoft":
+      return "Mulesoft";
     case "mysql":
       return "MySQL";
     case "netscaler":

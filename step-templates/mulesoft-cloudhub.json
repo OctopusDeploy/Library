@@ -1,0 +1,178 @@
+{
+  "Id": "35450be7-a9a2-415f-82b4-6503ca148f22",
+  "Name": "Mulesoft - Deploy to Cloudhub",
+  "Description": "Deploys a Mulesoft API to Cloudhub",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "a8d60939-169c-4026-a9b3-3789b2bb0152",
+      "Name": "Mulesoft.Asset",
+      "PackageId": null,
+      "FeedId": "feeds-builtin",
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "False",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "Mulesoft.Asset.File",
+        "Purpose": ""
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "Function Get-NpmExecutable\n{\n\t# Define parameters\n    param (\n    \t$NodeVersion = \"18.16.0\"\n    )\n       \n    # Declare local variables\n    $npmDownloadUrl = \"https://nodejs.org/dist/v$NodeVersion/\"\n    $downloadFileName = [string]::Empty\n    $npmExecutable = [string]::Empty\n    \n    # Assign download url\n    if ($IsWindows)\n    {\n    \t$downloadFileName += \"node-v$($NodeVersion)-win-x64.zip\"\n    }\n    else\n    {\n    \t$downloadFileName += \"node-v$($NodeVersion)-linux-x64.tar.xz\"\n    }\n\n\t# Create folder for npm\n    if ((Test-Path -Path \"$PWD/npm\") -eq $false)\n    {\n    \tNew-Item -Path \"$PWD/npm\" -ItemType \"Directory\"\n    }\n    \n    # Download npm binary\n    Write-Host \"Downloading $(($npmDownloadUrl + $downloadFileName)) ...\"\n    Invoke-WebRequest -Uri ($npmDownloadUrl + $downloadFileName) -Outfile \"$PWD/$downloadFileName\"\n    \n    Write-Output \"Extracting $downloadFileName ... \"\n    \n    if ($IsWindows)\n    {\n      # Extract\n      Expand-Archive -Path \"$PWD/$downloadFileName\" -DestinationPath \"$PWD/npm\"\n      \n      # Find the executable\n      $npmExecutable = Get-ChildItem -Path \"$PWD/npm/$($downloadFileName.Replace('.zip', ''))\" | Where-Object {$_.Name -eq \"npm.cmd\"}\n    }\n    \n    if ($IsLinux)\n    {\n      # Extract archive\n      tar -xf \"$PWD/$downloadFileName\" --directory \"$PWD/npm\"\n      \n      # Find the executable\n      $npmExecutable = Get-ChildItem -Path \"$PWD/npm/$($downloadFileName.Replace('.tar.xz', ''))/bin\" | Where-Object {$_.Name -eq \"npm\"}      \n    }\n    \n    # Insert location of executable into PATH environment variable so it can be called from anywhere\n    $env:PATH = \"$($npmExecutable.Directory)$([IO.Path]::PathSeparator)\" + $env:PATH\n}\n\nFunction Install-MulesoftCLI\n{\n\t# Define parameters\n    param (\n    \t$CLIVersion = \"4\"\n    )\n\t\n    # Run npm command to install pluguin\n    Write-Host \"Installing anypoint-cli-v$($CLIVersion) node module ...\"\n    \n    # Adjust install command based on operating system\n    if ($IsWindows)\n    {\n    \t& npm install -g \"anypoint-cli-v$($CLIVersion)\" \"2>&1\"\n    }\n    else\n    {\n    \t& npm install -g \"anypoint-cli-v$($CLIVersion)\" 2>&1\n    }\n    \n\t# Check exit code\n\tif ($lastExitCode -ne 0)\n\t{\n\t\t# Fail the step\n    \tWrite-Error \"Installation failed!\"\n\t}\n}\n\nFunction Deploy-MulesoftApplication\n{\n\t# Define parameters\n    param (\n    \t$AssetFilePath,\n        $ApplicationName,\n        $RuntimeVersion,\n        $NumberOfWorkers,\n        $WorkerSize,\n        $Region\n    )\n    \n    # Replace path seperator\n    if ($AssetFilePath.Contains(\"\\\"))\n    {\n    \t# Replace them with forward slash\n        $AssetFilePath = $AssetFilePath.Replace(\"\\\", \"/\")\n    }\n    \n    # Check to see if application already exists\n    $applicationList = (anypoint-cli-v4 runtime-mgr:cloudhub-application:list --output json | ConvertFrom-JSON)\n    $deployResults = $null\n    \n    if ($null -eq ($applicationList | Where-Object {$_.domain -eq $ApplicationName}))\n    {\n    \t# Deploy the application to cloud hub\n        Write-Host \"Deploying new application ...\"\n    \t$deployResults = anypoint-cli-v4 runtime-mgr:cloudhub-application:deploy $ApplicationName $AssetFilePath --output json --runtime $RuntimeVersion --workers $NumberOfWorkers --workerSize $WorkerSize --region $Region\n    }\n    else\n    {\n    \t# Update the application\n        Write-Host \"Updating existing application ...\"\n        $deployResults = anypoint-cli-v4 runtime-mgr:cloudhub-application:modify $ApplicationName $AssetFilePath --output json --runtime $RuntimeVersion --workers $NumberOfWorkers --workerSize $WorkerSize --region $Region\n    }\n    \n    # Display results \n    Write-Host \"Results:\"\n    $deployResults\n}\n\n# Check to see if $IsWindows is available\nif ($null -eq $IsWindows) {\n    Write-Host \"Determining Operating System...\"\n    $IsWindows = ([System.Environment]::OSVersion.Platform -eq \"Win32NT\")\n    $IsLinux = ([System.Environment]::OSVersion.Platform -eq \"Unix\")\n}\n\nif ($IsWindows)\n{\n\t# Disable progress bar for faster installation\n    $ProgressPreference = 'SilentlyContinue'\n}\n\n# Fix ANSI Color on PWSH Core issues when displaying objects\nif ($PSEdition -eq \"Core\") {\n    $PSStyle.OutputRendering = \"PlainText\"\n}\n\n# Get parameters\n$downloadUtils = [System.Convert]::ToBoolean(\"$($OctopusParameters['Mulesoft.Download'])\")\n\n# Check to see if we need to download utilities\nif ($downloadUtils)\n{\n\tGet-NpmExecutable -NodeVersion $OctopusParameters['Mulesoft.Node.CLI.Version']\n\tInstall-MulesoftCLI -CLIVersion $OctopusParameters['Mulesoft.Anypoint.CLI.Version']\n}\n\n# Set environment variables\n$env:ANYPOINT_CLIENT_ID = $OctopusParameters['Mulesoft.Anypoint.Client.Id']\n$env:ANYPOINT_CLIENT_SECRET = $OctopusParameters['Mulesoft.Anypoint.Client.Secret']\n$env:ANYPOINT_ORG = $OctopusParameters['Mulesoft.Anypoint.Organization.Id']\n$env:ANYPOINT_ENV = $OctopusParameters['Mulesoft.Anypoint.Environment']\n\n# Set global variables\n$mulesoftOrganizationId = $OctopusParameters['Mulesoft.Anypoint.Organization.Id']\n$mulesoftAssetVersionNumber = $OctopusParameters['Octopus.Action.Package[Mulesoft.Asset].PackageVersion']\n$mulesoftAssetArtifactId = $OctopusParameters['Octopus.Action.Package[Mulesoft.Asset].PackageId']\n$mulesoftApplicationName = $OctopusParameters['Mulesoft.Anypoint.Application.Name'].ToLower()\n$mulesoftRuntimeVersion = $OctopusParameters['Mulesoft.Anypoint.Runtime.Version']\n$mulesoftNumberOfWorkers = $OctopusParameters['Mulesfot.Anypoint.Worker.Count']\n$mulesoftWorkerSize = $OctopusParameters['Mulesoft.Anypoint.Worker.Size']\n$mulesoftRegion = $OctopusParameters['Mulesoft.Anypoint.Region']\n\n# Check optional parameters\nif ([string]::IsNullOrWhitespace($mulesoftNumberOfWorkers))\n{\n\t$mulesoftNumberOfWorkers = \"1\"\n}\n\nif ([string]::IsNullOrWhitespace($mulesoftWorkerSize))\n{\n\t$mulesoftWorkerSize = \"1\"\n}\n\n# Display variable values\nWrite-Host \"================== Deploying to CloudHub with the following options ==================\"\nWrite-Host \"Organization Id/Group Id: $mulesoftOrganizationId\"\nWrite-Host \"Artifact Id: $mulesoftAssetArtifactId\"\nWrite-Host \"Version number: $mulesoftAssetVersionNumber\"\nWrite-Host \"Application Name: $mulesoftApplicationname\"\nWrite-Host \"Environment: $($env:ANYPOINT_ENV)\"\nWrite-Host \"Runtime version: $mulesoftRuntimeVersion\"\nWrite-Host \"Number of workers: $mulesoftNumberOfWorkers\"\nWrite-Host \"Worker size: $mulesoftWorkerSize\"\nWrite-Host \"Region: $mulesoftRegion\"\nWrite-Host \"=======================================================================================\"\n\n# Get file properties\n$mulesoftApplicationFileExtension = [System.IO.Path]::GetExtension(\"$PWD/$($OctopusParameters['Octopus.Action.Package[Mulesoft.Asset].PackageFileName'])\")\n\n# Rename the file to the original\nRename-Item -Path \"$PWD/$($OctopusParameters['Octopus.Action.Package[Mulesoft.Asset].PackageFileName'])\" -NewName \"$($mulesoftAssetArtifactId).$($mulesoftAssetVersionNumber)$mulesoftApplicationFileExtension\"\n$mulesoftApplicationFilePath = \"$PWD/$($mulesoftAssetArtifactId).$($mulesoftAssetVersionNumber)$mulesoftApplicationFileExtension\"\n\n# Upload asset to exchange\nDeploy-MulesoftApplication -AssetFilePath $mulesoftApplicationFilePath -ApplicationName $mulesoftApplicationName -Region $mulesoftRegion -RuntimeVersion $mulesoftRuntimeVersion -NumberOfWorkers $mulesoftNumberOfWorkers -Workersize $mulesoftWorkerSize\n\n"
+  },
+  "Parameters": [
+    {
+      "Id": "e73b1ba3-df1f-490f-98d3-e564f6c1904a",
+      "Name": "Mulesoft.Anypoint.Organization.Id",
+      "Label": "Anypoint OrganizationID",
+      "HelpText": "The Organization ID of your Anypoint account.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "680c0b8c-a219-466a-840d-a5828247d2e8",
+      "Name": "Mulesoft.Anypoint.Client.Id",
+      "Label": "Anypoint Client ID",
+      "HelpText": "Client ID of the Anypoint user used for deployment.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "f71f9285-acee-4461-83fc-6f281c78ee87",
+      "Name": "Mulesoft.Anypoint.Client.Secret",
+      "Label": "Anypoint Client Secret",
+      "HelpText": "Client Secret of the Anypoint user used for deployment.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "4a7f78d5-3e68-4d04-aa88-327903d86d5c",
+      "Name": "Mulesoft.Anypoint.Environment",
+      "Label": "Anypoint Environment",
+      "HelpText": "Environment name to target.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "669bd6f1-a55e-4017-bc41-7008a166727c",
+      "Name": "Mulesoft.Anypoint.Application.Name",
+      "Label": "Anypoint Application Name",
+      "HelpText": "Name of the deployed application.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3ad06081-5a16-4fff-8d6d-dd2e9b5ea435",
+      "Name": "Mulesoft.Asset.File",
+      "Label": "Mulesoft Asset File",
+      "HelpText": "Select the package containing the Mulesoft API to upload to Exchange.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "291892c6-9fb0-4fc6-a3a5-d10bcdf70338",
+      "Name": "Mulesoft.Anypoint.Runtime.Version",
+      "Label": "Runtime version",
+      "HelpText": "The version of the runtime to use for your application.",
+      "DefaultValue": "4.4.0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d636b68a-dd56-4201-b2af-bb8faecc17ea",
+      "Name": "Mulesfot.Anypoint.Worker.Count",
+      "Label": "Number of Workers",
+      "HelpText": "(Optional) \t\nNumber of workers. (This value is '1' by default)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ace7c127-6adf-4df3-8e13-e43d596490f4",
+      "Name": "Mulesoft.Anypoint.Worker.Size",
+      "Label": "Worker Size",
+      "HelpText": "(Optional) Size of the workers in vCores. (This value is '1' by default)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a5aa6973-a64a-479e-a080-7fa684f00d45",
+      "Name": "Mulesoft.Anypoint.Region",
+      "Label": "Region",
+      "HelpText": "Name of the region to deploy to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7f527d06-c329-4883-a5cf-15f233fbe319",
+      "Name": "Mulesoft.Anypoint.CLI.AdditionalArguments",
+      "Label": "Additional CLI arguments",
+      "HelpText": "A comma delimited list of additional arguments to add to the CLI.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ada95ba7-64d4-4b0e-a287-b2dd6fac5718",
+      "Name": "Mulesoft.Node.CLI.Version",
+      "Label": "NodeJS version",
+      "HelpText": "Use to specify which version of the NodeJS CLI to use when choosing the Download Node option",
+      "DefaultValue": "18.16.0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9b34443c-bd76-4aa4-b036-10d930d619eb",
+      "Name": "Mulesoft.Anypoint.CLI.Version",
+      "Label": "Anypoint CLI Version",
+      "HelpText": "Specify the version of the CLI being used.",
+      "DefaultValue": "4",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "aa635c7b-bedb-4000-95a0-3c399721ce2b",
+      "Name": "Mulesoft.Download",
+      "Label": "Download NodeJS and Anypoint CLI?",
+      "HelpText": "Tick the box to dynamically download the NodeJS and Anypoint CLI utilities to deploy.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-07-20T17:36:01.897Z",
+    "OctopusVersion": "2023.2.12998",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "mulesoft"
+}
