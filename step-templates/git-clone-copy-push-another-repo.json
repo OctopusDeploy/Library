@@ -1,0 +1,114 @@
+{
+  "Id": "6db15b08-f6c6-4a6e-833c-773eb38ec0f0",
+  "Name": "Git - Clone, copy, push to another repo",
+  "Description": "Clones both a source and destination repository, copies files from the `Source Path` to the `Destination Path` then commits to the destination repository.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "Function Invoke-Git\n{\n\t# Define parameters\n    param (\n    \t$GitRepositoryUrl,\n        $GitFolder,\n        $GitUsername,\n        $GitPassword,\n        $GitCommand,\n        $AdditionalArguments\n    )\n    \n    # Get current work folder\n    $workDirectory = Get-Location\n\n\t# Check to see if GitFolder exists\n    if (![String]::IsNullOrWhitespace($GitFolder) -and (Test-Path -Path $GitFolder) -eq $false)\n    {\n    \t# Create the folder\n        New-Item -Path $GitFolder -ItemType \"Directory\" -Force | Out-Null\n        \n        # Set the location to the new folder\n        Set-Location -Path $GitFolder\n    }\n    \n    # Create arguments array\n    $gitArguments = @()\n    $gitArguments += $GitCommand\n    \n    # Check for url\n    if (![string]::IsNullOrWhitespace($GitRepositoryUrl))\n    {\n      # Convert url to URI object\n      $gitUri = [System.Uri]$GitRepositoryUrl\n      $gitUrl = \"{0}://{1}:{2}@{3}:{4}{5}\" -f $gitUri.Scheme, $GitUsername, $GitPassword, $gitUri.Host, $gitUri.Port, $gitUri.PathAndQuery\n      $gitArguments += $gitUrl\n\n      # Get the newly created folder name\n      $gitFolderName = $GitRepositoryUrl.SubString($GitRepositoryUrl.LastIndexOf(\"/\") + 1)\n      if ($gitFolderName.Contains(\".git\"))\n      {\n          $gitFolderName = $gitFolderName.SubString(0, $gitFolderName.IndexOf(\".\"))\n      }\n    }\n   \n    \n    # Check for additional arguments\n    if ($null -ne $AdditionalArguments)\n    {\n \t\t# Add the additional arguments\n        $gitArguments += $AdditionalArguments\n    }\n    \n    # Execute git command\n    $results = Execute-Command -commandPath \"git\" -commandArguments $gitArguments -workingDir $GitFolder\n    \n    Write-Host $results.stdout\n    Write-Host $results.stderr\n    \n    # Return the foldername\n    Set-Location -Path $workDirectory\n    \n    # Check to see if GitFolder is null\n    if ($null -ne $GitFolder)\n    {\n    \treturn Join-Path -Path $GitFolder -ChildPath $gitFolderName\n    }\n}\n\n# Check to see if $IsWindows is available\nif ($null -eq $IsWindows) {\n    Write-Host \"Determining Operating System...\"\n    $IsWindows = ([System.Environment]::OSVersion.Platform -eq \"Win32NT\")\n    $IsLinux = ([System.Environment]::OSVersion.Platform -eq \"Unix\")\n}\n\nFunction Copy-Files\n{\n\t# Define parameters\n    param (\n    \t$SourcePath,\n        $DestinationPath\n    )\n    \n    # Copy the items from source path to destination path\n    $copyArguments = @{}\n    $copyArguments.Add(\"Path\", $SourcePath)\n    $copyArguments.Add(\"Destination\", $DestinationPath)\n    \n    # Check to make sure destination exists\n    if ((Test-Path -Path $DestinationPath) -eq $false)\n    {\n    \t# Create the destination path\n        New-Item -Path $DestinationPath -ItemType \"Directory\" | Out-Null\n    }\n    \n    # Check for wildcard\n    if ($SourcePath.EndsWith(\"/*\") -or $SourcePath.EndsWith(\"\\*\"))\n    {\n\t\t# Add recurse argument\n\t\t$copyArguments.Add(\"Recurse\", $true)\n    }\n    \n    # Force overwrite\n    $copyArguments.Add(\"Force\", $true)\n    \n    # Copy files\n    Copy-Item @copyArguments\n}\n\nFunction Execute-Command\n{\n\tparam (\n    \t$commandPath,\n        $commandArguments,\n        $workingDir\n    )\n\n\t$gitExitCode = 0\n    $executionResults = $null\n\n  Try {\n    $pinfo = New-Object System.Diagnostics.ProcessStartInfo\n    $pinfo.FileName = $commandPath\n    $pinfo.WorkingDirectory = $workingDir\n    $pinfo.RedirectStandardError = $true\n    $pinfo.RedirectStandardOutput = $true\n    $pinfo.UseShellExecute = $false\n    $pinfo.Arguments = $commandArguments\n    $p = New-Object System.Diagnostics.Process\n    $p.StartInfo = $pinfo\n    $p.Start() | Out-Null\n    $executionResults = [pscustomobject]@{\n        stdout = $p.StandardOutput.ReadToEnd()\n        stderr = $p.StandardError.ReadToEnd()\n        ExitCode = $p.ExitCode\n    }\n    $p.WaitForExit()\n    $gitExitCode = [int]$p.ExitCode\n    \n    if ($gitExitCode -ge 2) \n    {\n\t\t# Fail the step\n        throw\n    }\n    \n    return $executionResults\n  }\n  Catch {\n    # Check exit code\n    Write-Error -Message \"$($executionResults.stderr)\" -ErrorId $gitExitCode\n    exit $gitExitCode\n  }\n\n}\n\nFunction Get-GitExecutable\n{\n\t# Define parameters\n    param (\n    \t$WorkingDirectory\n    )\n      \n    # Define variables\n    $gitExe = \"PortableGit-2.41.0.3-64-bit.7z.exe\"\n    $gitDownloadUrl = \"https://github.com/git-for-windows/git/releases/download/v2.41.0.windows.3/$gitExe\"\n    $gitDownloadArguments = @{}\n    $gitDownloadArguments.Add(\"Uri\", $gitDownloadUrl)\n    $gitDownloadArguments.Add(\"OutFile\", \"$WorkingDirectory/git/$gitExe\")\n    \n    # This makes downloading faster\n    $ProgressPreference = 'SilentlyContinue'\n    \n    # Check to see if git subfolder exists\n    if ((Test-Path -Path \"$WorkingDirectory/git\") -eq $false)\n    {\n    \t# Create subfolder\n        New-Item -Path \"$WorkingDirectory/git\"  -ItemType Directory\n    }\n    \n    # Check PowerShell version\n    if ($PSVersionTable.PSVersion.Major -lt 6)\n    {\n    \t# Use basic parsing is required\n        $gitDownloadArguments.Add(\"UseBasicParsing\", $true)\n    }\n    \n    # Download Git\n    Write-Host \"Downloading Git ...\"\n    Invoke-WebRequest @gitDownloadArguments\n    \n    # Extract Git\n    $gitExtractArguments = @()\n    $gitExtractArguments += \"-o\"\n    $gitExtractArguments += \"$WorkingDirectory\\git\"\n    $gitExtractArguments += \"-y\"\n    $gitExtractArguments += \"-bd\"\n\n    Write-Host \"Extracting Git download ...\"\n    & \"$WorkingDirectory\\git\\$gitExe\" $gitExtractArguments\n\n    # Wait until unzip action is complete\n    while ($null -ne (Get-Process | Where-Object {$_.ProcessName -eq ($gitExe.Substring(0, $gitExe.LastIndexOf(\".\")))}))\n    {\n        Start-Sleep 5\n    }\n    \n    # Add bin folder to path\n    $env:PATH = \"$WorkingDirectory\\git\\bin$([IO.Path]::PathSeparator)\" + $env:PATH\n    \n    # Disable promopt for credential helper\n    Invoke-Git -GitCommand \"config\" -AdditionalArguments @(\"--system\", \"--unset\", \"credential.helper\")\n}\n\n# Get variables\n$sourceGitUrl = $OctopusParameters['Template.Git.Source.Repo.Url']\n$destinationGitUrl = $OctopusParameters['Template.Git.Destination.Repo.Url']\n$gitSourceUser = $OctopusParameters['Template.Git.Source.User.Name']\n$gitSourcePassword = $OctopusParameters['Template.Git.Source.User.Password']\n$gitDestinationUser = $OctopusParameters['Template.Git.Destination.User.Name']\n$gitDestinationPassword = $OctopusParameters['Template.Git.Destination.User.Password']\n$sourceItems = $OctopusParameters['Template.Git.Source.Path']\n$destinationPath = $OctopusParameters['Template.Git.Destination.Path']\n$gitTag = $OctopusParameters['Template.Git.Tag']\n$gitSource = $null\n$gitDestination = $null\n\n# Check to see if it's Windows\nif ($IsWindows -and $OctopusParameters['Octopus.Workerpool.Name'] -eq \"Hosted Windows\")\n{\n\t# Dynamic worker don't have git, download portable version and add to path for execution\n    Write-Host \"Detected usage of Windows Dynamic Worker ...\"\n    Get-GitExecutable -WorkingDirectory $PWD\n}\n\n# Clone destination repository\n$destinationFolderName = Invoke-Git -GitRepositoryUrl $destinationGitUrl -GitUsername $gitDestinationUser -GitPassword $gitDestinationPassword -GitCommand \"clone\" -GitFolder \"$($PWD)/destination/default\"\n\n# Check for tag\nif (![String]::IsNullOrWhitespace($gitTag))\n{\n    $sourceFolderName = Invoke-Git -GitRepositoryUrl $sourceGitUrl -GitUsername $gitSourceUser -GitPassword $gitSourcePassword -GitCommand \"clone\" -GitFolder \"$($PWD)/source/tags/$gitTag\" -AdditionalArguments @(\"-b\", \"$gitTag\")\n}\nelse\n{\n\t$sourceFolderName = Invoke-Git -GitRepositoryUrl $sourceGitUrl -GitUsername $gitSourceUser -GitPassword $gitSourcePassword -GitCommand \"clone\" -GitFolder \"$($PWD)/source/default\"\n}\n\n# Copy files from source to destination\nCopy-Files -SourcePath \"$($sourceFolderName)$($sourceItems)\" -DestinationPath \"$($destinationFolderName)$($destinationPath)\"\n\n# Set user\n$gitAuthorName = $OctopusParameters['Octopus.Deployment.CreatedBy.DisplayName']\n$gitAuthorEmail = $OctopusParameters['Octopus.Deployment.CreatedBy.EmailAddress']\n\n# Check to see if user is system\nif ([string]::IsNullOrWhitespace($gitAuthorEmail) -and $gitAuthorName -eq \"System\")\n{\n\t# Initiated by the Octopus server via automated process, put something in for the email address\n    $gitAuthorEmail = \"system@octopus.local\"\n}\n\nInvoke-Git -GitCommand \"config\" -AdditionalArguments @(\"user.name\", $gitAuthorName) -GitFolder \"$($destinationFolderName)\" | Out-Null\nInvoke-Git -GitCommand \"config\" -AdditionalArguments @(\"user.email\", $gitAuthorEmail) -GitFolder \"$($destinationFolderName)\" | Out-Null\n\n# Commit changes\nInvoke-Git -GitCommand \"add\" -GitFolder \"$destinationFolderName\" -AdditionalArguments @(\".\") | Out-Null\nInvoke-Git -GitCommand \"commit\" -GitFolder \"$destinationFolderName\" -AdditionalArguments @(\"-m\", \"`\"Commit from #{Octopus.Project.Name} release version #{Octopus.Release.Number}`\"\") | Out-Null\n\n# Push the changes back to git\nInvoke-Git -GitCommand \"push\" -GitFolder \"$destinationFolderName\" | Out-Null\n\n"
+  },
+  "Parameters": [
+    {
+      "Id": "674d5325-aa93-4779-a734-cee8e5690f17",
+      "Name": "Template.Git.Source.Repo.Url",
+      "Label": "Source Git Repository URL",
+      "HelpText": "The URL used for the `git clone` operation.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f2d07c9c-85fc-485e-8057-5577efd9a26d",
+      "Name": "Template.Git.Source.User.Name",
+      "Label": "Source Git Username",
+      "HelpText": "Username of the credentials to use to log into git.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "597ae9a5-1ef4-4062-a435-2d9bb1fb16a2",
+      "Name": "Template.Git.Source.User.Password",
+      "Label": "Source Git User Password",
+      "HelpText": "Password for the git credential.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "5c080713-029f-4f9b-8037-234c7dd579bc",
+      "Name": "Template.Git.Source.Path",
+      "Label": "Source Path",
+      "HelpText": "Relative path to the folder or items to copy.  This field can take wildcards, eg - `/MyPath/*`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5fa438c9-2aa7-476f-ae79-bd77cdc22ccc",
+      "Name": "Template.Git.Tag",
+      "Label": "Tag",
+      "HelpText": "**(Optional)** Checkout the code for `SourcePath` from a specific tag.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6d3f8f4f-8e02-48bc-b473-817693aaf835",
+      "Name": "Template.Git.Destination.Repo.Url",
+      "Label": "Destination Git Repository URL",
+      "HelpText": "The destination repository to copy and push files to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "59590dd8-6698-46f8-884c-78ad9f4b7c2e",
+      "Name": "Template.Git.Destination.User.Name",
+      "Label": "Destination Git Username",
+      "HelpText": "Username of the credentials to log into destination git repo.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d81e0a3d-5eb9-4dd3-a197-e5bf0c48cdf1",
+      "Name": "Template.Git.Destination.User.Password",
+      "Label": "Destination Git User Password",
+      "HelpText": "Password for the destination git credential.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "f9a2141a-bcfa-4e53-862b-429b4f9892d9",
+      "Name": "Template.Git.Destination.Path",
+      "Label": "Destination Path",
+      "HelpText": "Relative path to the folder to copy items to.  This is the folder name only.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-09-12T15:32:07.199Z",
+    "OctopusVersion": "2023.4.2661",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "Your GitHub Username",
+  "Category": "other"
+}
