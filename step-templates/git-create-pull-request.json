@@ -1,0 +1,85 @@
+{
+  "Id": "a24c6354-5612-4e2c-a0ff-9b5a329fc0e9",
+  "Name": "Git - Create Pull Request",
+  "Description": "Create a Pull or Merge Request for the repository",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Check to see if $IsWindows is available\nif ($null -eq $IsWindows) {\n    Write-Host \"Determining Operating System...\"\n    $IsWindows = ([System.Environment]::OSVersion.Platform -eq \"Win32NT\")\n    $IsLinux = ([System.Environment]::OSVersion.Platform -eq \"Unix\")\n}\n\n# Fix ANSI Color on PWSH Core issues when displaying objects\nif ($PSEdition -eq \"Core\") {\n    $PSStyle.OutputRendering = \"PlainText\"\n}\n\n# Get variables\n$gitUrl = $OctopusParameters['Template.Git.Repo.Url']\n$gitUser = $OctopusParameters['Template.Git.User.Name']\n$gitPassword = $OctopusParameters['Template.Git.User.Password']\n$gitSourceBranch = $OctopusParameters['Template.Git.Source.Branch']\n$gitDestinationBranch = $OctopusParameters['Template.Git.Destination.Branch']\n$gitTech = $OctopusParameters['Template.Git.Repository.Technology']\n\n# Convert url into uri object\n$gitUri = [System.Uri]$gitUrl\n\nswitch ($gitTech)\n{\n    \"ado\"\n    {\n\n\t\t# Parse url\n        $gitOrganization = $gitUri.AbsolutePath\n        $gitOrganization = $gitOrganization.Substring(1)\n\t\t$gitOrganization = $gitOrganization.Substring(0, $gitOrganization.IndexOf(\"/\"))\n        \n        # Encode personal access token\n        $encodedPAT = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes(\"`:$gitPassword\"))\n        \n        # Construct Headers\n        $header = @{\n        \tAuthorization = \"Basic $encodedPAT\"\n        }\n                \n        $gitProject = $gitUri.AbsolutePath.Replace($gitOrganization, \"\").Replace(\"//\", \"\")\n        $gitProject = $gitProject.Substring(0, $gitProject.IndexOf(\"/\"))\n        \n\t\t# Create pull request\n        $jsonBody = @{\n        \tsourceRefName = \"refs/heads/\" + $gitSourceBranch\n            targetRefName = \"refs/heads/\" + $gitDestinationBranch\n            title = \"PR from Octopus Deploy\"\n            description = \"PR from #{Octopus.Project.Name} release version #{Octopus.Release.Number}\"\n        }\n        \n        # Construct API call\n        $adoApiUrl = \"{0}://{1}:{2}/{3}/{4}/_apis/git/repositories/{4}/pullrequests\" -f $gitUri.Scheme, $gitUri.Host, $gitUri.Port, $gitOrganization, $gitProject\n        Invoke-RestMethod -Method Post -Uri ($adoApiUrl + \"?api-version=7.0\") -Body ($jsonBody | ConvertTo-Json -Depth 10) -Headers $header -ContentType \"application/json\"\n    }\n    \"bitbucket\"\n    {\n\t\t# Parse url\n        $gitOrganization = $gitUri.AbsolutePath\n        $gitOrganization = $gitOrganization.Substring(1)\n\t\t$gitOrganization = $gitOrganization.Substring(0, $gitOrganization.IndexOf(\"/\"))\n        $gitProject = $gitUri.AbsolutePath.Replace($gitOrganization, \"\").Replace(\"//\", \"\")\n        \n        # Check to see if Repo Name ends with .git\n        if ($gitProject.EndsWith(\".git\"))\n        {\n        \t# Strip off the last part\n            $gitProject = $gitProject.Replace(\".git\", \"\")\n        }\n\n        # Construct Headers\n        $header = @{\n        \tAuthorization = \"Bearer $gitPassword\"\n        }\n        \n        # Construct API url\n        $bitbucketApiUrl = \"{0}://api.{1}:{2}/2.0/repositories/{3}/{4}/pullrequests\" -f $gitUri.Scheme, $gitUri.Host, $gitUri.Port, $gitOrganization, $gitProject\n        \n\t\t# Construct json body\n        $jsonBody = @{\n        \ttitle = \"PR from Octopus Deploy\"\n            source = @{\n            \tbranch = @{\n                \tname = $gitSourceBranch\n                }\n            }\n            destination = @{\n            \tbranch = @{\n                \tname = $gitDestinationBranch\n                }\n            }\n        }\n        \n        # Create PR\n        Invoke-RestMethod -Method Post -Uri $bitbucketApiUrl -Headers $header -Body ($jsonBody | ConvertTo-Json -Depth 10) -ContentType \"application/json\"\n    }\n    \"github\"\n    {\n        # Parse URL\n        $gitRepoOwner = $gitUri.AbsolutePath.Substring(1, $gitUri.AbsolutePath.LastIndexOf(\"/\") - 1)\n        $gitRepoName = $gitUri.AbsolutePath.Substring($gitUri.AbsolutePath.LastIndexOf(\"/\") + 1 )\n        \n        # Check to see if Repo Name ends with .git\n        if ($gitRepoName.EndsWith(\".git\"))\n        {\n        \t# Strip off the last part\n            $gitRepoName = $gitRepoName.Replace(\".git\", \"\")\n        }\n        \n        # Construct API endpoint\n        $githubApiUrl = \"{0}://api.{1}:{2}/repos/{3}/{4}/pulls\" -f $gitUri.Scheme, $gitUri.Host, $gitUri.Port, $gitRepoOwner, $gitRepoName\n        \n        # Construct Headers\n        $header = @{\n        \tAuthorization = \"Bearer $gitPassword\"\n            Accept = \"application/vnd.github+json\"\n            \"X-Github-Api-Version\" = \"2022-11-28\"\n        }\n        \n        # Construct body\n        $jsonBody = @{\n        \ttitle = \"PR from Octopus Deploy\"\n            body = \"PR from #{Octopus.Project.Name} release version #{Octopus.Release.Number}\"\n            head = $gitSourceBranch\n            base = $gitDestinationBranch\n        }\n        \n        # Create the pull request\n        Invoke-RestMethod -Method Post -Uri $gitHubApiUrl -Headers $header -Body ($jsonBody | ConvertTo-Json -Depth 10)\n    }\n    \"gitlab\"\n    {\n\t\t# Get project name\n        $gitlabProjectName = $gitUrl.SubString($gitUrl.LastIndexOf(\"/\") + 1)\n        \n        # Parse uri\n        $gitlabApiUrl = \"{0}://{1}:{2}/api/v4/users/{3}/projects\" -f $gitUri.Scheme, $gitUri.Host, $gitUri.Port, $gitUser\n        \n        # Check to see if it ends in .git\n        if ($gitlabProjectName.EndsWith(\".git\"))\n        {\n        \t# Strip that part off\n            $gitlabProjectName = $gitlabProjectName.Replace(\".git\", \"\")\n        }\n        \n        # Create header\n        $header = @{ \"PRIVATE-TOKEN\" = $gitPassword }\n        \n        # Get the project\n        $gitlabProject = (Invoke-RestMethod -Method Get -Uri $gitlabApiUrl -Headers $header) | Where-Object {$_.Name -eq $gitlabProjectName}\n        \n        # Create the merge request\n         $gitlabApiUrl = \"{0}://{1}:{2}/api/v4/projects/{3}/merge_requests?source_branch={4}&target_branch={5}&target_project_id={3}&title={6}\" -f $gitUri.Scheme, $gitUri.Host, $gitUri.Port, $gitlabProject.id, $gitSourceBranch, $gitDestinationBranch, \"PR from #{Octopus.Project.Name} release version #{Octopus.Release.Number}\"\n        Invoke-RestMethod -Method Post -Uri $gitlabApiUrl -Headers $header\n    }\n}\n\n<#\n# Set user\n$gitAuthorName = $OctopusParameters['Octopus.Deployment.CreatedBy.DisplayName']\n$gitAuthorEmail = $OctopusParameters['Octopus.Deployment.CreatedBy.EmailAddress']\n\n# Check to see if user is system\nif ([string]::IsNullOrWhitespace($gitAuthorEmail) -and $gitAuthorName -eq \"System\")\n{\n\t# Initiated by the Octopus server via automated process, put something in for the email address\n    $gitAuthorEmail = \"system@octopus.local\"\n}\n\n# Configure user information\nInvoke-Git -GitCommand \"config\" -AdditionalArguments @(\"user.name\", $gitAuthorName) #-GitFolder \"$($PWD)/$($folderName)\"\nInvoke-Git -GitCommand \"config\" -AdditionalArguments @(\"user.email\", $gitAuthorEmail) #-GitFolder \"$($PWD)/$($folderName)\"\n\n\n# Push the new tag\nInvoke-Git -Gitcommand \"request-pull\" -AdditionalArguments @(\"$gitSourceBranch\", $gitUrl, \"$gitDestinationBranch\") -GitFolder \"$($PWD)/$($folderName)\"    \n#>"
+  },
+  "Parameters": [
+    {
+      "Id": "674d5325-aa93-4779-a734-cee8e5690f17",
+      "Name": "Template.Git.Repo.Url",
+      "Label": "Git Repository URL",
+      "HelpText": "The URL used for the `git clone` operation.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f2d07c9c-85fc-485e-8057-5577efd9a26d",
+      "Name": "Template.Git.User.Name",
+      "Label": "Git Username",
+      "HelpText": "Username of the credentials to use to log into git.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "597ae9a5-1ef4-4062-a435-2d9bb1fb16a2",
+      "Name": "Template.Git.User.Password",
+      "Label": "Git User Password",
+      "HelpText": "Password for the git credential.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "7cfa6ba5-76c6-4b15-a30c-593e2cd8f914",
+      "Name": "Template.Git.Source.Branch",
+      "Label": "Source Branch",
+      "HelpText": "The source branch name to compare the repository with.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2b0ee0d3-8542-4db2-87fc-52ee41e63cc6",
+      "Name": "Template.Git.Destination.Branch",
+      "Label": "Destination Branch",
+      "HelpText": "The destination branch to create the pull/merge request against.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "74d8fc6d-2a4c-49ad-b7f8-248dcf44fc0f",
+      "Name": "Template.Git.Repository.Technology",
+      "Label": "Source Control Technology",
+      "HelpText": "Select which source control technology to create the request on.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "ado|Azure DevOps\nbitbucket|BitBucket\ngithub|GitHub\ngitlab|GitLab"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-09-12T15:32:53.416Z",
+    "OctopusVersion": "2023.4.2661",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "git"
+}
