@@ -1,0 +1,115 @@
+{
+  "Id": "f79befdd-9042-4e49-a4d9-164fc8daf8d6",
+  "Name": "GitHub - Fork Repo",
+  "Description": "Forks a repo in GitHub and returns the new repo URL in the output variable `NewRepo`. If the new repo already exists, it is not modified.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "# This script forks a GitHub repo. It creates a token from a GitHub App installation to avoid\n# having to use a regular user account.\nimport subprocess\nimport sys\n\n# Install our own dependencies\nsubprocess.check_call([sys.executable, '-m', 'pip', 'install', 'jwt'])\n\nimport json\nimport subprocess\nimport sys\nimport os\nimport urllib.request\nimport base64\nimport re\nimport jwt\nimport time\nimport argparse\nimport platform\nfrom urllib.request import urlretrieve\n\n# If this script is not being run as part of an Octopus step, setting variables is a noop\nif 'set_octopusvariable' not in globals():\n    def set_octopusvariable(variable, value):\n        pass\n\n# If this script is not being run as part of an Octopus step, return variables from environment variables.\n# Periods are replaced with underscores, and the variable name is converted to uppercase\nif \"get_octopusvariable\" not in globals():\n    def get_octopusvariable(variable):\n        return os.environ[re.sub('\\\\.', '_', variable.upper())]\n\n# If this script is not being run as part of an Octopus step, print directly to std out.\nif 'printverbose' not in globals():\n    def printverbose(msg):\n        print(msg)\n\n\ndef printverbose_noansi(output):\n    \"\"\"\n    Strip ANSI color codes and print the output as verbose\n    :param output: The output to print\n    \"\"\"\n    output_no_ansi = re.sub('\\x1b\\[[0-9;]*m', '', output)\n    printverbose(output_no_ansi)\n\n\ndef get_octopusvariable_quiet(variable):\n    \"\"\"\n    Gets an octopus variable, or an empty string if it does not exist.\n    :param variable: The variable name\n    :return: The variable value, or an empty string if the variable does not exist\n    \"\"\"\n    try:\n        return get_octopusvariable(variable)\n    except:\n        return ''\n\n\ndef execute(args, cwd=None, env=None, print_args=None, print_output=printverbose_noansi, raise_on_non_zero=False):\n    \"\"\"\n        The execute method provides the ability to execute external processes while capturing and returning the\n        output to std err and std out and exit code.\n    \"\"\"\n    process = subprocess.Popen(args,\n                               stdout=subprocess.PIPE,\n                               stderr=subprocess.PIPE,\n                               text=True,\n                               cwd=cwd,\n                               env=env)\n    stdout, stderr = process.communicate()\n    retcode = process.returncode\n\n    if not retcode == 0 and raise_on_non_zero:\n        raise Exception('command returned exit code ' + retcode)\n\n    if print_args is not None:\n        print_output(' '.join(args))\n\n    if print_output is not None:\n        print_output(stdout)\n        print_output(stderr)\n\n    return stdout, stderr, retcode\n\n\ndef init_argparse():\n    parser = argparse.ArgumentParser(\n        usage='%(prog)s [OPTION] [FILE]...',\n        description='Fork a GitHub repo'\n    )\n    parser.add_argument('--new-repo-name', action='store',\n                        default=get_octopusvariable_quiet(\n                            'ForkGithubRepo.Git.Url.NewRepoName') or get_octopusvariable_quiet(\n                            'Exported.Project.Name'))\n    parser.add_argument('--new-repo-name-prefix', action='store',\n                        default=get_octopusvariable_quiet(\n                            'ForkGithubRepo.Git.Url.NewRepoNamePrefix') or get_octopusvariable_quiet(\n                            'Git.Url.NewRepoNamePrefix'))\n    parser.add_argument('--template-repo-name', action='store',\n                        default=get_octopusvariable_quiet(\n                            'ForkGithubRepo.Git.Url.OriginalRepoName') or\n                                re.sub('[^a-zA-Z0-9-]', '_', get_octopusvariable_quiet('Octopus.Project.Name')))\n    parser.add_argument('--tenant-name', action='store',\n                        default=get_octopusvariable_quiet('Octopus.Deployment.Tenant.Name'))\n    parser.add_argument('--git-organization', action='store',\n                        default=get_octopusvariable_quiet(\n                            'ForkGithubRepo.Git.Url.Organization') or get_octopusvariable_quiet('Git.Url.Organization'))\n    parser.add_argument('--mainline-branch',\n                        action='store',\n                        default=get_octopusvariable_quiet(\n                            'ForkGiteaRepo.Git.Branch.MainLine') or get_octopusvariable_quiet('Git.Branch.MainLine'),\n                        help='The branch name to use for the fork. Defaults to \"main\".')\n    parser.add_argument('--github-app-id', action='store',\n                        default=get_octopusvariable_quiet(\n                            'ForkGithubRepo.GitHub.App.Id') or get_octopusvariable_quiet('GitHub.App.Id'))\n    parser.add_argument('--github-app-installation-id', action='store',\n                        default=get_octopusvariable_quiet(\n                            'ForkGithubRepo.GitHub.App.InstallationId') or get_octopusvariable_quiet(\n                            'GitHub.App.InstallationId'))\n    parser.add_argument('--github-app-private-key', action='store',\n                        default=get_octopusvariable_quiet(\n                            'ForkGithubRepo.GitHub.App.PrivateKey') or get_octopusvariable_quiet(\n                            'GitHub.App.PrivateKey'))\n    parser.add_argument('--github-access-token', action='store',\n                        default=get_octopusvariable_quiet(\n                            'ForkGithubRepo.GitHub.Credentials.AccessToken') or get_octopusvariable_quiet(\n                            'GitHub.Credentials.AccessToken'),\n                        help='The GitHub access token. This takes precedence over the --github-app-id,  --github-app-installation-id, and --github-app-private-key')\n\n    return parser.parse_known_args()\n\n\ndef generate_github_token(github_app_id, github_app_private_key, github_app_installation_id):\n    # Generate the tokens used by git and the GitHub API\n    app_id = github_app_id\n    signing_key = jwt.jwk_from_pem(github_app_private_key.encode('utf-8'))\n\n    payload = {\n        # Issued at time\n        'iat': int(time.time()),\n        # JWT expiration time (10 minutes maximum)\n        'exp': int(time.time()) + 600,\n        # GitHub App's identifier\n        'iss': app_id\n    }\n\n    # Create JWT\n    jwt_instance = jwt.JWT()\n    encoded_jwt = jwt_instance.encode(payload, signing_key, alg='RS256')\n\n    # Create access token\n    url = 'https://api.github.com/app/installations/' + github_app_installation_id + '/access_tokens'\n    headers = {\n        'Authorization': 'Bearer ' + encoded_jwt,\n        'Accept': 'application/vnd.github+json',\n        'X-GitHub-Api-Version': '2022-11-28'\n    }\n    request = urllib.request.Request(url, headers=headers, method='POST')\n    response = urllib.request.urlopen(request)\n    response_json = json.loads(response.read().decode())\n    return response_json['token']\n\n\ndef generate_auth_header(token):\n    auth = base64.b64encode(('x-access-token:' + token).encode('ascii'))\n    return 'Basic ' + auth.decode('ascii')\n\n\ndef verify_template_repo(token, cac_org, template_repo):\n    # Attempt to view the template repo\n    url = 'https://api.github.com/repos/' + cac_org + '/' + template_repo\n    try:\n        headers = {\n            'Accept': 'application/vnd.github+json',\n            'Authorization': 'Bearer ' + token,\n            'X-GitHub-Api-Version': '2022-11-28'\n        }\n        request = urllib.request.Request(url, headers=headers)\n        urllib.request.urlopen(request)\n    except:\n        print('Could not find the template repo at ' + url)\n        print('Check that the repo exists, and that the authentication credentials are correct')\n        sys.exit(1)\n\n\ndef verify_new_repo(token, cac_org, new_repo):\n    # Attempt to view the new repo\n    try:\n        url = 'https://api.github.com/repos/' + cac_org + '/' + new_repo\n        headers = {\n            'Accept': 'application/vnd.github+json',\n            'Authorization': 'Bearer ' + token,\n            'X-GitHub-Api-Version': '2022-11-28'\n        }\n        request = urllib.request.Request(url, headers=headers)\n        urllib.request.urlopen(request)\n        return True\n    except:\n        return False\n\n\ndef create_new_repo(token, cac_org, new_repo):\n    # If we could not view the repo, assume it needs to be created.\n    # https://docs.github.com/en/rest/repos/repos?apiVersion=2022-11-28#create-an-organization-repository\n    # Note you have to use the token rather than the JWT:\n    # https://stackoverflow.com/questions/39600396/bad-credentails-for-jwt-for-github-integrations-api\n\n    headers = {\n        'Authorization': 'token ' + token,\n        'Content-Type': 'application/json',\n        'Accept': 'application/vnd.github+json',\n        'X-GitHub-Api-Version': '2022-11-28',\n    }\n\n    try:\n        # First try to create an organization repo:\n        # https://docs.github.com/en/free-pro-team@latest/rest/repos/repos#create-an-organization-repository\n        url = 'https://api.github.com/orgs/' + cac_org + '/repos'\n        body = {'name': new_repo}\n        request = urllib.request.Request(url, headers=headers, data=json.dumps(body).encode('utf-8'))\n        urllib.request.urlopen(request)\n    except urllib.error.URLError as ex:\n        # Then fall back to creating a repo for the user:\n        # https://docs.github.com/en/free-pro-team@latest/rest/repos/repos?apiVersion=2022-11-28#create-a-repository-for-the-authenticated-user\n        if ex.code == 404:\n            url = 'https://api.github.com/user/repos'\n            body = {'name': new_repo}\n            request = urllib.request.Request(url, headers=headers, data=json.dumps(body).encode('utf-8'))\n            urllib.request.urlopen(request)\n        else:\n            raise ex\n\n\ndef fork_repo(git_executable, token, cac_org, new_repo, template_repo):\n    # Clone the repo and add the upstream repo\n    _, _, retcode = execute([git_executable, 'clone', 'https://' + 'x-access-token:' + token + '@'\n                             + 'github.com/' + cac_org + '/' + new_repo + '.git'])\n\n    if not retcode == 0:\n        print('Failed to clone repo ' + 'https://github.com/' + cac_org + '/' + new_repo + '.git.' +\n              ' Check the verbose logs for details.')\n        sys.exit(1)\n\n    _, _, retcode = execute(\n        [git_executable, 'remote', 'add', 'upstream', 'https://' + 'x-access-token:' + token + '@'\n         + 'github.com/' + cac_org + '/' + template_repo + '.git'],\n        cwd=new_repo)\n\n    if not retcode == 0:\n        print('Failed to add remote ' + 'https://github.com/' + cac_org + '/' + template_repo + '.git. ' +\n              'Check the verbose logs for details.')\n        sys.exit(1)\n\n    _, _, retcode = execute([git_executable, 'fetch', '--all'], cwd=new_repo)\n\n    if not retcode == 0:\n        print('Failed to fetch. Check the verbose logs for details.')\n        sys.exit(1)\n\n    _, _, retcode = execute(['git', 'checkout', '-b', 'upstream-' + branch, 'upstream/' + branch], cwd=new_repo)\n\n    if not retcode == 0:\n        print('Failed to checkout branch ' + branch + '. Check the verbose logs for details.')\n        sys.exit(1)\n\n    if branch != 'master' and branch != 'main':\n        _, _, retcode = execute(['git', 'checkout', '-b', branch, 'origin/' + branch], cwd=new_repo)\n    else:\n        _, _, retcode = execute(['git', 'checkout', branch], cwd=new_repo)\n\n    if not retcode == 0:\n        print('Failed to checkout branch ' + branch + '. Check the verbose logs for details.')\n        sys.exit(1)\n\n    # Hard reset it to the template main branch.\n    _, _, retcode = execute([git_executable, 'reset', '--hard', 'upstream/' + branch], cwd=new_repo)\n\n    if not retcode == 0:\n        print(\n            'Failed to perform a hard reset against branch upstream/' + branch + '.'\n            + ' Check the verbose logs for details.')\n        sys.exit(1)\n\n    # Push the changes.\n    _, _, retcode = execute([git_executable, 'push', 'origin', branch], cwd=new_repo)\n\n    if not retcode == 0:\n        print('Failed to push changes. Check the verbose logs for details.')\n        sys.exit(1)\n\n\ndef is_windows():\n    return platform.system() == 'Windows'\n\n\ndef ensure_git_exists():\n    if is_windows():\n        print(\"Checking git is installed\")\n        try:\n            stdout, _, exit_code = execute(['git', 'version'])\n            printverbose(stdout)\n            if not exit_code == 0:\n                raise \"git not found\"\n        except:\n            print(\"Downloading git\")\n            urlretrieve('https://www.7-zip.org/a/7zr.exe', '7zr.exe')\n            urlretrieve(\n                'https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.2/PortableGit-2.42.0.2-64-bit.7z.exe',\n                'PortableGit.7z.exe')\n            print(\"Installing git\")\n            print(\"Consider installing git on the worker or using a standard worker-tools image\")\n            execute(['7zr.exe', 'x', 'PortableGit.7z.exe', '-o' + os.getcwd() + '\\\\git', '-y'])\n            return os.getcwd() + '\\\\git\\\\bin\\\\git'\n\n    return 'git'\n\n\ngit_executable = ensure_git_exists()\nparser, _ = init_argparse()\n\nif not parser.github_access_token.strip() and not (\n        parser.github_app_id.strip() and parser.github_app_private_key.strip() and parser.github_app_installation_id.strip()):\n    print(\"You must supply the GitHub token, or the GitHub App ID and private key and installation ID\")\n    sys.exit(1)\n\nif not parser.template_repo_name.strip():\n    print(\"You must supply the upstream (or template) repo\")\n    sys.exit(1)\n\nif not parser.tenant_name.strip() and not parser.new_repo_name_prefix.strip():\n    print(\"You must define the new repo prefix or run this script against a tenant\")\n    sys.exit(1)\n\n# The access token is generated from a github app or supplied directly as an access token\ntoken = generate_github_token(parser.github_app_id, parser.github_app_private_key,\n                              parser.github_app_installation_id) if len(\n    parser.github_access_token.strip()) == 0 else parser.github_access_token.strip()\n\n# The process followed here is:\n# 1. Verify the manually supplied upstream repo exists\n# 2. Build the name of the new downstream repo with a prefix and the new project name.\n#    a. The prefix is either specified or assumed to be the name of a tenant\n#    b. The new project name is either specified or assumed to be the same as the upstream project name\n# 3. Create a new downstream repo if it doesn't exist\n# 4. Fork the upstream repo into the downstream repo with a hard git reset\n\ncac_org = parser.git_organization.strip()\ntemplate_repo = parser.template_repo_name.strip()\nnew_repo_custom_prefix = re.sub('[^a-zA-Z0-9-]', '_', parser.new_repo_name_prefix.strip())\ntenant_name_sanitized = re.sub('[^a-zA-Z0-9-]', '_', parser.tenant_name.strip())\nproject_repo_sanitized = re.sub('[^a-zA-Z0-9-]', '_',\n                                parser.new_repo_name.strip() if parser.new_repo_name.strip() else template_repo)\n\n# The new repo is prefixed either with the custom prefix or the tenant name if no custom prefix is defined\nnew_repo_prefix = new_repo_custom_prefix if len(new_repo_custom_prefix) != 0 else tenant_name_sanitized\n\n# The new repo name is the prefix + the name of thew new project\nnew_repo = new_repo_prefix + '_' + project_repo_sanitized if len(new_repo_prefix) != 0 else project_repo_sanitized\n\n# Assume the main branch if nothing else was specified\nbranch = parser.mainline_branch or 'main'\n\n# This is the value of the forked git repo\nset_octopusvariable('NewRepo', 'https://github.com/' + cac_org + '/' + new_repo)\n\nverify_template_repo(token, cac_org, template_repo)\n\nif not verify_new_repo(token, cac_org, new_repo):\n    create_new_repo(token, cac_org, new_repo)\n    fork_repo(git_executable, token, cac_org, new_repo, template_repo)\n    print(\n        'Repo was forked from ' + 'https://github.com/' + cac_org + '/' + template_repo + ' to '\n        + 'https://github.com/' + cac_org + '/' + new_repo)\nelse:\n    print('Repo at https://github.com/' + cac_org + '/' + new_repo + ' already exists and has not been modified')\n\nprint('New repo URL is defined in the output variable \"NewRepo\": #{Octopus.Action[' +\n      get_octopusvariable_quiet('Octopus.Step.Name') + '].Output.NewRepo}')\n",
+    "Octopus.Action.Script.Syntax": "Python"
+  },
+  "Parameters": [
+    {
+      "Id": "d6b60ef3-0dc1-4c01-86b9-b3b65a266acf",
+      "Name": "ForkGithubRepo.Git.Url.OriginalRepoName",
+      "Label": "Original Repo Name",
+      "HelpText": "This is the name of the original repo that is forked. The full URL of the original repo is `http://github.com/organization/<Original Repo Name>`.\n\nThis value defaults to the name of the project if not defined.",
+      "DefaultValue": "#{Octopus.Project.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a4c8c416-591f-4bc5-bf76-041064d8993b",
+      "Name": "ForkGithubRepo.Git.Url.NewRepoName",
+      "Label": "Forked Repo Name",
+      "HelpText": "This value is used to generate the name of the forked repo. The full URL of the original repo is `http://github.com/organization/<Forked Repo Prefix>_<Forked Repo Name>`.\n\nThe `Forked Repo Name` defaults to the `Original Repo Name` if it is left blank.\n\nThe forked repo name is sanitized to replace non-alpha-numeric or dash characters with an underscore.",
+      "DefaultValue": "#{Octopus.Project.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f829046a-8f59-4c53-8122-8281b6329363",
+      "Name": "ForkGithubRepo.Git.Url.NewRepoNamePrefix",
+      "Label": "Forked Repo Prefix",
+      "HelpText": "This prefix is prepended to the name of the forked repo. The final name of the forked repo is `<Forked Repo Prefix>_<Forked Repo Name>`. If a prefix is not specified, it is assumed to be the tenant's name running this script.\n\nYou must supply a prefix or run the script as a tenant.\n\nThe forked repo prefix is sanitized to replace non-alpha-numeric or dash characters with an underscore.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3fcfc3ff-ffbe-4d9f-a078-bf4394d2cf3b",
+      "Name": "ForkGithubRepo.Git.Url.Organization",
+      "Label": "GitHub Organization",
+      "HelpText": "This is the GitHub Organization or username that the source and destination repos are found in. It is the field `organization` in the URL `https://github.com/organization`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3972a9b5-ff11-4336-afff-0ed92b7e111c",
+      "Name": "ForkGiteaRepo.Git.Branch.MainLine",
+      "Label": "Mainline Branch",
+      "HelpText": "The name of the branch to fork.",
+      "DefaultValue": "main",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e6c3dc14-af61-4c3f-acc9-75f77cef9a6a",
+      "Name": "ForkGithubRepo.GitHub.Credentials.AccessToken",
+      "Label": "GitHub Access Token",
+      "HelpText": "This is the [access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) used to authenticate with GitHub. Leave this blank and fill in the App ID, Installation ID, and Private Key to use a GitHub for authentication.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "b19c2e88-1418-4a4c-8088-048007da5ffb",
+      "Name": "ForkGithubRepo.GitHub.App.Id",
+      "Label": "GitHub App ID",
+      "HelpText": "If a [GitHub App](https://docs.github.com/en/apps/creating-github-apps/about-creating-github-apps/about-creating-github-apps) is used for authentication, this is the application ID. Leave this blank and supply the `GitHub Access Token` field to use regular token authentication.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ce37e390-a6df-4782-9166-d7a22c8e6a50",
+      "Name": "ForkGithubRepo.GitHub.App.InstallationId",
+      "Label": "GitHub App Installation ID",
+      "HelpText": "If a [GitHub App](https://docs.github.com/en/apps/creating-github-apps/about-creating-github-apps/about-creating-github-apps) is used for authentication, this is the installation ID. Leave this blank and supply the  `GitHub Access Token` field to use regular token authentication.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1b7ad3bb-f12c-40e2-b062-8fdbfc1259e6",
+      "Name": "ForkGithubRepo.GitHub.App.PrivateKey",
+      "Label": "GitHub App Private Key",
+      "HelpText": "If a [GitHub App](https://docs.github.com/en/apps/creating-github-apps/about-creating-github-apps/about-creating-github-apps) is used for authentication, this is the private key. Leave this blank and supply the  `GitHub Access Token` field to use regular token authentication.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-09-18T21:46:58.212Z",
+    "OctopusVersion": "2023.4.2775",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "github"
+}
