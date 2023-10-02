@@ -88,7 +88,8 @@ export default class TemplateItem extends React.Component {
                   this.state.template.Properties["Octopus.Action.Script.ScriptBody"] ||
                   this.state.template.Properties["Octopus.Action.Email.Body"] ||
                   this.state.template.Properties["Octopus.Action.Azure.ResourceGroupTemplate"] ||
-                  this.state.template.Properties["Octopus.Action.KubernetesContainers.CustomResourceYaml"]
+                  this.state.template.Properties["Octopus.Action.KubernetesContainers.CustomResourceYaml"] ||
+                  this.state.template.Properties["Octopus.Action.Terraform.Template"]
                 }
               />
             </div>

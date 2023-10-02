@@ -60,6 +60,12 @@ export default class TemplateBody extends React.Component {
         templateType = "Email source";
         description = "Steps based on this template will render the email body below.";
         break;
+      case "Octopus.TerraformApply":
+        language = "hcl";
+        header = "Terraform resources";
+        templateType = "Terraform";
+        description = "Steps based on this template will apply the following terraform resources.";
+        break;
       default:
         return <div />;
     }
