@@ -142,6 +142,7 @@ describe("step-templates", function () {
               return;
             } else {
               template.Packages.forEach(function (pkg) {
+                if (pkg.FeedId === undefined) return; // undefined ok
                 if (pkg.FeedId === null) return; // null ok
                 if (pkg.FeedId[0] === "#") return; // variables ok
                 if (pkg.FeedId !== null) {
