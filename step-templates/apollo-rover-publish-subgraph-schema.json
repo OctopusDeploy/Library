@@ -7,7 +7,7 @@
   "CommunityActionTemplateId": null,
   "Packages": [
     {
-      "Name": "Schema Package",
+      "Name": "SchemaPackage",
       "PackageId": null,
       "FeedId": "feeds-builtin",
       "AcquisitionLocation": "Server",
@@ -22,7 +22,7 @@
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "Bash",
-    "Octopus.Action.Script.ScriptBody": "ROVER_VERSION=$(get_octopusvariable \"ApolloRoverVersion\")\n[ -z \"$ROVER_VERSION\" ] || [ \"$ROVER_VERSION\" == \"latest\" ] && ROVER_VERSION=\"latest\" || ROVER_VERSION=\"v$ROVER_VERSION\"\n\ncurl -sSL https://rover.apollo.dev/nix/$ROVER_VERSION | sh\n\nexport APOLLO_KEY=$(get_octopusvariable \"ApolloKey\")\n\nrover subgraph publish $(get_octopusvariable \"ApolloGraphRef\") \\\n  --name $(get_octopusvariable \"ApolloSubgraphName\") \\\n  --routing-url $(get_octopusvariable \"ApolloSubgraphUrl\") \\\n  --schema $(get_octopusvariable \"ApolloSchema\")\n"
+    "Octopus.Action.Script.ScriptBody": "APOLLO_KEY=$(get_octopusvariable \"ApolloKey\")\nAPOLLO_GRAPH_REF=$(get_octopusvariable \"ApolloGraphRef\")\nSUBGRAPH_NAME=$(get_octopusvariable \"ApolloSubgraphName\")\nSUBGRAPH_URL=$(get_octopusvariable \"ApolloSubgraphUrl\")\nSCHEMA=$(get_octopusvariable \"ApolloSchema\")\nver=$(get_octopusvariable \"ApolloRoverVersion\")\n\n[ -z \"$ver\" ] || [ \"$ver\" == \"latest\" ] && ROVER_VERSION=\"latest\" || ROVER_VERSION=\"v$ver\"\n\nmissing_params=()\n\n[ -z \"$APOLLO_KEY\" ] && missing_params+=(\"ApolloKey\")\n[ -z \"$APOLLO_GRAPH_REF\" ] && missing_params+=(\"ApolloGraphRef\")\n[ -z \"$SUBGRAPH_NAME\" ] && missing_params+=(\"SubgraphName\")\n[ -z \"$SUBGRAPH_URL\" ] && missing_params+=(\"SubgraphUrl\")\n[ -z \"$SCHEMA\" ] && missing_params+=(\"Schema\")\n\nif [ -n \"$missing_params\" ]; then\n  >&2 echo \"Missing parameters: ${missing_params[@]}\"\n  exit 1\nfi\n\ncurl -sSL https://rover.apollo.dev/nix/$ROVER_VERSION -o installer\n\nif [ \"$(head -n1 installer)\" != \"#!/bin/bash\" ]; then\n  >&2 echo \"There was a problem fetching $ROVER_VERSION of Rover CLI:\"\n  >&2 cat installer\n  rm installer\n  exit 1\nfi\n\nsh installer --force 2>&1\nrm installer\n\nAPOLLO_KEY=$APOLLO_KEY ~/.rover/bin/rover subgraph publish $APOLLO_GRAPH_REF \\\n  --name $SUBGRAPH_NAME \\\n  --routing-url $SUBGRAPH_URL \\\n  --schema $SCHEMA \\\n  2>&1\n"
   },
   "Parameters": [
     {
@@ -83,7 +83,7 @@
       "Name": "ApolloSchema",
       "Label": "Schema",
       "HelpText": "The path to the schema file",
-      "DefaultValue": "./schema.graphql",
+      "DefaultValue": "./SchemaPackage/schema.graphql",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
