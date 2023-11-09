@@ -3,7 +3,7 @@
   "Name": "Octopus - Add Runbook to Project (S3 Backend)",
   "Description": "This step exposes the fields required to deploy a runbook serialized with [octoterra](https://github.com/OctopusSolutionsEngineering/OctopusTerraformExport) using Terraform to a project.\n\nThis step configures a Terraform S3 backend.\n\nIt is recommended that this step be run with the `octopuslabs/terraform-workertools` worker image.",
   "ActionType": "Octopus.TerraformApply",
-  "Version": 1,
+  "Version": 2,
   "CommunityActionTemplateId": null,
   "Packages": [
     {
@@ -38,15 +38,15 @@
     "Octopus.Action.Aws.AssumeRole": "False",
     "Octopus.Action.Aws.Region": "#{OctoterraApply.AWS.S3.BucketRegion}",
     "Octopus.Action.Terraform.TemplateDirectory": "space_population",
-    "Octopus.Action.Terraform.FileSubstitution": "**/project_variable_sensitive*.tf"
+    "Octopus.Action.Terraform.FileSubstitution": ""
   },
   "Parameters": [
     {
       "Id": "95860b77-2c38-492c-bb84-ca1fbb4e4b72",
       "Name": "OctoterraApply.Terraform.Workspace.Name",
       "Label": "Terraform Workspace",
-      "HelpText": "The name of the Terraform workspace. This must be unique for every project this module is deployed to. The default value is based on the space ID that the module is applied to: `#{OctoterraApply.Octopus.SpaceID}`. Leave this as the default value unless you have a specific reason to change it.",
-      "DefaultValue": "#{OctoterraApply.Octopus.SpaceID}",
+      "HelpText": "The name of the Terraform workspace. This must be unique for every project this module is deployed to. The default value is based on the space ID and project name that the module is applied to: `#{OctoterraApply.Octopus.SpaceID}_#{OctoterraApply.Octopus.Project | Replace \"[^A-Za-z0-9]\" \"_\"}`. Leave this as the default value unless you have a specific reason to change it.",
+      "DefaultValue": "#{OctoterraApply.Octopus.SpaceID}_#{OctoterraApply.Octopus.Project | Replace \"[^A-Za-z0-9]\" \"_\"}",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
@@ -135,8 +135,8 @@
       "Id": "107214e9-b237-4255-894a-95163b28c1fe",
       "Name": "OctoterraApply.AWS.S3.BucketKey",
       "Label": "AWS S3 Bucket Key",
-      "HelpText": "The S3 file used to hold the Terraform state. See the [Terraform documentation](https://developer.hashicorp.com/terraform/language/settings/backends/s3) for details on using S3 as a backend. The combination of the workspace name and this key must be unique. \n\nThe default value is the name of the project and a prefix to indicate the type of resource: `Project_#{Octopus.Project.Name | Replace \"[^A-Za-z0-9]\" \"_\"}`.",
-      "DefaultValue": "#{Octopus.Action.Package.PackageId}",
+      "HelpText": "The S3 file used to hold the Terraform state. See the [Terraform documentation](https://developer.hashicorp.com/terraform/language/settings/backends/s3) for details on using S3 as a backend. The combination of the workspace name and this key must be unique. \n\nThe default value is the name of the runbook (based on the name of the package) and a prefix to indicate the type of resource: `Runbook_#{Octopus.Action.Package.PackageId}`.",
+      "DefaultValue": "Runbook_#{Octopus.Action.Package.PackageId}",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
