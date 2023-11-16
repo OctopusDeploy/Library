@@ -109,6 +109,8 @@ function humanize(categoryId) {
       return "Ansible";
     case "apexsql":
       return "ApexSQL";
+    case "apollo":
+      return "Apollo GraphQL";
     case "aspnet":
       return "ASP.NET";
     case "aws":
