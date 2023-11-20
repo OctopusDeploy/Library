@@ -1,0 +1,56 @@
+{
+  "Id": "947623c6-940d-4a54-a18b-c755a1035dce",
+  "Name": "Rotate Azure Load Balancer Pool",
+  "Description": "Updates all rules on an Azure load balancer to point to the next backed pool in a specified list. The current backend pool will be determined and the next pool in a provided list will become the target of all rules. If the current pool doesn't exist in the list, the first pool in the list will be used. This means that a specific pool can be chosen by specifying only a single pool.",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Script.ScriptBody": "$LoadBalancerName = [string]$OctopusParameters['RotateAzureLoadBalancerPool.LoadBalancerName']\n$AvailablePools   = [string[]]$OctopusParameters['RotateAzureLoadBalancerPool.AvailablePools'].Split(\"`n\").Trim()\n\n# Get existing values\n$loadBalancer                   = Get-AzLoadBalancer -Name $LoadBalancerName\n$resourceGroupName              = $loadBalancer.ResourceGroupName\n$allPools                       = Get-AzLoadBalancerBackendAddressPool -LoadBalancerName $LoadBalancerName -ResourceGroupName $resourceGroupName\n$allRules                       = Get-AzLoadBalancerRuleConfig -LoadBalancer $loadBalancer\n$existingBackendAddressPoolName = $allRules[0].BackendAddressPool.Id.Split('/')[-1]\n\n# This will find the next pool in the list, cycling back to the beginning if at the end. If the current pool isn't valid,\n# its index will be -1. The next index will be the zero and the first pool will be selected. \n$index = $AvailablePools.IndexOf($existingBackendAddressPoolName)\n$nextIndex = ($index + 1) % $AvailablePools.Count\n$backendAddressPoolName = $AvailablePools[$nextIndex]\n\n# Get the new pool to be used for configuring each rule\nif ($backendAddressPoolName -in $allPools.Name) {\n    $backendAddressPool = Get-AzLoadBalancerBackendAddressPool -ResourceGroupName $resourceGroupName -LoadBalancerName $LoadBalancerName -Name $backendAddressPoolName\n} else {\n    throw \"Backend Pool '$backendAddressPoolName' does not exist on load balancer '$LoadBalancerName'.\"\n}\n\n# Update each rule with the new pool \nforeach ($rule in $allRules) {\n    $ruleName = $rule.Name\n    $existingBackendAddressPoolName = $rule.BackendAddressPool.Id.Split('/')[-1]\n    if ($existingBackendAddressPoolName -eq $backendAddressPoolName) {\n        Write-Highlight \"Rule '$ruleName' is already pointing to pool '$backendAddressPoolName'.\"\n    } else {\n        Write-Highlight \"Rule '$ruleName' is pointing to pool '$existingBackendAddressPoolName'. Updating to pool '$backendAddressPoolName'.\"\n        $ipConfigName    = $rule.FrontendIPConfiguration.Id.Split('/')[-1]\n        $ipConfig        = Get-AzLoadBalancerFrontendIpConfig -LoadBalancer $loadBalancer -Name $ipConfigName\n        $healthProbeName = $rule.Probe.Id.Split('/')[-1]\n        $healthProbe     = Get-AzLoadBalancerProbeConfig -LoadBalancer $loadBalancer -Name $healthProbeName\n    \n        $ruleParams = @{\n            LoadBalancer            = $loadBalancer\n            Name                    = $ruleName\n            FrontendIpConfiguration = $ipConfig\n            BackendAddressPool      = $backendAddressPool\n            Probe                   = $healthProbe\n            Protocol                = $rule.Protocol\n            FrontendPort            = $rule.FrontendPort\n            BackendPort             = $rule.BackendPort\n            LoadDistribution        = $rule.LoadDistribution\n            IdleTimeoutInMinutes    = $rule.IdleTimeoutInMinutes\n            EnableTcpReset          = $rule.EnableTcpReset\n            EnableFloatingIP        = $rule.EnableFloatingIP\n            DisableOutboundSNAT     = $rule.DisableOutboundSNAT\n        }\n    \n        Set-AzLoadBalancerRuleConfig @ruleParams | Out-Null\n        Set-AzLoadBalancer -LoadBalancer $loadBalancer | Out-Null\n    }\n}",
+    "Octopus.Action.Azure.AccountId": "#{RotateAzureLoadBalancerPool.Account}"
+  },
+  "Parameters": [
+    {
+      "Id": "cef3a407-e9e1-44e5-9dcf-9dcf586f4958",
+      "Name": "RotateAzureLoadBalancerPool.Account",
+      "Label": "Account",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "7a8c14dd-072d-432e-9071-296381dd9cc9",
+      "Name": "RotateAzureLoadBalancerPool.LoadBalancerName",
+      "Label": "Load Balancer",
+      "HelpText": "The name of the load balancer to use.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1295c989-efbd-4605-a362-b72ea9762c4f",
+      "Name": "RotateAzureLoadBalancerPool.AvailablePools",
+      "Label": "Available Pools",
+      "HelpText": "A list of pools to available pools. If multiple pools are specified, rules will be updated to use the next pool in the list. If a single pool is specified, rules will use that pool. Enter one pool per line.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AzurePowerShell",
+  "$Meta": {
+    "ExportedAt": "2023-11-20T23:06:04.205Z",
+    "OctopusVersion": "2023.2.13113",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "REOScotte",
+  "Category": "octopus"
+}
