@@ -39,6 +39,7 @@ _Before submitting your PR, please delete everything above the line below._
 - [ ] Parameter names should not start with `$`
 - [ ] **Step template parameter names (the ones declared in the JSON, not the script body) should be prefixed with a namespace so that they are less likely to clash with other user-defined variables in Octopus** (see [this issue](https://github.com/OctopusDeploy/Issues/issues/2126)). For example, use an abbreviated name of the step template or the category of the step template).
 - [ ] `LastModifiedBy` field must be present, and (_optionally_) updated with the correct author
+- [ ] The best practises documented [here](https://github.com/OctopusDeploy/Library/wiki/Best-Practices) have been applied
 - [ ] If a new `Category` has been created:
    - [ ] An image with the name `{categoryname}.png` must be present under the `step-templates/logos` folder
    - [ ] The `switch` in the `humanize` function in [`gulpfile.babel.js`](https://github.com/OctopusDeploy/Library/blob/master/gulpfile.babel.js#L92) must have a `case` statement corresponding to it
