@@ -1,0 +1,139 @@
+{
+  "Id": "5c4fbed9-dbba-4139-8440-d8e27318772e",
+  "Name": "Azure AppConfig KV - Retrieve Values",
+  "Description": "This step retrieves one or more key/values from an Azure App Configuration store and creates [output variables](https://octopus.com/docs/projects/variables/output-variables) for each value retrieved. These values can be used in other deployment or runbook process steps.\n\nYou can retrieve individual keys that match a specific name and you can choose a custom output variable name for each key.\n\nWildcard search is also supported using the `*` notation in the **Key Names** parameter. Note: Combining a wildcard search with custom output variable names is not supported.\n\nAuthentication is performed using an Azure Service Principal.\n\n---\n\n**Required:** \n- An Azure account with permissions to retrieve key/values from the Azure App Config store.\n- The`az` CLI on the target or worker. If the CLI can't be found, the step will fail. \n\nNotes:\n\n- Tested on Octopus `2024.1` using az version `2.38.0`\n- Tested with both Windows PowerShell and PowerShell Core (on Linux).\n\n",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Azure.AccountId": "#{Azure.AppConfig.KV.RetrieveValues.AzureAccount}",
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = 'Stop'\n\n# Variables\n$global:AzureAppConfigStoreName = $OctopusParameters[\"Azure.AppConfig.KV.RetrieveValues.ConfigStoreName\"]\n$global:AzureAppConfigStoreEndpoint = $OctopusParameters[\"Azure.AppConfig.KV.RetrieveValues.ConfigStoreEndpoint\"]\n$global:AzureAppConfigRetrievalMethod = $OctopusParameters[\"Azure.AppConfig.KV.RetrieveValues.RetrievalMethod\"]\n$ConfigStoreKeyNames = $OctopusParameters[\"Azure.AppConfig.KV.RetrieveValues.KeyNames\"]\n$global:ConfigStoreLabels = $OctopusParameters[\"Azure.AppConfig.KV.RetrieveValues.Labels\"]\n$PrintVariableNames = $OctopusParameters[\"Azure.AppConfig.KV.RetrieveValues.PrintVariableNames\"]\n$SaveValuesAsSensitiveVariables = $OctopusParameters[\"Azure.AppConfig.KV.RetrieveValues.SaveAsSensitiveVariables\"] -ieq \"True\"\n$global:SuppressWarnings = $OctopusParameters[\"Azure.AppConfig.KV.RetrieveValues.SuppressWarnings\"] -ieq \"True\"\n$global:TreatWarningsAsErrors = $OctopusParameters[\"Azure.AppConfig.KV.RetrieveValues.TreatWarningsAsErrors\"] -ieq \"True\"\n$global:CreateAppSettingsJson = $OctopusParameters[\"Azure.AppConfig.KV.RetrieveValues.CreateAppSettingsJson\"] -ieq \"True\"\n\n# Validation\nif ([string]::IsNullOrWhiteSpace($global:AzureAppConfigStoreName) -and [string]::IsNullOrWhiteSpace($global:AzureAppConfigStoreEndpoint)) {\n    throw \"Either parameter ConfigStoreName or ConfigStoreEndpoint not specified\"\n}\n\nif ([string]::IsNullOrWhiteSpace($global:AzureAppConfigRetrievalMethod)) {\n    throw \"Required parameter Azure.AppConfig.KV.RetrieveValues.RetrievalMethod not specified\"\n}\n\nif ([string]::IsNullOrWhiteSpace($ConfigStoreKeyNames) -and [string]::IsNullOrWhiteSpace($global:ConfigStoreLabels)) {\n    throw \"Either Azure.AppConfig.KV.RetrieveValues.KeyNames or Azure.AppConfig.KV.RetrieveValues.Labels not specified\"\n}\n\n$RetrieveAllKeys = $global:AzureAppConfigRetrievalMethod -ieq \"all\"\n$global:ConfigStoreParameters = \"\"\nif (-not [string]::IsNullOrWhiteSpace($global:AzureAppConfigStoreName)) {\n    $global:ConfigStoreParameters += \" --name \"\"$global:AzureAppConfigStoreName\"\"\"\n}\nif (-not [string]::IsNullOrWhiteSpace($global:AzureAppConfigStoreEndpoint)) {\n    $global:ConfigStoreParameters += \" --endpoint \"\"$global:AzureAppConfigStoreEndpoint\"\"\"\n}\n\n### Helper functions\nfunction Test-ForAzCLI() {\n    $oldPreference = $ErrorActionPreference\n    $ErrorActionPreference = \"Stop\"\n    try { \n        if (Get-Command \"az\") {\n            return $True\n        }\n    }\n    catch { \n        return $false\n    }\n    finally { \n        $ErrorActionPreference = $oldPreference \n    }\n}\n\nfunction Write-OctopusWarning(\n    [string] $Message\n) {\n    if ($global:TreatWarningsAsErrors -eq $True) {\n        throw \"Error: $($Message)\"\n    }\n    else {\n        if ($global:SuppressWarnings -eq $False) {\n            Write-Warning -Message $Message\n        }\n        else {\n            Write-Verbose -Message $Message\n        }\n    }\n}\n\n\nfunction Save-OctopusVariable(\n    [string]$variableName, \n    [string]$variableValue) {\n\n    $VariableParams = @{name = $variableName; Value = $variableValue } \n                    \n    if ($SaveValuesAsSensitiveVariables -eq $True) {\n        $VariableParams.Sensitive = $True\n    }\n\n    Set-OctopusVariable @VariableParams\n\n    $global:VariablesCreated += 1\n\n    if ($global:CreateAppSettingsJson -eq $True) {\n        $global:AppSettingsVariables += [PsCustomObject]@{name = $variableName; value = $variableValue; slotSetting = $false }\n    }\n\n    if ($PrintVariableNames -eq $True) {\n        Write-Host \"Created output variable: ##{Octopus.Action[$StepName].Output.$variableName}\"\n    }\n}\n\nfunction Find-AzureAppConfigMatchesFromKey(\n    [string]$KeyName,\n    [bool]$IsWildCard,\n    [string]$VariableName,\n    [PsCustomObject]$AppConfigValues) {\n\n    if ($IsWildCard -eq $False) {\n        Write-Verbose \"Finding exact match for: $($keyName)\"\n        $matchingAppConfigKeys = $appConfigValues | Where-Object { $_.key -ieq $keyName }\n        if ($null -eq $matchingAppConfigKeys -or $matchingAppConfigKeys.Count -eq 0) {\n            Write-OctopusWarning \"Unable to find a matching key in Azure App Config for: $($keyName)\"\n        }\n        else {\n            if ($matchingAppConfigKeys.Count -gt 1) {\n                Write-OctopusWarning \"Found multiple matching keys ($($matchingAppConfigKeys.Count)) in Azure App Config for: $($keyName). This is usually due to multiple values with labels\"\n\n                foreach ($matchingAppConfigKey in $matchingAppConfigKeys) {\n                    Write-Verbose \"Found match for $($keyName) $(if(![string]::IsNullOrWhiteSpace($matchingAppConfigKey.label)) {\"(label: $($matchingAppConfigKey.label))\"})\"\n                    $variableValue = $matchingAppConfigKey.value\n\n                    if ([string]::IsNullOrWhiteSpace($variableName)) {\n                        $variableName = \"$($keyName.Trim())\"\n                    }\n                    \n                    if (![string]::IsNullOrWhiteSpace($matchingAppConfigKey.label)) {\n                        $variableName = \"$($variableName)-$($matchingAppConfigKey.label)\"\n                        Write-Verbose \"Appending label to variable name to avoid duplicate output name: $variableName\"\n                    }\n\n                    Save-OctopusVariable -variableName $variableName -variableValue $variableValue\n                }\n            } \n            else {\n                $matchingAppConfigKey = $matchingAppConfigKeys | Select-Object -First 1\n\n                Write-Verbose \"Found match for $($keyName)\"\n                $variableValue = $matchingAppConfigKey.value\n    \n                if ([string]::IsNullOrWhiteSpace($variableName)) {\n                    $variableName = \"$($keyName.Trim())\"\n                }\n    \n                Save-OctopusVariable -variableName $variableName -variableValue $variableValue\n            }\n        }\n    }\n    else {\n        Write-Verbose \"Finding wildcard match for: $($keyName)\"\n        $matchingAppConfigKeys = @($appConfigValues | Where-Object { $_.key -ilike $keyName })\n        if ($matchingAppConfigKeys.Count -eq 0) {\n            Write-OctopusWarning \"Unable to find any matching keys in Azure App Config for wildcard: $($keyName)\"\n        }\n        else {\n            foreach ($match in $matchingAppConfigKeys) {\n                # Have to explicitly set variable Name here as its a wildcard match\n                $variableName = $match.key\n                $variableValue = $match.value\n                Write-Verbose \"Found wildcard match '$variableName' $(if(![string]::IsNullOrWhiteSpace($matchingAppConfigKey.content_type)) {\"($($matchingAppConfigKey.content_type))\"})\"\n                Save-OctopusVariable -variableName $variableName -variableValue $variableValue\n            }\n        }\n    }\n}\n\nfunction Find-AzureAppConfigMatchesFromLabels() {\n    \n    Write-Verbose \"Retrieving values matching labels: $($global:ConfigStoreLabels)\"\n    $command = \"az appconfig kv list $($global:ConfigStoreParameters) --label \"\"$global:ConfigStoreLabels\"\" --auth-mode login\"\n            \n    Write-Verbose \"Invoking expression: $command\"\n    $appConfigResponse = Invoke-Expression -Command $command\n    $ExitCode = $LastExitCode\n    Write-Verbose \"az exit code: $ExitCode\"\n    if ($ExitCode -ne 0) {\n        throw \"Error retrieving appsettings. ExitCode: $ExitCode\"\n    }\n\n    if ($null -eq $appConfigResponse) {\n        Write-OctopusWarning \"Null or empty response received from Azure App Configuration service\"\n    }\n    else {\n        $appConfigValues = $appConfigResponse | ConvertFrom-Json\n        if ($appConfigValues.Count -eq 0) {\n            Write-OctopusWarning \"Unable to find any matching keys in Azure App Config for labels: $($global:ConfigStoreLabels)\"\n        }\n        else {\n            Write-Verbose \"Finding match(es) for labels: $($global:ConfigStoreLabels)\"\n            foreach ($appConfigValue in $appConfigValues) {\n                # Have to explicitly set variable Name here as its a match based on label alone\n                $variableName = $appConfigValue.key\n                Write-Verbose \"Found label match '$($appConfigValue.key)' $(if(![string]::IsNullOrWhiteSpace($appConfigValue.content_type)) {\"($($appConfigValue.content_type))\"})\"\n                if (![string]::IsNullOrWhiteSpace($appConfigValue.label)) {\n                    $variableName = \"$($variableName)-$($appConfigValue.label)\"\n                    Write-Verbose \"Appending label to variable name to avoid duplicate output name: $variableName\"\n                }\n                $variableValue = $appConfigValue.value\n                \n                Save-OctopusVariable -variableName $variableName -variableValue $variableValue\n            }\n        }\n    }\n}\n\n# Check if Az cli is installed.\n$azCliAvailable = Test-ForAzCLI\nif ($azCliAvailable -eq $False) {\n    throw \"Cannot find the Azure CLI (az) on the machine. This must be available to continue.\"\t\n}\n\n$Keys = @()\n$global:VariablesCreated = 0\n$global:AppSettingsVariables = @()\n$StepName = $OctopusParameters[\"Octopus.Step.Name\"]\n\n# Extract key names+optional custom variable name\n@(($ConfigStoreKeyNames -Split \"`n\").Trim()) | ForEach-Object {\n    if (![string]::IsNullOrWhiteSpace($_)) {\n        Write-Verbose \"Working on: '$_'\"\n        $keyDefinition = ($_ -Split \"\\|\")\n        $keyName = $keyDefinition[0].Trim()\n        $KeyIsWildcard = $keyName.EndsWith(\"*\")\n        $variableName = $null\n        if ($keyDefinition.Count -gt 1) {\n            if ($KeyIsWildcard -eq $True) {\n                throw \"Key definition: '$_' evaluated as a wildcard with a custom variable name. This is not supported.\"\n            }\n            $variableName = $keyDefinition[1].Trim()\n        }\n\n        if ([string]::IsNullOrWhiteSpace($keyName)) {\n            throw \"Unable to establish key name from: '$($_)'\"\n        }\n\n        $key = [PsCustomObject]@{\n            KeyName       = $keyName\n            KeyIsWildcard = $KeyIsWildcard\n            VariableName  = if (![string]::IsNullOrWhiteSpace($variableName)) { $variableName } else { \"\" }\n        }\n        $Keys += $key\n    }\n}\n\n$LabelsArray = $global:ConfigStoreLabels -Split \",\"\n\nWrite-Verbose \"Azure AppConfig Retrieval Method: $global:AzureAppConfigRetrievalMethod\"\nif (![string]::IsNullOrWhiteSpace($global:AzureAppConfigStoreName)) {\n    Write-Verbose \"Azure AppConfig Store Name: $global:AzureAppConfigStoreName\"\n}\nif (![string]::IsNullOrWhiteSpace($global:AzureAppConfigStoreEndpoint)) {\n    Write-Verbose \"Azure AppConfig Store Endpoint: $global:AzureAppConfigStoreEndpoint\"\n}\nWrite-Verbose \"Save sensitive variables: $SaveValuesAsSensitiveVariables\"\nWrite-Verbose \"Suppress warnings: $global:SuppressWarnings\"\nWrite-Verbose \"Print variables: $PrintVariableNames\"\nWrite-Verbose \"Keys to retrieve: $($Keys.Count)\"\nWrite-Verbose \"Labels to retrieve: $($LabelsArray.Count)\"\n\n$appConfigResponse = $null\n\n# Retrieving all keys should be more performant, but may have a larger payload response.\nif ($RetrieveAllKeys -eq $True) {\n    \n    if ($Keys.Count -gt 0) {\n        Write-Host \"Retrieving ALL config values from store\"\n        $command = \"az appconfig kv list $($global:ConfigStoreParameters) --all --auth-mode login\"\n    \n        if (![string]::IsNullOrWhiteSpace($global:ConfigStoreLabels)) {\n            $command += \" --label \"\"$($global:ConfigStoreLabels)\"\" \"\n        }\n        Write-Verbose \"Invoking expression: $command\"\n        $appConfigResponse = Invoke-Expression -Command $command\n        $ExitCode = $LastExitCode\n        Write-Verbose \"az exit code: $ExitCode\"\n        if ($ExitCode -ne 0) {\n            throw \"Error retrieving appsettings. ExitCode: $ExitCode\"\n        }\n    \n        if ($null -eq $appConfigResponse) {\n            Write-OctopusWarning \"Null or empty response received from Azure App Configuration service\"\n        }\n        else {\n            $appConfigValues = $appConfigResponse | ConvertFrom-Json\n        }\n\n        foreach ($key in $Keys) {\n            $keyName = $key.KeyName\n            $KeyIsWildcard = $key.KeyIsWildcard\n            $variableName = $key.VariableName\n        \n            Find-AzureAppConfigMatchesFromKey -KeyName $keyName -IsWildcard $KeyIsWildcard -VariableName $variableName -AppConfigValues $appConfigValues\n        }\n    }\n    # Possible that ONLY labels have been provided\n    elseif ($LabelsArray.Count -gt 0) {\n        Find-AzureAppConfigMatchesFromLabels \n    }\n}\n# Loop through and get keys based on the supplied names\nelse {\n    \n    Write-Host \"Retrieving keys based on supplied names...\"\n    if ($Keys.Count -gt 0) {\n        foreach ($key in $Keys) {\n            $keyName = $key.KeyName\n            $KeyIsWildcard = $key.KeyIsWildcard\n            $variableName = $key.VariableName\n\n            if ([string]::IsNullOrWhiteSpace($variableName)) {\n                $variableName = \"$($keyName.Trim())\"\n            }\n\n            Write-Verbose \"Retrieving values matching key: $($keyName) from store\"\n            $command = \"az appconfig kv list $($global:ConfigStoreParameters) --key \"\"$keyName\"\" --auth-mode login\"\n            \n            if (![string]::IsNullOrWhiteSpace($global:ConfigStoreLabels)) {\n                $command += \" --label \"\"$($global:ConfigStoreLabels)\"\" \"\n            }\n            Write-Verbose \"Invoking expression: $command\"\n\n            $appConfigResponse = Invoke-Expression -Command $command\n            $ExitCode = $LastExitCode\n            Write-Verbose \"az exit code: $ExitCode\"\n            if ($ExitCode -ne 0) {\n                throw \"Error retrieving appsettings. ExitCode: $ExitCode\"\n            }\n\n            if ($null -eq $appConfigResponse) {\n                Write-OctopusWarning \"Null or empty response received from Azure App Configuration service\"\n            }\n            else {\n                $appConfigValues = $appConfigResponse | ConvertFrom-Json\n                if ($appConfigValues.Count -eq 0) {\n                    Write-OctopusWarning \"Unable to find a matching key in Azure App Config for: $($keyName)\"\n                }\n                else {\n                    Write-Verbose \"Finding match(es) for: $($keyName)\"\n                    Find-AzureAppConfigMatchesFromKey -KeyName $keyName -IsWildcard $KeyIsWildcard -VariableName $variableName -AppConfigValues $appConfigValues\n                }\n            }\n        }\n    }\n}\n\nif ($global:AppSettingsVariables.Count -gt 0 -and $global:CreateAppSettingsJson) {\n    Write-Verbose \"Creating AppSettings JSON output variable\"\n    $AppSettingsJson = ($global:AppSettingsVariables | Sort-Object -Property * -Unique) | ConvertTo-Json -Compress -Depth 10\n    if ($SaveValuesAsSensitiveVariables -eq $True) {\n        Set-OctopusVariable -Name \"AppSettingsJson\" -Value $AppSettingsJson -Sensitive\n    }\n    else {\n        Set-OctopusVariable -Name \"AppSettingsJson\" -Value $AppSettingsJson \n    }\n    $global:VariablesCreated += 1\n    if ($PrintVariableNames -eq $True) {\n        Write-Host \"Created output variable: ##{Octopus.Action[$StepName].Output.AppSettingsJson}\"\n    }\n}\n\nWrite-Host \"Created $variablesCreated output variable(s)\""
+  },
+  "Parameters": [
+    {
+      "Id": "4bc809d3-71d5-4f05-ba0e-994ef6649db0",
+      "Name": "Azure.AppConfig.KV.RetrieveValues.AzureAccount",
+      "Label": "Azure Account",
+      "HelpText": "An Azure account with permissions to retrieve values from the Azure App Config store",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "2b53fffb-cef1-4c3b-a070-aa6448fe84b0",
+      "Name": "Azure.AppConfig.KV.RetrieveValues.ConfigStoreName",
+      "Label": "Config Store Name",
+      "HelpText": "The name of the Azure App Configuration store. Provide this or the **Config store endpoint**.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "41f5fa14-c1ce-4a27-9e63-06419e96f095",
+      "Name": "Azure.AppConfig.KV.RetrieveValues.ConfigStoreEndpoint",
+      "Label": "Config Store Endpoint",
+      "HelpText": "The endpoint for the Azure App Configuration Store. Provide this or the **Config store name**.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "39d76051-4ede-47dd-8139-57f3801d215e",
+      "Name": "Azure.AppConfig.KV.RetrieveValues.RetrievalMethod",
+      "Label": "Retrieval Method",
+      "HelpText": "Choose how the step calls the az cli. Either:\n- `All`: Retrieve all configuration values in one call\n- `Individually`: Retrieve configuration values in multiple calls; one for each key specified in the **Key Names** parameter.\n\nDefault: `All`",
+      "DefaultValue": "all",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "all|All\nindividual|Individually"
+      }
+    },
+    {
+      "Id": "02d67ef3-d990-499c-bdbd-226d583ccdc0",
+      "Name": "Azure.AppConfig.KV.RetrieveValues.KeyNames",
+      "Label": "Key Names",
+      "HelpText": "Specify the names of the keys to be returned from Azure App Configuration in the format `KeyName | OutputVariableName` where:\n\n- `KeyName` is the key to retrieve. Wildcards are supported by adding `*` at the end of the key name.\n- `OutputVariableName` is the _optional_ Octopus [output variable](https://octopus.com/docs/projects/variables/output-variables) name to store the key's value in. *If this value isn't specified, an output name will be generated dynamically*.\n\n**Note:** Multiple keys can be retrieved by entering each one on a new line. Note: Combining a wildcard search with custom output variable names is not supported.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "b97ff62d-6b14-4baa-abc2-9065632f5118",
+      "Name": "Azure.AppConfig.KV.RetrieveValues.Labels",
+      "Label": "Labels",
+      "HelpText": "Labels are an attribute on keys. Provide one or more labels in the format `label1,label2` to retrieve only selected keys that are tagged with those labels.\n\n**Note:** You can include both label values *and* specify key names if you want.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a5dfafc4-743e-4a56-8c89-cd001dc73af3",
+      "Name": "Azure.AppConfig.KV.RetrieveValues.SaveAsSensitiveVariables",
+      "Label": "Save sensitive output variables",
+      "HelpText": "Set the Octopus [output variables](https://octopus.com/docs/projects/variables/output-variables) to Sensitive values. Default: `False`.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "c93c377c-e557-4b8a-a918-ee0c47f80c1b",
+      "Name": "Azure.AppConfig.KV.RetrieveValues.SuppressWarnings",
+      "Label": "Suppress warnings",
+      "HelpText": "Suppress warnings from being written to the task log. For example, when a supplied key can't be found in the Azure App Configuration store.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "c51f515f-c749-4c00-90b3-fdc09b2cd426",
+      "Name": "Azure.AppConfig.KV.RetrieveValues.TreatWarningsAsErrors",
+      "Label": "Treat Warnings as Errors",
+      "HelpText": "Treats warnings as errors. If enabled, the **Suppress Warnings** parameter is ignored. ",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "166f88c8-2fb0-4a3c-a0dc-c4087a5ebc76",
+      "Name": "Azure.AppConfig.KV.RetrieveValues.CreateAppSettingsJson",
+      "Label": "Create AppSettings JSON",
+      "HelpText": "Create an Azure App Service AppSettings JSON output variable called `AppSettingsJson`. This can be useful when using the Octopus **Azure App Service** step and you want to dynamically create the JSON app settings.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "159858de-5a33-4111-a059-de261f687b08",
+      "Name": "Azure.AppConfig.KV.RetrieveValues.PrintVariableNames",
+      "Label": "Print output variable names",
+      "HelpText": "Write out the Octopus [output variable](https://octopus.com/docs/projects/variables/output-variables) names to the task log. Default: `False`.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AzurePowerShell",
+  "$Meta": {
+    "ExportedAt": "2023-11-23T18:03:26.601Z",
+    "OctopusVersion": "2024.1.2558",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedAt": "2023-11-23T18:03:26.601Z",
+  "LastModifiedBy": "harrisonmeister",
+  "Category": "azure"
+}
