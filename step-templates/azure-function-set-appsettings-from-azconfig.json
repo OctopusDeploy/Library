@@ -1,0 +1,149 @@
+{
+  "Id": "67fcc93c-509c-4c13-bc24-645eff53c5c2",
+  "Name": "Azure Function - Set AppSettings from Azure AppConfig",
+  "Description": "This step retrieves one or more key/values from an Azure App Configuration store and adds them to an Azure App Function's AppSettings.\n\nYou can retrieve individual keys that match a specific name, and you can choose a custom setting name for each key.\n\nWildcard search is also supported using the `*` notation in the **Key Names** parameter. Note: Combining a wildcard search with custom setting names is not supported.\n\nYou can also combine retrieved values with additional parameters passed into the step using the `Additional AppSettings` parameter.\n\nAuthentication is performed using an Azure Service Principal.\n\n---\n\n**Required:** \n- An Azure account with permission to both retrieve values from the Azure App Config store and publish to the App Function.\n- The `az` CLI on the target or worker. If the CLI can't be found, the step will fail. \n\nNotes:\n\n- Tested on Octopus `2024.1` using az version `2.38.0`\n- Tested with both Windows PowerShell and PowerShell Core (on Linux).\n- Slot Settings are not currently supported.",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 3,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = 'Stop'\n\n# KV Variables\n$global:AzureAppConfigStoreName = $OctopusParameters[\"AzFunction.SetAppSettings.FromAzAppConfig.ConfigStoreName\"]\n$global:AzureAppConfigStoreEndpoint = $OctopusParameters[\"AzFunction.SetAppSettings.FromAzAppConfig.ConfigStoreEndpoint\"]\n$global:AzureAppConfigRetrievalMethod = $OctopusParameters[\"AzFunction.SetAppSettings.FromAzAppConfig.RetrievalMethod\"]\n$ConfigStoreKeyNames = $OctopusParameters[\"AzFunction.SetAppSettings.FromAzAppConfig.KeyNames\"]\n$global:ConfigStoreLabels = $OctopusParameters[\"AzFunction.SetAppSettings.FromAzAppConfig.Labels\"]\n$global:SuppressWarnings = $OctopusParameters[\"AzFunction.SetAppSettings.FromAzAppConfig.SuppressWarnings\"] -ieq \"True\"\n$global:TreatWarningsAsErrors = $OctopusParameters[\"AzFunction.SetAppSettings.FromAzAppConfig.TreatWarningsAsErrors\"] -ieq \"True\"\n\n# Function Variables\n$FunctionName = $OctopusParameters[\"AzFunction.SetAppSettings.FromAzAppConfig.FunctionName\"]\n$ResourceGroup = $OctopusParameters[\"AzFunction.SetAppSettings.FromAzAppConfig.ResourceGroup\"]\n$AdditionalSettingsValues = $OctopusParameters[\"AzFunction.SetAppSettings.FromAzAppConfig.AdditionalSettingsValues\"]\n$Slot = $OctopusParameters[\"AzFunction.SetAppSettings.FromAzAppConfig.Slot\"]\n\n# KV params validation\nif ([string]::IsNullOrWhiteSpace($global:AzureAppConfigStoreName) -and [string]::IsNullOrWhiteSpace($global:AzureAppConfigStoreEndpoint)) {\n    throw \"Either parameter ConfigStoreName or ConfigStoreEndpoint not specified\"\n}\n\nif ([string]::IsNullOrWhiteSpace($global:AzureAppConfigRetrievalMethod)) {\n    throw \"Required parameter AzFunction.SetAppSettings.FromAzAppConfig.RetrievalMethod not specified\"\n}\n\nif ([string]::IsNullOrWhiteSpace($ConfigStoreKeyNames) -and [string]::IsNullOrWhiteSpace($global:ConfigStoreLabels)) {\n    throw \"Either AzFunction.SetAppSettings.FromAzAppConfig.KeyNames or AzFunction.SetAppSettings.FromAzAppConfig.Labels not specified\"\n}\n\n# Function params validation\nif ([string]::IsNullOrWhiteSpace($FunctionName)) {\n    throw \"Required parameter AzureFunction.ConfigureAppSettings.FunctionName not specified\"\n}\n\nif ([string]::IsNullOrWhiteSpace($ResourceGroup)) {\n    throw \"Required parameter AzureFunction.ConfigureAppSettings.ResourceGroup not specified\"\n}\n\n$RetrieveAllKeys = $global:AzureAppConfigRetrievalMethod -ieq \"all\"\n$global:ConfigStoreParameters = \"\"\nif (-not [string]::IsNullOrWhiteSpace($global:AzureAppConfigStoreName)) {\n    $global:ConfigStoreParameters += \" --name \"\"$global:AzureAppConfigStoreName\"\"\"\n}\nif (-not [string]::IsNullOrWhiteSpace($global:AzureAppConfigStoreEndpoint)) {\n    $global:ConfigStoreParameters += \" --endpoint \"\"$global:AzureAppConfigStoreEndpoint\"\"\"\n}\n\n### Helper functions\nfunction Test-ForAzCLI() {\n    $oldPreference = $ErrorActionPreference\n    $ErrorActionPreference = \"Stop\"\n    try { \n        if (Get-Command \"az\") {\n            return $True\n        }\n    }\n    catch { \n        return $false\n    }\n    finally { \n        $ErrorActionPreference = $oldPreference \n    }\n}\n\n\nfunction Write-OctopusWarning(\n    [string] $Message\n) {\n    if ($global:TreatWarningsAsErrors) {\n        throw \"Error: $Message\"\n    }\n    else {\n        if ($global:SuppressWarnings -eq $False) {\n            Write-Warning -Message $Message\n        }\n        else {\n            Write-Verbose -Message $Message\n        }\n    }\n}\n\nfunction Save-AppSetting(\n    [string]$settingName, \n    [string]$settingValue) {\n\n    $global:Settings += [PsCustomObject]@{name = $settingName; value = $settingValue; slotSetting = $false }\n}\n\nfunction Find-AzureAppConfigMatchesFromKey(\n    [string]$KeyName,\n    [bool]$IsWildCard,\n    [string]$settingName,\n    [PsCustomObject]$AppConfigValues) {\n\n    if ($IsWildCard -eq $False) {\n        Write-Verbose \"Finding exact match for: $keyName\"\n        $matchingAppConfigKeys = $appConfigValues | Where-Object { $_.key -ieq $keyName }\n        if ($null -eq $matchingAppConfigKeys -or $matchingAppConfigKeys.Count -eq 0) {\n            Write-OctopusWarning \"Unable to find a matching key in Azure App Config for: $keyName\"\n        }\n        else {\n\n            if ($matchingAppConfigKeys.Count -gt 1) {\n                Write-OctopusWarning \"Found multiple matching keys ($($matchingAppConfigKeys.Count)) in Azure App Config for: $keyName. This is usually due to multiple values with labels\"\n\n                foreach ($matchingAppConfigKey in $matchingAppConfigKeys) {\n                    Write-Verbose \"Found match for $keyName $(if(![string]::IsNullOrWhiteSpace($matchingAppConfigKey.content_type)) {\"($($matchingAppConfigKey.content_type))\"})\"\n                    $settingValue = $matchingAppConfigKey.value\n        \n                    if ([string]::IsNullOrWhiteSpace($settingName)) {\n                        $settingName = $keyName.Trim()\n                    }\n                    if (![string]::IsNullOrWhiteSpace($matchingAppConfigKey.label)) {\n                        $settingName = \"$($keyName.Trim())-$($matchingAppConfigKey.label)\"\n                        Write-Verbose \"Appending label to setting name to avoid duplicate setting: $settingName\"\n                    }\n        \n                    Save-AppSetting -settingName $settingName -settingValue $settingValue\n                }\n            } \n            else {\n                $matchingAppConfigKey = $matchingAppConfigKeys | Select-Object -First 1\n                Write-Verbose \"Found match for $keyName $(if(![string]::IsNullOrWhiteSpace($matchingAppConfigKey.content_type)) {\"($($matchingAppConfigKey.content_type))\"})\"\n                $settingValue = $matchingAppConfigKey.value\n    \n                if ([string]::IsNullOrWhiteSpace($settingName)) {\n                    $settingName = $keyName.Trim()\n                }\n    \n                Save-AppSetting -settingName $settingName -settingValue $settingValue\n            }\n        }\n    }\n    else {\n        Write-Verbose \"Finding wildcard match for: $keyName\"\n        $matchingAppConfigKeys = @($appConfigValues | Where-Object { $_.key -ilike $keyName })\n        if ($matchingAppConfigKeys.Count -eq 0) {\n            Write-OctopusWarning \"Unable to find any matching keys in Azure App Config for wildcard: $keyName\"\n        }\n        else {\n            foreach ($match in $matchingAppConfigKeys) {\n                # Have to explicitly set settings as they are wildcard matches\n                $settingName = $match.key\n                $settingValue = $match.value\n                Write-Verbose \"Found wildcard match '$settingName' $(if(![string]::IsNullOrWhiteSpace($matchingAppConfigKey.content_type)) {\"($($matchingAppConfigKey.content_type))\"})\"\n                Save-AppSetting -settingName $settingName -settingValue $settingValue\n            }\n        }\n    }\n}\n\nfunction Find-AzureAppConfigMatchesFromLabels() {\n    \n    Write-Verbose \"Retrieving values matching labels: $global:ConfigStoreLabels\"\n    $command = \"az appconfig kv list $global:ConfigStoreParameters --label \"\"$global:ConfigStoreLabels\"\" --auth-mode login\"\n            \n    Write-Verbose \"Invoking expression: $command\"\n    $appConfigResponse = Invoke-Expression -Command $command\n    $ExitCode = $LastExitCode\n    Write-Verbose \"az exit code: $ExitCode\"\n    if ($ExitCode -ne 0) {\n        throw \"Error retrieving appsettings. ExitCode: $ExitCode\"\n    }\n\n    if ([string]::IsNullOrWhiteSpace($appConfigResponse)) {\n        Write-OctopusWarning \"Null or empty response received from Azure App Configuration service\"\n    }\n    else {\n        $appConfigValues = $appConfigResponse | ConvertFrom-Json\n        if ($appConfigValues.Count -eq 0) {\n            Write-OctopusWarning \"Unable to find any matching keys in Azure App Config for labels: $global:ConfigStoreLabels\"\n        }\n        else {\n            Write-Verbose \"Finding match(es) for labels: $global:ConfigStoreLabels\"\n            foreach ($appConfigValue in $appConfigValues) {\n                # Have to explicitly set setting Name here as its a match based on label alone\n                $settingName = $appConfigValue.key\n                Write-Verbose \"Found label match '$($appConfigValue.key)' $(if(![string]::IsNullOrWhiteSpace($appConfigValue.content_type)) {\"($($appConfigValue.content_type))\"})\"\n                if (![string]::IsNullOrWhiteSpace($appConfigValue.label)) {\n                    $settingName = \"$($settingName)-$($appConfigValue.label)\"\n                    Write-Verbose \"Appending label to setting to avoid duplicate name: $settingName\"\n                }\n                $settingValue = $appConfigValue.value\n                \n                Save-AppSetting -settingName $settingName -settingValue $settingValue\n            }\n        }\n    }\n}\n\n# Check if Az cli is installed.\n$azCliAvailable = Test-ForAzCLI\nif ($azCliAvailable -eq $False) {\n    throw \"Cannot find the Azure CLI (az) on the machine. This must be available to continue.\"\t\n}\n\n# Begin KV Retrieval\n$Keys = @()\n$global:Settings = @()\n\n# Extract key names+optional custom setting name\n@(($ConfigStoreKeyNames -Split \"`n\").Trim()) | ForEach-Object {\n    if (![string]::IsNullOrWhiteSpace($_)) {\n        Write-Verbose \"Working on: '$_'\"\n        $keyDefinition = ($_ -Split \"\\|\")\n        $keyName = $keyDefinition[0].Trim()\n        $KeyIsWildcard = $keyName.EndsWith(\"*\")\n        $settingName = $null\n        if ($keyDefinition.Count -gt 1) {\n            if ($KeyIsWildcard) {\n                throw \"Key definition: '$_' evaluated as a wildcard with a custom setting name. This is not supported.\"\n            }\n            $settingName = $keyDefinition[1].Trim()\n        }\n\n        if ([string]::IsNullOrWhiteSpace($keyName)) {\n            throw \"Unable to establish key name from: '$_'\"\n        }\n\n        $key = [PsCustomObject]@{\n            KeyName       = $keyName\n            KeyIsWildcard = $KeyIsWildcard\n            SettingName   = if (![string]::IsNullOrWhiteSpace($settingName)) { $settingName } else { \"\" }\n        }\n        $Keys += $key\n    }\n}\n\n$LabelsArray = $global:ConfigStoreLabels -Split \",\" | Where-Object { [string]::IsNullOrWhiteSpace($_) -eq $False }\n\nWrite-Verbose \"Azure AppConfig Retrieval Method: $global:AzureAppConfigRetrievalMethod\"\nif (![string]::IsNullOrWhiteSpace($global:AzureAppConfigStoreName)) {\n    Write-Verbose \"Azure AppConfig Store Name: $global:AzureAppConfigStoreName\"\n}\nif (![string]::IsNullOrWhiteSpace($global:AzureAppConfigStoreEndpoint)) {\n    Write-Verbose \"Azure AppConfig Store Endpoint: $global:AzureAppConfigStoreEndpoint\"\n}\nWrite-Verbose \"Suppress warnings: $global:SuppressWarnings\"\nWrite-Verbose \"Treat warnings as errors: $global:TreatWarningsAsErrors\"\nWrite-Verbose \"Keys to retrieve: $($Keys.Count)\"\nWrite-Verbose \"Labels to retrieve: $($LabelsArray.Count)\"\n\n$appConfigResponse = $null\n\n# Retrieving all keys should be more performant, but may have a larger payload response.\nif ($RetrieveAllKeys) {\n    \n    if ($Keys.Count -gt 0) {\n        Write-Host \"Retrieving ALL config values from store\"\n        $command = \"az appconfig kv list $global:ConfigStoreParameters --all --auth-mode login\"\n    \n        if (![string]::IsNullOrWhiteSpace($global:ConfigStoreLabels)) {\n            $command += \" --label \"\"$global:ConfigStoreLabels\"\" \"\n        }\n        Write-Verbose \"Invoking expression: $command\"\n        $appConfigResponse = Invoke-Expression -Command $command\n        $ExitCode = $LastExitCode\n        Write-Verbose \"az exit code: $ExitCode\"\n        if ($ExitCode -ne 0) {\n            throw \"Error retrieving appsettings. ExitCode: $ExitCode\"\n        }\n    \n        if ([string]::IsNullOrWhiteSpace($appConfigResponse)) {\n            Write-OctopusWarning \"Null or empty response received from Azure App Configuration service\"\n        }\n        else {\n            $appConfigValues = $appConfigResponse | ConvertFrom-Json\n        }\n\n        foreach ($key in $Keys) {\n            $keyName = $key.KeyName\n            $KeyIsWildcard = $key.KeyIsWildcard\n            $SettingName = $key.SettingName\n        \n            Find-AzureAppConfigMatchesFromKey -KeyName $keyName -IsWildcard $KeyIsWildcard -SettingName $SettingName -AppConfigValues $appConfigValues\n        }\n    }\n    # Possible that ONLY labels have been provided\n    elseif ($LabelsArray.Count -gt 0) {\n        Find-AzureAppConfigMatchesFromLabels \n    }\n}\n# Loop through and get keys based on the supplied names\nelse {\n    \n    Write-Host \"Retrieving keys based on supplied names...\"\n    if ($Keys.Count -gt 0) {\n        foreach ($key in $Keys) {\n            $keyName = $key.KeyName\n            $KeyIsWildcard = $key.KeyIsWildcard\n            $settingName = $key.SettingName\n\n            if ([string]::IsNullOrWhiteSpace($settingName)) {\n                $settingName = \"$($keyName.Trim())\"\n            }\n\n            Write-Verbose \"Retrieving values matching key: $keyName from store\"\n            $command = \"az appconfig kv list $global:ConfigStoreParameters --key \"\"$keyName\"\" --auth-mode login\"\n            \n            if (![string]::IsNullOrWhiteSpace($global:ConfigStoreLabels)) {\n                $command += \" --label \"\"$global:ConfigStoreLabels\"\" \"\n            }\n            Write-Verbose \"Invoking expression: $command\"\n\n            $appConfigResponse = Invoke-Expression -Command $command\n            $ExitCode = $LastExitCode\n            Write-Verbose \"az exit code: $ExitCode\"\n            if ($ExitCode -ne 0) {\n                throw \"Error retrieving appsettings. ExitCode: $ExitCode\"\n            }\n\n            if ([string]::IsNullOrWhiteSpace($appConfigResponse)) {\n                Write-OctopusWarning \"Null or empty response received from Azure App Configuration service\"\n            }\n            else {\n                $appConfigValues = $appConfigResponse | ConvertFrom-Json\n                if ($appConfigValues.Count -eq 0) {\n                    Write-OctopusWarning \"Unable to find a matching key in Azure App Config for: $keyName\"\n                }\n                else {\n                    Write-Verbose \"Finding match(es) for: $keyName\"\n                    Find-AzureAppConfigMatchesFromKey -KeyName $keyName -IsWildcard $KeyIsWildcard -SettingName $settingName -AppConfigValues $appConfigValues\n                }\n            }\n        }\n    }\n}\n# End KV Retrieval\n\n# Begin AZ Function set\n\n$AdditionalSettings = @()\n#$SlotSettings = @()\n\n# Extract additional settings values\nif (-not [string]::IsNullOrWhiteSpace($AdditionalSettingsValues)) {\n    @(($AdditionalSettingsValues -Split \"`n\").Trim()) | ForEach-Object {\n        if (![string]::IsNullOrWhiteSpace($_)) {\n            Write-Verbose \"Working on: '$_'\"\n            if (-not $_.Contains(\"|\")) {\n                throw \"Setting '$_' doesnt contain the '|' delimiter. Multi-line values aren't supported.\"\n            }\n            $settingDefinition = ($_ -Split \"\\|\")\n            $settingName = $settingDefinition[0].Trim()\n            $settingValue = \"\"\n            if ($settingDefinition.Count -gt 1) {\n                $settingValue = $settingDefinition[1].Trim()\n            }\n            if ([string]::IsNullOrWhiteSpace($settingName)) {\n                throw \"Unable to establish additional setting name from: '$_'\"\n            }\n            $setting = [PsCustomObject]@{\n                name        = $settingName\n                value       = $settingValue\n                slotSetting = $false\n            }\n            $AdditionalSettings += $setting\n        }\n    }\n}\n\n\nif ($Settings.Count -gt 0 -or $AdditionalSettings.Count -gt 0) {\n    Write-Host \"Settings found to publish to App Function: $FunctionName\"\n\n    Write-Verbose \"Function Name: $FunctionName\"\n    Write-Verbose \"Resource Group: $ResourceGroup\"\n    Write-Verbose \"Slot: $Slot\"\n    Write-Verbose \"Settings: $($Settings.Count)\"\n    Write-Verbose \"Additional Settings: $($AdditionalSettings.Count)\"\n    if ($AdditionalSettings.Count -gt 0) {\n        Write-Verbose \"Combining additional settings with settings retrieved from Azure App Config\"\n        $Settings = $Settings + $AdditionalSettings\n    }\n\n    $settingsFile = $null\n\n    try {\n\n        $command = \"az functionapp config appsettings set --name=\"\"$Functionname\"\" --resource-group \"\"$ResourceGroup\"\" \"\n        if (-not([string]::IsNullOrWhiteSpace($Slot))) {\n            $command += \" --slot \"\"$Slot\"\" \"\n        }\n\n        if ($Settings.Count -ge 1) {\n            $settingsFile = [System.IO.Path]::GetRandomFileName()\n            $ConvertToJsonParameters = @{}\n            if ($PSVersionTable.PSVersion.Major -ge 6) {\n                $ConvertToJsonParameters.Add(\"AsArray\", $True)\n            }\n            $Settings | ConvertTo-Json @ConvertToJsonParameters | Set-Content -Path $settingsFile\n            $command += \" --settings '@$settingsFile'\"\n        }\n\n        Write-Verbose \"Invoking expression: $command\"\n        Write-Host \"##octopus[stderr-progress]\"\n        $settingsUpdateResponse = Invoke-Expression -Command $command\n        $ExitCode = $LastExitCode\n        Write-Verbose \"FunctionApp update ExitCode: $ExitCode\"\n        if ($ExitCode -ne 0) {\n            throw \"Error configuring appsettings for function app '$FunctionName'. ExitCode: $ExitCode\"\n        }\n        Write-Host \"##octopus[stderr-default]\"\n        if ($null -ne $settingsUpdateResponse) {\n            Write-Host \"Update of function '$FunctionName' was successful\"\n            try {\n                $functionSettings = $settingsUpdateResponse | ConvertFrom-Json\n                if ($null -ne $functionSettings) {\n                    $settingsCount = @($functionSettings | Where-Object { $_.slotSetting -eq $False }).Count\n                    $slotSettingsCount = @($functionSettings | Where-Object { $_.slotSetting -eq $True }).Count\n                    Write-Verbose \"Function '$FunctionName' has $settingsCount setting(s) and $slotSettingsCount slot setting(s).\"\n                }\n            }\n            catch {}\n        }\n        \n    }\n    catch { throw }\n    finally {\n        if (-not([string]::IsNullOrWhiteSpace($settingsFile))) {\n            Write-Verbose \"Removing temporary settings file $settingsFile\"\n            Remove-Item -Path $settingsFile -Force -ErrorAction Ignore\n        }\n        if (-not([string]::IsNullOrWhiteSpace($slotSettingsFile))) {\n            Write-Verbose \"Removing temporary slot settings file $slotSettingsFile\"\n            Remove-Item -Path $slotSettingsFile -Force -ErrorAction Ignore\n        }\n    }\n}\nelse {\n    Write-Host \"No settings found to publish to the Azure App function\"\n}",
+    "Octopus.Action.Azure.AccountId": "#{AzFunction.SetAppSettings.FromAzAppConfig.AzureAccount}"
+  },
+  "Parameters": [
+    {
+      "Id": "b4c7f413-9341-4602-b5f4-5d69365e6cff",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.AzureAccount",
+      "Label": "Azure Account",
+      "HelpText": "An Azure account with permission to both retrieve values from the Azure App Config store and publish to the App Function",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "fcf6f1fd-1b3c-47d2-8037-802224c76452",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.ConfigStoreName",
+      "Label": "Config Store Name",
+      "HelpText": "The name of the Azure App Configuration store. Provide this or the **Config store endpoint**.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7d6b9332-9c13-42b1-83b5-a8e84fc593f0",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.ConfigStoreEndpoint",
+      "Label": "Config Store Endpoint",
+      "HelpText": "The endpoint for the Azure App Configuration Store. Provide this or the **Config store name**.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c25b6875-2007-4d55-97a1-7ec7b061b06b",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.RetrievalMethod",
+      "Label": "Retrieval Method",
+      "HelpText": "Choose how the step calls the az cli. Either:\n- `All`: Retrieve all configuration values in one call\n- `Individually`: Retrieve configuration values in multiple calls; one for each key specified in the **Key Names** parameter.\n\nDefault: `All`",
+      "DefaultValue": "all",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "all|All\nindividual|Individually"
+      }
+    },
+    {
+      "Id": "cf069635-3027-47a4-8965-d229c8e64afd",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.KeyNames",
+      "Label": "Key Names",
+      "HelpText": "Specify the names of the keys to be returned from Azure App Configuration in the format `KeyName | CustomSettingName` where:\n\n- `KeyName` is the key to retrieve. Wildcards are supported by adding `*` at the end of the key name.\n- `CustomSettingName` is the _optional_ name to set for the AppSetting value in the App Function. *If this value isn't specified, the original key will be used.*.\n\n**Note:** Multiple keys can be retrieved by entering each one on a new line. Note: Combining a wildcard search with custom setting names is not supported.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "13007305-0fa2-468c-b7de-3c5317bd8611",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.Labels",
+      "Label": "Labels",
+      "HelpText": "Labels are an attribute on keys. Provide one or more labels in the format `label1,label2` to retrieve only selected keys tagged with those labels.\n\n**Note:** You can include both label values *and* specify key names if you want.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a7e79ba3-5ea3-40ab-9759-aa281e3c02f9",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.SuppressWarnings",
+      "Label": "Suppress warnings",
+      "HelpText": "Suppress warnings from being written to the task log. For example, when a supplied key can't be found in the Azure App Configuration store.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "62d8f95f-8a57-4908-b789-c3ecabd7c6dd",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.TreatWarningsAsErrors",
+      "Label": "Treat Warnings as Errors",
+      "HelpText": "Treats warnings as errors. If enabled the **Suppress Warnings** parameter is ignored. ",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "c8c1c14d-a515-47e7-b117-6a69644b78af",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.FunctionName",
+      "Label": "Azure Function App Name",
+      "HelpText": "The name of the Azure App function.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "07fcb750-13a1-4272-b6b6-a5cdd120a15f",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.ResourceGroup",
+      "Label": "Resource Group",
+      "HelpText": "The name of the resource group where the Function App is located.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "fbd1b5bf-e1ce-415c-b7db-9c9d49e9f8e3",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.Slot",
+      "Label": "Slot",
+      "HelpText": "\nThe name of the slot. Defaults to the production slot if not specified.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "21e9c8b3-50ce-4006-83a7-86d7803c31ee",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.AdditionalSettingsValues",
+      "Label": "Additional AppSettings",
+      "HelpText": "Specify the name and values of any **additional** settings to be applied to the Azure App Function in the format `KEY | VALUE` where:\n\n- `KEY` is the name of the app setting to add\n- `VALUE` is the value to be used. [Octopus variables](https://octopus.com/docs/projects/variables) can be used here.\n\n\n**Note:** Multiple settings can be added by entering each one on a new line. As a result, values that span multiple lines will result in an error.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AzurePowerShell",
+  "$Meta": {
+    "ExportedAt": "2023-11-30T16:25:08.828Z",
+    "OctopusVersion": "2024.1.2558",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedAt": "2023-11-30T16:25:08.828Z",
+  "LastModifiedBy": "harrisonmeister",
+  "Category": "azure"
+}
