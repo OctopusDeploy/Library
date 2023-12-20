@@ -1,7 +1,7 @@
 {
-  "Id": "c9c5a6a2-0ce7-4d7a-8eb5-111ac44df24e",
-  "Name": "Octopus - Create Octoterra Space (Azure Backend)",
-  "Description": "This step exposes the fields required to create the initial blank space serialized with [octoterra](https://github.com/OctopusSolutionsEngineering/OctopusTerraformExport) using Terraform. The new space is then populated using the `Octopus - Populate Octoterra Space (S3 Backend)` step.\n\nThis step configures a Terraform S3 backend.\n\nIt is recommended that this step be run with the `octopuslabs/terraform-workertools` worker image.",
+  "Id": "fabaed9d-555c-425d-9510-43c167103cb3",
+  "Name": "Octopus - Populate Octoterra Space (Azure Backend)",
+  "Description": "This step exposes the fields required to deploy a project or space serialized with [octoterra](https://github.com/OctopusSolutionsEngineering/OctopusTerraformExport) using Terraform.\n\nThis step configures a Terraform S3 backend.\n\nIt is recommended that this step be run with the `octopuslabs/terraform-workertools` worker image.",
   "ActionType": "Octopus.TerraformApply",
   "Version": 1,
   "CommunityActionTemplateId": null,
@@ -20,7 +20,7 @@
   ],
   "GitDependencies": [],
   "Properties": {
-    "Octopus.Action.GoogleCloud.UseVMServiceAccount": "False",
+    "Octopus.Action.GoogleCloud.UseVMServiceAccount": "True",
     "Octopus.Action.GoogleCloud.ImpersonateServiceAccount": "False",
     "Octopus.Action.Terraform.GoogleCloudAccount": "False",
     "Octopus.Action.Terraform.AzureAccount": "True",
@@ -31,57 +31,38 @@
     "Octopus.Action.Terraform.PlanJsonOutput": "False",
     "Octopus.Action.Terraform.Workspace": "#{OctoterraApply.Terraform.Workspace.Name}",
     "Octopus.Action.Terraform.AdditionalInitParams": "-backend-config=\"resource_group_name=#{OctoterraApply.Azure.Storage.ResourceGroup}\" -backend-config=\"storage_account_name=#{OctoterraApply.Azure.Storage.AccountName}\" -backend-config=\"container_name=#{OctoterraApply.Azure.Storage.Container}\" -backend-config=\"key=#{OctoterraApply.Azure.Storage.Key}\" #{if OctoterraApply.Terraform.AdditionalInitParams}#{OctoterraApply.Terraform.AdditionalInitParams}#{/if}",
-    "Octopus.Action.Terraform.AdditionalActionParams": "-var=octopus_server=#{OctoterraApply.Octopus.ServerUrl} -var=octopus_apikey=#{OctoterraApply.Octopus.ApiKey} \"-var=octopus_space_name=#{OctoterraApply.Octopus.Space.NewName}\" -var=octopus_space_managers=#{OctoterraApply.Octopus.Space.Managers} #{if OctoterraApply.Terraform.AdditionalApplyParams}#{OctoterraApply.Terraform.AdditionalApplyParams}#{/if}",
+    "Octopus.Action.Terraform.AdditionalActionParams": "-var=octopus_server=#{OctoterraApply.Octopus.ServerUrl} -var=octopus_apikey=#{OctoterraApply.Octopus.ApiKey} -var=octopus_space_id=#{OctoterraApply.Octopus.SpaceID} #{if OctoterraApply.Terraform.AdditionalApplyParams}#{OctoterraApply.Terraform.AdditionalApplyParams}#{/if}",
     "Octopus.Action.Package.DownloadOnTentacle": "False",
     "Octopus.Action.RunOnServer": "true",
     "Octopus.Action.AwsAccount.UseInstanceRole": "False",
     "Octopus.Action.Aws.AssumeRole": "False",
-    "Octopus.Action.Terraform.TemplateDirectory": "space_creation",
-    "Octopus.Action.AzureAccount.Variable": "OctoterraApply.Azure.Account"
+    "Octopus.Action.Terraform.TemplateDirectory": "space_population",
+    "Octopus.Action.Terraform.FileSubstitution": "**/project_variable_sensitive*.tf",
+    "Octopus.Action.AzureAccount.Variable": "OctoterraApply.Azure.Storage.AccountName"
   },
   "Parameters": [
     {
-      "Id": "281f1167-aa9b-4061-9550-2c4a08d20256",
-      "Name": "OctoterraApply.Octopus.Space.NewName",
-      "Label": "Octopus Space Name",
-      "HelpText": "The name of the new space to create. The default value assumes that the step is run against a tenant, and the tenant name matches the space.",
-      "DefaultValue": "#{Octopus.Deployment.Tenant.Name}",
-      "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
-      }
-    },
-    {
-      "Id": "ec7890fd-6a73-49a1-b4c4-f53e5a76e0dd",
-      "Name": "OctoterraApply.Octopus.Space.Managers",
-      "Label": "Octopus Space Managers",
-      "HelpText": "The name of a team to assign as the space manager.",
-      "DefaultValue": "teams-administrators",
-      "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
-      }
-    },
-    {
-      "Id": "ea73512f-aab0-4fdc-8381-ad37a3f31220",
+      "Id": "fc203025-f9f8-421d-a4d8-963347555a7b",
       "Name": "OctoterraApply.Terraform.Workspace.Name",
       "Label": "Terraform Workspace",
       "HelpText": "The name of the Terraform workspace. This must be unique for every project this module is deployed to. The default value is based on the space ID that the module is applied to: `#{OctoterraApply.Octopus.SpaceID}`. Leave this as the default value unless you have a specific reason to change it.",
-      "DefaultValue": "#{OctoterraApply.Octopus.Space.NewName  | Replace \"[^A-Za-z0-9]\" \"_\"}",
+      "DefaultValue": "#{OctoterraApply.Octopus.SpaceID}",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
     },
     {
-      "Id": "d675cd1e-4306-4b8c-91fc-7090377dc34c",
+      "Id": "f3581f20-f65f-4819-9060-aca5d0e5dc85",
       "Name": "OctoterraApply.Terraform.Package.Id",
       "Label": "Terraform Module Package",
-      "HelpText": "The package created by [octoterra](https://github.com/OctopusSolutionsEngineering/OctopusTerraformExport). It must include the `space_creation` and `space_population` directories.",
+      "HelpText": "The package created by [octoterra](https://github.com/OctopusSolutionsEngineering/OctopusTerraformExport). It must include the `space_population` directory.",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "Package"
       }
     },
     {
-      "Id": "1d039630-0602-4491-b906-e29b45876411",
+      "Id": "6e9b0c07-703a-4c1f-a5f6-83084fb676d8",
       "Name": "OctoterraApply.Octopus.ServerUrl",
       "Label": "Octopus Server URL",
       "HelpText": "The Octopus server URL.",
@@ -91,7 +72,7 @@
       }
     },
     {
-      "Id": "0eab90d6-c7a0-482c-a386-e254a477c291",
+      "Id": "09c3a07e-1c63-4342-8b7f-1d596cc26c11",
       "Name": "OctoterraApply.Octopus.ApiKey",
       "Label": "Octopus API key",
       "HelpText": "The Octopus API key. See the [documentation](https://octopus.com/docs/octopus-rest-api/how-to-create-an-api-key) for details on creating an API key.",
@@ -101,7 +82,17 @@
       }
     },
     {
-      "Id": "dd0fe15d-c377-45d2-86b8-61d326e7e411",
+      "Id": "a320bade-7813-4326-8335-b99ffe525871",
+      "Name": "OctoterraApply.Octopus.SpaceID",
+      "Label": "Octopus Space ID",
+      "HelpText": "The Space ID to deploy the Terraform module into. The [Octopus - Lookup Space ID](https://library.octopus.com/step-templates/324f747e-e2cd-439d-a660-774baf4991f2/actiontemplate-octopus-lookup-space-id) step can be used to convert a space name to an ID.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "19fef90b-d94d-4a45-8cc5-6da4925a4b23",
       "Name": "OctoterraApply.Azure.Account",
       "Label": "Azure Account Variable",
       "HelpText": "The Azure account variable.",
@@ -151,7 +142,7 @@
       }
     },
     {
-      "Id": "05715061-fda9-48b1-8bec-960b9fa56e89",
+      "Id": "eef59864-851c-4f6a-bb55-f4a58e1ca2b2",
       "Name": "OctoterraApply.Terraform.AdditionalApplyParams",
       "Label": "Terraform Additional Apply Params",
       "HelpText": "This field can be used to define additional parameters passed to the `terraform apply` command. This field can be left blank. See the [Terraform documentation](https://developer.hashicorp.com/terraform/cli/commands/apply) for details on the `apply` command.",
@@ -161,7 +152,7 @@
       }
     },
     {
-      "Id": "e6ffdabd-5009-4e55-aab8-eeafc2291e47",
+      "Id": "dae7e399-1bdc-49c2-90d1-b7b2560b379a",
       "Name": "OctoterraApply.Terraform.AdditionalInitParams",
       "Label": "Terraform Additional Init Params",
       "HelpText": "This field can be used to define additional parameters passed to the `terraform init` command. This field can be left blank.  See the [Terraform documentation](https://developer.hashicorp.com/terraform/cli/commands/init) for details on the `init` command.",
@@ -173,7 +164,7 @@
   ],
   "StepPackageId": "Octopus.TerraformApply",
   "$Meta": {
-    "ExportedAt": "2023-12-20T22:22:32.372Z",
+    "ExportedAt": "2023-12-20T23:00:51.038Z",
     "OctopusVersion": "2024.1.5406",
     "Type": "ActionTemplate"
   },
