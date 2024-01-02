@@ -1,0 +1,183 @@
+{
+  "Id": "9b206752-5a8c-40dd-84a8-94f08a42955c",
+  "Name": "Octopus - Add Runbook to Project (Azure Backend)",
+  "Description": "This step exposes the fields required to deploy a runbook serialized with [octoterra](https://github.com/OctopusSolutionsEngineering/OctopusTerraformExport) using Terraform to a project.\n\nThis step configures a Terraform Azure backend.\n\nIt is recommended that this step be run with the `octopuslabs/terraform-workertools` worker image.",
+  "ActionType": "Octopus.TerraformApply",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "093b1515-15a9-4446-8dc2-6297018a77e7",
+      "Name": "",
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "SelectionMode": "deferred",
+        "PackageParameterName": "OctoterraApply.Terraform.Package.Id"
+      }
+    }
+  ],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.GoogleCloud.UseVMServiceAccount": "False",
+    "Octopus.Action.GoogleCloud.ImpersonateServiceAccount": "False",
+    "Octopus.Action.Terraform.GoogleCloudAccount": "False",
+    "Octopus.Action.Terraform.AzureAccount": "True",
+    "Octopus.Action.Terraform.ManagedAccount": "None",
+    "Octopus.Action.Terraform.AllowPluginDownloads": "True",
+    "Octopus.Action.Script.ScriptSource": "Package",
+    "Octopus.Action.Terraform.RunAutomaticFileSubstitution": "False",
+    "Octopus.Action.Terraform.PlanJsonOutput": "False",
+    "Octopus.Action.Terraform.Workspace": "#{OctoterraApply.Terraform.Workspace.Name}",
+    "Octopus.Action.Terraform.AdditionalInitParams": "-backend-config=\"resource_group_name=#{OctoterraApply.Azure.Storage.ResourceGroup}\" -backend-config=\"storage_account_name=#{OctoterraApply.Azure.Storage.AccountName}\" -backend-config=\"container_name=#{OctoterraApply.Azure.Storage.Container}\" -backend-config=\"key=#{OctoterraApply.Azure.Storage.Key}\" #{if OctoterraApply.Terraform.AdditionalInitParams}#{OctoterraApply.Terraform.AdditionalInitParams}#{/if}",
+    "Octopus.Action.Terraform.AdditionalActionParams": "-var=octopus_server=#{OctoterraApply.Octopus.ServerUrl} -var=octopus_apikey=#{OctoterraApply.Octopus.ApiKey} -var=octopus_space_id=#{OctoterraApply.Octopus.SpaceID} \"-var=parent_project_name=#{OctoterraApply.Octopus.Project}\" #{if OctoterraApply.Terraform.AdditionalApplyParams}#{OctoterraApply.Terraform.AdditionalApplyParams}#{/if}",
+    "Octopus.Action.Package.DownloadOnTentacle": "False",
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "False",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.Terraform.TemplateDirectory": "space_population",
+    "Octopus.Action.Terraform.FileSubstitution": "**/project_variable_sensitive*.tf",
+    "Octopus.Action.AzureAccount.Variable": "OctoterraApply.Azure.Account"
+  },
+  "Parameters": [
+    {
+      "Id": "78dee77f-10a8-465c-9134-cda7edb6e794",
+      "Name": "OctoterraApply.Terraform.Workspace.Name",
+      "Label": "Terraform Workspace",
+      "HelpText": "The name of the Terraform workspace. This must be unique for every project this module is deployed to. The default value is based on the space ID that the module is applied to: `#{OctoterraApply.Octopus.SpaceID}`. Leave this as the default value unless you have a specific reason to change it.",
+      "DefaultValue": "#{OctoterraApply.Octopus.SpaceID}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6c05bc2b-1326-4e6b-a6ea-16d09d6a6abe",
+      "Name": "OctoterraApply.Terraform.Package.Id",
+      "Label": "Terraform Module Package",
+      "HelpText": "The package created by [octoterra](https://github.com/OctopusSolutionsEngineering/OctopusTerraformExport). It must include the `space_population` directory.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "ecadd361-bdf6-45d5-92bb-2dba7ebf4163",
+      "Name": "OctoterraApply.Octopus.ServerUrl",
+      "Label": "Octopus Server URL",
+      "HelpText": "The Octopus server URL.",
+      "DefaultValue": "#{Octopus.Web.ServerUri}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c43aff0c-1321-42d6-a08b-a22426239e30",
+      "Name": "OctoterraApply.Octopus.ApiKey",
+      "Label": "Octopus API key",
+      "HelpText": "The Octopus API key. See the [documentation](https://octopus.com/docs/octopus-rest-api/how-to-create-an-api-key) for details on creating an API key.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "4b669ef2-11e3-4ead-b613-60b9832ec23e",
+      "Name": "OctoterraApply.Octopus.SpaceID",
+      "Label": "Octopus Space ID",
+      "HelpText": "The Space ID to deploy the Terraform module into. The [Octopus - Lookup Space ID](https://library.octopus.com/step-templates/324f747e-e2cd-439d-a660-774baf4991f2/actiontemplate-octopus-lookup-space-id) step can be used to convert a space name to an ID.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b54953d9-a441-485c-97f8-937ba0e77c32",
+      "Name": "OctoterraApply.Octopus.Project",
+      "Label": "Octopus Project Name",
+      "HelpText": "The name of the project to import the runbook into",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f827567a-9807-4d3a-b16e-2845112d1873",
+      "Name": "OctoterraApply.Azure.Account",
+      "Label": "Azure Account Variable",
+      "HelpText": "The Azure account variable.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "b2d855be-4f8f-4c7c-9e28-49c5539c1df5",
+      "Name": "OctoterraApply.Azure.Storage.ResourceGroup",
+      "Label": "Azure Backend Resource Group",
+      "HelpText": "The name of the resource group holding the Azure storage account. See the [Terraform documentation](https://developer.hashicorp.com/terraform/language/settings/backends/azurerm) for details on using Azure storage accounts as a backend.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d3098333-99ac-463f-83eb-f66aca3d1055",
+      "Name": "OctoterraApply.Azure.Storage.AccountName",
+      "Label": "Azure Storage Account Name",
+      "HelpText": "The name of the Azure storage account used to hold the Terraform state. See the [Terraform documentation](https://developer.hashicorp.com/terraform/language/settings/backends/azurerm) for details on using Azure storage accounts as a backend.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7c816136-7917-4b7d-9a5a-580c6466c713",
+      "Name": "OctoterraApply.Azure.Storage.Container",
+      "Label": "Azure Storage Container",
+      "HelpText": "The name of the Azure storage account container used to hold the Terraform state. See the [Terraform documentation](https://developer.hashicorp.com/terraform/language/settings/backends/azurerm) for details on using Azure storage accounts as a backend.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b793155e-76c5-4781-a075-d1c5182c3b5f",
+      "Name": "OctoterraApply.Azure.Storage.Key",
+      "Label": "Azure Storage Key",
+      "HelpText": "The file used to hold the Terraform state. See the [Terraform documentation](https://developer.hashicorp.com/terraform/language/settings/backends/azurerm) for details on using Azure as a backend. The combination of the workspace name and this key must be unique. \n\nThe default value is the name of the runbook and a prefix to indicate the type of resource: `Runbook_#{Octopus.Action.Package.PackageId}`.",
+      "DefaultValue": "Runbook_#{Octopus.Action.Package.PackageId}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "213f14e9-3856-419f-9de1-1e0e755c82db",
+      "Name": "OctoterraApply.Terraform.AdditionalApplyParams",
+      "Label": "Terraform Additional Apply Params",
+      "HelpText": "This field can be used to define additional parameters passed to the `terraform apply` command. This field can be left blank. See the [Terraform documentation](https://developer.hashicorp.com/terraform/cli/commands/apply) for details on the `apply` command.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "24e0186c-bb65-4c77-b9d8-4f4d19523621",
+      "Name": "OctoterraApply.Terraform.AdditionalInitParams",
+      "Label": "Terraform Additional Init Params",
+      "HelpText": "This field can be used to define additional parameters passed to the `terraform init` command. This field can be left blank.  See the [Terraform documentation](https://developer.hashicorp.com/terraform/cli/commands/init) for details on the `init` command.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.TerraformApply",
+  "$Meta": {
+    "ExportedAt": "2023-12-20T23:32:58.875Z",
+    "OctopusVersion": "2024.1.5406",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "octopus"
+}
