@@ -13,7 +13,7 @@ step "notify-octopus-library-on-slack" {
             ssn_IconUrl = "http://octopusdeploy.com/content/resources/favicon.png"
             ssn_Message = <<-EOT
                 Release `#{Octopus.Release.Number}` to *#{Octopus.Environment.Name}*
-
+                
                 #{if Octopus.Release.Notes}
                 *Release notes*
                 ```#{Octopus.Release.Notes}```
@@ -22,9 +22,9 @@ step "notify-octopus-library-on-slack" {
             ssn_Title = "Deployment started"
             ssn_Username = "Octopus Deploy"
         }
+        worker_pool = "hosted-windows-2022"
     }
 }
-
 
 step "clear-staging-slot" {
     condition = "Always"
@@ -40,7 +40,7 @@ step "clear-staging-slot" {
             Octopus.Action.Script.ScriptBody = <<-EOT
                 #Remove the staging slot if it exists
                 Remove-AzureRmWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging -Force
-
+                
                 #Create the staging slot
                 New-AzureRmWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging
                 EOT
@@ -57,13 +57,14 @@ step "clear-staging-slot-az" {
         action_type = "Octopus.AzurePowerShell"
         properties = {
             Octopus.Action.Azure.AccountId = "team-steps-production-service-principal"
+            Octopus.Action.RunOnServer = "true"
             Octopus.Action.Script.ScriptBody = <<-EOT
                 #Remove the staging slot if it exists
                 Remove-AzWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging -Force
-
+                
                 #Create the staging slot
                 New-AzWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging
-
+                
                 EOT
             Octopus.Action.Script.ScriptSource = "Inline"
             Octopus.Action.Script.Syntax = "PowerShell"
@@ -95,9 +96,10 @@ step "deploy-octopus-library" {
             Octopus.Action.Package.DownloadOnTentacle = "False"
             Octopus.Action.Package.FeedId = "octopus-server-built-in"
             Octopus.Action.Package.PackageId = "Octopus.Library"
-            Octopus.Action.RunOnServer = "false"
+            Octopus.Action.RunOnServer = "true"
             Octopus.Action.SubstituteInFiles.TargetFiles = "views\\index.pug"
         }
+        worker_pool = "hosted-windows-2022"
 
         packages {
             acquisition_location = "Server"
@@ -152,6 +154,7 @@ step "http-invoke-url" {
             Octopus.Action.Template.Version = "2"
             url = "#{LibrarySiteWithSlotUrl}"
         }
+        worker_pool = "hosted-windows-2022"
     }
 }
 
@@ -169,20 +172,21 @@ step "notify-octopus-library-of-manual-intervention" {
             ssn_IconUrl = "http://octopusdeploy.com/content/resources/favicon.png"
             ssn_Message = <<-EOT
                 Confirm the changes in this release on https://library-prod-webapp-staging.azurewebsites.net/
-
+                
                 #{if Octopus.Release.Notes}
                 *Release notes*
-
+                
                 ```
                 #{Octopus.Release.Notes}
                 ```
                 #{/if}
-
+                
                 <#{Octopus.Web.ServerUri}#{Octopus.Web.DeploymentLink}|Action manual intervention>
                 EOT
             ssn_Title = "Confirm changes on Staging slot"
             ssn_Username = "Octopus Deploy"
         }
+        worker_pool = "hosted-windows-2022"
     }
 }
 
@@ -196,11 +200,11 @@ step "confirm-changes-on-staging-slot" {
             Octopus.Action.Manual.BlockConcurrentDeployments = "True"
             Octopus.Action.Manual.Instructions = <<-EOT
                 Confirm the changes in this release on [Staging](https://library-prod-webapp-staging.azurewebsites.net/).
-
+                
                 If you get an error, try running the `Restart Azure web app - Staging Slot` runbook.
-
+                
                 ### Release notes
-
+                
                 #{Octopus.Release.Notes}
                 EOT
             Octopus.Action.RunOnServer = "false"
@@ -231,6 +235,7 @@ step "swap-staging-slot-to-production-az" {
         action_type = "Octopus.AzurePowerShell"
         properties = {
             Octopus.Action.Azure.AccountId = "team-steps-production-service-principal"
+            Octopus.Action.RunOnServer = "true"
             Octopus.Action.Script.ScriptBody = "Switch-AzWebAppSlot -SourceSlotName Staging -DestinationSlotName Production -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName}"
             Octopus.Action.Script.ScriptSource = "Inline"
             Octopus.Action.Script.Syntax = "PowerShell"
@@ -256,6 +261,7 @@ step "http-invoke-url-production" {
             Octopus.Action.Template.Version = "2"
             url = "#{LibrarySiteUrl}"
         }
+        worker_pool = "hosted-windows-2022"
     }
 }
 
@@ -276,6 +282,7 @@ step "github-create-release" {
             releaseNotes = "#{Octopus.Release.Notes}"
             versionNumber = "#{Octopus.Release.Number}"
         }
+        worker_pool = "hosted-windows-2022"
     }
 }
 
@@ -289,7 +296,7 @@ step "github-clean-vnext-milestone" {
             Octopus.Action.RunOnServer = "true"
             Octopus.Action.Script.ScriptBody = <<-EOT
                 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
+                
                 $githubUri = "https://api.github.com"
                 $githubHeaders = @{
                         Authorization = 'Basic ' + [Convert]::ToBase64String(
@@ -297,8 +304,8 @@ step "github-clean-vnext-milestone" {
                         );
                 }
                 $issuesUri = "$githubUri/repos/$GitHubOwner/$GitHubRepository/issues"
-
-
+                
+                
                 $issueRequest = @{
                     "state" = "closed";
                     "milestone" = "*"
@@ -310,7 +317,7 @@ step "github-clean-vnext-milestone" {
                     Headers = $githubHeaders;
                     ContentType = 'application/json';
                 }
-
+                
                 $closedIssues = Invoke-RestMethod @closedIssuesRequest
                 $closedIssues | % {
                     $issueNumber = $_.number
@@ -325,7 +332,7 @@ step "github-clean-vnext-milestone" {
                         ContentType = 'application/json';
                         Body = (ConvertTo-Json $issueUpdate -Compress)
                     }
-
+                
                     try
                     {
                         $response = Invoke-RestMethod @issueUpdateRequest
@@ -335,11 +342,12 @@ step "github-clean-vnext-milestone" {
                         break
                     }
                 }
-
+                
                 EOT
             Octopus.Action.Script.ScriptSource = "Inline"
             Octopus.Action.Script.Syntax = "PowerShell"
         }
+        worker_pool = "hosted-windows-2022"
     }
 }
 
@@ -360,5 +368,6 @@ step "notify-octopus-library-of-deployment-result" {
             ssn_Title = "Deployment *#{if Octopus.Deployment.Error}failed#{/if}#{unless Octopus.Deployment.Error}succeeded#{/unless}*"
             ssn_Username = "Octopus Deploy"
         }
+        worker_pool = "hosted-windows-2022"
     }
 }
