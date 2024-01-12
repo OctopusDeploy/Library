@@ -7,6 +7,7 @@ step "notify-octopus-library-on-slack" {
             Octopus.Action.RunOnServer = "true"
             Octopus.Action.Template.Id = "ActionTemplates-404"
             Octopus.Action.Template.Version = "12"
+            OctopusUseBundledTooling = "False"
             ssn_Channel = "#{SlackChannel}"
             ssn_Color = "good"
             ssn_HookUrl = "#{SlackWebhook}"
@@ -21,6 +22,12 @@ step "notify-octopus-library-on-slack" {
                 EOT
             ssn_Title = "Deployment started"
             ssn_Username = "Octopus Deploy"
+        }
+        worker_pool = "hosted-ubuntu"
+
+        container {
+            feed = "registered-dockerhub"
+            image = "octopusdeploy/worker-tools:ubuntu.22.04"
         }
     }
 }
@@ -56,12 +63,13 @@ step "clear-staging-slot-az" {
         action_type = "Octopus.AzurePowerShell"
         properties = {
             Octopus.Action.Azure.AccountId = "team-steps-production-service-principal"
+            Octopus.Action.RunOnServer = "true"
             Octopus.Action.Script.ScriptBody = <<-EOT
                 #Remove the staging slot if it exists
                 Remove-AzWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging -Force
                 
                 #Create the staging slot
-                New-AzWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging 
+                New-AzWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging
                 
                 EOT
             Octopus.Action.Script.ScriptSource = "Inline"
@@ -94,8 +102,15 @@ step "deploy-octopus-library" {
             Octopus.Action.Package.DownloadOnTentacle = "False"
             Octopus.Action.Package.FeedId = "octopus-server-built-in"
             Octopus.Action.Package.PackageId = "Octopus.Library"
-            Octopus.Action.RunOnServer = "false"
+            Octopus.Action.RunOnServer = "true"
             Octopus.Action.SubstituteInFiles.TargetFiles = "views\\index.pug"
+            OctopusUseBundledTooling = "False"
+        }
+        worker_pool = "hosted-ubuntu"
+
+        container {
+            feed = "registered-dockerhub"
+            image = "octopusdeploy/worker-tools:ubuntu.22.04"
         }
 
         packages {
@@ -149,7 +164,14 @@ step "http-invoke-url" {
             Octopus.Action.RunOnServer = "true"
             Octopus.Action.Template.Id = "ActionTemplates-102"
             Octopus.Action.Template.Version = "2"
+            OctopusUseBundledTooling = "False"
             url = "#{LibrarySiteWithSlotUrl}"
+        }
+        worker_pool = "hosted-ubuntu"
+
+        container {
+            feed = "registered-dockerhub"
+            image = "octopusdeploy/worker-tools:ubuntu.22.04"
         }
     }
 }
@@ -162,6 +184,7 @@ step "notify-octopus-library-of-manual-intervention" {
             Octopus.Action.RunOnServer = "true"
             Octopus.Action.Template.Id = "ActionTemplates-404"
             Octopus.Action.Template.Version = "12"
+            OctopusUseBundledTooling = "False"
             ssn_Channel = "#{SlackChannel}"
             ssn_Color = "good"
             ssn_HookUrl = "#{SlackWebhook}"
@@ -181,6 +204,12 @@ step "notify-octopus-library-of-manual-intervention" {
                 EOT
             ssn_Title = "Confirm changes on Staging slot"
             ssn_Username = "Octopus Deploy"
+        }
+        worker_pool = "hosted-ubuntu"
+
+        container {
+            feed = "registered-dockerhub"
+            image = "octopusdeploy/worker-tools:ubuntu.22.04"
         }
     }
 }
@@ -230,6 +259,7 @@ step "swap-staging-slot-to-production-az" {
         action_type = "Octopus.AzurePowerShell"
         properties = {
             Octopus.Action.Azure.AccountId = "team-steps-production-service-principal"
+            Octopus.Action.RunOnServer = "true"
             Octopus.Action.Script.ScriptBody = "Switch-AzWebAppSlot -SourceSlotName Staging -DestinationSlotName Production -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName}"
             Octopus.Action.Script.ScriptSource = "Inline"
             Octopus.Action.Script.Syntax = "PowerShell"
@@ -253,7 +283,14 @@ step "http-invoke-url-production" {
             Octopus.Action.RunOnServer = "true"
             Octopus.Action.Template.Id = "ActionTemplates-102"
             Octopus.Action.Template.Version = "2"
+            OctopusUseBundledTooling = "False"
             url = "#{LibrarySiteUrl}"
+        }
+        worker_pool = "hosted-ubuntu"
+
+        container {
+            feed = "registered-dockerhub"
+            image = "octopusdeploy/worker-tools:ubuntu.22.04"
         }
     }
 }
@@ -271,9 +308,16 @@ step "github-create-release" {
             Octopus.Action.RunOnServer = "true"
             Octopus.Action.Template.Id = "ActionTemplates-61"
             Octopus.Action.Template.Version = "4"
+            OctopusUseBundledTooling = "False"
             preRelease = "false"
             releaseNotes = "#{Octopus.Release.Notes}"
             versionNumber = "#{Octopus.Release.Number}"
+        }
+        worker_pool = "hosted-ubuntu"
+
+        container {
+            feed = "registered-dockerhub"
+            image = "octopusdeploy/worker-tools:ubuntu.22.04"
         }
     }
 }
@@ -338,6 +382,13 @@ step "github-clean-vnext-milestone" {
                 EOT
             Octopus.Action.Script.ScriptSource = "Inline"
             Octopus.Action.Script.Syntax = "PowerShell"
+            OctopusUseBundledTooling = "False"
+        }
+        worker_pool = "hosted-ubuntu"
+
+        container {
+            feed = "registered-dockerhub"
+            image = "octopusdeploy/worker-tools:ubuntu.22.04"
         }
     }
 }
@@ -351,6 +402,7 @@ step "notify-octopus-library-of-deployment-result" {
             Octopus.Action.RunOnServer = "true"
             Octopus.Action.Template.Id = "ActionTemplates-404"
             Octopus.Action.Template.Version = "12"
+            OctopusUseBundledTooling = "False"
             ssn_Channel = "#{SlackChannel}"
             ssn_Color = "#{if Octopus.Deployment.Error}danger#{/if}#{unless Octopus.Deployment.Error}good#{/unless}"
             ssn_HookUrl = "#{SlackWebhook}"
@@ -358,6 +410,12 @@ step "notify-octopus-library-of-deployment-result" {
             ssn_Message = "Release `#{Octopus.Release.Number}` to *#{Octopus.Environment.Name}*"
             ssn_Title = "Deployment *#{if Octopus.Deployment.Error}failed#{/if}#{unless Octopus.Deployment.Error}succeeded#{/unless}*"
             ssn_Username = "Octopus Deploy"
+        }
+        worker_pool = "hosted-ubuntu"
+
+        container {
+            feed = "registered-dockerhub"
+            image = "octopusdeploy/worker-tools:ubuntu.22.04"
         }
     }
 }
