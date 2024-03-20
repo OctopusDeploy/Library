@@ -76,6 +76,8 @@ Describe "ApplyRetentionPolicy Tests" {
     $script:StartDate = Get-Date
     $script:timestampFormat = "yyyy-MM-dd-HHmmss"
     $script:challengingFilenames = @(
+        # similar DB name noted during PR review
+        "ExampleDB_final_2024-03-18-1030.bak",
         # Similar DB name, valid timestamp. Might be confused with a backup for a different but similarly named database.
         "ExampleDB1_2024-03-18-1030.bak",
         # Same DB, different valid timestamp. Tests accuracy of timestamp matching.
