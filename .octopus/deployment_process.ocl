@@ -32,30 +32,6 @@ step "notify-octopus-library-on-slack" {
     }
 }
 
-step "clear-staging-slot" {
-    condition = "Always"
-    name = "Clear Staging slot"
-    start_trigger = "StartWithPrevious"
-
-    action "clear-staging-slot-1" {
-        action_type = "Octopus.AzurePowerShell"
-        is_disabled = true
-        properties = {
-            Octopus.Action.Azure.AccountId = "team-steps-production-service-principal"
-            Octopus.Action.RunOnServer = "false"
-            Octopus.Action.Script.ScriptBody = <<-EOT
-                #Remove the staging slot if it exists
-                Remove-AzureRmWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging -Force
-                
-                #Create the staging slot
-                New-AzureRmWebAppSlot -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName} -Slot Staging
-                EOT
-            Octopus.Action.Script.ScriptSource = "Inline"
-            Octopus.Action.Script.Syntax = "PowerShell"
-        }
-    }
-}
-
 step "clear-staging-slot-az" {
     name = "Clear Staging slot - az"
 
@@ -232,22 +208,6 @@ step "confirm-changes-on-staging-slot" {
                 #{Octopus.Release.Notes}
                 EOT
             Octopus.Action.RunOnServer = "false"
-        }
-    }
-}
-
-step "swap-staging-slot-to-production" {
-    name = "Swap Staging slot to Production"
-
-    action "swap-staging-slot-to-production-1" {
-        action_type = "Octopus.AzurePowerShell"
-        is_disabled = true
-        properties = {
-            Octopus.Action.Azure.AccountId = "team-steps-production-service-principal"
-            Octopus.Action.RunOnServer = "false"
-            Octopus.Action.Script.ScriptBody = "Switch-AzureRmWebAppSlot -SourceSlotName Staging -DestinationSlotName Production -ResourceGroupName #{AzureResourceGroupName} -Name #{AzureSiteName}"
-            Octopus.Action.Script.ScriptSource = "Inline"
-            Octopus.Action.Script.Syntax = "PowerShell"
         }
     }
 }
