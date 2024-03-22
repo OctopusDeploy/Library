@@ -1,8 +1,3 @@
-param(
-    [bool]$SkipMissingScripts = $true,
-    [bool]$ExpandMissing = $false
-)
-
 $ErrorActionPreference = "Stop";
 Set-StrictMode -Version "Latest";
 
