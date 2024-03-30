@@ -1,11 +1,10 @@
-$ErrorActionPreference = "Stop"
-Set-StrictMode -Version "Latest"
+$ErrorActionPreference = "Stop";
+Set-StrictMode -Version "Latest";
 
-# Paths for script directories
-$thisScript = $MyInvocation.MyCommand.Path
-$thisFolder = [System.IO.Path]::GetDirectoryName($thisScript)
-$rootFolder = [System.IO.Path]::GetDirectoryName($thisFolder)
-$parentFolder = [System.IO.Path]::GetDirectoryName($rootFolder)
+$thisScript = $MyInvocation.MyCommand.Path;
+$thisFolder = [System.IO.Path]::GetDirectoryName($thisScript);
+$rootFolder = [System.IO.Path]::GetDirectoryName($thisFolder);
+$parentFolder = [System.IO.Path]::GetDirectoryName($rootFolder);
 
 # Unpack any tests that are not present
 $testableScripts = Get-ChildItem -Path $thisFolder -Filter "*.ScriptBody.ps1"
@@ -17,7 +16,7 @@ foreach ($script in $testableScripts) {
         $converter = [System.IO.Path]::Combine($toolsFolder, "Converter.ps1")
         & $converter -operation unpack -searchpattern $searchpattern
     }
-    . $filename
+    . $filename;
 }
 
 # Attempt to use local Pester module, fallback to global if not found
