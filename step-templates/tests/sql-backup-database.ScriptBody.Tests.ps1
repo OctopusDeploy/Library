@@ -1,8 +1,7 @@
 $ErrorActionPreference = "Stop";
 Set-StrictMode -Version "Latest";
 
-# Assuming ApplyRetentionPolicy function is defined in a script file named 'ApplyRetentionPolicy.ps1'
-# . '.\ApplyRetentionPolicy.ps1'
+. "$PSScriptRoot\..\sql-backup-database.ScriptBody.ps1"
 
 function SetupTestEnvironment {
   param(

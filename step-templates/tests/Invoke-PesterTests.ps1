@@ -1,38 +1,37 @@
-$ErrorActionPreference = "Stop";
-Set-StrictMode -Version "Latest";
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version "Latest"
 
-$thisScript = $MyInvocation.MyCommand.Path;
-$thisFolder = [System.IO.Path]::GetDirectoryName($thisScript);
-$rootFolder = [System.IO.Path]::GetDirectoryName($thisFolder);
-$parentFolder = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetDirectoryName($thisFolder));
+# Paths for script directories
+$thisScript = $MyInvocation.MyCommand.Path
+$thisFolder = [System.IO.Path]::GetDirectoryName($thisScript)
+$rootFolder = [System.IO.Path]::GetDirectoryName($thisFolder)
+$parentFolder = [System.IO.Path]::GetDirectoryName($rootFolder)
 
-$testableScripts = @(
-    "windows-scheduled-task-create.ScriptBody.ps1",
-    "sql-backup-database.ScriptBody.ps1"
-);
-
-#unpack any tests that are not present
-foreach( $script in $testableScripts )
-{
-    $filename = [System.IO.Path]::Combine($rootFolder, $script);
-    if( -not [System.IO.File]::Exists($filename) )
-    {
-       $searchpattern = $script -replace "\.ScriptBody\.ps1$";
-       $toolsFolder = [System.IO.Path]::Combine($parentFolder, "tools");
-       $converter = [System.IO.Path]::Combine($toolsFolder, "Converter.ps1");
-       & $converter -operation unpack -searchpattern $searchpattern;
+# Unpack any tests that are not present
+$testableScripts = Get-ChildItem -Path $thisFolder -Filter "*.ScriptBody.ps1"
+foreach ($script in $testableScripts) {
+    $filename = [System.IO.Path]::Combine($rootFolder, $script.Name)
+    if (-not [System.IO.File]::Exists($filename)) {
+        $searchpattern = $script.BaseName -replace "\.ScriptBody$"
+        $toolsFolder = [System.IO.Path]::Combine($parentFolder, "tools")
+        $converter = [System.IO.Path]::Combine($toolsFolder, "Converter.ps1")
+        & $converter -operation unpack -searchpattern $searchpattern
     }
-    . $filename;
+    . $filename
 }
 
+# Attempt to use local Pester module, fallback to global if not found
 try {
-  $packagesFolder = $thisFolder;
-  $packagesFolder = [System.IO.Path]::GetDirectoryName($packagesFolder);
-  $packagesFolder = [System.IO.Path]::GetDirectoryName($packagesFolder);
-  $packagesFolder = [System.IO.Path]::Combine($packagesFolder, "packages");
-  Import-Module -Name ([System.IO.Path]::Combine($packagesFolder, "Pester.3.4.3\tools\Pester")) -ErrorAction Stop
+    $packagesFolder = [System.IO.Path]::Combine($rootFolder, "packages")
+    Import-Module -Name ([System.IO.Path]::Combine($packagesFolder, "Pester\tools\Pester")) -ErrorAction Stop
 } catch {
-  Import-Module Pester
+    Write-Host "Using globally installed Pester module."
+    Import-Module Pester -ErrorAction Stop
 }
 
-Invoke-Pester;
+# Find and run all Pester test files in the tests directory
+$testFiles = Get-ChildItem -Path "$thisFolder" -Filter "*.tests.ps1" -Recurse
+foreach ($testFile in $testFiles) {
+    Write-Host "Running tests in: $($testFile.FullName)"
+    Invoke-Pester -Path $testFile.FullName
+}
