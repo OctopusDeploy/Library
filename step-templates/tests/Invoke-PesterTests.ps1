@@ -22,11 +22,13 @@ foreach ($script in $testableScripts) {
 # Attempt to use local Pester module, fallback to global if not found
 try {
     $packagesFolder = [System.IO.Path]::Combine($rootFolder, "packages")
-    Import-Module -Name ([System.IO.Path]::Combine($packagesFolder, "Pester\tools\Pester")) -ErrorAction Stop
+    $pester3Path = [System.IO.Path]::Combine($packagesFolder, "Pester\tools\Pester")
+    # Import the specific version of Pester 3.4.0
+    Import-Module -Name $pester3Path -RequiredVersion 3.4.0 -ErrorAction Stop
 } catch {
-    Write-Host "Using globally installed Pester module."
-    Import-Module Pester -ErrorAction Stop
-}
+    Write-Host "Using globally installed Pester module version 3.4.0."
+    # Specify the exact version of Pester 3.x you have installed
+    Import-Module -Name Pester -RequiredVersion 3.4.0 -ErrorAction Stop}
 
 # Find and run all Pester test files in the tests directory
 $testFiles = Get-ChildItem -Path "$thisFolder" -Filter "*.tests.ps1" -Recurse
