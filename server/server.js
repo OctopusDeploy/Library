@@ -7,7 +7,8 @@ import compress from "compression";
 import React from "react";
 import ReactDOMServer from "react-dom/server";
 import { match, RouterContext } from "react-router";
-import "babel-core/register";
+//import "babel-core/register";
+import "@babel/register";
 import frameguard from "frameguard";
 
 import config from "./package.json";
