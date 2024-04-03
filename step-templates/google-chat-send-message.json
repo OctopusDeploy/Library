@@ -1,0 +1,45 @@
+{
+    "Id": "6c4c6253-45de-404f-b725-c96e1d7e4958",
+    "Name": "Google Chat - Send message",
+    "Description": "Send a message to a [Google Chat](https://chat.google.com) space using a configured [chat webhook](https://developers.google.com/workspace/chat/quickstart/webhooks#python_2).\n\nMulti-line message content and [basic formatting](https://developers.google.com/workspace/chat/format-messages) are supported.\n\n**Note:** This script is written in python, and is required for this step to function correctly.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "GitDependencies": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "Python",
+      "Octopus.Action.Script.ScriptBody": "import subprocess\nimport sys\n\nsubprocess.check_call([sys.executable, '-m', 'pip', 'install', 'httplib2', '--disable-pip-version-check'])\n\n# parameters\nwebhook_url = get_octopusvariable(\"GoogleChat.SendMessage.WebhookUrl\")\nmessage_content = get_octopusvariable(\"GoogleChat.SendMessage.MessageContent\")\n\nif not webhook_url:\n  raise ValueError('Webhook url null or empty!')\n  \nif not message_content:\n  raise ValueError('Message content null or empty!')\n  \nfrom json import dumps\nfrom httplib2 import Http\n\napp_message = {\"text\": message_content}\nmessage_headers = {\"Content-Type\": \"application/json; charset=UTF-8\"}\nhttp_obj = Http()\nresponse = http_obj.request(\n  uri=webhook_url,\n  method=\"POST\",\n  headers=message_headers,\n  body=dumps(app_message),\n)\nprintverbose('Google response:')\nprintverbose(response)"
+    },
+    "Parameters": [
+      {
+        "Id": "bb5767eb-bbfb-4379-917e-31f73cf56ad2",
+        "Name": "GoogleChat.SendMessage.WebhookUrl",
+        "Label": "Webhook URL",
+        "HelpText": "Provide the Google Chat [Webhook URL](https://developers.google.com/workspace/chat/quickstart/webhooks)",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "cb6577d7-d160-4e3a-86ea-b536bf92133a",
+        "Name": "GoogleChat.SendMessage.MessageContent",
+        "Label": "Message Content",
+        "HelpText": "Provide the message to send. Multi-line values, and [basic formatting](https://developers.google.com/workspace/chat/format-messages) are supported.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "MultiLineText"
+        }
+      }
+    ],
+    "StepPackageId": "Octopus.Script",
+    "$Meta": {
+      "ExportedAt": "2024-04-03T13:02:57.192Z",
+      "OctopusVersion": "2024.2.4001",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "harrisonmeister",
+    "Category": "google-chat"
+  }
