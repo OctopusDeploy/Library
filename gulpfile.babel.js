@@ -158,7 +158,7 @@ function humanize(categoryId) {
     case "gitlab":
       return "GitLab";
     case "google-chat":
-        return "Google Chat";  
+      return "Google Chat";
     case "google-cloud":
       return "Google Cloud";
     case "grate":
@@ -409,8 +409,10 @@ gulp.task("build", gulp.parallel("build:server", "build:client", "copy:configs")
 gulp.task(
   "watch",
   gulp.series("clean", "build", () => {
-    let server = LiveServer(`${buildDir}/server.js`);
+    process.chdir(`${buildDir}`);
+    let server = LiveServer(`server.js`);
     server.start();
+    process.chdir(`../`);
 
     browserSync.init(null, {
       proxy: "http://localhost:9000",
