@@ -76,13 +76,14 @@ Congratulations, you are now ready to build and test the site locally.
 From the root of the repository, run the following command: 
 
 ```
-gulp
+gulp build
 ```
 
 This will build a debuggable version of the library site and output it to `./build/`. To test the site, run the following command:
 
 ```
-node build/server.js
+cd build
+node server.js
 ```
 
 This will start the `express` server and you can browse the site at the following URL `http://localhost:9000`. 
@@ -104,6 +105,7 @@ gulp --production
 This will minify/uglify/concat the js/css files and output it to `./dist/`. To test the site, run the following command:
 
 ```
+cd dist
 node dist/server.js
 ```
 
