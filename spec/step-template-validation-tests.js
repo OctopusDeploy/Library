@@ -109,7 +109,9 @@ describe("step-templates", function () {
       }
 
       var otherThings = results.filter(function (file) {
-        return file.substr(-5) !== ".json" && file !== "logos" && file !== "tests";
+        var pesterFile = file.endsWith(".ScriptBody.ps1");
+        var jsonFile = file.endsWith(".json");
+        return !pesterFile && !jsonFile && file !== "logos" && file !== "tests";
       });
       expect(otherThings).toEqual([]);
       done();
