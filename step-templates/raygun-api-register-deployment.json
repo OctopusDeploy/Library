@@ -1,0 +1,45 @@
+{
+  "Id": "bb7de751-edba-4c5f-9845-1bd1b26f6b62",
+  "Name": "Raygun API - Register Deployment",
+  "Description": "Notifies [Raygun](https://raygun.com) of a deployment using their [Deployments API](https://raygun.com/documentation/product-guides/deployment-tracking/powershell/).\nSends the release number, deployer, release notes from the Octopus deployment.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "Function Get-Parameter($Name, [switch]$Required, $Default, [switch]$FailOnValidate) {\n    $result = $null\n    $errMessage = [string]::Empty\n\n    If ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n        Write-Host \"Octopus paramter value for $Name : $result\"\n    }\n\n    If ($result -eq $null) {\n        $variable = Get-Variable $Name -EA SilentlyContinue\n        if ($variable -ne $null) {\n            $result = $variable.Value\n        }\n    }\n\n    If ($result -eq $null) {\n        If ($Required) {\n            $errMessage = \"Missing parameter value $Name\"\n        } Else {\n            $result = $Default\n        }\n    } \n\n    If (-Not [string]::IsNullOrEmpty($errMessage)) {\n        If ($FailOnValidate) {\n            Throw $errMessage\n        } Else {\n            Write-Warning $errMessage\n        }\n    }\n\n    return $result\n}\n\n& {\n    Write-Host \"Start AddInRaygun\"\n\n    $deploymentId = [string] (Get-Parameter \"Octopus.Release.Number\" $true [string]::Empty $true)\n    $ownerName = [string] (Get-Parameter \"Octopus.Deployment.CreatedBy.DisplayName\" $true [string]::Empty $true)\n    $emailAddress = [string] (Get-Parameter \"Octopus.Deployment.CreatedBy.EmailAddress\" $false [string]::Empty $true)\n    $releaseNotes = [string] (Get-Parameter \"Octopus.Release.Notes\" $false [string]::Empty $true)\n    $personAccessToken = [string] (Get-Parameter \"Raygun.PersonalAccessToken\" $true [string]::Empty $true)\n    $apiKey = [string] (Get-Parameter \"Raygun.ApiKey\" $true [string]::Empty $true)\n    $deployedAt = Get-Date -Format \"o\"\n\n    Write-Host \"Registering deployment with Raygun\"\n\n    # Some older API keys may contain URL reserved characters (eg '/', '=', '+') and will need to be encoded.\n    # If your API key does not contain any reserved characters you can exclude the following line.\n    $urlEncodedApiKey = [System.Uri]::EscapeDataString($apiKey);\n\n    $url = \"https://api.raygun.com/v3/applications/api-key/\" + $urlEncodedApiKey + \"/deployments\"\n\n    $headers = @{\n        Authorization=\"Bearer \" + $personAccessToken\n    }\n\n    $payload = @{\n        version = $deploymentId\n        ownerName = $ownerName\n        emailAddress = $emailAddress\n        comment = $releaseNotes\n        deployedAt = $deployedAt\n    }\n\n    $payloadJson = $payload | ConvertTo-Json \n\n\n    try {\n        Invoke-RestMethod -Uri $url -Body $payloadJson -Method Post -Headers $headers -ContentType \"application/json\" -AllowInsecureRedirect\n        Write-Host \"Deployment registered with Raygun\"\n    } catch {\n        Write-Host \"Tried to send a deployment to \" $url \" with payload \" $payloadJson\n        Write-Error \"Error received when registering deployment with Raygun: $_\"\n    }\n\n    Write-Host \"End AddInRaygun\"\n}"
+  },
+  "Parameters": [
+    {
+      "Id": "0dd429d3-28f6-46b8-8fb7-e2ceb9124c15",
+      "Name": "Raygun.ApiKey",
+      "Label": "Api Key",
+      "HelpText": "Raygun Application's ApiKey (the same one you use to set Raygun up within your app)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "22d41dfb-f8f3-479d-8e72-08f456529f04",
+      "Name": "Raygun.PersonalAccessToken",
+      "Label": "Personal Access Token",
+      "HelpText": "Personal Access Token to use from your [Raygun User Settings page](https://app.raygun.io/user).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2024-04-09T08:20:04.075Z",
+    "OctopusVersion": "2024.2.4248",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "benjimac93",
+  "Category": "raygun"
+}
