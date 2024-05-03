@@ -301,7 +301,7 @@ function provideMissingData() {
     template.Category = humanize(categoryId);
 
     // Note: this deprecates base64 encoded images in the template files - they will be ignored
-    template.Logo = 'https://i.octopus.com/library/step-templates/' + categoryId + '.png';
+    template.Logo = "https://i.octopus.com/library/step-templates/" + categoryId + ".png";
 
     file.contents = Buffer.from(JSON.stringify(template));
 
