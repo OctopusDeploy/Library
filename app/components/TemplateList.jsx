@@ -26,8 +26,8 @@ export default class TemplateList extends React.Component {
       }
       let friendlySlug = SlugMaker.make(item.Name);
       return (
-        <li className={"item-summary " + item.ScriptClass} key={index + "." + item.Name}>
-          <img src={"data:image/gif;base64," + item.Logo} />
+        <li className={"item-summary " + (item.ScriptClass || "")} key={index + "." + item.Name}>
+          <img loading="lazy" src={item.Logo} />
           <h4 key={index + "." + item.Name + ".0"}>
             <Link to={`/step-templates/${item.Id}/${friendlySlug}`}>{item.Name}</Link>
           </h4>
