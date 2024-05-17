@@ -1,5 +1,7 @@
-import * as fs from 'node:fs/promises';
 import path from 'node:path';
+import * as fs from 'node:fs/promises';
+import * as detail from './detail.js';
+import { toSlug }  from './formatting.js';
 
 const templatePath = '../../step-templates';
 const distributionPath = '../../integrations';
@@ -25,7 +27,7 @@ for (let file of files) {
         name: json.Name
     });
 
-    await createMarkdown(category, json);
+    await createMarkdown(category, json, file);
 }
 
 console.log(categories);
@@ -70,16 +72,11 @@ async function createCategory(category) {
     await fs.mkdir(`${distributionPath}/${toSlug(category)}`, { recursive: true });
 }
 
-async function createMarkdown(category, data) {
-    const content = `---
-    todo: frontmatter
----
-
-`;
+async function createMarkdown(category, data, file) {
+    const content = detail.getContent(category, data, file);
 
     await fs.writeFile(`${distributionPath}/${toSlug(category)}/${toSlug(data.Name)}.md`, content)
 }
 
-function toSlug(text) {
-    return encodeURIComponent(text.toLowerCase().replace(/ - /g, ' ').replace(/ /g, '-'));
-}
+
+
