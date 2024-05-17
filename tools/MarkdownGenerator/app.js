@@ -1,5 +1,6 @@
 import path from 'node:path';
 import * as fs from 'node:fs/promises';
+import * as index from './index.js';
 import * as detail from './detail.js';
 import { toSlug }  from './formatting.js';
 
@@ -10,6 +11,8 @@ const files = await fs.readdir(templatePath);
 const categories = {};
 
 await cleanOutputFolder();
+
+// Process individual templates
 
 for (let file of files) {
     const json = await getTemplateData(file);
@@ -28,6 +31,12 @@ for (let file of files) {
     });
 
     await createMarkdown(category, json, file);
+}
+
+// Process category index pages
+
+for (let property in categories) {
+    await createIndex(property, categories[property]);
 }
 
 console.log(categories);
@@ -75,8 +84,13 @@ async function createCategory(category) {
 async function createMarkdown(category, data, file) {
     const content = detail.getContent(category, data, file);
 
-    await fs.writeFile(`${distributionPath}/${toSlug(category)}/${toSlug(data.Name)}.md`, content)
+    await fs.writeFile(`${distributionPath}/${toSlug(category)}/${toSlug(data.Name)}.md`, content);
 }
 
+async function createIndex(name, data) {
+    const content = index.getContent(name, data);
+
+    await fs.writeFile(`${distributionPath}/${toSlug(name)}/index.md`, content);
+}
 
 
