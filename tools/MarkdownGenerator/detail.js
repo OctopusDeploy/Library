@@ -5,12 +5,12 @@ const scriptBlock = '```';
 
 return `---
 layout: src/layouts/Default.astro
-pubDate: ${toMetaDate(data.LastModifiedOn)}
+pubDate: ${toMetaDate(data.ExportedAt)}
 title: '${data.Name}'
 description: '${data.Description}'
 ---
 
-${data.ActionType} exported ${toDisplayDate(data.LastModifiedOn)} by ${data.LastModifiedBy} belongs to '${data.Category}' category.
+${data.ActionType} exported ${toDisplayDate(data.ExportedAt)} by ${data.Author} belongs to '${data.Category}' category.
 
 ## Parameters
 

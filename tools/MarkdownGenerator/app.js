@@ -14,24 +14,43 @@ await cleanOutputFolder();
 
 // Process individual templates
 
-for (let file of files) {
-    const json = await getTemplateData(file);
+// TODO: Fetch from https://library.octopus.com/api/step-templates
 
-    if (json == null) {
-        continue;
-    }
+const libraryData = await fetch('https://library.octopus.com/api/step-templates')
+    .then(res => res.json());
 
-    const category = getSafeCategory(json);
+for (let template of libraryData) {
+    const category = getSafeCategory(template);
 
     await createCategory(category);
 
     categories[category].templates.push({
-        id: json.Id,
-        name: json.Name
+        id: template.Id,
+        name: template.Name
     });
 
-    await createMarkdown(category, json, file);
+    await createMarkdown(category, template, template.HistoryUrl);
 }
+
+
+// for (let file of files) {
+//     const json = await getTemplateData(file);
+
+//     if (json == null) {
+//         continue;
+//     }
+
+//     const category = getSafeCategory(json);
+
+//     await createCategory(category);
+
+//     categories[category].templates.push({
+//         id: json.Id,
+//         name: json.Name
+//     });
+
+//     await createMarkdown(category, json, file);
+// }
 
 // Process category index pages
 
@@ -42,7 +61,7 @@ for (let property in categories) {
 console.log(categories);
 
 async function cleanOutputFolder() {
-    await fs.rmdir(distributionPath, { recursive: true });
+    await fs.rm(distributionPath, { recursive: true, force: true });
 }
 
 async function getTemplateData(file) {
@@ -61,12 +80,20 @@ async function getTemplateData(file) {
 
 function getSafeCategory(data) {
     const category = data.Category;
+    
     if (category == null || category.length == 0) {
         console.warn(`There is no category for ${data.Name}. Using 'other'.`);
         return 'other';
     }
 
-    return category.toLowerCase();
+    while(category.charAt(0)== '-') {
+        category = category.substring(1);
+    }
+
+    return category
+        .toLowerCase()
+        .replace(/\.net/g, 'dotnet')
+        .trim();
 }
 
 async function createCategory(category) {
