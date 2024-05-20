@@ -12,10 +12,7 @@ const categories = {};
 
 await cleanOutputFolder();
 
-// Process individual templates
-
-// TODO: Fetch from https://library.octopus.com/api/step-templates
-
+// Get templates from the API
 const libraryData = await fetch('https://library.octopus.com/api/step-templates')
     .then(res => res.json());
 
@@ -29,53 +26,19 @@ for (let template of libraryData) {
         name: template.Name
     });
 
+    // Create detail pages
     await createMarkdown(category, template, template.HistoryUrl);
 }
 
-
-// for (let file of files) {
-//     const json = await getTemplateData(file);
-
-//     if (json == null) {
-//         continue;
-//     }
-
-//     const category = getSafeCategory(json);
-
-//     await createCategory(category);
-
-//     categories[category].templates.push({
-//         id: json.Id,
-//         name: json.Name
-//     });
-
-//     await createMarkdown(category, json, file);
-// }
-
-// Process category index pages
-
+// Create category index pages
 for (let property in categories) {
     await createIndex(property, categories[property]);
 }
 
-console.log(categories);
+console.log(`Processed ${Object.keys(categories).length} categories`);
 
 async function cleanOutputFolder() {
     await fs.rm(distributionPath, { recursive: true, force: true });
-}
-
-async function getTemplateData(file) {
-    const filePath = `${templatePath}/${file}`;
-    const ext = path.extname(filePath);
-
-    if (ext != '.json') {
-        return null;
-    }
-
-    console.log(ext, filePath);
-
-    const fileText = await fs.readFile(filePath, { encoding: 'utf8' });
-    return JSON.parse(fileText);
 }
 
 function getSafeCategory(data) {
