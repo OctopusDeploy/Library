@@ -1,0 +1,76 @@
+{
+  "Id": "bc4eae30-786a-4974-a003-948b7a4ed023",
+  "Name": "Application Insights - Annotate Release with Azure CLI and RBAC",
+  "Description": "Marks a release point in Application Insights. This step template uses Azure CLI and Role-Based Access Control instead of an API Key. Used application-insights-annotate-release.json as inspiration.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Function to decrypt data\nfunction Convert-PasswordToPlainText {\n\t$base64password = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($OctopusParameters[\"AppInsights.ApplicationInsightsAccount.Password\"]))\n    return [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($base64password))\n}\n\n# Function to ensure all Unicode characters in a JSON string are properly escaped\nfunction Convert-UnicodeToEscapeHex {\n  param (\n    [parameter(Mandatory = $true)][string]$JsonString\n  )\n  $JsonObject = ConvertFrom-Json -InputObject $JsonString\n  foreach ($property in $JsonObject.PSObject.Properties) {\n    $name = $property.Name\n    $value = $property.Value\n    if ($value -is [string]) {\n      $value = [regex]::Unescape($value)\n      $OutputString = \"\"\n      foreach ($char in $value.ToCharArray()) {\n        $dec = [int]$char\n        if ($dec -gt 127) {\n          $hex = [convert]::ToString($dec, 16)\n          $hex = $hex.PadLeft(4, '0')\n          $OutputString += \"\\u$hex\"\n        }\n        else {\n          $OutputString += $char\n        }\n      }\n      $JsonObject.$name = $OutputString\n    }\n  }\n  return ConvertTo-Json -InputObject $JsonObject -Compress\n}\n\n$applicationName = $OctopusParameters[\"AppInsights.ApplicationName\"]\n$resourceGroup = $OctopusParameters[\"AppInsights.ResourceGroup\"]\n$releaseName = $OctopusParameters[\"AppInsights.ReleaseName\"]\n$properties = $OctopusParameters[\"AppInsights.ReleaseProperties\"]\n\n# Authenticate via Service Principal\n$securePassword = Convert-PasswordToPlainText\n$azEnv = if($OctopusParameters[\"AppInsights.ApplicationInsightsAccount.AzureEnvironment\"]) { $OctopusParameters[\"AppInsights.ApplicationInsightsAccount.AzureEnvironment\"] } else { \"AzureCloud\" }\n\n$azEnv = Get-AzEnvironment -Name $azEnv\nif (!$azEnv) {\n\tWrite-Error \"No Azure environment could be matched given the name $($OctopusParameters[\"AppInsights.ApplicationInsightsAccount.AzureEnvironment\"])\"\n\texit -2\n}\n\nWrite-Verbose \"Authenticating with Service Principal\"\n\n# Force any output generated to be verbose in Octopus logs.\naz login --service-principal -u $OctopusParameters[\"AppInsights.ApplicationInsightsAccount.Client\"] -p $securePassword --tenant $OctopusParameters[\"AppInsights.ApplicationInsightsAccount.TenantId\"]\n\nWrite-Verbose \"Initiating the body of the annotation\"\n\n$releaseProperties = $null\n\nif ($properties -ne $null)\n{\n    $releaseProperties = ConvertFrom-StringData -StringData $properties\n}\n\n$annotation = @{\n    Id = [GUID]::NewGuid();\n    AnnotationName = $releaseName;\n    EventTime = (Get-Date).ToUniversalTime().GetDateTimeFormats(\"s\")[0];\n    Category = \"Deployment\"; #Application Insights only displays annotations from the \"Deployment\" Category\n    Properties = ConvertTo-Json $releaseProperties -Compress\n}\n\n$annotation = ConvertTo-Json $annotation -Compress\n$annotation = Convert-UnicodeToEscapeHex -JsonString $annotation  \n\n$body = $annotation -replace '(\\\\+)\"', '$1$1\"' -replace \"`\"\", \"`\"`\"\"\n\nWrite-Verbose \"Send the annotation to Application Insights\"\n\naz rest --method put --uri \"/subscriptions/$($OctopusParameters[\"AppInsights.ApplicationInsightsAccount.SubscriptionNumber\"])/resourceGroups/$($resourceGroup)/providers/microsoft.insights/components/$($applicationName)/Annotations?api-version=2015-05-01\" --body \"$($body) \"",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Id": "ef9d044d-3765-4cb0-af55-22c15ce4013c",
+      "Name": "AppInsights.ApplicationInsightsAccount",
+      "Label": "Application Insights Account",
+      "HelpText": "Azure account for the Application Insights instance",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "98174616-d9dd-4e8e-9b01-2961a061360f",
+      "Name": "AppInsights.ApplicationName",
+      "Label": "Application Name",
+      "HelpText": "The Application Insights Application name.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "41835ca3-76d3-47f8-b863-d26c782c4ba4",
+      "Name": "AppInsights.ResourceGroup",
+      "Label": "Resource Group",
+      "HelpText": "The Resource Group of the Application Insights instance",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e008808c-622d-4efe-91a0-ac666d264996",
+      "Name": "AppInsights.ReleaseName",
+      "Label": "Release Name",
+      "HelpText": "The release name. Typically bound to #{Octopus.Release.Number}",
+      "DefaultValue": "#{Octopus.Release.Number}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "551f06ad-9470-415b-aed9-dd80f3a4123d",
+      "Name": "AppInsights.ReleaseProperties",
+      "Label": "Release Properties",
+      "HelpText": "List of key/value pairs separated by a new-line. For example:\n\n```\nReleaseDescription = Release with annotation\nTriggerBy = John Doe\n```",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2024-05-17T06:54:43.852Z",
+    "OctopusVersion": "2024.1.12600",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedOn": "2024-05-17T07:30:00.000Z",
+  "LastModifiedBy": "NielsDM",
+  "Category": "azure"
+}
