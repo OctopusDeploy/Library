@@ -1,0 +1,45 @@
+{
+  "Id": "a757705d-2551-42bf-8cef-8dd99bd6b4f9",
+  "Name": "Argo - Rollouts Pause",
+  "Description": "Set the rollout paused state to 'true'",
+  "ActionType": "Octopus.KubernetesRunScript",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Installs the Argo Rollouts plugin\nfunction Install-Plugin\n{\n# Define parameters\n\tparam ($PluginUri,\n           $PluginFilename\n    )\n    \n    # Check for plugin folder\n    if ((Test-Path -Path \"$PWD/plugins\") -eq $false)\n    {\n\t\t# Create new plugins folder\n        New-Item -Path \"$PWD/plugins\" -ItemType \"Directory\"\n        \n        # Add to path\n        $env:PATH = \"$($PWD)/plugins$([IO.Path]::PathSeparator)\" + $env:PATH\n    }\n\n\t# Download plugin\n\tInvoke-WebRequest -Uri \"$PluginUri\" -OutFile \"$PWD/plugins/$PluginFilename\"\n\n\t# Make file executable\n    if ($IsLinux)\n    {\n\t\t# Make it executable\n    \tchmod +x ./plugins/$PluginFilename\n    }\n    \n    if ($IsWindows)\n    {\n    \t# Update filename to include .exe extension\n        Rename-Item -Path \"$PWD/plugins/$PluginFilename\" -NewName \"$PWD/plugins/$($PluginFilename).exe\"\n    }\n}\n\n# When listing plugins, kubectl looks in all paths defined in $env:PATH and will fail if the path does not exist\nfunction Verify-Path-Variable\n{\n\t# Get current path and split into array\n    $paths = $env:PATH.Split([IO.Path]::PathSeparator)\n    $verifiedPaths = @()\n    \n    # Loop through paths\n    foreach ($path in $paths)\n    {\n    \t# Check for existence\n        if ((Test-Path -Path $path) -eq $true)\n        {\n        \t# Add to verified\n            $verifiedPaths += $path\n        }\n    }\n    \n    # Return verified paths\n    return ($verifiedPaths -join [IO.Path]::PathSeparator)\n}\n\nfunction Get-Plugin-Installed\n{\n\t# Define parameters\n    param (\n    \t$PluginName,\n        $InstalledPlugins\n        )\n        \n   \t$isInstalled = $false\n   \n\tforeach ($plugin in $installedPlugins)\n   \t{\n\t\tif ($plugin -like \"$($PluginName)*\")\n        {\n        \t$isInstalled = $true\n          \tbreak\n        }\n\t}\n    \n    return $isInstalled\n}\n\n# Check to see if $IsWindows is available\nif ($null -eq $IsWindows) {\n    Write-Host \"Determining Operating System...\"\n    $IsWindows = ([System.Environment]::OSVersion.Platform -eq \"Win32NT\")\n    $IsLinux = ([System.Environment]::OSVersion.Platform -eq \"Unix\")\n}\n\n# Fix ANSI Color on PWSH Core issues when displaying objects\nif ($PSEdition -eq \"Core\") {\n    $PSStyle.OutputRendering = \"PlainText\"\n}\n\n# Check to see if it's running on Windows\nif ($IsWindows) {\n    # Disable the progress bar so downloading files via Invoke-WebRequest are faster\n    $ProgressPreference = 'SilentlyContinue'\n}\n\n# Set TLS\n[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12\n\n# Verify all PATH variables are avaialable\n$env:PATH = Verify-Path-Variable\nif ($IsLinux)\n{\n\t$pluginUri = \"https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64\"\n}\n\nif ($IsWindows)\n{\n\t$pluginUri = \"https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-windows-amd64\"\n}\n\ntry \n{\n    # Check to see if plugins are installed\n    $pluginList = (kubectl plugin list 2>&1)\n\n    # This is the path that Linux will take\n    if ($lastExitCode -ne 0 -and $pluginList.Exception.Message -eq \"error: unable to find any kubectl plugins in your PATH\") \n    {\n        Install-Plugin -PluginUri $pluginUri -PluginFilename \"kubectl-argo-rollouts\"\n    }\n    else\n    {\n        # Parse list\n    \t$pluginList = $pluginList.Split(\"`n\", [System.StringSplitOptions]::RemoveEmptyEntries)\n        \n        if ((Get-Plugin-Installed -PluginName \"kubectl-argo-rollouts\" -InstalledPlugins $pluginList) -eq $false)\n        {\n        \tInstall-Plugin -PluginUri $pluginUri -PluginFilename \"kubectl-argo-rollouts\"\n        }\n        else\n        {\n        \tWrite-Host \"Argo Rollout kubectl plugin found ...\"\n        }\n    }    \n}\ncatch\n{\n\t# On Windows, the executable will cause an error if no plugins found so this the path Windows will take\n    if ($_.Exception.Message -eq \"error: unable to find any kubectl plugins in your PATH\")\n    {\n      Install-Plugin -PluginUri $pluginUri -PluginFilename \"kubectl-argo-rollouts\"    \n    }\n    else\n    {\n    \t# Something else happened, we need to surface the error\n        throw\n    }\n}\n\n# Get parameters\n$rolloutsName = $OctopusParameters['Argo.Rollout.Name']\n$rolloutsNamespace = $OctopusParameters['Argo.Rollout.Namespace']\n\n# Create arguments array\n$kubectlArguments = @(\"argo\", \"rollouts\", \"pause\", $rolloutsName, \"--namespace\", $rolloutsNamespace)\n\n# Pause rollout\nkubectl $kubectlArguments"
+  },
+  "Parameters": [
+    {
+      "Id": "d7665ee0-08b1-4c3a-b7f9-bf9ccfa63219",
+      "Name": "Argo.Rollout.Name",
+      "Label": "Rollout Name",
+      "HelpText": "Name of the Argo Rollout to pause.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8a9ed999-5c3f-4652-abbb-07f592205bfc",
+      "Name": "Argo.Rollout.Namespace",
+      "Label": "Namespace",
+      "HelpText": "The namespace where the rollout exists.",
+      "DefaultValue": "default",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.KubernetesRunScript",
+  "$Meta": {
+    "ExportedAt": "2024-06-06T19:54:47.156Z",
+    "OctopusVersion": "2024.1.12815",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "argo"
+}
