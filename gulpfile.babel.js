@@ -111,6 +111,8 @@ function humanize(categoryId) {
       return "ApexSQL";
     case "apollo":
       return "Apollo GraphQL";
+    case "argo":
+      return "Argo";
     case "aspnet":
       return "ASP.NET";
     case "aws":
