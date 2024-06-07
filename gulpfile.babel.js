@@ -112,7 +112,7 @@ function humanize(categoryId) {
     case "apollo":
       return "Apollo GraphQL";
     case "argo":
-      return "Arogo";
+      return "Argo";
     case "aspnet":
       return "ASP.NET";
     case "aws":
