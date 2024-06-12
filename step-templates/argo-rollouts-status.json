@@ -1,0 +1,55 @@
+{
+  "Id": "866c3e69-5bd6-4439-8a2e-8cbf252885a4",
+  "Name": "Argo - Rollouts Status",
+  "Description": "Gets the status of an Argo Rollout.\nNote: A timeout isn't considered an error, it will return the status at the time of the timeout.",
+  "ActionType": "Octopus.KubernetesRunScript",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Supress info messages written to stderr\nWrite-Host \"##octopus[stderr-progress]\"\n\nfunction Save-OctopusVariable {\n    Param(\n        [string] $name,\n        [string] $value\n    )\n    $StepName = $OctopusParameters[\"Octopus.Step.Name\"]    \n    \n    Set-OctopusVariable -Name $name -Value $value\n\n    Write-Host \"Created output variable: ##{Octopus.Action[$StepName].Output.$name}\"\n}\n\n# Installs the Argo Rollouts plugin\nfunction Install-Plugin\n{\n# Define parameters\n\tparam ($PluginUri,\n           $PluginFilename\n    )\n    \n    # Check for plugin folder\n    if ((Test-Path -Path \"$PWD/plugins\") -eq $false)\n    {\n\t\t# Create new plugins folder\n        New-Item -Path \"$PWD/plugins\" -ItemType \"Directory\"\n        \n        # Add to path\n        $env:PATH = \"$($PWD)/plugins$([IO.Path]::PathSeparator)\" + $env:PATH\n    }\n\n\t# Download plugin\n\tInvoke-WebRequest -Uri \"$PluginUri\" -OutFile \"$PWD/plugins/$PluginFilename\"\n\n\t# Make file executable\n    if ($IsLinux)\n    {\n\t\t# Make it executable\n    \tchmod +x ./plugins/$PluginFilename\n    }\n    \n    if ($IsWindows)\n    {\n    \t# Update filename to include .exe extension\n        Rename-Item -Path \"$PWD/plugins/$PluginFilename\" -NewName \"$PWD/plugins/$($PluginFilename).exe\"\n    }\n}\n\n# When listing plugins, kubectl looks in all paths defined in $env:PATH and will fail if the path does not exist\nfunction Verify-Path-Variable\n{\n\t# Get current path and split into array\n    $paths = $env:PATH.Split([IO.Path]::PathSeparator)\n    $verifiedPaths = @()\n    \n    # Loop through paths\n    foreach ($path in $paths)\n    {\n    \t# Check for existence\n        if ((Test-Path -Path $path) -eq $true)\n        {\n        \t# Add to verified\n            $verifiedPaths += $path\n        }\n    }\n    \n    # Return verified paths\n    return ($verifiedPaths -join [IO.Path]::PathSeparator)\n}\n\nfunction Get-Plugin-Installed\n{\n\t# Define parameters\n    param (\n    \t$PluginName,\n        $InstalledPlugins\n        )\n        \n   \t$isInstalled = $false\n   \n\tforeach ($plugin in $installedPlugins)\n   \t{\n\t\tif ($plugin -like \"$($PluginName)*\")\n        {\n        \t$isInstalled = $true\n          \tbreak\n        }\n\t}\n    \n    return $isInstalled\n}\n\n# Check to see if $IsWindows is available\nif ($null -eq $IsWindows) {\n    Write-Host \"Determining Operating System...\"\n    $IsWindows = ([System.Environment]::OSVersion.Platform -eq \"Win32NT\")\n    $IsLinux = ([System.Environment]::OSVersion.Platform -eq \"Unix\")\n}\n\n# Fix ANSI Color on PWSH Core issues when displaying objects\nif ($PSEdition -eq \"Core\") {\n    $PSStyle.OutputRendering = \"PlainText\"\n}\n\n# Check to see if it's running on Windows\nif ($IsWindows) {\n    # Disable the progress bar so downloading files via Invoke-WebRequest are faster\n    $ProgressPreference = 'SilentlyContinue'\n}\n\n# Set TLS\n[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12\n\n# Verify all PATH variables are avaialable\n$env:PATH = Verify-Path-Variable\nif ($IsLinux)\n{\n\t$pluginUri = \"https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64\"\n}\n\nif ($IsWindows)\n{\n\t$pluginUri = \"https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-windows-amd64\"\n}\n\ntry \n{\n    # Check to see if plugins are installed\n    $pluginList = (kubectl plugin list 2>&1)\n\n    # This is the path that Linux will take\n    if ($lastExitCode -ne 0 -and $pluginList.Exception.Message -eq \"error: unable to find any kubectl plugins in your PATH\") \n    {\n        Install-Plugin -PluginUri $pluginUri -PluginFilename \"kubectl-argo-rollouts\"\n    }\n    else\n    {\n        # Parse list\n    \t$pluginList = $pluginList.Split(\"`n\", [System.StringSplitOptions]::RemoveEmptyEntries)\n        \n        if ((Get-Plugin-Installed -PluginName \"kubectl-argo-rollouts\" -InstalledPlugins $pluginList) -eq $false)\n        {\n        \tInstall-Plugin -PluginUri $pluginUri -PluginFilename \"kubectl-argo-rollouts\"\n        }\n        else\n        {\n        \tWrite-Host \"Argo Rollout kubectl plugin found ...\"\n        }\n    }    \n}\ncatch\n{\n\t# On Windows, the executable will cause an error if no plugins found so this the path Windows will take\n    if ($_.Exception.Message -eq \"error: unable to find any kubectl plugins in your PATH\")\n    {\n\t\tInstall-Plugin -PluginUri $pluginUri -PluginFilename \"kubectl-argo-rollouts\"    \n    }\n    else\n    {\n    \t# Something else happened, we need to surface the error\n        throw\n    }\n}\n\n# Get parameters\n$rolloutsName = $OctopusParameters['Argo.Rollout.Name']\n$rolloutsNamespace = $OctopusParameters['Argo.Rollout.Namespace']\n$rolloutsTimeout = $OctopusParameters['Argo.Rollout.Timeout']\n\n# Validate arguments\nif ([string]::IsNullOrWhitespace($rolloutsTimeout))\n{\n    Write-Error \"Please specify a timeout value\"\n}\n\n# Add new arguments\n$kubectlArguments = @(\"argo\", \"rollouts\", \"status\", $rolloutsName, \"--namespace\", $rolloutsNamespace, \"--timeout\", $rolloutsTimeout)\n\ntry\n{\n    # Get the current status - This was the only way to get it to work cross-platform\n    $process = Start-Process -FilePath \"kubectl\" -ArgumentList $kubectlArguments -NoNewWindow -RedirectStandardError \"error.txt\" -RedirectStandardOutput \"success.txt\" -Wait -PassThru\n    $lastExitCode = $process.ExitCode\n    $rolloutStatus =  (Get-Content \"success.txt\")\n   \n    # Check the code from the command\n    if ($lastExitCode -ne 0)\n    {\n        # Get the error from the file\n        $errorMessage = Get-Content \"error.txt\"\n\n        if ($errorMessage -is [array])\n        {\n          $errorMessage = $errorMessage[0]\n        }\n\n        # Expose the original error\n        throw $errorMessage\n    }\n}\ncatch\n{\n    if ($_.Exception.Message -ne \"Error: Rollout status watch exceeded timeout\")\n    {\n        # Timeout is expected, everything else is not\n        Write-Host \"$(Get-Content \"error.txt\")\"\n        throw\n    }\n    else\n    {\n        # It was just a timeout, make last exit 0\n        Write-Host \"Wait operation timed out, returning recorded status.\"\n        $lastExitCode = 0\n    }\n}\n\nWrite-Host \"Status is $rolloutStatus\"\n\nif ($rolloutStatus.Contains(\"-\"))\n{\n    $messages = $rolloutStatus.Split(\"-\")\n    \n    Save-OctopusVariable -Name \"Status\" -Value $messages[0].Trim()\n    Save-OctopusVariable -Name \"StatusMessage\" -Value $messages[1].Trim()\n}\nelse\n{\n    Save-OctopusVariable -Name \"Status\" -Value $rolloutStatus\n}"
+  },
+  "Parameters": [
+    {
+      "Id": "5eefb32e-04a6-40ed-9018-3ba12e241b01",
+      "Name": "Argo.Rollout.Name",
+      "Label": "Rollout Name",
+      "HelpText": "Name of the Argo Rollout to promote.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b13022d0-9a74-42cd-8b3e-d3cfa0c4d64c",
+      "Name": "Argo.Rollout.Namespace",
+      "Label": "Namespace",
+      "HelpText": "The namespace to execute the promotion of the rollout against.",
+      "DefaultValue": "default",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "065f1110-abe9-4bdf-9a98-af20dcac4e8e",
+      "Name": "Argo.Rollout.Timeout",
+      "Label": "Timeout",
+      "HelpText": "The length of time to watch before giving up. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). Zero means wait forever.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.KubernetesRunScript",
+  "$Meta": {
+    "ExportedAt": "2024-06-12T18:36:25.339Z",
+    "OctopusVersion": "2024.2.9210",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "argo"
+}
