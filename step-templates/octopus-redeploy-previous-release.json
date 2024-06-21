@@ -1,0 +1,75 @@
+{
+  "Id": "829b2777-144c-498b-b6aa-2b387da76ead",
+  "Name": "Octopus - Re-deploy previous version",
+  "Description": "Re-deploy the previous version of a project.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "function Get-OctopusItems\n{\n\t# Define parameters\n    param(\n    \t$OctopusUri,\n        $ApiKey,\n        $SkipCount = 0\n    )\n    \n    # Define working variables\n    $items = @()\n    $skipQueryString = \"\"\n    $headers = @{\"X-Octopus-ApiKey\"=\"$ApiKey\"}\n\n    # Check to see if there there is already a querystring\n    if ($octopusUri.Contains(\"?\"))\n    {\n        $skipQueryString = \"&skip=\"\n    }\n    else\n    {\n        $skipQueryString = \"?skip=\"\n    }\n\n    $skipQueryString += $SkipCount\n    \n    # Get intial set\n    Write-Host \"Calling $OctopusUri$skipQueryString\"\n    $resultSet = Invoke-RestMethod -Uri \"$($OctopusUri)$skipQueryString\" -Method GET -Headers $headers\n\n    # Check to see if it returned an item collection\n    if ($null -ne $resultSet.Items)\n    {\n        # Store call results\n        $items += $resultSet.Items\n    \n        # Check to see if resultset is bigger than page amount\n        if (($resultSet.Items.Count -gt 0) -and ($resultSet.Items.Count -eq $resultSet.ItemsPerPage))\n        {\n            # Increment skip count\n            $SkipCount += $resultSet.ItemsPerPage\n\n            # Recurse\n            $items += Get-OctopusItems -OctopusUri $OctopusUri -ApiKey $ApiKey -SkipCount $SkipCount\n        }\n    }\n    else\n    {\n        return $resultSet\n    }\n    \n    # Return results\n    return $items\n}\n\n# Define variables\n$octopusApiKey = $OctopusParameters['redeploy.api.key']\n$octopusUri = $OctopusParameters['redeploy.octopus.server.uri']\n$octopusReleaseNumber = $OctopusParameters['redeploy.release.number']\n$octopusReleaseId = $null\n$header =  @{ \"X-Octopus-ApiKey\" = $octopusApiKey }\n$spaceId = $OctopusParameters['Octopus.Space.Id']\n$environmentId = $OctopusParameters['Octopus.Environment.Id']\n$projectId = $OctopusParameters['Octopus.Project.Id']\n$promptedVariables = $OctopusParameters['redeploy.prompted.variables']\n$usePreviousPromptedVariables = [System.Convert]::ToBoolean($OctopusParameters['redeploy.prompted.useexisting'])\n$deploymentFormValues = @{}\n\nif ($octopusUri.EndsWith(\"/\") -eq $true)\n{\n  # Add trailing slash\n  $octopusUri = $octopusUri.Substring(0, ($octopusUri.Length - 1))\n}\n\n# Check to see if a release number was provided\nif ([string]::IsNullOrWhitespace($octopusReleaseNumber))\n{\n  # Get the previous release number\n  $octopusReleaseId = $OctopusParameters['Octopus.Release.PreviousForEnvironment.Id']\n  \n  $release = Get-OctopusItems -OctopusUri \"$octopusUri/api/$spaceId/releases/$octopusReleaseId\" -ApiKey $octopusApiKey\n}\nelse\n{\n  # Get the specific release\n  $release = Get-OctopusItems -OctopusUri \"$octopusUri/api/$spaceId/projects/$projectId/releases?searchByVersion=$octopusReleaseNumber\" -ApiKey $octopusApiKey\n  \n  # Record the id\n  $octopusReleaseId = $release.Id\n}  \n  \n# Verify result\nif ($null -ne $release)\n{\n  # Get deployments\n  $deployments = Get-OctopusItems -OctopusUri \"$octopusUri/api/$spaceId/releases/$($release.Id)/deployments\" -ApiKey $octopusApiKey\n   \n  # Ensure this release has been deployed to this environment\n  $deployment = ($deployments | Where-Object {$_.EnvironmentId -eq $environmentId})\n    \n  if ($null -eq $deployment)\n  {\n    Write-Error \"Error: $octopusReleaseNumber has not been deployed to $($OctopusParameters['Octopus.Environment.Name'])!\"\n  }\n    \n  # Get the task\n  if ($deployment.Links.Task -is [array])\n  {\n    # Get the last attempt\n    $taskLink = $deployment.Links.Task[-1]\n  }\n  else\n  {\n    $taskLink = $deployment.Links.Task\n  }\n  \n  $serverTask = Invoke-RestMethod -Method Get -Uri \"$octopusUri$($taskLink)\" -Headers $header\n    \n  # Ensure it was successful before continuing\n  if ($serverTask.State -eq \"Failed\")\n  {\n    Write-Error \"The previous deployment of $($release.Version) to $($OctopusParameters['Octopus.Environment.Name']) was not successful, unable to re-deploy.\"\n  }\n  \n  try\n  {\n    $deploymentVariables = Invoke-RestMethod -Method Get -Uri \"$octopusUri/api/$spaceId/variables/variableset-$($serverTask.Arguments.DeploymentId)\" -Headers $header\n  }\n  catch\n  {\n    if ($_.Exception.Response.StatusCode -eq \"NotFound\")\n    {\n      $deploymentVariables = $null\n    }\n    else\n    {\n      throw\n    }\n  }\n  \n  # Get only prompted variables\n  $deploymentVariables = ($deploymentVariables.Variables | Where-Object {$null -ne $_.Prompt})\n}\nelse\n{\n  Write-Error \"Unable to find release version $octopusReleaseNumber!\"\n}\n\n# Check to see if there prompted variables that need to be included\nif ($usePreviousPromptedVariables -or ![string]::IsNullOrWhitespace($promptedVariables))\n{\n    # Ensure the previous deployment variables were retrieved\n    if ($null -eq $deploymentVariables)\n    {\n      throw \"Error: Unable to retrieve previous deployment variables!\"\n    }\n    \n    if ($usePreviousPromptedVariables)\n    {\n      # Create list\n      $promptedValueList = @()\n      foreach ($variable in $deploymentVariables)\n      {\n        $promptedValueList += \"$($variable.Name)=$($variable.Value)\"\n      }\n    }\n    else\n    {\n      $promptedValueList = @(($promptedVariables -Split \"`n\").Trim())\n    }\n\n    # Get deployment preview for prompted variables\n    $deploymentPreview = Invoke-RestMethod \"$OctopusUri/api/$spaceId/releases/$octopusReleaseId/deployments/preview/$($environmentId)?includeDisabledSteps=true\" -Headers $header  \n   \n    foreach($element in $deploymentPreview.Form.Elements)\n    {\n        $nameToSearchFor = $element.Control.Name\n        $uniqueName = $element.Name\n        $isRequired = $element.Control.Required\n    \n        $promptedVariablefound = $false\n    \n        Write-Host \"Looking for the prompted variable value for $nameToSearchFor\"\n        foreach ($promptedValue in $promptedValueList)\n        {\n            $splitValue = $promptedValue -Split \"=\"\n            Write-Host \"Comparing $nameToSearchFor with provided prompted variable $($promptedValue[$nameToSearchFor])\"\n            if ($splitValue.Length -gt 1)\n            {\n                if ($nameToSearchFor -eq $splitValue[0].Trim())\n                {\n                    Write-Host \"Found the prompted variable value $nameToSearchFor\"\n                    $deploymentFormValues[$uniqueName] = $splitValue[1].Trim()\n                    $promptedVariableFound = $true\n                    break\n                }\n            }\n        }\n    \n        if ($promptedVariableFound -eq $false -and $isRequired -eq $true)\n        {\n            Write-Highlight \"Unable to find a value for the required prompted variable $nameToSearchFor, exiting\"\n            Exit 1\n        }\n    }\n \n}\n\n# Create json object to deploy the release\n$deploymentBody = @{\n  ReleaseId = $octopusReleaseId\n  EnvironmentId = $environmentId\n}\n\n# Check to see if there were any Prompted Variables\nif ($deploymentFormValues.Count -gt 0)\n{\n  $deploymentBody.Add(\"FormValues\", $deploymentFormValues)\n}\n\n# Submit deployment\nWrite-Host \"Submitting release $($release.Version) to $($OctopusParameters['Octopus.Environment.Name'])\"\n$submittedRelease = (Invoke-RestMethod -Uri \"$octopusUri/api/$spaceId/deployments\" -Method POST -Headers $header -Body ($deploymentBody | ConvertTo-Json -Depth 10))\n\nWrite-Host \"[View the re-deployment]($octopusUri$($submittedRelease.Links.Web))\""
+  },
+  "Parameters": [
+    {
+      "Id": "9f8d7b00-417c-406e-8788-326fd67d22b3",
+      "Name": "redeploy.octopus.server.uri",
+      "Label": "Octopus URI",
+      "HelpText": "Provide the URI to your Octopus server.",
+      "DefaultValue": "#{Octopus.Web.ServerUri}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7b2ed439-b215-42fe-8971-3839626988fd",
+      "Name": "redeploy.api.key",
+      "Label": "API Key",
+      "HelpText": "Provide an API key with permission to re-deploy the previous version.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "92461617-cab6-4dc7-8fdd-0fcfc08c5d66",
+      "Name": "redeploy.release.number",
+      "Label": "Release number",
+      "HelpText": "(Optional)\nProvide a release number to re-deploy.  Leave blank to use the immediate previous release number.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "47eaaeaf-e414-4b34-ba7d-7d84715fd2ea",
+      "Name": "redeploy.prompted.variables",
+      "Label": "Prompted variables",
+      "HelpText": "Enter any prompted variables and their values in the format `VariableName=VariableValue`.  Enter one entry per line.\n\nExample: `MyVar=MyValue`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "c0137294-b4e3-406e-a36d-fd7aca2731e7",
+      "Name": "redeploy.prompted.useexisting",
+      "Label": "Use previous prompted variables",
+      "HelpText": "Tick this box to use the same prompted variables and values from the previous deployment.\n\nNote: This setting will override anything in the `Prompted variables` input with the values from the previous deployment.  In addition, it will use the values from the latest deployment of the Release.\n\nNote: Please be aware that this template uses the API to retrieve variable which will not work sensitive values.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2024-06-18T23:04:33.802Z",
+    "OctopusVersion": "2024.2.9220",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "octopus"
+}
