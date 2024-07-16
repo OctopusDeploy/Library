@@ -4,10 +4,10 @@
   "Name": "ASP.NET Core Set Environment Variables Via IIS Config",
   "Description": "Set environment variables in IIS config (no web.config)",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "Packages": [],
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "function AddOrReplaceEnvironmentVariable {\n    param\n    (\n        [string] $variableName, \n        [string] $variableValue,\n        [string] $siteName,\n        [string] $appCmd\n    )\n\n    Try {\n        [xml] $xmlConfig = (&$appCmd list config $sev_siteName -section:system.webServer/aspNetCore)\n    }\n    Catch {\n        Write-Host $sev_siteName 'either does not exist or is not an AspNetCore site!'\n        exit -1\n    }\n\n    if($xmlConfig.selectNodes(\"//environmentVariable[@name='$variableName']\")) {\n        &$appCmd set config $sev_siteName -section:system.webServer/aspNetCore /-\"environmentVariables.[name='$variableName',value='$variableValue']\" /commit:apphost\n    }\n    \n    &$appCmd set config $sev_siteName -section:system.webServer/aspNetCore /+\"environmentVariables.[name='$variableName',value='$variableValue']\" /commit:apphost\n}\n\n[string] $sev_siteName=$OctopusParameters['sev_siteName']\n[string] $sev_envVariables=$OctopusParameters['sev_envVariables']\n[string] $sev_appCmdPath=$OctopusParameters['sev_appCmdPath']\n\nWrite-Host \"---------------------------\"\nWrite-Host $sev_envVariables\nWrite-Host $sev_appCmdPath\nWrite-Host \"---------------------------\"\n\n$appCmd = Join-Path $sev_appCmdPath 'appcmd.exe'\n\nforeach($line in $sev_envVariables -split '\\r?\\n') {\n    $keyValuePair = $line -split '='\n\n    AddOrReplaceEnvironmentVariable $keyValuePair[0] $keyValuePair[1] $sev_siteName $appCmd\n}\n",
+    "Octopus.Action.Script.ScriptBody": "function AddOrReplaceEnvironmentVariable {\n    param\n    (\n        [string] $variableName, \n        [string] $variableValue,\n        [string] $siteName,\n        [string] $appCmd\n    )\n\n    Try {\n        [xml] $xmlConfig = (&$appCmd list config $sev_siteName -section:system.webServer/aspNetCore)\n    }\n    Catch {\n        Write-Host $sev_siteName 'either does not exist or is not an AspNetCore site!'\n        exit -1\n    }\n\n    if($xmlConfig.selectNodes(\"//environmentVariable[@name='$variableName']\")) {\n        &$appCmd set config $sev_siteName -section:system.webServer/aspNetCore /-\"environmentVariables.[name='$variableName',value='$variableValue']\" /commit:apphost\n    }\n    \n    &$appCmd set config $sev_siteName -section:system.webServer/aspNetCore /+\"environmentVariables.[name='$variableName',value='$variableValue']\" /commit:apphost\n}\n\n[string] $sev_siteName=$OctopusParameters['sev_siteName']\n[string] $sev_envVariables=$OctopusParameters['sev_envVariables']\n[string] $sev_appCmdPath=$OctopusParameters['sev_appCmdPath']\n\nWrite-Host \"---------------------------\"\nWrite-Host $sev_envVariables\nWrite-Host $sev_appCmdPath\nWrite-Host \"---------------------------\"\n\n$appCmd = Join-Path $sev_appCmdPath 'appcmd.exe'\n\nforeach($line in $sev_envVariables -split '\\r?\\n') {\n    $indexOfEquals = $line.IndexOf('=')\n    if ($indexOfEquals -eq -1) {\n        Write-Host \"Invalid environment variable format: $line\"\n        continue\n    }\n    $key = $line.Substring(0, $indexOfEquals)\n    $value = $line.Substring($indexOfEquals + 1)\n\n    AddOrReplaceEnvironmentVariable $key $value $sev_siteName $appCmd\n}\n",
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.RunOnServer": "false"
@@ -44,10 +44,10 @@
       }
     }
   ],
-  "LastModifiedBy": "waxtell",    
+  "LastModifiedBy": "geeknz",
   "$Meta": {
-    "ExportedAt": "2020-08-11T17:06:34.462Z",
-    "OctopusVersion": "2020.1.4",
+    "ExportedAt": "2024-07-15T22:40:29.070Z",
+    "OctopusVersion": "2024.2.9220",
     "Type": "ActionTemplate"
   },
   "Category": "dotnetcore"
