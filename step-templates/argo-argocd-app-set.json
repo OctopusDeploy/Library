@@ -1,0 +1,75 @@
+{
+  "Id": "e27c8535-9375-4cd2-97e7-ac73a43e9ef1",
+  "Name": "Argo - argocd app set",
+  "Description": "Set application parameters using the [argocd app set](https://argo-cd.readthedocs.io/en/stable/user-guide/commands/argocd_app_set/) CLI command. \n\n_Note:_ This step will only run against an Octopus [kubernetes](https://octopus.com/docs/infrastructure/deployment-targets/kubernetes) deployment target.\n\n**Pre-requisites:**\n- Access to the `argocd` CLI on the target or worker.",
+  "ActionType": "Octopus.KubernetesRunScript",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "# argocd is required\nif ! [ -x \"$(command -v argocd)\" ]; then\n\tfail_step 'argocd command not found'\nfi\n\n# Helper functions\nisSet() { [ ! -z \"${1}\" ]; }\nisNotSet() { [ -z \"${1}\" ]; }\n\n# Get variables\nargocd_server=$(get_octopusvariable \"ArgoCD.AppSet.ArgoCD_Server\")\nargocd_authToken=$(get_octopusvariable \"ArgoCD.AppSet.ArgoCD_Auth_Token\")\napplicationName=$(get_octopusvariable \"ArgoCD.AppSet.ApplicationName\")\napplicationParameters=$(get_octopusvariable \"ArgoCD.AppSet.AppParameters\")\nadditionalParameters=$(get_octopusvariable \"ArgoCD.AppSet.AdditionalParameters\")\n\n# Check required variables\nif isNotSet \"${argocd_server}\"; then\n  fail_step \"argocd_server is not set\"\nfi\n\nif isNotSet \"${argocd_authToken}\"; then\n  fail_step \"argocd_authToken is not set\"\nfi\n\nif isNotSet \"${applicationName}\"; then\n  fail_step \"applicationName is not set\"\nfi\n\nif isSet \"${applicationParameters}\"; then\n  parameters=\"${applicationParameters//$'\\n'/ \\\\$'\\n'}\"\n  flattenedParams=\"${applicationParameters//$'\\n'/ }\"\n  IFS=$'\\n' read -rd '' -a appParameters <<< \"$applicationParameters\"\nelse\n  appParameters=()\nfi\nflattenedParams=\"${appParameters[@]}\"\n\n\nif isSet \"${additionalParameters}\"; then\n  IFS=$'\\n' read -rd '' -a additionalArgs <<< \"$additionalParameters\"\nelse\n  additionalArgs=()\nfi\n\nflattenedArgs=\"${additionalArgs[@]}\"\n\nwrite_verbose \"ARGOCD_SERVER: '${argocd_server}'\"\nwrite_verbose \"ARGOCD_AUTH_TOKEN: '********'\"\n\nauthArgs=\"--server ${argocd_server} --auth-token ${argocd_authToken}\"\nmaskedAuthArgs=\"--server ${argocd_server} --auth-token '********'\"\n\necho \"Executing: argocd app set ${applicationName} ${maskedAuthArgs} ${flattenedArgs} \\\\ \n${parameters}\"\nargocd app set ${applicationName} ${authArgs} ${flattenedArgs} ${flattenedParams}"
+  },
+  "Parameters": [
+    {
+      "Id": "0a5f6eea-c876-4db2-a4ab-ea5b5d35fddb",
+      "Name": "ArgoCD.AppSet.ArgoCD_Server",
+      "Label": "ArgoCD Server",
+      "HelpText": "Enter the name of the ArgoCD Server to connect to. This sets the `--server` parameter used with the CLI.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4c034426-cf1d-4e9a-a69c-4de4aa6cde31",
+      "Name": "ArgoCD.AppSet.ArgoCD_Auth_Token",
+      "Label": "ArgoCD Auth Token",
+      "HelpText": "Enter the name of the ArgoCD Auth Token used to authenticate with. This sets the `--auth-token` parameter used with the CLI.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "e738d659-aca8-4fc4-a021-36d57ec71325",
+      "Name": "ArgoCD.AppSet.ApplicationName",
+      "Label": "ArgoCD Application Name",
+      "HelpText": "Enter the ArgoCD application name",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2adb0917-6b2d-4528-90a4-beff6a01109d",
+      "Name": "ArgoCD.AppSet.AppParameters",
+      "Label": "Application Parameters",
+      "HelpText": "Enter the parameters to set for the application, including the `--parameter` or `-p`. e.g.:\n- `-p key1=value1`\n- `--parameter key2=value2`\n\n**Note:** Multiple parameters can be supplied by entering each one on a new line.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "b13a3a5e-ac79-477d-bd51-cf6efd009bd4",
+      "Name": "ArgoCD.AppSet.AdditionalParameters",
+      "Label": "Additional Parameters (optional)",
+      "HelpText": "Enter additional parameter values(s) to be used when calling the `argocd` CLI.\n\n**Note:** Multiple parameters can be supplied by entering each one on a new line.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.KubernetesRunScript",
+  "$Meta": {
+    "ExportedAt": "2024-07-22T09:57:16.491Z",
+    "OctopusVersion": "2024.3.7046",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "harrisonmeister",
+  "Category": "argo"
+}
