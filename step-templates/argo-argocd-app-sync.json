@@ -1,0 +1,65 @@
+{
+  "Id": "655058aa-2e76-4aac-a8eb-728337b5c664",
+  "Name": "Argo - argocd app sync",
+  "Description": "Sync an application to its target state using the [argocd app sync](https://argo-cd.readthedocs.io/en/stable/user-guide/commands/argocd_app_sync/) CLI command\n\n_Note:_ This step will only run against an Octopus [kubernetes](https://octopus.com/docs/infrastructure/deployment-targets/kubernetes) deployment target.\n\n**Pre-requisites:**\n- Access to the `argocd` CLI on the target or worker.",
+  "ActionType": "Octopus.KubernetesRunScript",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "# argocd is required\nif ! [ -x \"$(command -v argocd)\" ]; then\n\tfail_step 'argocd command not found'\nfi\n\n# Helper functions\nisSet() { [ ! -z \"${1}\" ]; }\nisNotSet() { [ -z \"${1}\" ]; }\n\n# Get variables\nargocd_server=$(get_octopusvariable \"ArgoCD.AppSync.ArgoCD_Server\")\nargocd_authToken=$(get_octopusvariable \"ArgoCD.AppSync.ArgoCD_Auth_Token\")\napplicationSelector=$(get_octopusvariable \"ArgoCD.AppSync.ApplicationSelector\")\nadditionalParameters=$(get_octopusvariable \"ArgoCD.AppSync.AdditionalParameters\")\n\n# Check required variables\nif isNotSet \"${argocd_server}\"; then\n  fail_step \"argocd_server is not set\"\nfi\n\nif isNotSet \"${argocd_authToken}\"; then\n  fail_step \"argocd_authToken is not set\"\nfi\n\nif isNotSet \"${applicationSelector}\"; then\n  fail_step \"applicationSelector is not set\"\nfi\n\nif isSet \"${additionalParameters}\"; then\n  IFS=$'\\n' read -rd '' -a additionalArgs <<< \"$additionalParameters\"\nelse\n  additionalArgs=()\nfi\n\nflattenedArgs=\"${additionalArgs[@]}\"\n\nwrite_verbose \"ARGOCD_SERVER: '${argocd_server}'\"\nwrite_verbose \"ARGOCD_AUTH_TOKEN: '********'\"\n\nauthArgs=\"--server ${argocd_server} --auth-token ${argocd_authToken}\"\nmaskedAuthArgs=\"--server ${argocd_server} --auth-token '********'\"\n\necho \"Executing: argocd app sync ${applicationSelector} ${maskedAuthArgs} ${flattenedArgs}\"\nargocd app sync ${applicationSelector} ${authArgs} ${flattenedArgs}"
+  },
+  "Parameters": [
+    {
+      "Id": "0a5f6eea-c876-4db2-a4ab-ea5b5d35fddb",
+      "Name": "ArgoCD.AppSync.ArgoCD_Server",
+      "Label": "ArgoCD Server",
+      "HelpText": "Enter the name of the ArgoCD Server to connect to. This sets the `--server` parameter used with the CLI.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4c034426-cf1d-4e9a-a69c-4de4aa6cde31",
+      "Name": "ArgoCD.AppSync.ArgoCD_Auth_Token",
+      "Label": "ArgoCD Auth Token",
+      "HelpText": "Enter the name of the ArgoCD Auth Token used to authenticate with. This sets the `--auth-token` parameter used with the CLI.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "e738d659-aca8-4fc4-a021-36d57ec71325",
+      "Name": "ArgoCD.AppSync.ApplicationSelector",
+      "Label": "ArgoCD Application Selector",
+      "HelpText": "Enter the ArgoCD application details you want to sync. Valid examples are:\n- Application Name(s) e.g.`appname`\n- Labels e.g. `-l app.kubernetes.io/instance=my-app`\n- Specific resource e.g. `--resource :Service:my-service`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "566e77a0-fb80-4c3f-b2ef-cffaa2a2d797",
+      "Name": "ArgoCD.AppSync.AdditionalParameters",
+      "Label": "Additional Parameters (optional)",
+      "HelpText": "Enter additional parameter values(s) to be used when calling the `argocd` CLI. e.g.:\n- `--revisions 0.0.1` \n- `--source-positions 1`\n\n**Note:** Multiple parameters can be supplied by entering each one on a new line.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.KubernetesRunScript",
+  "$Meta": {
+    "ExportedAt": "2024-07-22T09:54:04.913Z",
+    "OctopusVersion": "2024.3.7046",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "harrisonmeister",
+  "Category": "argo"
+}
