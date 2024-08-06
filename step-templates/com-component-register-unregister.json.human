@@ -1,0 +1,149 @@
+{
+  "Id": "cf8634b6-313f-4435-bae6-88520c58d81d",
+  "Name": "Com Component - Register and Unregister using Regsvr32.exe",
+  "Description": "Uses regsvr32.exe to register com components",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\r
+param(\r
+    [string]$DllFilePaths,\r
+    [string]$Uninstall\r
+)\r
+\r
+$ErrorActionPreference = \"Stop\" \r
+\r
+function Get-Param($Name, [switch]$Required, $Default) {\r
+    $result = $null\r
+\r
+    if ($OctopusParameters -ne $null) {\r
+        $result = $OctopusParameters[$Name]\r
+    }\r
+\r
+    if ($result -eq $null) {\r
+        $variable = Get-Variable $Name -EA SilentlyContinue   \r
+        if ($variable -ne $null) {\r
+            $result = $variable.Value\r
+        }\r
+    }\r
+\r
+    if ($result -eq $null) {\r
+        if ($Required) {\r
+            throw \"Missing parameter value $Name\"\r
+        } else {\r
+            $result = $Default\r
+        }\r
+    }\r
+\r
+    return $result\r
+}\r
+\r
+& {\r
+    param(\r
+        [string]$DllFilePaths,\r
+        [string]$Uninstall\r
+    ) \r
+\r
+    $isUninstall = $($Uninstall.ToLower() -eq 'true')\r
+\r
+    Write-Host \"COM Component - Register\"\r
+    Write-Host \"DllFilePaths: $DllFilePaths\"\r
+\r
+    $DllFilePaths.split(\";\") | ForEach {\r
+        $dllFilePath = $_.Trim();\r
+        Write-Host $dllFilePath\r
+        \r
+        if($dllFilePath.Length -lt 1){\r
+            break;\r
+        }\r
+        \r
+        Write-Host \"Attempting to register $dllFilePath\"\r
+\r
+        if(!(Test-Path \"$dllFilePath\"))\r
+        {\r
+            Write-Host \"FILE NOT FOUND $dllFilePath.\" -ForegroundColor Yellow;\r
+            return;\r
+        }\r
+\r
+         Write-Host \"Attempting to register $dllFilePath\"\r
+    \r
+        $pinfo = New-Object System.Diagnostics.ProcessStartInfo\r
+\r
+        $cmd = \"$env:windir\\System32\\regsvr32.exe\"\r
+\r
+        Write-Host \"Registering with: $env:windir\\System32\\regsvr32.exe\"\r
+\r
+        $pinfo.FileName = \"$cmd\"\r
+\r
+        $pinfo.RedirectStandardError = $true\r
+        $pinfo.RedirectStandardOutput = $true\r
+        $pinfo.UseShellExecute = $false\r
+        \r
+        if($isUninstall){\r
+            $args = \"/u\"\r
+        }\r
+        $args = \"$args /s `\"$dllFilePath`\"\"\r
+\r
+        $pinfo.Arguments = $args\r
+        \r
+        $p = New-Object System.Diagnostics.Process\r
+\r
+        $p.StartInfo = $pinfo\r
+\r
+        Write-Host \"Command:\"\r
+        Write-Host \"$cmd $args\"\r
+\r
+        if ($p.Start())\r
+        {\r
+            Write-Host $p.StandardOutput.ReadToEnd().ToString()\r
+\r
+            if($p.ExitCode -ne 0)\r
+            {\r
+                \r
+                Write-Host \"FAILED $($p.ExitCode) - Register\" -ForegroundColor Red \r
+                Write-Host $p.StandardError.ReadToEnd() -ForegroundColor Red\r
+                                \r
+                throw $p.StandardError.ReadToEnd()\r
+            }\r
+            \r
+            Write-Host \"SUCCESS- Register\" -ForegroundColor Green \r
+        }\r
+\r
+       \r
+    }\r
+\r
+ } `\r
+ (Get-Param 'DllFilePaths' -Required) `\r
+ (Get-Param 'Uninstall' -Required)",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "DllFilePaths",
+      "Label": "DllFilePaths",
+      "HelpText": "List of dlls to be registered separated by a ; and can appear on separate lines",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "Uninstall",
+      "Label": "Un-register",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-06-29T20:18:21.590+00:00",
+  "LastModifiedBy": "jbennett",
+  "$Meta": {
+    "ExportedAt": "2015-06-30T18:55:08.050+00:00",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}

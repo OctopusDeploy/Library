@@ -1,0 +1,114 @@
+{
+  "Id": "eb2ef48d-d4d1-40c9-9dab-769c1bac7608",
+  "Name": "Log to a Splunk Event Collector",
+  "Description": "A step template that logs a given message to the Splunk [Event Collector](http://dev.splunk.com/view/event-collector/SP-CAAAE6M) along with related Octopus Deploy variables.",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "If ([System.Net.ServicePointManager]::CertificatePolicy -ne $null)
+{
+add-type @\" 
+    using System.Net; 
+    using System.Security.Cryptography.X509Certificates; 
+
+    public class NoSSLCheckPolicy : ICertificatePolicy { 
+        public NoSSLCheckPolicy() {} 
+        public bool CheckValidationResult( 
+            ServicePoint sPoint, X509Certificate cert, 
+            WebRequest wRequest, int certProb) { 
+            return true; 
+        } 
+    } 
+\"@ 
+[System.Net.ServicePointManager]::CertificatePolicy = new-object NoSSLCheckPolicy 
+}
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType] \"Ssl3\"
+
+
+# Check the parameters.
+if (-NOT $SplunkHost) { throw \"You must enter a value for 'Splunk Host'.\" }
+if (-NOT $SplunkEventCollectorPort) { throw \"You must enter a value for 'Splunk Event Collector Port'.\" }
+if (-NOT $SplunkEventCollectorToken) { throw \"You must enter a value for 'Event Collector Token'.\" } 
+if (-NOT $Message) { throw \"You must enter a value for 'Message'.\" } 
+  
+$properties = @{
+Message = $Message;
+ProjectName = $OctopusParameters['Octopus.Project.Name'];
+ReleaseNumber = $OctopusParameters['Octopus.Release.Number']; 
+EnvironmentName = $OctopusParameters['Octopus.Environment.Name'];
+DeploymentName = $OctopusParameters['Octopus.Deployment.Name'];
+Channel = $OctopusParameters['Octopus.Release.Channel.Name']; 
+ReleaseUri = $OctopusParameters['Octopus.Web.ReleaseLink'];
+DeploymentUri = $OctopusParameters['Octopus.Web.DeploymentLink'];
+DeploymentCreatedBy = $OctopusParameters['Octopus.Deployment.CreatedBy.Username'];
+Comments = $OctopusParameters['Octopus.Deployment.Comments'];
+}  
+
+$exception = $null
+if ($OctopusParameters['Octopus.Deployment.Error']) {  
+    $properties[\"DeploymentError\"] = $OctopusParameters['Octopus.Deployment.Error']
+    $properties[\"DeploymentDetailedError\"] = $OctopusParameters['Octopus.Deployment.ErrorDetail']
+}  
+
+$body = @{
+    event =(ConvertTo-Json $properties)
+}
+ 
+$uri = \"https://\" + $SplunkHost + \":\" + $SplunkEventCollectorPort + \"/services/collector\"
+$header = @{\"Authorization\"=\"Splunk \" + $SplunkEventCollectorToken}
+
+Invoke-RestMethod -Method Post -Uri $uri -Body (ConvertTo-Json $body) -Header $header
+",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "SplunkHost",
+      "Label": "The host endpoint of the Splunk Event Collector",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SplunkEventCollectorPort",
+      "Label": "The port of the Event Collector",
+      "HelpText": null,
+      "DefaultValue": "8088",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SplunkEventCollectorToken",
+      "Label": "The token for the Event Collector",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Message",
+      "Label": "The message to send to the event collector",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2016-05-11T06:13:32.800+00:00",
+    "OctopusVersion": "3.3.12",
+    "Type": "ActionTemplate"
+  },
+  "Category": "splunk"
+}

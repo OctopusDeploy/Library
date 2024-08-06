@@ -1,0 +1,473 @@
+{
+  "Id": "5b3e7576-44f8-4852-ae09-a45bd985c549",
+  "Name": "IIS Application - Create",
+  "Description": "Create an IIS virtual application (a virtual directory with an application pool)",
+  "ActionType": "Octopus.Script",
+  "Version": 37,
+  "Properties": {
+  "Octopus.Action.Script.ScriptBody": "## --------------------------------------------------------------------------------------\r
+## Input\r
+## --------------------------------------------------------------------------------------\r
+\r
+$virtualPath = $OctopusParameters['VirtualPath']\r
+$physicalPath = $OctopusParameters['PhysicalPath']\r
+$applicationPoolName = $OctopusParameters['ApplicationPoolName']\r
+$setApplicationPoolSettings = [boolean]::Parse($OctopusParameters['SetApplicationPoolSettings'])\r
+$appPoolFrameworkVersion = $OctopusParameters[\"ApplicationPoolFrameworkVersion\"]\r
+$applicationPoolIdentityType = $OctopusParameters[\"ApplicationPoolIdentityType\"]\r
+$applicationPoolUsername = $OctopusParameters[\"ApplicationPoolUsername\"]\r
+$applicationPoolPassword = $OctopusParameters[\"ApplicationPoolPassword\"]\r
+\r
+$parentSite = $OctopusParameters['ParentSite']\r
+$bindingProtocols = $OctopusParameters['BindingProtocols']\r
+$authentication = $OctopusParameters['AuthenticationType']\r
+$requireSSL = $OctopusParameters['RequireSSL']\r
+$clientCertificate = $OctopusParameters['ClientCertificate']\r
+\r
+$preloadEnabled = [boolean]::Parse($OctopusParameters['PreloadEnabled'])\r
+$enableAnonymous = [boolean]::Parse($OctopusParameters['EnableAnonymous'])\r
+$enableBasic = [boolean]::Parse($OctopusParameters['EnableBasic'])\r
+$enableWindows = [boolean]::Parse($OctopusParameters['EnableWindows'])\r
+\r
+## --------------------------------------------------------------------------------------\r
+## Helpers\r
+## --------------------------------------------------------------------------------------\r
+# Helper for validating input parameters\r
+function Validate-Parameter($foo, [string[]]$validInput, $parameterName) {\r
+    Write-Host \"${parameterName}: ${foo}\"\r
+    if (! $foo) {\r
+        throw \"$parameterName cannot be empty, please specify a value\"\r
+    }\r
+    \r
+    if ($validInput) {\r
+        @($foo) | % { \r
+                if ($validInput -notcontains $_) {\r
+                    throw \"'$_' is not a valid input for '$parameterName'\"\r
+                }\r
+             }  \r
+        }   \r
+}\r
+\r
+# Helper to run a block with a retry if things go wrong\r
+$maxFailures = 5\r
+$sleepBetweenFailures = Get-Random -minimum 1 -maximum 4\r
+function Execute-WithRetry([ScriptBlock] $command) {\r
+    $attemptCount = 0\r
+    $operationIncomplete = $true\r
+\r
+    while ($operationIncomplete -and $attemptCount -lt $maxFailures) {\r
+        $attemptCount = ($attemptCount + 1)\r
+\r
+        if ($attemptCount -ge 2) {\r
+            Write-Output \"Waiting for $sleepBetweenFailures seconds before retrying...\"\r
+            Start-Sleep -s $sleepBetweenFailures\r
+            Write-Output \"Retrying...\"\r
+        }\r
+\r
+        try {\r
+            & $command\r
+\r
+            $operationIncomplete = $false\r
+        } catch [System.Exception] {\r
+            if ($attemptCount -lt ($maxFailures)) {\r
+                Write-Output (\"Attempt $attemptCount of $maxFailures failed: \" + $_.Exception.Message)\r
+            \r
+            }\r
+            else {\r
+                throw \"Failed to execute command\"\r
+            }\r
+        }\r
+    }\r
+}\r
+\r
+## --------------------------------------------------------------------------------------\r
+## Configuration\r
+## --------------------------------------------------------------------------------------\r
+Validate-Parameter $virtualPath -parameterName \"Virtual path\"\r
+Validate-Parameter $physicalPath -parameterName \"Physical path\"\r
+Validate-Parameter $applicationPoolName -parameterName \"Application pool\"\r
+Validate-Parameter $parentSite -parameterName \"Parent site\"\r
+\r
+\r
+Add-PSSnapin WebAdministration -ErrorAction SilentlyContinue\r
+Import-Module WebAdministration -ErrorAction SilentlyContinue\r
+\r
+\r
+## --------------------------------------------------------------------------------------\r
+## Run\r
+## --------------------------------------------------------------------------------------\r
+\r
+Write-Host \"Getting web site $parentSite\"\r
+# Workaround to bug in Get-WebSite cmdlet which would return all sites\r
+# See http://forums.iis.net/p/1167298/1943273.aspx / http://stackoverflow.com/a/6832577/785750\r
+$site = Get-WebSite  | where { $_.Name -eq $parentSite }\r
+if (!$site) {\r
+    throw \"The web site '$parentSite' does not exist. Please create the site first.\"\r
+}\r
+\r
+$path = $site.PhysicalPath;\r
+$parts = $virtualPath -split \"[/\\\\]\"\r
+$name = \"\"\r
+\r
+for ($i = 0; $i -lt $parts.Length; $i++) {\r
+    $name = $name + \"/\" + $parts[$i]\r
+    $name = $name.TrimStart('/').TrimEnd('/')\r
+    if ($i -eq $parts.Length - 1) {\r
+        \r
+    }\r
+    elseif ([string]::IsNullOrEmpty($name) -eq $false -and $name -ne \"\") {\r
+        Write-Host \"Ensuring parent exists: $name\"\r
+        \r
+        $path = [IO.Path]::Combine($path, $parts[$i])\r
+        $app = Get-WebApplication -Name $name -Site $parentSite\r
+\r
+        if (!$app) {\r
+            $vdir = Get-WebVirtualDirectory -Name $name -site $parentSite\r
+            if (!$vdir) {\r
+                Write-Verbose \"The application or virtual directory '$name' does not exist\"\r
+                if([IO.Directory]::Exists([System.Environment]::ExpandEnvironmentVariables($path)) -eq $true)\r
+                {\r
+                    Write-Verbose \"Using physical path '$path' as parent\"\r
+                }\r
+                else\r
+                {\r
+                    throw \"Failed to ensure parent\"\r
+                }\r
+            }\r
+            else\r
+            {\r
+                $path = $vdir.PhysicalPath\r
+            }\r
+        }\r
+        else\r
+        {\r
+            $path = $app.PhysicalPath\r
+        }\r
+    }\r
+}\r
+\r
+$existing = Get-WebApplication -site $parentSite -Name $name\r
+\r
+# Set App Pool\r
+Execute-WithRetry { \r
+\tWrite-Verbose \"Loading Application pool\"\r
+\t$pool = Get-Item \"IIS:\\AppPools\\$ApplicationPoolName\" -ErrorAction SilentlyContinue\r
+\tif (!$pool) { \r
+\t\tWrite-Host \"Application pool `\"$ApplicationPoolName`\" does not exist, creating...\" \r
+\t\tnew-item \"IIS:\\AppPools\\$ApplicationPoolName\" -confirm:$false\r
+\t\t$pool = Get-Item \"IIS:\\AppPools\\$ApplicationPoolName\"\r
+\t} else {\r
+\t\tWrite-Host \"Application pool `\"$ApplicationPoolName`\" already exists\"\r
+\t}\r
+}\r
+\r
+# Set App Pool Identity\r
+Execute-WithRetry { \r
+\tif($setApplicationPoolSettings)\r
+    {\r
+        Write-Host \"Set application pool identity: $applicationPoolIdentityType\"\r
+        if ($applicationPoolIdentityType -eq \"SpecificUser\") {\r
+            Set-ItemProperty \"IIS:\\AppPools\\$ApplicationPoolName\" -name processModel -value @{identitytype=\"SpecificUser\"; username=\"$applicationPoolUsername\"; password=\"$applicationPoolPassword\"}\r
+        } else {\r
+            Set-ItemProperty \"IIS:\\AppPools\\$ApplicationPoolName\" -name processModel -value @{identitytype=\"$applicationPoolIdentityType\"}\r
+        }\r
+    }\r
+}\r
+\r
+# Set .NET Framework\r
+Execute-WithRetry { \r
+    if($setApplicationPoolSettings)\r
+    {\r
+        Write-Host \"Set .NET framework version: $appPoolFrameworkVersion\" \r
+        if($appPoolFrameworkVersion -eq \"No Managed Code\")\r
+        {\r
+            Set-ItemProperty \"IIS:\\AppPools\\$ApplicationPoolName\" managedRuntimeVersion \"\"\r
+        }\r
+        else\r
+        {\r
+            Set-ItemProperty \"IIS:\\AppPools\\$ApplicationPoolName\" managedRuntimeVersion $appPoolFrameworkVersion\r
+        }\r
+    }\r
+}\r
+\r
+Execute-WithRetry { \r
+    ## Check if the physical path exits\r
+    if(!(Test-Path -Path $physicalPath)) {\r
+        Write-Host \"Creating physical path '$physicalPath'\"\r
+        New-Item -ItemType directory -Path $physicalPath\r
+    }\r
+\r
+    if (!$existing) {\r
+        Write-Host \"Creating web application '$name'\"\r
+        New-WebApplication -Site $parentSite -Name $name -ApplicationPool $applicationPoolName -PhysicalPath $physicalPath\r
+        Write-Host \"Web application created\"\r
+    } else {\r
+        Write-Host \"The web application '$name' already exists. Updating physical path:\"\r
+\r
+        Set-ItemProperty IIS:\\\\Sites\\\\$parentSite\\\\$name -name physicalPath -value $physicalPath\r
+        Write-Host \"Physical path changed to: $physicalPath\"\r
+\r
+        Set-ItemProperty IIS:\\\\Sites\\\\$parentSite\\\\$name -Name applicationPool -Value $applicationPoolName\r
+        Write-Output \"ApplicationPool changed to: $applicationPoolName\"\r
+    }\r
+    \r
+    Write-Host \"Enabling '$bindingProtocols' protocols\"\r
+    Set-ItemProperty IIS:\\\\Sites\\\\$parentSite\\\\$name -name enabledProtocols -value $bindingProtocols\r
+\r
+    $enabledIisAuthenticationOptions = $Authentication -split '\\\\s*[,;]\\\\s*'\r
+\r
+    try {\r
+\r
+    Execute-WithRetry { \r
+        Write-Output \"Anonymous authentication enabled: $enableAnonymous\"\r
+        Set-WebConfigurationProperty -filter /system.webServer/security/authentication/anonymousAuthentication -name enabled -value \"$enableAnonymous\" -PSPath IIS:\\\\ -location $parentSite/$virtualPath\r
+    }    \r
+    \r
+    Execute-WithRetry { \r
+        Write-Output \"Windows authentication enabled: $enableWindows\"\r
+        Set-WebConfigurationProperty -filter /system.WebServer/security/authentication/windowsAuthentication -name enabled -value \"$enableWindows\" -PSPath IIS:\\\\ -location $parentSite/$virtualPath\r
+    }\r
+\r
+    Execute-WithRetry { \r
+        Write-Output \"Basic authentication enabled: $enableBasic\"\r
+        Set-WebConfigurationProperty -filter /system.webServer/security/authentication/basicAuthentication -name enabled -value \"$enableBasic\" -PSPath IIS:\\\\ -location $parentSite/$virtualPath\r
+    }\r
+\r
+    } catch [System.Exception] {\r
+        Write-Output \"Authentication options could not be set. This can happen when there is a problem with your application's web.config. For example, you might be using a section that requires an extension that is not installed on this web server (such as URL Rewriting). It can also happen when you have selected an authentication option and the appropriate IIS module is not installed (for example, for Windows authentication, you need to enable the Windows Authentication module in IIS/Windows first)\"\r
+        throw\r
+    }\r
+\r
+    Set-WebConfiguration -value \"None\" -filter \"system.webserver/security/access\" -location $parentSite/$virtualPath -PSPath IIS:\\\\ \r
+    if ($requireSSL -ieq \"True\")\r
+    {\r
+        Write-Output \"Require SSL enabled: $requireSSL\"\r
+        Set-WebConfiguration -value \"Ssl\" -filter \"system.webserver/security/access\" -location $parentSite/$virtualPath -PSPath IIS:\\\\ \r
+        Write-Output \"Client certificate mode: $clientCertificate\"\r
+        if ($clientCertificate -ieq \"Accept\") {\r
+           Set-WebConfigurationProperty -filter \"system.webServer/security/access\" -location $parentSite/$virtualPath -PSPath IIS:\\\\ -name \"sslFlags\" -value \"Ssl,SslNegotiateCert\"\r
+        }\r
+        if ($clientCertificate -ieq \"Require\") {\r
+           Set-WebConfigurationProperty -filter \"system.webServer/security/access\" -location $parentSite/$virtualPath -PSPath IIS:\\\\ -name \"sslFlags\" -value \"Ssl,SslNegotiateCert,SslRequireCert\"\r
+        }\r
+    }\r
+    \r
+    try {\r
+        Set-ItemProperty IIS:\\\\Sites\\\\$parentSite\\\\$name -name preloadEnabled -value $preloadEnabled\r
+        Write-Output \"Preload Enabled: $preloadEnabled\"\r
+    } catch [System.Exception] {\r
+       if ($preloadEnabled) {\r
+            Write-Output \"Preload Enabled: $preloadEnabled Could not be set. You may to install the Application Initialization feature\"\r
+            throw\r
+       }\r
+    }\r
+}\r
+",
+
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "679da415-996c-4ad3-87d5-bb8ce4e1f8d0",
+      "Name": "VirtualPath",
+      "Label": "Virtual path",
+      "HelpText": "The name of the application to create. For example, to serve an application that will be available at `/myapp`, enter `myapp`. To create an application under a parent virtual directory or application, separate with slashes - for example: `/applications/myapp`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "3eecef84-fe72-4efc-98bf-42aa41a2d488",
+      "Name": "PhysicalPath",
+      "Label": "Physical path",
+      "HelpText": "Physical folder that the application will serve files from. Example: `C:\\MyApp`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "f2b3a7ef-4d83-4692-a328-fc18cb85fd3e",
+      "Name": "ParentSite",
+      "Label": "Parent site",
+      "HelpText": "The name of the IIS web site to attach the application to. For example, to put the application under the default web site, enter:
+
+    Default Web Site",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "3cb9971e-a7f2-47e7-8201-fb25c3080bd0",
+      "Name": "ApplicationPoolName",
+      "Label": "Application pool",
+      "HelpText": "The name of the application pool that the application will run under.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2a5d18bf-50ad-43c4-882b-9314ee2551b4",
+      "Name": "BindingProtocols",
+      "Label": "Protocols",
+      "HelpText": "The protocols to use for the application",
+      "DefaultValue": "http",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "07d979ef-c343-4c9c-8681-d3c06f451539",
+      "Name": "RequireSSL",
+      "Label": "Require SSL",
+      "HelpText": "Web site SSL settings",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "3a3a8fe8-9fb0-4db5-85c9-04141f33f32d",
+      "Name": "ClientCertificate",
+      "Label": "Client certificate",
+      "HelpText": "_(Require SSL)_ Defines how to handle client certificates if SSL is required.",
+      "DefaultValue": "Ignore",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Ignore
+Accept
+Require"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "174299e5-38dc-4fe9-b25a-6a5bdad05b34",
+      "Name": "PreloadEnabled",
+      "Label": "Preload Enabled",
+      "HelpText": "If true, sets the application to enable preloading.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "1641d3e2-a1e5-4933-b993-6528f1764557",
+      "Name": "EnableAnonymous",
+      "Label": "Enable Anonymous authentication",
+      "HelpText": "Whether IIS should allow anonymous authentication",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "3a52b977-3ea6-482b-8e55-62efd0198b14",
+      "Name": "EnableBasic",
+      "Label": "Enable Basic authentication",
+      "HelpText": "Whether IIS should allow basic authentication with a 401 challenge.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "085a3183-30bc-499e-90bf-9b5bcdf0842a",
+      "Name": "EnableWindows",
+      "Label": "Enable Windows authentication",
+      "HelpText": "Whether IIS should allow integrated Windows authentication with a 401 challenge.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "de7b8dee-bf5a-48ea-99bc-f5b86fcdf118",
+      "Name": "SetApplicationPoolSettings",
+      "Label": "Set Application Pool Settings",
+      "HelpText": "If true, this will allow you to set the Application Pool CLR Version, identity using the .NET CLR Version, Identity, Username, and Password parameters.  If false, the other four parameters will be ignored.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "dd301881-0cd6-40bf-98b4-36e13a587fe2",
+      "Name": "ApplicationPoolFrameworkVersion",
+      "Label": "Application Pool .NET CLR Version",
+      "HelpText": "The version of the .NET common language runtime that this application pool will use.",
+      "DefaultValue": "v4.0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "v2.0|CLR v2.0 (.NET 2.0, 3.0, 3.5)
+v4.0|CLR v4.0 (.NET 4.0, 4.5, 4.6)
+No Managed Code"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "92cb9de4-f65f-4855-bc88-d89e6a748f3c",
+      "Name": "ApplicationPoolIdentityType",
+      "Label": "Application Pool Identity",
+      "HelpText": "Which built-in account will the application pool run under.",
+      "DefaultValue": "ApplicationPoolIdentity",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "ApplicationPoolIdentity|Application Pool Identity
+LocalService|Local Service
+LocalSystem|Local System
+NetworkService|Network Service
+SpecificUser|Custom user ..."
+      },
+      "Links": {}
+    },
+    {
+      "Id": "7cbeec84-7fad-46dd-98de-ed61531f8bb3",
+      "Name": "ApplicationPoolUsername",
+      "Label": "Application Pool Username",
+      "HelpText": "The Windows/domain account of the custom user that the application pool will run under. Example: YOURDOMAIN\\\\YourAccount. You will need to ensure that this user has permissions to run as an application pool.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "748a99a2-a9f4-46b2-b9b5-283a864171d3",
+      "Name": "ApplicationPoolPassword",
+      "Label": "Application Pool Password",
+      "HelpText": "The password for the custom account given above.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2017-04-10T15:13:10.653Z",
+    "OctopusVersion": "3.12.1",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}

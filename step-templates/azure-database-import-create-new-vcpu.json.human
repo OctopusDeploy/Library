@@ -1,0 +1,477 @@
+{
+    "Id": "4f03ce31-a9ce-4aff-8c7b-5144af5401a1",
+    "Name": "Azure Database - Import Create New vcpu",
+    "Description": "Restores a bacpac to a new database
+
+*Depends on az cli*
+
+*Source database requires 'Allow Azure services and resources to access this server' option turn on in the SQL server firewall*",
+    "ActionType": "Octopus.AzurePowerShell",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "#get variables into easy to use format
+
+# vCPU vars
+$family = $OctopusParameters[\"azDbImportNewVCPU.family\"] # Gen4 is being phased out.
+$computeModel = $OctopusParameters[\"azDbImportNewVCPU.computeModel\"]
+$readReplicaCount = $OctopusParameters[\"azDbImportNewVCPU.readReplicaCount\"]
+$edition = $OctopusParameters[\"azDbImportNewVCPU.edition\"]
+$capacity = $OctopusParameters[\"azDbImportNewVCPU.coreCount\"] -as [int]
+
+# Create DB Variables
+$databaseName = $OctopusParameters[\"azDbImportNewVCPU.dbName\"]
+$sqlServer = $OctopusParameters[\"azDbImportNewVCPU.server\"]
+$rgName = $OctopusParameters[\"azDbImportNewVCPU.resourceGroup\"]
+$elasticPool = $OctopusParameters[\"azDbImportNewVCPU.elasticPool\"]
+$readScaleTruthy = $OctopusParameters[\"azDbImportNewVCPU.readScale\"]
+
+$tags = $OctopusParameters[\"azDbImportNewVCPU.tags\"]
+$zoneRedundant = $OctopusParameters[\"azDbImportNewVCPU.zoneRedundant\"]
+$maxSize = $OctopusParameters[\"azDbImportNewVCPU.maxSize\"]
+
+# Import bacpac variables
+$adminName = $OctopusParameters[\"azDbImportNewVCPU.adminName\"]
+$adminPwd = $OctopusParameters[\"azDbImportNewVCPU.adminPwd\"]
+$accessKey = $OctopusParameters[\"azDbImportNewVCPU.blobAccessKey\"]
+$accessKeyType = $OctopusParameters[\"azDbImportNewVCPU.accessKeyType\"]
+$containerUri = $OctopusParameters[\"azDbImportNewVCPU.ContainerUri\"]
+$backupName = $OctopusParameters[\"azDbImportNewVCPU.backupName\"]
+$backupUri = \"$containerUri/$backupName.bacpac\"
+
+$readScaleValue = \"Disabled\"
+
+if($readScaleTruthy -eq \"true\") { $readScalevalue = \"Enabled\" }
+$maxAvailableSize = 1TB
+
+$gen5VcpuCount = 2,4,6,8,10,12,14,16,18,20,24,32,40,80
+$gen5VcpuCountSvrless = 1,2,4,6,8,10,12,14,16,18,20,24,32,40
+
+#validate parameters
+
+if($null -eq (az sql server list --query \"[?Name==$sqlServer]\" | ConvertFrom-Json))
+{
+    throw \"$sqlServer doesn't exist or the selected azure account doesn't have access to it.\"
+}
+
+if($null -ne (az sql db list --resource-group $rgName --server $sqlServer --query \"[?Name==$databaseName]\" | ConvertFrom-Json))
+{
+    throw \"$database already exists\"
+}
+
+# max size for all databases (except GP serverless) is 1TB
+
+if([string]::IsNullOrEmpty($rgName))
+{
+\tthrow \"resource group name is not provided\"
+}
+
+if([string]::IsNullOrEmpty($sqlServer))
+{
+\tthrow \"sql server name is not provided\"
+}
+
+if([string]::IsNullOrEmpty($databaseName))
+{
+\tthrow \"database name not provided\"
+}
+
+# admin name, password and access key will not be validated in favor of security
+
+if([string]::IsNullOrEmpty($accessKeyType))
+{
+\tthrow \"access key type not provided\"
+}
+
+if([string]::IsNullOrEmpty($containerUri))
+{
+\tthrow \"containerUri not provided\"
+}
+
+if([string]::IsNullOrEmpty($backupName))
+{
+\tthrow \"backup name not provided\"
+}
+
+switch($edition)
+{
+    \"GeneralPurpose\"
+    {
+        switch($computeModel)
+        {
+            \"Provisioned\"
+            {
+                switch($family)
+                {
+                    \"Gen5\"
+                    {
+                    \twrite-verbose \"Capacity set to: $capacity\"
+                        if($capacity -lt 2)
+                        {
+                        \tWrite-Warning \"Minimum vCPU for provisioned is 2\"
+                            Write-Warning \"setting vCPU to 2\"
+                            $capacity = 2
+                        }
+                        if(!$gen5VcpuCount.Contains($capacity))
+                        {
+                            throw \"Invalid max vCPU count entered valid values for Gen5 hardware is: $gen5VcpuCount\"
+                        }
+                        $maxAvailableSize = 1TB
+                    }
+                    \"FSv2\"
+                    {
+                        $capacity = 72
+                        $maxAvailableSize = 4TB
+                    }
+                    \"Default\"
+                    {
+                        throw \"Invalid hardware family selected for General purpose\"
+                    }
+                }
+            }
+            \"Serverless\"
+            {
+                if($capacity -gt 40)
+                {
+                    Write-Warning \"Max vCPUs for serverless is 40\"
+                    Write-Warning \"Setting max vCPU to 40\"
+                    $capacity = 40
+                }
+
+                if($family -ne \"Gen5\") {throw \"Only Gen5 hardware family available for serverless\"}
+
+                if(!$gen5VcpuCountSvrless.Contains($capacity))
+                {
+                    throw \"Invalid max vCPU count entered valid values for serverless Gen5 hardware is: $gen5VcpuCountSvrless\"
+                }
+                $maxAvailableSize = 512GB
+            }
+        }
+    }
+    \"Hyperscale\"
+    {
+        if($family -ne \"Gen5\") {throw \"Only Gen5 hardware family available for Hyperscale\"}
+
+        if($capacity -lt 2)
+        {
+            Write-Warning \"Minimum vCPU for provisioned is 2\"
+            Write-Warning \"setting vCPU to 2\"
+            $capacity = 2
+        }
+
+        if(!$gen5VcpuCount.Contains($capacity))
+        {
+            throw \"Invalid max vCPU count entered valid values for Gen5 hardware is: $gen5VcpuCount\"
+        }
+    }
+    \"BusinessCritical\"
+    {
+        switch ($family)
+        {
+            \"Gen5\"
+            {
+                if($capacity -lt 2)
+                {
+                    Write-Warning \"Minimum vCPU for provisioned is 2\"
+                    Write-Warning \"setting vCPU to 2\"
+                    $capacity = 2
+                }
+
+                if(!$gen5VcpuCount.Contains($capacity))
+                {
+                    throw \"Invalid max vCPU count entered valid values for Gen5 hardware is: $gen5VcpuCount\"
+                }
+                $maxAvailableSize = 1TB
+            }
+            \"M\"
+            {
+                $capacity = 128
+                $maxAvailableSize = 4TB
+                if($zoneRedundant -eq \"true\")
+                {
+                    Write-Warning \"Zone redundant not available for M-Series hardware configuration\"
+                    Write-Warning \"Setting zone redundant to false\"
+                    $zoneRedundant = \"false\"
+                }
+            }
+        }
+    }
+}
+
+if(($maxSize / 1GB) -gt ($maxAvailableSize / 1GB))
+{
+    Write-Warning \"Desired max size of $($maxSize / 1GB)GB exceeds available max size of $($maxAvailableSize / 1GB)GB\"
+    Write-Warning \"Setting max size to $($maxAvailableSize / 1GB)GB\"
+    $maxSize = $maxAvailableSize
+}
+
+$cliArgs = \"--name $databaseName --resource-group $rgName --server $sqlServer\"
+
+if($elasticPool) {$cliArgs += \" --elastic-pool $elasticPool\"}
+else {$cliArgs += \" --edition $edition --family $family --capacity $capacity\"}
+
+if((!$edition -eq \"Hyperscale\") -and $maxSize) {$cliArgs += \" --max-size $maxSize\"}
+if($edition -eq \"GeneralPurpose\") {$cliArgs += \" --compute-model $computeModel\"}
+if($edition -eq \"Hyperscale\") {cliArgs += \" --read-replicas $readReplicaCount\"}
+if($tags) {$cliArgs += \" --tags $tags\"}
+if($edition -eq \"BusinessCritical\") {$cliArgs += \" --read-scale $readScaleValue --zone-redundant $zoneRedundant\"}
+if($elasticPool) {$cliArgs += \" --elastic-pool $elasticPool\"}
+
+$cmd = \"az sql db create $cliArgs\"
+
+write-verbose \"cmd is: $cmd\"
+
+Write-Host \"Creating Database\"
+invoke-expression \"$cmd\"
+
+write-host \"starting db import\"
+write-verbose \"import cmd az sql db import --resource-group $rgname --server $sqlServer --name $databaseName --admin-password $adminPwd --admin-user $adminName --storage-key $accessKey --storage-key-type $accessKeyType --storage-uri $backupUri\"
+
+az sql db import --resource-group $rgname --server $sqlServer --name $databaseName --admin-password $adminPwd --admin-user $adminName --storage-key $accessKey --storage-key-type $accessKeyType --storage-uri $backupUri
+",
+      "Octopus.Action.Azure.AccountId": "#{azDbImportNewVCPU.azAccount}"
+    },
+    "Parameters": [
+      {
+        "Id": "a7ee5061-2e7a-4b1a-876c-21bee392e455",
+        "Name": "azDbImportNewVCPU.azAccount",
+        "Label": "Azure Account",
+        "HelpText": "Azure account with permissions to the subscription and resource group",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "AzureAccount"
+        }
+      },
+      {
+        "Id": "0f280e95-7f8b-4864-bd1d-6af9930257ec",
+        "Name": "azDbImportNewVCPU.resourceGroup",
+        "Label": "Resource Group",
+        "HelpText": "Resource group name housing the target SQL server",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "12c084b7-1a60-4076-91e4-6471a57f8978",
+        "Name": "azDbImportNewVCPU.server",
+        "Label": "SQL Server",
+        "HelpText": "Name of the Azure SQL server",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "7e8e96ee-63d6-4b6b-ab69-da69bf35a798",
+        "Name": "azDbImportNewVCPU.dbName",
+        "Label": "Database Name",
+        "HelpText": "Name of the database that will be created",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "a7db94c4-7954-4bbb-af9f-b25f0d282978",
+        "Name": "azDbImportNewVCPU.edition",
+        "Label": "Edition",
+        "HelpText": "The edition component of the sku",
+        "DefaultValue": "GeneralPurpose",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "GeneralPurpose|General Purpose
+BusinessCritical|Business Critical
+Hyperscale|Hyperscale"
+        }
+      },
+      {
+        "Id": "20568782-31c5-496a-8885-f69f4240a9b4",
+        "Name": "azDbImportNewVCPU.computeModel",
+        "Label": "Compute Model",
+        "HelpText": "The compute model of the database.  Only applicable for general purpose instances",
+        "DefaultValue": "Provisioned",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "Provisioned|Provisioned
+Serverless|Serverless"
+        }
+      },
+      {
+        "Id": "c99d1edc-62c4-4d3a-9896-8a7647a42783",
+        "Name": "azDbImportNewVCPU.family",
+        "Label": "Hardware Configuration",
+        "HelpText": "Select Between Gen5, Fsv2 , or M-Series.  Please note the documented vCPU overrides if listed.",
+        "DefaultValue": "Gen5",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "Gen5|Gen5
+Fsv2|Fsv2 (General Purpose, Compute Optimized 72 vCPUs)
+M|M-Series (Business Critical, Memory Opimized 128 vCPUs)"
+        }
+      },
+      {
+        "Id": "d869775f-4bf4-4497-a1eb-c83fddf4c215",
+        "Name": "azDbImportNewVCPU.coreCount",
+        "Label": "vCPU Core Count",
+        "HelpText": "the number of vCores to use.
+*General purpose FSv2 hardware is set to 72*",
+        "DefaultValue": "2",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "1|1 (Only available for general purpose, serverless instances)
+2|2
+4|4
+6|6
+8|8
+10|10
+12|12
+14|14
+16|16
+18|18
+20|20
+24|24
+32|32
+40|40
+80|80 (Not available for general purpose, serverless instances)"
+        }
+      },
+      {
+        "Id": "fd690b8e-8467-4872-a8b9-b6b046f8c91d",
+        "Name": "azDbImportNewVCPU.maxsize",
+        "Label": "Max Storage Size",
+        "HelpText": "The max storage size.  If no unit is specified, defaults to bytes (B)",
+        "DefaultValue": "1GB",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "ff278593-3b7a-4923-b15e-3dc958c87496",
+        "Name": "azDbImportNewVCPU.elasticPool",
+        "Label": "Elastic Pool",
+        "HelpText": "The name or resource id of the elastic pool to create the database in",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "26414a8b-d167-4b94-9142-fa9bf1c984fe",
+        "Name": "azDbImportNewVCPU.zoneRedundant",
+        "Label": "Zone Redundant",
+        "HelpText": "Specifies whether to enable zone redundancy.  This property is only applied to Business Critical databases.",
+        "DefaultValue": "false",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "a2e4e51d-8a3b-4447-92f4-39e83f82339e",
+        "Name": "azDbImportNewVCPU.readScale",
+        "Label": "Read Scale",
+        "HelpText": "If enabled, connections that have application intent set to read only in their connection string may be routed to a read only secondary replica.  This property is only applied to Business Critical databases.",
+        "DefaultValue": "false",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "61ef6953-b59c-44f4-80a4-a005feba912c",
+        "Name": "azDbImportNewVCPU.readReplicaCount",
+        "Label": "Read Reaplica Count",
+        "HelpText": "The number of readonly replicas to provision for the database. This property is only applied to hyperscale databases.",
+        "DefaultValue": "0",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "0|0
+1|1
+2|2
+3|3
+4|4"
+        }
+      },
+      {
+        "Id": "713515d2-9dd1-4d63-8a66-14cfd08a7065",
+        "Name": "azDbImportNewVCPU.tags",
+        "Label": "Tags",
+        "HelpText": "Space-separated tags.  `key[=value] key[=value]`",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "53913bf4-b70e-455f-8dbe-7002e3584ef0",
+        "Name": "azDbImportNewVCPU.blobAccessKey",
+        "Label": "Azure Blob Access Key",
+        "HelpText": "the access key (Shared Access Key or Storage Access Key) to grant access to the storage account",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "9c7cdde5-e5a1-4566-80f2-f9f5391c398b",
+        "Name": "azDbImportNewVCPU.accessKeyType",
+        "Label": "Access Key Type",
+        "HelpText": "The type of key the access key represents",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "SharedAccessKey|Shared Access Key
+StorageAccessKey|Storage Access Key"
+        }
+      },
+      {
+        "Id": "fda41fbc-36cc-47b2-864f-2670144ad3e7",
+        "Name": "azDbImportNewVCPU.ContainerUri",
+        "Label": "Container Uri",
+        "HelpText": "The URI of the container to save the exported database in.  Format is: `https://{StorageAccountName}.blob.core.windows.net/{ContainerName}`",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0a0da7eb-afee-4595-a073-993a9e951838",
+        "Name": "azDbImportNewVCPU.backupName",
+        "Label": "Backup Name",
+        "HelpText": "The name of the file being saved.  Defaults to DB Name",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "8a601118-6e0d-4340-badd-c66d5c8101dd",
+        "Name": "azDbImportNewVCPU.adminName",
+        "Label": "SQL Server Admin Name",
+        "HelpText": "The admin name of the SQL server containing the database you wish to import",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "f3f441ba-e92e-4cf2-bab9-0477591bc907",
+        "Name": "azDbImportNewVCPU.adminPwd",
+        "Label": "SQL Server Admin Password",
+        "HelpText": "The admin password of the SQL server containing the database you wish to import",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2020-06-23T20:13:26.129Z",
+      "OctopusVersion": "2020.2.10",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "Your GitHub Username",
+    "Category": "other"
+  }

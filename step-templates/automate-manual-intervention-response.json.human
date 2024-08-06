@@ -1,0 +1,209 @@
+{
+    "Id": "54f95528-aa1e-4c97-8c16-b2e0d737c43e",
+    "Name": "Automate Manual Intervention Response",
+    "Description": "This template will search for deployments that have been paused due to Manual Intervention or Guided Failure and automate the response.",
+    "ActionType": "Octopus.Script",
+    "Version": 2,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "function Get-OctopusItems
+{
+ # Define parameters
+    param(
+        $OctopusUri,
+        $ApiKey,
+        $SkipCount = 0
+    )
+
+    # Define working variables
+    $items = @()
+    $skipQueryString = \"\"
+    $headers = @{\"X-Octopus-ApiKey\"=\"$ApiKey\"}
+
+    # Check to see if there there is already a querystring
+    if ($octopusUri.Contains(\"?\"))
+    {
+        $skipQueryString = \"&skip=\"
+    }
+    else
+    {
+        $skipQueryString = \"?skip=\"
+    }
+
+    $skipQueryString += $SkipCount
+
+    # Get intial set
+    $resultSet = Invoke-RestMethod -Uri \"$($OctopusUri)$skipQueryString\" -Method GET -Headers $headers
+
+    # Check to see if it returned an item collection
+    if ($resultSet.Items)
+    {
+        # Store call results
+        $items += $resultSet.Items
+
+        # Check to see if resultset is bigger than page amount
+        if (($resultSet.Items.Count -gt 0) -and ($resultSet.Items.Count -eq $resultSet.ItemsPerPage))
+        {
+            # Increment skip count
+            $SkipCount += $resultSet.ItemsPerPage
+
+            # Recurse
+            $items += Get-OctopusItems -OctopusUri $OctopusUri -ApiKey $ApiKey -SkipCount $SkipCount
+        }
+    }
+    else
+    {
+        return $resultSet
+    }
+
+
+    # Return results
+    return ,$items
+}
+
+$automaticResponseOctopusUrl = $OctopusParameters['AutomateResponse.Octopus.Url']
+$automaticResponseApiKey = $OctopusParameters['AutomateResponse.Api.Key']
+$automaticResponseReasonNotes = $OctopusParameters['AutomateResponse.Reason.Notes']
+$automaticResponseManualInterventionResponseType = $OctopusParameters['AutomateResponse.ManualIntervention']
+$automaticResponseGuidedFailureResponseType = $OctopusParameters['AutomateResponse.GuidedFailure']
+$header = @{ \"X-Octopus-ApiKey\" = $automaticResponseApiKey }
+
+# Validate response type input
+if (![string]::IsNullOrWhitespace($automaticResponseManualInterventionResponseType) -and ![string]::IsNullOrWhitespace($automaticResponseGuidedFailureResponseType))
+{
+\t# Fail step
+    Write-Error \"Cannot have both a Manual Intervention and Guided Failure selections.\"
+}
+
+if ([string]::IsNullOrWhitespace($automaticResponseManualInterventionResponseType) -and [string]::IsNullOrWhitespace($automaticResponseGuidedFailureResponseType))
+{
+\t# Fail step
+    Write-Error \"Please select either a Manual Intervention or Guidded Failure response type.\"
+}
+
+# Get space
+$spaceId = $OctopusParameters['Octopus.Space.Id']
+
+# Get project
+$projectId = $OctopusParameters['Octopus.Project.Id']
+
+# Get the environemtn
+$environmentId = $OctopusParameters['Octopus.Environment.Id']
+
+# Get currently executing deployments for project
+Write-Host \"Searching for executing deployments ...\"
+$executingDeployments = Get-OctopusItems -OctopusUri \"$automaticResponseOctopusUrl/api/$($spaceId)/deployments?projects=$($projectId)&taskState=Executing&environments=$($environmentId)\" -ApiKey $automaticResponseApiKey
+
+# Check to see if anything was returned for the environment
+if ($executingDeployments -is [array])
+{
+  # Loop through executing deployments
+  foreach ($deployment in $executingDeployments)
+  {
+      # Get object for manual intervention
+      Write-Host \"Checking $($deployment.Id) for manual interventions ...\"
+      $manualIntervention = Get-OctopusItems -OctopusUri \"$automaticResponseOctopusUrl/api/$($spaceId)/interruptions?regarding=$($deployment.Id)&pendingOnly=true\" -ApiKey $automaticResponseApiKey
+
+      # Check to see if a manual intervention was returned
+      if ($null -ne $manualIntervention.Id)
+      {
+          # Take responsibility
+          Write-Host \"Auto taking resonsibility for manual intervention ...\"
+          Invoke-RestMethod -Method Put -Uri \"$automaticResponseOctopusUrl/api/$($spaceId)/interruptions/$($manualIntervention.Id)/responsible\" -Headers $header
+
+          # Create response object
+          $jsonBody = @{
+              Notes = $automaticResponseReasonNotes
+          }
+
+          # Check to see if manual intervention is empty
+          if (![string]::IsNullOrWhiteSpace($automaticResponseManualInterventionResponseType))
+          {
+              # Add the manual intervention type
+              Write-Host \"Submitting $automaticResponseManualInterventionResponseType as response ...\"
+              $jsonBody.Add(\"Result\", $automaticResponseManualInterventionResponseType)
+          }
+
+          # Check to see if the guided failure is empty
+          if (![string]::IsNullOrWhiteSpace($automaticResponseGuidedFailureResponseType))
+          {
+              # Add the guided failure response
+              Write-Host \"Submitting $automaticResponseGuidedFailureResponseType as response ...\"
+              $jsonBody.Add(\"Guidance\", $automaticResponseGuidedFailureResponseType)
+          }
+
+          # Post to server
+          Invoke-RestMethod -Method Post -Uri \"$automaticResponseOctopusUrl/api/$($spaceId)/interruptions/$($manualIntervention.Id)/submit\" -Body ($jsonBody | ConvertTo-Json -Depth 10) -Headers $header
+      }
+  }
+}"
+    },
+    "Parameters": [
+      {
+        "Id": "f5961f82-66a5-4219-a15c-f4a9feb68904",
+        "Name": "AutomateResponse.Octopus.Url",
+        "Label": "Octopus Server Url",
+        "HelpText": "The Url to your Octopus Server instance.",
+        "DefaultValue": "#{Octopus.Web.ServerUri}",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "3752c78e-4df8-4261-bdff-906bed063b12",
+        "Name": "AutomateResponse.Api.Key",
+        "Label": "API Key",
+        "HelpText": "API Key of the account you want to use for the automatic response.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "be44e98e-13a8-4f4e-9b51-99920dfcf763",
+        "Name": "AutomateResponse.Reason.Notes",
+        "Label": "Reason Notes",
+        "HelpText": "This is the `Notes` input for manual intervention.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "1bfbcc18-7ed9-4fce-88d1-0b4ab76d2623",
+        "Name": "AutomateResponse.ManualIntervention",
+        "Label": "Manual Intervention Response Type",
+        "HelpText": "Select the response type for the Manual Intervention.  Click Default Value to reset to none",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "Abort|Abort
+Proceed|Proceed"
+        }
+      },
+      {
+        "Id": "30405062-6bb6-499f-85ef-78bd378684ba",
+        "Name": "AutomateResponse.GuidedFailure",
+        "Label": "Guided Failure Response Type",
+        "HelpText": "Select the automated response for a Guided Failure.  Click Default Value to reset to none.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "Fail|Fail
+Exclude|Exclude Machine From Deployment
+Ignore|Ignore
+Retry|Retry"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-10-01T17:52:01.610Z",
+      "OctopusVersion": "2021.2.7580",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "twerthi",
+    "Category": "octopus"
+  }

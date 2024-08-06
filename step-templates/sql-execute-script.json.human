@@ -1,0 +1,172 @@
+{
+  "Id": "73f89638-51d1-4fbb-b68f-b71ba9e86720",
+  "Name": "SQL - Execute Script",
+  "Description": "Execute a SQL script",
+  "ActionType": "Octopus.Script",
+  "Version": 6,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Parameters
+$ConnectionString = $OctopusParameters[\"ConnectionString\"]
+$ContinueOnError = $OctopusParameters[\"ContinueOnError\"] -ieq \"True\"
+$SqlQuery = $OctopusParameters[\"SqlScript\"]
+$CommandTimeout = $OctopusParameters[\"CommandTimeout\"]
+$CaptureOutputToVariables = $OctopusParameters[\"CaptureOutputToVariables\"] -ieq \"True\"
+
+# Local Variables
+$connection = New-Object System.Data.SqlClient.SqlConnection
+$connection.ConnectionString = $ConnectionString
+$StepName = $OctopusParameters[\"Octopus.Step.Name\"]
+
+$global:outputs = @()
+
+Register-ObjectEvent -InputObject $connection -EventName InfoMessage -Action {
+    Write-Output $event.SourceEventArgs
+} | Out-Null
+
+function Execute-SqlQuery($SqlQuery) {
+    $queries = [System.Text.RegularExpressions.Regex]::Split($SqlQuery, \"^s*GOs*`$\", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline)
+
+    $queries | ForEach-Object {
+        $query = $_
+        if ((-not [String]::IsNullOrWhiteSpace($query)) -and ($query.Trim() -ine \"GO\")) {            
+            $command = $connection.CreateCommand()
+            $command.CommandText = $query
+            $command.CommandTimeout = $CommandTimeout
+            $command.ExecuteNonQuery() | Out-Null
+        }
+    }
+}
+
+$handler = [System.Data.SqlClient.SqlInfoMessageEventHandler] { param($sender, $event) 
+    $eventMessage = $event.Message
+    Write-Verbose $eventMessage
+    if ($CaptureOutputToVariables -eq $True) {
+        $global:outputs += $eventMessage
+    }
+}
+
+try {
+\t
+    Write-Output \"Attach InfoMessage event handler\"
+    $connection.add_InfoMessage($handler)
+    
+    Write-Output \"Connecting\"
+    $connection.Open()
+
+    Write-Output \"Executing script\"
+    Execute-SqlQuery -SqlQuery $SqlQuery
+}
+catch {
+    if ($ContinueOnError) {
+        Write-Output \"Error: $($_.Exception.Message)\"
+    }
+    else {
+        throw
+    }
+}
+finally {
+    if ($null -ne $connection) {
+        Write-Output \"Detach InfoMessage event handler\"
+        $connection.remove_InfoMessage($handler)
+        Write-Output \"Closing connection\"
+        $connection.Dispose()
+    }
+}
+
+if ($CaptureOutputToVariables -eq $True) {
+    Write-Output \"Capture output to variables is true\"
+    Write-Output \"Output Count: $($global:outputs.Length)\"
+    if ($global:outputs.Length -gt 0) {
+        Write-Verbose \"Setting Octopus output variables\"
+        for ($i = 0; $i -lt $global:outputs.Length; $i++) {
+            $variableName = \"SQLOutput-$($i+1)\"
+            $variableValue = $global:outputs[$i]
+            Set-OctopusVariable -Name $variableName -Value $variableValue
+            Write-Verbose \"Created output variable: ##{Octopus.Action[$StepName].Output.$variableName}\"
+        }
+    }
+    else {
+        Write-Verbose \"No Octopus output variables to set\"
+    }
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Id": "802db0cd-f6eb-4cc6-9388-c5f6a4ae63ea",
+      "Name": "ConnectionString",
+      "Label": "Connection string",
+      "HelpText": "Connection string for the SQL connection. Example:
+
+    Server=.\\SQLExpress;Database=OctoFX;Integrated Security=True;
+
+Bind to a variable to provide different values for different environments.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ec5a5223-3415-4cda-a888-3655f2b3e98c",
+      "Name": "SqlScript",
+      "Label": "SQL Script",
+      "HelpText": "Script to run. Can be bound to a variable split over multiple lines. Text output by the PRINT statement in SQL will be logged to the deployment log. Use 'GO' to separate multiple commands
+
+Example:
+
+    USE MASTER
+    go
+
+    BACKUP DATABASE [OctoFX] TO DISK = N'#{FilePath}' WITH  COPY_ONLY, NOFORMAT, NOINIT,  NAME = N'Backup created by Octopus', SKIP, NOREWIND, NOUNLOAD,  STATS = 10",
+      "DefaultValue": "PRINT 'Hello from SQL'",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "1360f453-ad5b-4cc9-bf56-c565f62e2542",
+      "Name": "ContinueOnError",
+      "Label": "Continue On Error",
+      "HelpText": "If set to true, an error with the SQL statement will simply write to the log and not cause an error in the deployment.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "d2f77e7a-a3d2-453c-a784-e3587db28e12",
+      "Name": "CommandTimeout",
+      "Label": "Command Timeout",
+      "HelpText": "The SQL Command Timeout. By default is 30 seconds.",
+      "DefaultValue": "30",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "90b930a8-39d9-43a2-991d-e2a7d374d30b",
+      "Name": "CaptureOutputToVariables",
+      "Label": "Capture SQL Output to Variable(s)",
+      "HelpText": "If set to true, output received from each command (via the `SqlInfoMessageEventHandler`) will be added to an Octopus [output variable](https://octopus.com/docs/projects/variables/output-variables) named **SQLOutput**, and will be suffixed with a number corresponding to the command that generated the output. The default is `False`.
+
+Example:
+
+1. `#{Octopus.Action[STEP NAME].Output.SQLOutput-1}`
+2. `#{Octopus.Action[STEP NAME].Output.SQLOutput-2}`",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2022-01-21T11:31:23.426Z",
+  "LastModifiedBy": "harrisonmeister",
+  "$Meta": {
+    "ExportedAt": "2022-01-21T11:31:23.426Z",
+    "OctopusVersion": "2021.3.12033",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

@@ -1,0 +1,144 @@
+{
+  "Id": "0147e912-ff8d-46d9-965a-dee0789ef32b",
+  "Name": "Windows Disk Cleanup Manager",
+  "Description": "Installs Windows Disk Cleanup manager on Windows 2008, 2008-R2 and 2012 Server.  Should work on Windows 7 and 8",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$driveLetter = $OctopusParameters[\"driveLetter\"]\r
+$cleanupSwitch = $OctopusParameters[\"cleanupSwitch\"]\r
+\r
+#REM  ORIGINAL AUTHOR JAMES FOX \r
+#REM SOURCE http://technet.microsoft.com/en-us/library/ff630161(WS.10).aspx\r
+\r
+#  DECLARATIONS\r
+$SOURCEEXE = \"\"\r
+$SOURCEMUI = \"\"\r
+# END DECLARATIONS \r
+\r
+# SETUP TEMPORARY ENVIROMENT VARIABLES FOR COPY PROCESS\r
+$DCLEANMGR = \"$env:systemroot\\System32\"\r
+$DCLEANMGRMUI = \"$env:systemroot\\System32\\en-US\"\r
+\r
+# $PATH TO MUI FILE          WINDOWS 2008 R2 64bit oR 2012\r
+if (Test-Path $env:systemroot\\winsxs\\amd64_microsoft-windows-cleanmgr.resources_31bf3856ad364e35_6.1.7600.16385_en-us_b9cb6194b257cc63\\cleanmgr.exe.mui)\r
+{\r
+$SOURCEMUI = \"$env:systemroot\\winsxs\\amd64_microsoft-windows-cleanmgr.resources_31bf3856ad364e35_6.1.7600.16385_en-us_b9cb6194b257cc63\\cleanmgr.exe.mui\"\r
+}\r
+\r
+# $PATH TO EXE FILE          WINDOWS 2008 R2 64bit oR 2012\r
+if (Test-Path $env:systemroot\\winsxs\\amd64_microsoft-windows-cleanmgr_31bf3856ad364e35_6.1.7600.16385_none_c9392808773cd7da\\cleanmgr.exe)\r
+{\r
+  $SOURCEEXE = \"$env:systemroot\\winsxs\\amd64_microsoft-windows-cleanmgr_31bf3856ad364e35_6.1.7600.16385_none_c9392808773cd7da\\cleanmgr.exe\"\r
+}\r
+\r
+\r
+# $PATH TO MUI FILE       WINDOWS 2008 64bit\r
+if (Test-Path $env:systemroot\\winsxs\\amd64_microsoft-windows-cleanmgr.resources_31bf3856ad364e35_6.0.6001.18000_en-us_b9f50b71510436f2\\cleanmgr.exe.mui)\r
+{\r
+\t$SOURCEMUI = \"$env:systemroot\\winsxs\\amd64_microsoft-windows-cleanmgr.resources_31bf3856ad364e35_6.0.6001.18000_en-us_b9f50b71510436f2\\cleanmgr.exe.mui\"\r
+}\r
+# $PATH TO EXE FILE       WINDOWS 2008 64bit\r
+if (Test-Path $env:systemroot\\winsxs\\amd64_microsoft-windows-cleanmgr_31bf3856ad364e35_6.0.6001.18000_none_c962d1e515e94269\\cleanmgr.exe)\r
+{\r
+\t$SOURCEEXE = \"$env:systemroot\\winsxs\\amd64_microsoft-windows-cleanmgr_31bf3856ad364e35_6.0.6001.18000_none_c962d1e515e94269\\cleanmgr.exe\"\r
+}\r
+\r
+# $PATH TO MUI FILE   WINDOWS 2008 32bit\r
+if (Test-Path $env:systemroot\\winsxs\\x86_microsoft-windows-cleanmgr.resources_31bf3856ad364e35_6.0.6001.18000_en-us_5dd66fed98a6c5bc\\cleanmgr.exe.mui)\r
+{\r
+\t$SOURCEMUI = \"$env:systemroot\\winsxs\\x86_microsoft-windows-cleanmgr.resources_31bf3856ad364e35_6.0.6001.18000_en-us_5dd66fed98a6c5bc\\cleanmgr.exe.mui\"\r
+}\r
+# $PATH TO EXE FILE   WINDOWS 2008 32bit\r
+if (Test-Path $env:systemroot\\winsxs\\x86_microsoft-windows-cleanmgr_31bf3856ad364e35_6.0.6001.18000_none_6d4436615d8bd133\\cleanmgr.exe)\r
+{\r
+\t$SOURCEEXE = \"$env:systemroot\\winsxs\\x86_microsoft-windows-cleanmgr_31bf3856ad364e35_6.0.6001.18000_none_6d4436615d8bd133\\cleanmgr.exe\"\r
+}\r
+\r
+# COPY PROCESS \r
+# THIS SECTION SHOULD NEVER HAPPEN ON WINDOWS 2003 SERVER BECAUSE CLEANMGR.EXE IS ALWAYS INSTALLED\r
+# TEST AND COPY IF CLEANMGR.EXE DOES NOT EXIST IN EXPECTED LOCATION COPY FROM SOURCE EXE AND MUI\r
+if (!(Test-Path $env:systemroot\\SYSTEM32\\cleanmgr.exe))\r
+{\r
+  xcopy $SOURCEMUI $DCLEANMGRMUI /y\r
+}\r
+if (!(Test-Path $env:systemroot\\SYSTEM32\\cleanmgr.exe))\r
+{\r
+  xcopy $SOURCEEXE $DCLEANMGR /y\r
+}\r
+\r
+# RUN EXE AND CLEAN DRIVE MAX CLEANUP\r
+$pinfo = New-Object System.Diagnostics.ProcessStartInfo\r
+$pinfo.FileName = \"$env:systemroot\\SYSTEM32\\CLEANMGR.EXE\"\r
+$pinfo.RedirectStandardError = $true\r
+$pinfo.RedirectStandardOutput = $true\r
+$pinfo.UseShellExecute = $false\r
+$pinfo.Arguments = \"/d$driveLetter /$cleanupSwitch\"\r
+$p = New-Object System.Diagnostics.Process\r
+$p.StartInfo = $pinfo\r
+$p.Start() | Out-Null\r
+$p.WaitForExit()\r
+$stdout = $p.StandardOutput.ReadToEnd()\r
+$stderr = $p.StandardError.ReadToEnd()\r
+Write-Host \"stdout: $stdout\"\r
+Write-Host \"stderr: $stderr\"\r
+Write-Host \"Exit Code: \" + $p.ExitCode\r
+"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "driveLetter",
+      "Label": "Drive Letter",
+      "HelpText": "The driver letter in which to run the clean up manager on, by default C.",
+      "DefaultValue": "C",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "C
+D
+E
+F
+G
+H
+I
+J
+K
+L
+M
+N
+O
+P
+Q
+R
+S
+T
+U
+V
+W
+X
+Y
+Z"
+      }
+    },
+    {
+      "Name": "cleanupSwitch",
+      "Label": "Clean up Level",
+      "HelpText": "2 options are LOWDISK or VERYLOWDISK, varies the level of cleanup that is done.  VERYLOWDISK is the most complete, most cleaned up.",
+      "DefaultValue": "VERYLOWDISK",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "VERYLOWDISK| Very Low Disk
+LOWDISK\\Low Disk"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-10-12T18:46:26.067+00:00",
+  "LastModifiedBy": "dbloch",
+  "$Meta": {
+    "ExportedAt": "2015-10-12T19:07:41.676+00:00",
+    "OctopusVersion": "3.0.21.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}

@@ -1,0 +1,84 @@
+{
+  "Id": "255a7317-460f-4bc4-8017-a99b4563aad3",
+  "Name": "SQL - Drop Database Using SMO",
+  "Description": "This uses Sql Management Objects to drop a database if it exists. If the username and password are both empty then it will attempt a trusted connection.",
+  "ActionType": "Octopus.Script",
+  "Version": 9,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SMO\") | out-null
+
+try
+{    
+    $server = new-object ('Microsoft.SqlServer.Management.Smo.Server') $SqlServer
+    
+    if (!$SqlUsername -and !$SqlPassword)
+    {
+        $server.ConnectionContext.LoginSecure = $true
+    } else {
+        $server.ConnectionContext.LoginSecure = $false
+        $server.ConnectionContext.set_Login($SqlUsername)
+        $server.ConnectionContext.set_Password($SqlPassword)      
+    }
+
+\tif ($server.databases[$SqlDatabase] -ne $null)
+\t{
+    \t$server.killallprocesses($SqlDatabase)
+    \t$server.databases[$SqlDatabase].drop()
+\t}
+}
+catch
+{    
+    $error[0] | format-list -force
+    Exit 1
+}
+    ",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "SqlServer",
+      "Label": "Sql Server",
+      "HelpText": "SQL Server Instance with Port",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SqlUsername",
+      "Label": "Sql Username (optional)",
+      "HelpText": "The SQL Account which has access to Create SQL Database",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SqlPassword",
+      "Label": "Sql Password (optional)",
+      "HelpText": "The password for the SQL Account",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SqlDatabase",
+      "Label": "Sql Database",
+      "HelpText": "Name of Database to be Dropped",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2015-05-20T13:00:12.964+00:00",
+    "OctopusVersion": "2.6.5.1010",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

@@ -1,0 +1,318 @@
+{
+  "Id": "cc3b7dd9-f107-4477-acc4-4d1ffdf9e820",
+  "Name": "Azure Database - Import Create New DTU",
+  "Description": "restores a bacpac to a new database
+
+*Depends on az cli*
+
+*Source database requires 'Allow Azure services and resources to access this server' option turn on in the SQL server firewall*",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "#get variables into easy to use format
+# Create DB Variables
+$databaseName = $OctopusParameters[\"azDbImportNewDTU.dbName\"]
+$sqlServer = $OctopusParameters[\"azDbImportNewDTU.server\"]
+$rgName = $OctopusParameters[\"azDbImportNewDTU.resourceGroup\"]
+$elasticPool = $OctopusParameters[\"azDbImportNewDTU.elasticPool\"]
+$readScaleTruthy = $OctopusParameters[\"azDbImportNewDTU.readScale\"]
+$serviceObjective = $OctopusParameters[\"azDbImportNewDTU.serviceObjective\"]
+$tags = $OctopusParameters[\"azDbImportNewDTU.tags\"]
+$zoneRedundant = $OctopusParameters[\"azDbImportNewDTU.zoneRedundant\"]
+$maxSize = $OctopusParameters[\"azDbImportNewDTU.maxSize\"]
+
+# Import bacpac variables
+$adminName = $OctopusParameters[\"azDbImportNewDTU.adminName\"]
+$adminPwd = $OctopusParameters[\"azDbImportNewDTU.adminPwd\"]
+$accessKey = $OctopusParameters[\"azDbImportNewDTU.blobAccessKey\"]
+$accessKeyType = $OctopusParameters[\"azDbImportNewDTU.accessKeyType\"]
+$containerUri = $OctopusParameters[\"azDbImportNewDTU.ContainerUri\"]
+$backupName = $OctopusParameters[\"azDbImportNewDTU.backupName\"]
+$backupUri = \"$containerUri/$backupName.bacpac\"
+
+$readScaleValue = \"Disabled\"
+
+if($readScaleTruthy -eq \"true\") { $readScalevalue = \"Enabled\" }
+
+$ServiceObjectiveSizes = @{Basic = 2GB; S0 = 250GB; S1 = 250GB; S2 = 250GB; S3 = 1TB; S4 = 1TB; S6 = 1TB; S7 = 1TB; S9 = 1TB; S12 = 1TB; P1 = 1TB; P2 = 1TB; P4 = 1TB; P6 = 1TB; P11 = 4TB; P15 = 4TB}
+
+if($null -eq (az sql server list --query \"[?Name==$sqlServer]\" | ConvertFrom-Json))
+{
+    throw \"$sqlServer doesn't exist or the selected azure account doesn't have access to it.\"
+}
+
+if($null -ne (az sql db list --resource-group $rgName --server $sqlServer --query \"[?Name==$databaseName]\" | ConvertFrom-Json))
+{
+    throw \"$databaseName already exists\"
+}
+
+#validate parameters
+
+if(($maxSize / 1GB) -gt ($ServiceObjectiveSizes[$serviceObjective] / 1GB))
+{
+    Write-Warning \"Desired max size of $($maxSize / 1GB)GB exceeds max size of $($ServiceObjectiveSizes[$serviceObjective] / 1GB)GB for selected service objective: $serviceObjective\"
+    Write-Warning \"Setting max size to $($ServiceObjectiveSizes[$serviceObjective] / 1GB)GB\"
+    $maxSize = \"$($ServiceObjectiveSizes[$serviceObjective] / 1GB)GB\"
+}
+
+if([string]::IsNullOrEmpty($rgname))
+{
+\tthrow \"resource group name is not provided\"
+}
+
+if([string]::IsNullOrEmpty($sqlServer))
+{
+\tthrow \"sql server name is not provided\"
+}
+
+if([string]::IsNullOrEmpty($databaseName))
+{
+\tthrow \"database name not provided\"
+}
+
+# admin name, password and access key will not be validated in favor of security
+
+if([string]::IsNullOrEmpty($accessKeyType))
+{
+\tthrow \"access key type not provided\"
+}
+
+if([string]::IsNullOrEmpty($containerUri))
+{
+\tthrow \"containerUri not provided\"
+}
+
+if([string]::IsNullOrEmpty($backupName))
+{
+\tthrow \"backup name not provided\"
+}
+
+# validate premium SKU settings
+if(!$serviceObjective.Contains('P'))
+{
+    if($readScaleValue -eq \"Enabled\")
+    {
+        Write-Warning \"Read Scaling only available for premium SKUs. Setting database read scale to disabled\"
+        $readScaleValue = \"Disabled\"
+    }
+    if($zoneRedundant -eq \"true\")
+    {
+        Write-Warning \"Zone redundant only available for premium SKUs. Setting database zone redundant to false\"
+        $zoneRedundant = \"false\"
+    }
+}
+
+$cliArgs = \"--name $databaseName --resource-group $rgName --server $sqlServer\"
+
+if($elasticPool) {$cliArgs += \" --elastic-pool $elasticPool\"}
+else {$cliArgs += \" --max-size $maxSize --service-objective $serviceObjective  --zone-redundant $zoneRedundant\"}
+
+if($tags) {$cliArgs += \" --tags $tags\"}
+if($readScale) {$cliArgs += \" --read-scale $readScaleValue\"}
+
+
+$cmd = \"az sql db create $cliArgs\"
+
+write-verbose \"cmd is: $cmd\"
+
+Write-Host \"Creating Database\"
+Invoke-Expression $cmd
+
+write-host \"starting db import\"
+write-verbose \"import cmd az sql db import --resource-group $rgname --server $sqlServer --name $databaseName --admin-password $adminPwd --admin-user $adminName --storage-key $accessKey --storage-key-type $accessKeyType --storage-uri $backupUri\"
+
+az sql db import --resource-group $rgname --server $sqlServer --name $databaseName --admin-password $adminPwd --admin-user $adminName --storage-key $accessKey --storage-key-type $accessKeyType --storage-uri $backupUri
+",
+    "Octopus.Action.Azure.AccountId": "azureserviceprincipal-chris-azure-account-spaces-1"
+  },
+  "Parameters": [
+    {
+      "Id": "918c8c99-4afe-4d8b-8c3d-3f7d5443a951",
+      "Name": "azDbImportNewDTU.azAccount",
+      "Label": "Azure Account",
+      "HelpText": "Azure account with permissions to the subscription and resource group",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "dcf78060-568c-4717-87d5-d1d2d1044418",
+      "Name": "azDbImportNewDTU.resourceGroup",
+      "Label": "Resource Group",
+      "HelpText": "Resource group name housing the target SQL server",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2a35cc98-c991-4bbf-bf80-b6fb74b5d066",
+      "Name": "azDbImportNewDTU.server",
+      "Label": "SQL Server",
+      "HelpText": "Name of the Azure SQL server",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "aad2ddb7-ea11-4e7b-b90a-8ccb354e4a60",
+      "Name": "azDbImportNewDTU.dbName",
+      "Label": "Database Name",
+      "HelpText": "Name of the database that will be created",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1c794a0d-d7f2-4757-875a-e2e0148e8fd1",
+      "Name": "azDbImportNewDTU.serviceObjective",
+      "Label": "Service Objective",
+      "HelpText": "The service objective for the new database",
+      "DefaultValue": "Basic",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Basic|Basic
+S0|S0
+S1|S1
+S3|S3
+S4|S4
+S6|S6
+S7|S7
+S9|S9
+S12|S12
+P1|P1
+P2|P2
+P4|P4
+P6|P6
+P11|P11
+P15|P15"
+      }
+    },
+    {
+      "Id": "81cef05c-98d2-4e82-bc78-f1bcb6536291",
+      "Name": "azDbImportNewDTU.elasticPool",
+      "Label": "Elastic Pool",
+      "HelpText": "The name or resource id of the elastic pool to create the database in",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "48128da8-94e8-4560-8fa7-7c30e68d1849",
+      "Name": "azDbImportNewDTU.readScale",
+      "Label": "Read Scale",
+      "HelpText": "If enabled, connections that have application intent set to readonly in their connection string may be routed to a readonly secondary replica.  This property is only settable for Premium and Business Critical databases",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "4a52b908-7515-4089-91ad-0736e6bb687c",
+      "Name": "azDbImportNewDTU.zoneRedundant",
+      "Label": "Zone Redundant",
+      "HelpText": "Specifies whether to enable zone redundancy",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "948d5fa8-7d9a-4d51-bcd3-6ac6eaf37d3b",
+      "Name": "azDbImportNewDTU.maxsize",
+      "Label": "Max Storage Size",
+      "HelpText": "The max storage size.  If no unit is specified, defaults to bytes (B)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4bc52675-3963-4bdd-9ca4-b2611dc968eb",
+      "Name": "azDbImportNewDTU.tags",
+      "Label": "Tags",
+      "HelpText": "Space-separated tags.  `key[=value] key[=value]`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "40715e88-4892-48c6-83f2-603c0193439b",
+      "Name": "azDbImportNewDTU.blobAccessKey",
+      "Label": "Azure Blob Access Key",
+      "HelpText": "the access key (Shared Access Key or Storage Access Key) to grant access to the storage account",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "fcb94050-5f81-410e-9ed9-c5f52653f9c6",
+      "Name": "azDbImportNewDTU.accessKeyType",
+      "Label": "Access Key Type",
+      "HelpText": "The type of key the access key represents",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "SharedAccessKey|Shared Access Key
+StorageAccessKey|Storage Access Key"
+      }
+    },
+    {
+      "Id": "a8631db7-556e-4532-aacd-595266c4347f",
+      "Name": "azDbImportNewDTU.ContainerUri",
+      "Label": "Container Uri",
+      "HelpText": "The URI of the container to save the exported database in.  Format is: `https://{StorageAccountName}.blob.core.windows.net/{ContainerName}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "85686923-5e57-4b1d-8dd7-6b5ca263ba42",
+      "Name": "azDbImportNewDTU.backupName",
+      "Label": "Backup Name",
+      "HelpText": "The name of the file being saved.  Defaults to DB Name",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6da5679d-1c84-4fb4-8f91-22fd91b50baa",
+      "Name": "azDbImportNewDTU.adminName",
+      "Label": "SQL Server Admin Name",
+      "HelpText": "The admin name of the SQL server containing the database you wish to import",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "44e1a2a3-6b9b-44a5-893d-d26f14166b52",
+      "Name": "azDbImportNewDTU.adminPwd",
+      "Label": "Admin Password",
+      "HelpText": "The admin password of the SQL server containing the database you wish to import",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-06-23T20:12:56.412Z",
+    "OctopusVersion": "2020.2.10",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "xtreampb",
+  "Category": "azure"
+}

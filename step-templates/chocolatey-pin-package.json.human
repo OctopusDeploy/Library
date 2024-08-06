@@ -1,0 +1,123 @@
+{
+  "Id": "81d9b602-7969-4cb2-a9c0-b5c961937db4",
+  "Name": "Chocolatey - Pin Package",
+  "Description": "Allows pinning versions of packages using the Chocolatey package manager.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+$chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"Machine\") + \"\\bin\"
+if(-not (Test-Path $chocolateyBin)) {
+    Write-Output \"Environment variable 'ChocolateyInstall' was not found in the system variables. Attempting to find it in the user variables...\"
+    $chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"User\") + \"\\bin\"
+}
+
+$choco = \"$chocolateyBin\\choco.exe\"
+
+if (-not (Test-Path $choco)) {
+    throw \"Chocolatey was not found at $chocolateyBin.\"
+}
+
+# check we have required parameters
+if (-not $ChocolateyPackagePinId) {
+    throw \"Please specify the ID of an application package to install.\"
+}
+
+$chocoVersion = & $choco --version
+Write-Output \"Running Chocolatey version $chocoVersion\"
+
+# base arguments to use with choco.exe
+$chocoBaseArgs = @('pin', $ChocolateyPackagePinAction)
+
+# this parameter only works in Chocolatey licensed editions
+if ($ChocolateyPackagePinReason) {
+ \t# determine if this is a licensed edition
+\t$edition = & $choco
+    if ($edition -like '*Business*' -and [version]$chocoVersion -ge [version]'1.12.2') {
+    \tWrite-Output \"Using reason '$ChocolateyPackagePinReason' when pinning packages.\"
+    \t$chocoBaseArgs += \"--reason=\"\"'$ChocolateyPackagePinReason'\"\"\"
+    }
+\telse {
+    \tWrite-Output \"Using a reason for a package pin only works with Chocolatey For Business licensed editions. Ignoring the pin reason '$ChocolateyPackagePinReason'.\"
+\t}
+}
+
+if ($ChocolateyPackagePinVersion) {
+\t$chocoBaseArgs += \"--version=$ChocolateyPackagePinVersion\"
+}
+
+$chocoPackages = $ChocolateyPackagePinId -split ' '
+ForEach ($package in $chocoPackages) {
+\tWrite-Output \"Pinning Chocolatey package $package.\"
+    $chocoArgs = $chocoBaseArgs + @(\"--name=\"\"'$package'\"\"\")
+    
+    # execute the command line
+\tWrite-Output \"Running the command: $choco $chocoArgs\"
+\t& $choco $chocoArgs
+}",
+    "Octopus.Action.EnabledFeatures": ""
+  },
+  "Parameters": [
+    {
+      "Id": "2194aed6-a753-4e95-8067-b98a2a1a54bb",
+      "Name": "ChocolateyPackagePinId",
+      "Label": "(Required) Package Name",
+      "HelpText": "The name of the Chocolatey package to install. Install multiple packages by separating them with a space.
+
+Examples:
+
+* _git_
+* _git_ _vscode_ _notepadplusplus_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "65b0dd7d-7643-4d55-8a63-d8506b674688",
+      "Name": "ChocolateyPackagePinVersion",
+      "Label": "(Optional) Package Version",
+      "HelpText": "If a specific version of the Chocolatey package is required enter it here. If you specify a version this will apply to all packages in 'Package Name'. Otherwise, leave this field blank to use the latest version. Example: _2.3.4_.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "32722882-c1cc-42fe-b3c9-4405218795ba",
+      "Name": "ChocolateyPackagePinAction",
+      "Label": "(Required) Pin Action",
+      "HelpText": "The Chocolatey pin action to take place. You can add a pin or remove an existing pin.",
+      "DefaultValue": "add",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "add|Add a package pin
+remove|Remove an existing package pin"
+      }
+    },
+    {
+      "Id": "00ef4776-72bc-4a1a-8a73-ee2a5c86a810",
+      "Name": "ChocolateyPackagePinReason",
+      "Label": "(Optional) Pin Reason",
+      "HelpText": "The reason for the package being pinned. 
+
+_NOTE: This only works with Chocolatey For Business editions 1.12.2+_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-08-10T17:30:40.400Z",
+    "OctopusVersion": "2020.3.2",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedOn": "2020-08-10T17:30:40.400Z",
+  "LastModifiedBy": "pauby",
+  "Category": "chocolatey"
+}

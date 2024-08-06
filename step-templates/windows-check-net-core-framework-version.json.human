@@ -1,0 +1,118 @@
+{
+  "Id": "929ff903-29de-4217-b6a9-83fbfd477e11",
+  "Name": ".NET Core - Check .NET Core Framework Version",
+  "Description": "Check if given .NET Core framework version (or greater) is installed.",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\" 
+function Get-Parameter($Name, $Default, [switch]$Required) {
+    $result = $null
+
+    if ($OctopusParameters -ne $null) {
+        $result = $OctopusParameters[$Name]
+    }
+
+    if ($result -eq $null) {
+        if ($Required) {
+            throw \"Missing parameter value $Name\"
+        } else {
+            $result = $Default
+        }
+    }
+
+    return $result
+}
+
+function Get-DotNetCoreFrameworkVersions() {
+    $dotNetCoreVersions = @()
+    if(Test-Path \"$env:programfiles/dotnet/shared/Microsoft.NETCore.App\") {
+        $dotNetCoreVersions = (ls \"$env:programfiles/dotnet/shared/Microsoft.NETCore.App\").Name
+    }
+    return $dotNetCoreVersions
+}
+
+function Get-AspDotNetCoreRuntimeVersions() {
+    $aspDotNetCoreRuntimeVersions = @()
+    $DotNETCoreUpdatesPath = \"Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\Microsoft\\Updates\\.NET Core\"
+    $DotNETUpdatesPath = \"Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\Microsoft\\Updates\\.NET\"
+
+    if (Test-Path \"HKLM:\\SOFTWARE\\Wow6432Node\\Microsoft\\Updates\\.NET Core\") {
+\t    $DotNetCoreItems = (Get-Item -Path $DotNETCoreUpdatesPath).GetSubKeyNames()
+    }
+    if (Test-Path \"HKLM:\\SOFTWARE\\Wow6432Node\\Microsoft\\Updates\\.NET\") {
+        $DotNetItems = (Get-Item -Path $DotNETUpdatesPath).GetSubKeyNames()
+    }
+\t$aspDotNetCoreRuntimeVersions = $DotNetCoreItems + $DotNetItems | where { $_ -match \"^Microsoft (ASP)?\\.NET Core (?<version>[\\d\\.]+(.*?)?) \"} | foreach { $Matches['version'] }
+
+    return $aspDotNetCoreRuntimeVersions
+}
+
+$targetVersion = (Get-Parameter \"TargetVersion\" -Required).Trim()
+$exact = [boolean]::Parse((Get-Parameter \"Exact\" -Required))
+$CheckASPdotNETCore = [boolean]::Parse((Get-Parameter \"CheckASPdotNETCore\" -Required))
+
+$matchedVersions = Get-DotNetCoreFrameworkVersions | Where-Object { if ($exact) { $_ -eq $targetVersion } else { $_ -ge $targetVersion }  }
+if (!$matchedVersions) { 
+    throw \"Can't find .NET Core Runtime $targetVersion installed in the machine.\"
+}
+
+$matchedVersions | foreach { Write-Host \"Found .NET Core Runtime $_ installed in the machine.\" }
+
+if ($CheckASPdotNETCore) {
+    $matchedAspVersions = Get-AspDotNetCoreRuntimeVersions
+    if (!$matchedAspVersions) {
+        throw \"Can't find ASP.NET Core Runtime installed in the machine.\"
+    }
+
+    $matchedAspVersions | foreach { Write-Host \"Found ASP.NET Core Runtime $_ installed in the machine.\" }
+}"
+  },
+  "Parameters": [
+    {
+      "Id": "f386deb4-36fb-4116-ad4a-5bceed89fa5b",
+      "Name": "TargetVersion",
+      "Label": "Target .NET Core framework version",
+      "HelpText": "The target .NET Core framework version you expect to be installed in the machine. For example, 2.0.5.",
+      "DefaultValue": "2.0.5",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "7312dd89-2174-47d7-bdfd-2745fb812f58",
+      "Name": "Exact",
+      "Label": "Exact",
+      "HelpText": "If you check \"Exact\", it means the installed .NET Core framework version MUST match target version.
+
+Otherwise, as long as the installed .NET Coreframework version is greater than or equal to target version, the check will pass.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "4f0b738b-8f06-4c93-a27f-49b3cd06ea9a",
+      "Name": "CheckASPdotNETCore",
+      "Label": "Check ASP.NET Core Module",
+      "HelpText": "If you check \"Check ASP.NET Core Module\", it means this step will check if ASP.NET Core module is installed in the host or not.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2018-06-13T08:43:39.365Z",
+    "OctopusVersion": "2018.4.1",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "FinnianDempsey",
+  "Category": "dotnetcore"
+}

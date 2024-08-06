@@ -1,0 +1,115 @@
+{
+  "Id": "4db094ce-9c74-499d-8129-ce973cdaa9d4",
+  "Name": "Datadog - Schedule Downtime",
+  "Description": "Datadog is cloud monitoring service which allows you to push arbitrary events into via an api. This task allows you to schedule a downtime event to prevent error alerts during a deployment.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Lets handle our own errors here\r
+$ErrorActionPreference = \"continue\"\r
+\r
+$apiKey = $OctopusParameters['ApiKey']\r
+$appKey = $OctopusParameters['AppKey']\r
+$endpoint = $OctopusParameters['DatadogEndpoint']\r
+$downtimeApiEndpoint = \"/api/v1/downtime\"\r
+$scope = $OctopusParameters['Environment']\r
+$durstring = $OctopusParameters['Duration']\r
+\r
+[int]$duration = [convert]::ToInt32($durstring,10)\r
+\r
+# Write out some debug information\r
+Write-Host \"Scheduling Downtime for: $scope\"\r
+Write-Host \"Datadog Endpoint: $endpoint$downtimeApiEndpoint\"\r
+\r
+# Create the url from basic information\r
+$url = \"$endpoint$downtimeApiEndpoint`?api_key=$apiKey&application_key=$appKey\"\r
+\r
+Write-Host $url\r
+\r
+$start=[Math]::Floor([decimal](Get-Date(Get-Date).ToUniversalTime()-uformat \"%s\"))\r
+$end = $start + $duration\r
+$json = @\"\r
+{\r
+      \"scope\": \"env:$scope\",\r
+      \"start\": \"$start\",\r
+      \"end\": \"$end\"\r
+  }\r
+\"@\r
+\r
+# Make the response and handle exceptions **Requires PS 3.0 + \r
+try {\r
+    $response = Invoke-WebRequest -Uri $url -Method POST -Body ($json | ConvertFrom-Json | ConvertTo-Json) -ContentType \"Application/json\" -UseBasicParsing\r
+}catch{\r
+    Write-Error \"Error: $_\"\r
+    EXIT 0\r
+}\r
+\r
+# Some Error handling here\r
+if($response.StatusCode -ne 200){\r
+    Write-Error \"There was an error listing response content below to debug\"\r
+    $response.RawContent\r
+}else{\r
+    Write-Host \"Sent Successfully\"\r
+}\r
+\r
+# We usually don't want to fail a deployment because of this\r
+EXIT 0"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ApiKey",
+      "Label": "Datadog Api Key",
+      "HelpText": "The api key used to authenticate with Datadog",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AppKey",
+      "Label": "Datadog Application Key",
+      "HelpText": "The Application key used to authenticate with Datadog",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DatadogEndpoint",
+      "Label": "Datadog Endpoint",
+      "HelpText": "The endpoint for datadog, for most (if not all) instances this should just be \"https://app.datadoghq.com\"",
+      "DefaultValue": "https://app.datadoghq.com",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Environment",
+      "Label": "Environment",
+      "HelpText": "Environment tag in Datadog to schedule the downtime for",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Duration",
+      "Label": "Downtime Duration (seconds)",
+      "HelpText": "How long should the downtime be scheduled for, in seconds default is 10 minutes",
+      "DefaultValue": "600",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2019-09-18T00:54:17.669Z",
+  "LastModifiedBy": "baynewc1",
+  "$Meta": {
+    "ExportedAt": "2016-03-01T23:11:19.809Z",
+    "OctopusVersion": "3.2.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "datadog"
+}

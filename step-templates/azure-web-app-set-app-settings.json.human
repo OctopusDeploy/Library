@@ -1,0 +1,96 @@
+{
+    "Id": "850667b2-567d-46ba-a87d-d85dc31ebc83",
+    "Name": "Azure Web App - Set App Settings",
+    "Description": "Sets the Azure web app settings of a targeted Azure web app deployment target.  Will use the deployment slot if defined.
+<hr />
+
+*<p>Note This template is designed to run against an azure web app octopus target</p>*
+*<p>Depends on Azure CLI and powershell to be installed on the worker</p>*",
+    "ActionType": "Octopus.AzurePowerShell",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Azure.AccountId": "#{azureWebAppSettings.azAccount}",
+      "Octopus.Action.Script.ScriptBody": "$webAppName = $OctopusParameters[\"Octopus.Action.Azure.WebAppName\"]
+$rg = $OctopusParameters[\"Octopus.Action.Azure.ResourceGroupName\"]
+$slot = $OctopusParameters[\"Octopus.Action.Azure.DeploymentSlot\"]
+$isSlotSettings = $OctopusParameters[\"azureWebAppSettings.isSlotSettings\"]
+
+$settingsType = \"settings\"
+
+$appSettings = $OctopusParameters[\"azureWebAppSettings.settings\"]
+
+$settings = \"\"
+
+Write-Host \"Parsing Settings\"
+
+$appSettings -split \"`n\" | ForEach-Object { $settings += \"$_ \"}
+
+$settings = $settings.TrimEnd(' ')
+
+$cmdArgs = \"--name $webAppName --resource-group $rg\"
+
+if(![string]::IsNullOrEmpty($slot))
+{
+\tif($isSlotSettings -eq 'true')
+    {
+    \t$settingsType = \"slot-settings\"
+    }
+    
+\t$settings += \" --slot $slot\"
+}
+
+$settingsArgs = \" --$settingsType $settings\"
+
+Write-Host \"Setting app settings\"
+
+$cmd = \"az webapp config appsettings set $cmdArgs $settingsArgs\"
+
+write-verbose \"command to execute: $cmd\"
+
+Invoke-Expression $cmd
+"
+    },
+    "Parameters": [
+      {
+        "Id": "598025e6-2d89-49bf-8abb-fda6da181de5",
+        "Name": "azureWebAppSettings.azAccount",
+        "Label": "Azure Account",
+        "HelpText": "An Azure account with permissions to the subscription and web app being modified",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "AzureAccount"
+        }
+      },
+      {
+        "Id": "5d232cfd-8e9f-4b3e-8c4e-7bf3a75ced19",
+        "Name": "azureWebAppSettings.settings",
+        "Label": "Web App Settings",
+        "HelpText": "The web app settings to append or update.  Each new setting should be on a new line as a key value pair using the template `key=value`",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "MultiLineText"
+        }
+      },
+      {
+        "Id": "9bbee2cf-c57c-45db-8a7f-62a752779b56",
+        "Name": "azureWebAppSettings.isSlotSettings",
+        "Label": "Is Slot Settings",
+        "HelpText": "This is used to distinguish what settings are slot specific and which one are not.  Slot setting do not follow the deployed app when the slot is swapped.",
+        "DefaultValue": "false",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2020-06-30T15:48:06.905Z",
+      "OctopusVersion": "2020.2.10",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "xtreampb",
+    "Category": "azure"
+}

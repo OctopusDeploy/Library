@@ -1,0 +1,176 @@
+{
+  "Id": "a7fa3e51-14aa-4bb9-8686-781adc9bf93e",
+  "Name": "TeamCity - Run Build",
+  "Description": "Trigger a specific Team City build from an Octopus Deploy process and wait for the result. The step will fail if the build fails.",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Set TLS 1.2
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+$teamCityBuildConfigId = $OctopusParameters['tcrb_TeamCityBuildConfigurationId']\r
+$teamCityUrl = $OctopusParameters['tcrb_TeamCityUrl']\r
+$teamCityUsername = $OctopusParameters['tcrb_TeamCityUsername']\r
+$teamCityPassword = $OctopusParameters['tcrb_TeamCityPassword']\r
+$teamCityInterval = [int]::Parse($OctopusParameters['tcrb_TeamCityInterval'])\r
+$teamCityBuildParams = $OctopusParameters['tcrb_BuildParams']\r
+\r
+function Start-TeamCityBuild($Url, $Username, $Password, $BuildConfigId, $BuildParams) {\r
+    $endpoint = \"${Url}/httpAuth/app/rest/buildQueue\"\r
+    $content = \"<build><buildType id=`\"${BuildConfigId}`\" /><properties>\"\r
+    if (-not [String]::IsNullOrEmpty($BuildParams)) {\r
+        foreach ($param in (ConvertFrom-Csv -Delimiter '=' -Header Name,Value -InputObject $BuildParams)) {\r
+            $name = $param.Name.Replace('\"', '&quot;')\r
+            $value = $param.Value.Replace('\"', '&quot;')\r
+            $content += \"<property name=`\"${name}`\" value=`\"${value}`\" />\"\r
+        }\r
+    }\r
+    $content += \"</properties></build>\"    \r
+    $encodedContent = [System.Text.Encoding]::UTF8.GetBytes($content)\r
+\r
+    Write-Host \"Triggering build with Id ${BuildConfigId} in TeamCity. Server: ${Url}\"\r
+\r
+    $req = [System.Net.WebRequest]::Create($endpoint)\r
+    $req.Credentials = New-Object System.Net.NetworkCredential($Username, $Password)\r
+    $req.Method = \"POST\"\r
+    $req.ContentType = \"application/xml\"\r
+\r
+    $req.ContentLength = $encodedContent.length\r
+    $requestStream = $req.GetRequestStream()\r
+    $requestStream.Write($encodedContent, 0, $encodedContent.length)\r
+    $requestStream.Close()\r
+\r
+    $resp = $req.GetResponse()\r
+    $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())\r
+    $result = [xml]$reader.ReadToEnd()\r
+    $buildUrl = $result.build.webUrl\r
+\r
+    Write-Host $buildUrl\r
+    Write-Host \"================================================================================\"\r
+\r
+    return $result\r
+}\r
+\r
+function Get-TeamCityBuildState($Url, $Username, $Password, $BuildInfo) {\r
+    $href = $BuildInfo.href\r
+    $buildId = $BuildInfo.id\r
+    $endpoint = \"${Url}${href}\"\r
+\r
+    Write-Host \"Getting state of build ${buildId} in TeamCity. Server: ${Url}\"\r
+\r
+    $req = [System.Net.WebRequest]::Create($endpoint)\r
+    $req.Credentials = New-Object System.Net.NetworkCredential($Username, $Password)\r
+    $req.Method = \"GET\"\r
+\r
+    $resp = $req.GetResponse()\r
+    $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())\r
+    return [xml]$reader.ReadToEnd();\r
+}\r
+\r
+function Invoke-TeamCityBuild ($Url, $Username, $Password, $BuildConfigId, $Interval, $BuildParams) {\r
+    $build = Start-TeamCityBuild -Url $Url -Username $Username -Password $Password -BuildConfigId $BuildConfigId -BuildParams $teamCityBuildParams\r
+    $buildInfo = $build.build\r
+\r
+    while ($true) {\r
+        $buildState = Get-TeamCityBuildState -Url $teamCityUrl -Username $teamCityUsername -Password $teamCityPassword -BuildInfo $buildInfo\r
+        Write-Host $buildState.build.state\r
+        if ($buildState.build.state -eq 'finished') {\r
+            return $buildState.build\r
+        }\r
+        \r
+        Start-Sleep -Seconds $Interval\r
+    }\r
+}\r
+\r
+$buildResult = Invoke-TeamCityBuild -Url $teamCityUrl -Username $teamCityUsername -Password $teamCityPassword -BuildConfigId $teamCityBuildConfigId -Interval $teamCityInterval -BuildParams $teamCityBuildParams\r
+$message = $buildResult.statusText\r
+Write-Host \"================================================================================\"\r
+Write-Host $buildResult.webUrl\r
+if ($buildResult.status -eq 'FAILURE') {\r
+    Write-Host \"Build failed: ${message}\"\r
+    exit 1\r
+}\r
+elseif ($message -eq 'Canceled') {\r
+    Write-Host \"Build canceled: ${message}\"\r
+    exit 2\r
+}\r
+else {\r
+    Write-Host \"Build successful: ${message}\"\r
+    exit 0\r
+}\r
+",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptFileName": null
+  },
+  "Parameters": [
+    {
+      "Name": "tcrb_TeamCityBuildConfigurationId",
+      "Label": "BuildConfigurationId",
+      "HelpText": "The Id of the build configuration to trigger.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "tcrb_TeamCityUrl",
+      "Label": "TeamCityUrl",
+      "HelpText": "The URL of the Team City server.
+E.g. `http://teamcity.example.com`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "tcrb_TeamCityUsername",
+      "Label": "TeamCityUsername",
+      "HelpText": "The username to use for accessing TeamCity.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "tcrb_TeamCityPassword",
+      "Label": "TeamCityPassword",
+      "HelpText": "The password for the TeamCity user.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "tcrb_TeamCityInterval",
+      "Label": "TeamCityInterval",
+      "HelpText": "Number of seconds to wait between each check of the build's state.",
+      "DefaultValue": "5",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "tcrb_BuildParams",
+      "Label": "BuildParameters",
+      "HelpText": "Line-delimited list of parameters to add to the build in the form <name>=<value>
+<name> and <value> can be contained in quotes.
+E.g.
+param1=param_value1
+env.param2=\"env_param2\"
+system.param3=sys_param2",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-11-03T09:42:34.506Z",
+    "OctopusVersion": "2020.4.10",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "harrisonmeister",
+  "Category": "teamcity"
+}

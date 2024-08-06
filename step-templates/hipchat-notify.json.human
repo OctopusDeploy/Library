@@ -1,0 +1,100 @@
+{
+  "Id": "6a6ce997-c91b-4e06-b237-4484417efc89",
+  "Name": "HipChat - Notify",
+  "Description": "Notifies a HipChat room of a deployment outcome.",
+  "ActionType": "Octopus.Script",
+  "Version": 0,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "#--------- Notify-Hipchat\r
+$apitoken = $OctopusParameters['AuthToken']\r
+$roomid = $OctopusParameters['RoomId']\r
+$messageText = \"(successful)\"\r
+$color = 'green'\r
+\r
+if ($OctopusParameters['Octopus.Deployment.Error']) {\r
+    $messageText = \"(failed)\"\r
+    $color = 'red'\r
+}\r
+\r
+$messageValue = \"$messageText $($OctopusParameters['Octopus.Project.Name']) [v$($OctopusParameters['Octopus.Release.Number'])] deployed to $($OctopusParameters['Octopus.Environment.Name'])    on $($OctopusParameters['Octopus.Machine.Name'])\"\r
+\r
+if ($OctopusParameters['NotificationText']) {\r
+    $messageValue = $OctopusParameters['NotificationText']\r
+    $color = $OctopusParameters['NotificationColor']\r
+}\r
+\r
+$message = New-Object PSObject \r
+$message | Add-Member -MemberType NoteProperty -Name color -Value $color\r
+$message | Add-Member -MemberType NoteProperty -Name message -Value $messageValue\r
+$message | Add-Member -MemberType NoteProperty -Name notify -Value $false\r
+$message | Add-Member -MemberType NoteProperty -Name message_format -Value text\r
+\r
+#Do the HTTP POST to HipChat\r
+$uri = \"https://api.hipchat.com/v2/room/$roomid/notification?auth_token=$apitoken\"\r
+$postBody = ConvertTo-Json -InputObject $message\r
+$postStr = [System.Text.Encoding]::UTF8.GetBytes($postBody)\r
+\r
+$webRequest = [System.Net.WebRequest]::Create($uri)\r
+$webRequest.ContentType = \"application/json\"\r
+$webrequest.ContentLength = $postStr.Length\r
+$webRequest.Method = \"POST\"\r
+\r
+$requestStream = $webRequest.GetRequestStream()\r
+$requestStream.Write($postStr, 0,$postStr.length)\r
+$requestStream.Close()\r
+\r
+[System.Net.WebResponse] $resp = $webRequest.GetResponse()\r
+$rs = $resp.GetResponseStream()\r
+\r
+[System.IO.StreamReader] $sr = New-Object System.IO.StreamReader -argumentList $rs\r
+$sr.ReadToEnd()",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "AuthToken",
+      "Label": "API Auth Token",
+      "HelpText": "HipChat authentication token for a user who can post notifications to rooms",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "RoomId",
+      "Label": "Room",
+      "HelpText": "The room name that you wish to post a notification to",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "NotificationText",
+      "Label": "Notification Text",
+      "HelpText": "An optional text override for the notification. Default is: <(succeeded) or (failed)> (Project) v(Release) deployed to (Environment) on (Machine)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "NotificationColor",
+      "Label": "Notification Color",
+      "HelpText": "The color for the notification for the room. Default messages will receive green success, and red failure.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2014-07-29T01:53:13.319+00:00",
+  "LastModifiedBy": "stephengodbold",
+  "$Meta": {
+    "ExportedAt": "2014-07-29T01:56:04.693+00:00",
+    "OctopusVersion": "2.5.5.318",
+    "Type": "ActionTemplate"
+  },
+  "Category": "hipchat"
+}

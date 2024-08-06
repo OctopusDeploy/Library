@@ -1,0 +1,223 @@
+{
+  "Id": "ccb7ad4c-a19e-426f-822e-cd0e0243bda3",
+  "Name": "Jenkins - Queue Job",
+  "Description": "Trigger a job in Jenkins",
+  "ActionType": "Octopus.Script",
+  "Version": 7,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$jenkinsServer = $OctopusParameters['jqj_JenkinsServer'] 
+$jenkinsUserName = $OctopusParameters['jqj_JenkinsUserName']
+$jenkinsUserPassword = $OctopusParameters['jqj_JenkinsUserPasword']
+$jobURL = $jenkinsServer + $OctopusParameters['jqj_JobUrl']
+$failBuild = [System.Convert]::ToBoolean($OctopusParameters['jqj_FailBuild'])
+$jobTimeout = $OctopusParameters['jqj_JobTimeout']
+$buildParam = $OctopusParameters['jqj_BuildParam']
+$checkIntervals = $OctopusParameters['jqj_checkInterval']
+$fetchBuildWait = $OctopusParameters['jqj_FetchBuildWait']
+$fetchBuildLimit = $OctopusParameters['jqj_FetchBuildLimit']
+
+$jobUrlWithParams = \"$jobURL$buildParam\"
+
+Write-Host \"job url: \" $jobUrlWithParams 
+
+function Get-JenkinsAuth
+{
+    $params = @{}
+    if (![string]::IsNullOrWhiteSpace($jenkinsUserName)) {
+        $securePwd = ConvertTo-SecureString $jenkinsUserPassword -AsPlainText -Force 
+        $credential = New-Object System.Management.Automation.PSCredential ($jenkinsUserName, $securePwd) 
+        $head = @{\"Authorization\" = \"Basic \" + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($jenkinsUserName + \":\" + $jenkinsUserPassword ))}
+        $params = @{
+            Headers = $head;
+            Credential = $credential;
+            ContentType = \"text/plain\";
+        }
+    }
+
+    # If your Jenkins uses the \"Prevent Cross Site Request Forgery exploits\" security option (which it should), 
+    # when you make a POST request, you have to send a CSRF protection token as an HTTP request header.
+    # https://wiki.jenkins.io/display/JENKINS/Remote+access+API
+    try {
+        $tokenUrl = $jenkinsServer + \"crumbIssuer/api/json?tree=crumbRequestField,crumb\"
+        $crumbResult = Invoke-WebRequest -Uri $tokenUrl -Method Get @params -UseBasicParsing | ConvertFrom-Json
+        Write-Host \"CSRF protection is enabled, adding CSRF token to request headers\"
+        $params.Headers += @{$crumbResult.crumbRequestField = $crumbResult.crumb}
+    } catch {
+        Write-Host \"Failed to get CSRF token, CSRF may not be enabled\"
+        Write-Host $Error[0]
+    }
+    return $params
+}
+
+try {
+    Write-Host \"Fetching Jenkins auth params\"
+    $authParams = Get-JenkinsAuth
+
+    Write-Host \"Start the build\"
+    $returned = Invoke-WebRequest -Uri $jobUrlWithParams  -Method Post -UseBasicParsing @authParams
+    Write-Host \"Job URL Link: $($returned.Headers['Location'])\"
+    $jobResult = \"$($returned.Headers['Location'])/api/json\"
+    $response = Invoke-RestMethod -Uri $jobResult -Method Get @authParams
+    $buildUrl = $Response.executable.url
+    $c = 0
+    while (($null -eq $buildUrl -or $buildUrl -eq \"\") -and ($c -lt $fetchBuildLimit) ) {
+        $c += 1
+        $response = Invoke-RestMethod -Uri $jobResult -Method Get @authParams
+        $buildUrl = $Response.executable.url
+        Start-Sleep -s $fetchBuildWait
+    }
+    Write-Host \"Build Number is: $($Response.executable.number)\"
+    Write-Host \"Job URL Is: $($buildUrl)\"
+    $buildResult = \"$buildUrl/api/json?tree=result,number,building\"
+        
+    $isBuilding = \"True\"
+    $i = 0
+    Write-Host \"Estimate Job Duration: \" $jobTimeout
+    while ($isBuilding -eq \"True\" -and $i -lt $jobTimeout) {       
+        $i += 5
+        Write-Host \"waiting $checkIntervals secs for build to complete\"
+        Start-Sleep -s $checkIntervals
+        $retyJobStatus = Invoke-RestMethod -Uri $buildResult -Method Get @authParams
+
+        $isBuilding = $retyJobStatus[0].building
+        $result = $retyJobStatus[0].result
+        $buildNumber = $retyJobStatus[0].number
+        Write-Host \"Retry Job Status: \" $result \" BuildNumber: \"  $buildNumber  \" IsBuilding: \"  $isBuilding 
+    }
+    if ($failBuild) {
+        if ($result -ne \"SUCCESS\") {
+            Write-Host \"BUILD FAILURE: build is unsuccessful or status could not be obtained.\"
+            exit 1
+        }
+    }
+}
+catch {
+    Write-Host \"Exception in jenkins job: $($_.Exception.Message)\"
+    exit 1
+}
+"
+  },
+  "Parameters": [
+    {
+      "Id": "b8337514-3989-4b33-930c-b5ebde5b4be0",
+      "Name": "jqj_JobUrl",
+      "Label": "Job Url",
+      "HelpText": "e.g. job/jobname/build",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "a52f7318-6f45-4e9f-b825-b3ae767608f8",
+      "Name": "jqj_FailBuild",
+      "Label": "Fail Build",
+      "HelpText": "Should this fail the deployment?",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "a59c57d3-0177-470c-80e0-f103e57f30d3",
+      "Name": "jqj_JobTimeout",
+      "Label": "Timeout Duration(secs)",
+      "HelpText": "e.g. 60. Specify in secs how long to check for the job status before timing out.",
+      "DefaultValue": "0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "70e9cf06-3712-4950-a174-a5c5c7bd5858",
+      "Name": "jqj_BuildParam",
+      "Label": "Build Param",
+      "HelpText": "e.g. ?Param=Value or ?delay=10sec",
+      "DefaultValue": "/build",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "da8cdc0a-3cd8-4b34-9e5d-13245f77002c",
+      "Name": "jqj_JenkinsServer",
+      "Label": "Jenkins Server",
+      "HelpText": null,
+      "DefaultValue": "http://jenkins:8080/",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "1e43a971-d6a2-4692-8dd2-d8b5344b706c",
+      "Name": "jqj_JenkinsUserName",
+      "Label": "Jenkins User Name",
+      "HelpText": "(Optional) User name  to use to connect to the Jenkins Server",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "fba79fa0-9221-4cd1-9259-5d59e716f0db",
+      "Name": "jqj_JenkinsUserPasword",
+      "Label": "Jenkins User Password",
+      "HelpText": "(Optional) The password to use to connect to the Jenkins Server",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "9fea70e1-ff39-4cc1-8937-7cc19b959e17",
+      "Name": "jqj_checkInterval",
+      "Label": "Check Interval",
+      "HelpText": "The sleep time between checking if the job is running in seconds",
+      "DefaultValue": "20",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "432dbaed-512e-4d29-9b4d-814a8b7c4846",
+      "Name": "jqj_FetchBuildWait",
+      "Label": "Fetch Build URL Wait(secs)",
+      "HelpText": "e.g. 10 Used when getting the build URL. Useful if Jenkins is busy and can't schedule job immediately or there are connection issues. Helps limit excess calls to /api",
+      "DefaultValue": "10",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "cd222e86-cb94-495c-8a5a-8d4cd8b20d86",
+      "Name": "jqj_FetchBuildLimit",
+      "Label": "Fetch Build URL Limit",
+      "HelpText": "e.g. 5. Used to limit the number of times the script asks for the build URL. Used in with FetchBuildURLWait to limit the calls made to /api for build URL.",
+      "DefaultValue": "5",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2024-07-16T18:49:59.8950000Z",
+  "LastModifiedBy": "mspikes",
+  "$Meta": {
+    "ExportedAt": "2021-09-14T13:38:58.1830000Z",
+    "OctopusVersion": "2024.1.11966",
+    "Type": "ActionTemplate"
+  },
+  "Category": "jenkins"
+}

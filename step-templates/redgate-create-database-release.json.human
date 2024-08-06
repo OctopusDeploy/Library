@@ -1,0 +1,627 @@
+{
+    "Id":  "c20b70dc-69aa-42a1-85db-6d37341b63e3",
+    "Name":  "Redgate - Create Database Release",
+    "Description":  "Creates the resources (including the SQL update script) to deploy database changes using Redgate\u0027s [SQL Change Automation](http://www.red-gate.com/sca/productpage), and exports them as Octopus artifacts so you can review the changes before deploying.\r
+\r
+Requires SQL Change Automation version 3.0.2 or later.\r
+\r
+*Version date: 2020-12-21*",
+    "ActionType":  "Octopus.Script",
+    "Version":  22,
+    "Properties":  {
+                       "Octopus.Action.Script.ScriptBody":  "function GetModuleInstallationFolder\r
+{\r
+    if (ModuleInstallationFolderIsValid)\r
+    {\r
+        return [System.IO.Path]::GetFullPath($DLMAutomationModuleInstallationFolder)\r
+    }\r
+\r
+    return \"$PSScriptRoot\\Modules\"\r
+}\r
+\r
+function ModuleInstallationFolderIsValid\r
+{\r
+    if ([string]::IsNullOrWhiteSpace($DLMAutomationModuleInstallationFolder))\r
+    {\r
+        return $false\r
+    }\r
+\r
+    return (Test-Path $DLMAutomationModuleInstallationFolder -IsValid) -eq $true;\r
+}\r
+\r
+$DlmAutomationModuleName = \"DLMAutomation\"\r
+$SqlChangeAutomationModuleName = \"SqlChangeAutomation\"\r
+$ModulesFolder = GetModuleInstallationFolder\r
+$LocalModules = (New-Item \"$ModulesFolder\" -ItemType Directory -Force).FullName\r
+$env:PSModulePath = \"$LocalModules;$env:PSModulePath\"\r
+\r
+function IsScaAvailable\r
+{\r
+    if ((Get-Module $SqlChangeAutomationModuleName) -ne $null) {\r
+        return $true\r
+    }\r
+\r
+    return $false\r
+}\r
+\r
+function InstallCorrectSqlChangeAutomation\r
+{\r
+    [CmdletBinding()]\r
+    Param(\r
+        [Parameter(Mandatory = $false)]\r
+        [Version]$requiredVersion,\r
+        [Parameter(Mandatory = $false)]\r
+        [bool]$useInstalledVersion\r
+    )\r
+\r
+    $moduleName = $SqlChangeAutomationModuleName\r
+\r
+    # this will be null if $requiredVersion is not specified - which is exactly what we want\r
+    $maximumVersion = $requiredVersion\r
+\r
+    if ($requiredVersion) {\r
+        if ($requiredVersion.Revision -eq -1) {\r
+            #If provided with a 3 part version number (the 4th part, revision, == -1), we should allow any value for the revision\r
+            $maximumVersion = [Version]\"$requiredVersion.$([System.Int32]::MaxValue)\"\r
+        }\r
+\r
+        if ($requiredVersion.Major -lt 3) {\r
+            # If the specified version is below V3 then the user is requesting a version of DLMA. We should look for that module name instead\r
+            $moduleName = $DlmAutomationModuleName\r
+        }\r
+    }\r
+\r
+    if ($useInstalledVersion) {\r
+        Write-Verbose \"Option to use installed version is selected. Skipping update/install using PowerShellGet.\"\r
+    }\r
+    else {\r
+        $installedModule = GetHighestInstalledModule $moduleName -minimumVersion $requiredVersion -maximumVersion $maximumVersion\r
+\r
+        if (!$installedModule) {\r
+            #Either SCA isn\u0027t installed at all or $requiredVersion is specified but that version of SCA isn\u0027t installed\r
+            Write-Verbose \"$moduleName $requiredVersion not available - attempting to download from gallery\"\r
+            InstallLocalModule -moduleName $moduleName -minimumVersion $requiredVersion -maximumVersion $maximumVersion\r
+        }\r
+        elseif (!$requiredVersion) {\r
+            #We\u0027ve got a version of SCA installed, but $requiredVersion isn\u0027t specified so we might be able to upgrade\r
+            $newest = GetHighestInstallableModule $moduleName\r
+            if ($newest -and ($installedModule.Version -lt $newest.Version)) {\r
+                Write-Verbose \"Updating $moduleName to version $($newest.Version)\"\r
+                InstallLocalModule -moduleName $moduleName -minimumVersion $newest.Version\r
+            }\r
+        }\r
+    }\r
+\r
+    # Now we\u0027re done with install/upgrade, try to import the highest available module that matches our version requirements\r
+\r
+    # We can\u0027t just use -minimumVersion and -maximumVersion arguments on Import-Module because PowerShell 3 doesn\u0027t have them,\r
+    # so we have to find the precise matching installed version using our code, then import that specifically. Note that\r
+    # $requiredVersion and $maximumVersion might be null when there\u0027s no specific version we need.\r
+    $installedModule = GetHighestInstalledModule $moduleName -minimumVersion $requiredVersion -maximumVersion $maximumVersion\r
+\r
+    if (!$installedModule -and !$requiredVersion) {\r
+        #Did not find SCA, and we don\u0027t have a required version so we might be able to use an installed DLMA instead.\r
+        Write-Verbose \"$moduleName is not installed - trying to fall back to $DlmAutomationModuleName\"\r
+        $installedModule = GetHighestInstalledModule $DlmAutomationModuleName\r
+    }\r
+\r
+    if ($installedModule) {\r
+        Write-Verbose \"Importing installed $($installedModule.Name) version $($installedModule.Version)\"\r
+        Import-Module $installedModule -Force\r
+    }\r
+    else {\r
+        throw \"$moduleName $requiredVersion is not installed, and could not be downloaded from the PowerShell gallery\"\r
+    }\r
+}\r
+\r
+function InstallPowerShellGet {\r
+    [CmdletBinding()]\r
+    Param()\r
+\r
+    ConfigureProxyIfVariableSet\r
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12\r
+\r
+    $psget = GetHighestInstalledModule PowerShellGet\r
+    if (!$psget)\r
+    {\r
+        Write-Warning @\"\r
+Cannot access the PowerShell Gallery because PowerShellGet is not installed.\r
+To install PowerShellGet, either upgrade to PowerShell 5 or install the PackageManagement MSI.\r
+See https://docs.microsoft.com/en-us/powershell/gallery/installing-psget for more details.\r
+\"@\r
+        throw \"PowerShellGet is not available\"\r
+    }\r
+\r
+    if ($psget.Version -lt [Version]\u00271.6\u0027) {\r
+        #Bootstrap the NuGet package provider, which updates NuGet without requiring admin rights\r
+        Write-Debug \"Installing NuGet package provider\"\r
+        Get-PackageProvider NuGet -ForceBootstrap | Out-Null\r
+\r
+        #Use the currently-installed version of PowerShellGet\r
+        Import-PackageProvider PowerShellGet\r
+\r
+        #Download the version of PowerShellGet that we actually need\r
+        Write-Debug \"Installing PowershellGet\"\r
+        Save-Module -Name PowerShellGet -Path $LocalModules -MinimumVersion 1.6 -Force -ErrorAction SilentlyContinue\r
+    }\r
+\r
+    Write-Debug \"Importing PowershellGet\"\r
+    Import-Module PowerShellGet -MinimumVersion 1.6 -Force\r
+    #Make sure we\u0027re actually using the package provider from the imported version of PowerShellGet\r
+    Import-PackageProvider ((Get-Module PowerShellGet).Path) | Out-Null\r
+}\r
+\r
+function InstallLocalModule {\r
+    [CmdletBinding()]\r
+    Param(\r
+        [Parameter(Mandatory = $true)]\r
+        [string]$moduleName,\r
+        [Parameter(Mandatory = $false)]\r
+        [Version]$minimumVersion,\r
+        [Parameter(Mandatory = $false)]\r
+        [Version]$maximumVersion\r
+    )\r
+    try {\r
+        InstallPowerShellGet\r
+\r
+        Write-Debug \"Install $moduleName $requiredVersion\"\r
+        Save-Module -Name $moduleName -Path $LocalModules -Force -AcceptLicense -MinimumVersion $minimumVersion -MaximumVersion $maximumVersion -ErrorAction Stop\r
+    }\r
+    catch {\r
+        Write-Warning \"Could not install $moduleName $requiredVersion from any registered PSRepository\"\r
+    }\r
+}\r
+\r
+function GetHighestInstalledModule {\r
+    [CmdletBinding()]\r
+    Param(\r
+        [Parameter(Mandatory = $true, Position = 0)]\r
+        [string] $moduleName,\r
+\r
+        [Parameter(Mandatory = $false)]\r
+        [Version]$minimumVersion,\r
+        [Parameter(Mandatory = $false)]\r
+        [Version]$maximumVersion\r
+    )\r
+\r
+    return Get-Module $moduleName -ListAvailable |\r
+           Where {(!$minimumVersion -or ($_.Version -ge $minimumVersion)) -and (!$maximumVersion -or ($_.Version -le $maximumVersion))} |\r
+           Sort -Property @{Expression = {[System.Version]($_.Version)}; Descending = $True} |\r
+           Select -First 1\r
+}\r
+\r
+function GetHighestInstallableModule {\r
+    [CmdletBinding()]\r
+    Param(\r
+        [Parameter(Mandatory = $true, Position = 0)]\r
+        [string] $moduleName\r
+    )\r
+\r
+    try {\r
+        InstallPowerShellGet\r
+        Find-Module SqlChangeAutomation -AllVersions |\r
+            Sort -Property @{Expression = {[System.Version]($_.Version)}; Descending = $True} |\r
+            Select -First 1\r
+    }\r
+    catch {\r
+        Write-Warning \"Could not find any suitable versions of $moduleName from any registered PSRepository\"\r
+    }\r
+}\r
+\r
+function GetInstalledSqlChangeAutomationVersion {\r
+    $scaModule = (Get-Module $SqlChangeAutomationModuleName)\r
+\r
+    if ($scaModule -ne $null) {\r
+        return $scaModule.Version\r
+    }\r
+\r
+    $dlmaModule = (Get-Module $DlmAutomationModuleName)\r
+\r
+    if ($dlmaModule -ne $null) {\r
+        return $dlmaModule.Version\r
+    }\r
+\r
+    return $null\r
+}\r
+\r
+function ConfigureProxyIfVariableSet\r
+{\r
+    if ([string]::IsNullOrWhiteSpace($DLMAutomationProxyUrl) -eq $false)\r
+    {\r
+        Write-Debug \"Setting DefaultWebProxy to $proxyUrl\"\r
+\r
+        [System.Net.WebRequest]::DefaultWebProxy = New-Object System.Net.WebProxy($DLMAutomationProxyUrl)\r
+        [System.Net.WebRequest]::DefaultWebProxy.credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials\r
+        [System.Net.WebRequest]::DefaultWebProxy.BypassProxyOnLocal = $True\r
+    }\r
+}\r
+\r
+\r
+$ErrorActionPreference = \u0027Stop\u0027\r
+$VerbosePreference = \u0027Continue\u0027\r
+\r
+# Set process level FUR environment\r
+$env:REDGATE_FUR_ENVIRONMENT = \"Octopus Step Templates\"\r
+\r
+#Helper functions for paramter handling\r
+function Required() {\r
+    Param(\r
+        [Parameter(Mandatory = $false)][string]$Parameter,\r
+        [Parameter(Mandatory = $true)][string]$Name\r
+    )\r
+    if ([string]::IsNullOrWhiteSpace($Parameter)) { throw \"You must enter a value for \u0027$Name\u0027\" }\r
+}\r
+function Optional() {\r
+    #Default is untyped here - if we specify [string] powershell will convert nulls into empty string\r
+    Param(\r
+        [Parameter(Mandatory = $false)][string]$Parameter,\r
+        [Parameter(Mandatory = $false)]$Default\r
+    )\r
+    if ([string]::IsNullOrWhiteSpace($Parameter)) {\r
+        $Default\r
+    } else {\r
+        $Parameter\r
+    }\r
+}\r
+function RequireBool() {\r
+    Param(\r
+        [Parameter(Mandatory = $false)][string]$Parameter,\r
+        [Parameter(Mandatory = $true)][string]$Name\r
+    )\r
+    $Result = $False\r
+    if (![bool]::TryParse($Parameter , [ref]$Result )) { throw \"\u0027$Name\u0027 must be a boolean value.\" }\r
+    $Result\r
+}\r
+function RequirePositiveNumber() {\r
+    Param(\r
+        [Parameter(Mandatory = $false)][string]$Parameter,\r
+        [Parameter(Mandatory = $true)][string]$Name\r
+    )\r
+    $Result = 0\r
+    if (![int32]::TryParse($Parameter , [ref]$Result )) { throw \"\u0027$Name\u0027 must be a numerical value.\" }\r
+    if ($Result -lt 0) { throw \"\u0027$Name\u0027 must be \u003e= 0.\" }\r
+    $Result\r
+}\r
+\r
+$SpecificModuleVersion = Optional -Parameter $SpecificModuleVersion\r
+$UseInstalledModuleVersion = Optional -Parameter $UseInstalledModuleVersion -Default \u0027False\u0027\r
+$UseInstalledVersionSwitch = [bool]::Parse($UseInstalledModuleVersion)\r
+InstallCorrectSqlChangeAutomation -requiredVersion $SpecificModuleVersion -useInstalledVersion $UseInstalledVersionSwitch\r
+\r
+# Check if SQL Change Automation is installed.\r
+$powershellModule = Get-Module -Name SqlChangeAutomation\r
+if ($powershellModule -eq $null) {\r
+    throw \"Cannot find SQL Change Automation on your Octopus Tentacle. If SQL Change Automation is installed, try restarting the Tentacle service for it to be detected.\"\r
+}\r
+\r
+$currentVersion = $powershellModule.Version\r
+$minimumRequiredVersion = [version] \u00273.0.3\u0027\r
+if ($currentVersion -lt $minimumRequiredVersion) {\r
+    throw \"This step requires SQL Change Automation version $minimumRequiredVersion or later. The current version is $currentVersion. The latest version can be found at http://www.red-gate.com/sca/productpage\"\r
+}\r
+\r
+$minimumRequiredVersionDataCompareOptions = [version] \u00273.3.0\u0027\r
+$minimumRequiredVersionTrustServerCertificate = [version]\u00274.3.20267\u0027\r
+\r
+function AreConnectionOptionsHandled($encryptConnection, $trustServerCertificate)\r
+{\r
+    if ([string]::IsNullOrWhiteSpace($currentVersion) -or $currentVersion -ge $minimumRequiredVersionTrustServerCertificate)\r
+    {\r
+        return $true\r
+    }\r
+    elseif($encryptConnection -or $trustServerCertificate)\r
+    {\r
+        Write-Warning \"Encrypt and TrustServerCertificate options require SQL Change Automation version $minimumRequiredVersionTrustServerCertificate or later. The current version is $currentVersion.\"\r
+        return $false\r
+    }\r
+}\r
+\r
+# Check the parameters.\r
+Required -Parameter $DLMAutomationDeploymentResourcesPath -Name \u0027Export Path\u0027\r
+Required -Parameter $DLMAutomationDeleteExistingFiles -Name \u0027Delete files in export folder\u0027\r
+Required -Parameter $DLMAutomationNuGetDbPackageDownloadStepName -Name \u0027Database package step\u0027\r
+Required -Parameter $DLMAutomationDatabaseServer -Name \u0027Target SQL Server instance\u0027\r
+Required -Parameter $DLMAutomationDatabaseName -Name \u0027Target database name\u0027\r
+$DLMAutomationDatabaseUsername = Optional -Parameter $DLMAutomationDatabaseUsername\r
+$DLMAutomationDatabasePassword = Optional -Parameter $DLMAutomationDatabasePassword\r
+$DLMAutomationEncrypt = Optional -Parameter $DLMAutomationEncrypt\r
+$DLMAutomationTrustServerCertificate = Optional -Parameter $DLMAutomationTrustServerCertificate\r
+$DLMAutomationFilterPath = Optional -Parameter $DLMAutomationFilterPath\r
+$DLMAutomationCompareOptions = Optional -Parameter $DLMAutomationCompareOptions\r
+$DLMAutomationDataCompareOptions = Optional -Parameter $DLMAutomationDataCompareOptions\r
+$DLMAutomationTransactionIsolationLevel = Optional -Parameter $DLMAutomationTransactionIsolationLevel -Default \u0027Serializable\u0027\r
+$DLMAutomationIgnoreStaticData = Optional -Parameter $DLMAutomationIgnoreStaticData -Default \u0027False\u0027\r
+$DLMAutomationIncludeIdenticalsInReport = Optional -Parameter $DLMAutomationIncludeIdenticalsInReport -Default \u0027False\u0027\r
+$DLMAutomationModuleInstallationFolder = Optional -Parameter $DLMAutomationModuleInstallationFolder\r
+$DLMAutomationProxyUrl = Optional -Parameter $DLMAutomationProxyUrl\r
+\r
+# Get the NuGet package installation directory path.\r
+$packagePath = $OctopusParameters[\"Octopus.Action[$DLMAutomationNuGetDbPackageDownloadStepName].Output.Package.InstallationDirectoryPath\"]\r
+if($packagePath -eq $null) {\r
+    throw \"The \u0027Database package download step\u0027 is not a \u0027Deploy a NuGet package\u0027 step: \u0027$DLMAutomationNuGetDbPackageDownloadStepName\u0027\"\r
+}\r
+\r
+# Constructing the unique export path.\r
+$projectId = $OctopusParameters[\"Octopus.Project.Id\"]\r
+$releaseNumber = $OctopusParameters[\"Octopus.Release.Number\"]\r
+$nugetPackageId = $OctopusParameters[\"Octopus.Action[$DLMAutomationNuGetDbPackageDownloadStepName].Package.NuGetPackageId\"]\r
+$exportPath = Join-Path (Join-Path (Join-Path $DLMAutomationDeploymentResourcesPath $projectId) $releaseNumber) $nugetPackageId\r
+\r
+# Make sure the directory we\u0027re about to create doesn\u0027t already exist, and delete any files if requested.\r
+if ((Test-Path $exportPath) -AND ((Get-ChildItem $exportPath | Measure-Object).Count -ne 0)) {\r
+    if ($DLMAutomationDeleteExistingFiles -eq \u0027True\u0027) {\r
+        Write-Host \"Deleting all files in $exportPath\"\r
+        rmdir $exportPath -Recurse -Force\r
+    } else {\r
+        throw \"The export path is not empty: $exportPath.  Select the \u0027Delete files in export folder\u0027 option to overwrite the existing folder contents.\"\r
+    }\r
+}\r
+\r
+$connectionOptions = @{ }\r
+\r
+if(AreConnectionOptionsHandled([bool]::Parse($DLMAutomationEncrypt), [bool]::Parse($DLMAutomationTrustServerCertificate))) {\r
+    $connectionOptions += @{ \u0027Encrypt\u0027 = [bool]::Parse($DLMAutomationEncrypt) }\r
+    $connectionOptions += @{ \u0027TrustServerCertificate\u0027 = [bool]::Parse($DLMAutomationTrustServerCertificate) }\r
+}\r
+\r
+# Determine whether or not to include identical objects in the report.\r
+$targetDB = New-DatabaseConnection @connectionOptions `\r
+                                   -ServerInstance $DLMAutomationDatabaseServer `\r
+                                   -Database $DLMAutomationDatabaseName `\r
+                                   -Username $DLMAutomationDatabaseUsername `\r
+                                   -Password $DLMAutomationDatabasePassword | Test-DatabaseConnection\r
+\r
+$importedBuildArtifact = Import-DatabaseBuildArtifact -Path $packagePath\r
+\r
+# Only allow sqlcmd variables that don\u0027t have special characters like spaces, colon or dashes\r
+$regex = \u0027^[a-zA-Z_][a-zA-Z0-9_]+$\u0027\r
+$sqlCmdVariables = @{}\r
+$OctopusParameters.Keys | Where { $_ -match $regex } | ForEach {\r
+\t$sqlCmdVariables[$_] = $OctopusParameters[$_]\r
+}\r
+\r
+# Create the deployment resources from the database to the NuGet package\r
+$releaseParams = @{\r
+    Target = $targetDB\r
+    Source = $importedBuildArtifact\r
+    TransactionIsolationLevel = $DLMAutomationTransactionIsolationLevel\r
+    IgnoreStaticData = [bool]::Parse($DLMAutomationIgnoreStaticData)\r
+    FilterPath = $DLMAutomationFilterPath\r
+    SQLCompareOptions = $DLMAutomationCompareOptions\r
+    IncludeIdenticalsInReport = [bool]::Parse($DLMAutomationIncludeIdenticalsInReport)\r
+    SqlCmdVariables = $sqlCmdVariables\r
+}\r
+\r
+if($currentVersion -ge $minimumRequiredVersionDataCompareOptions) {\r
+    $releaseParams.SQLDataCompareOptions = $DLMAutomationDataCompareOptions\r
+} elseif(-not [string]::IsNullOrWhiteSpace($DLMAutomationDataCompareOptions)) {\r
+    Write-Warning \"SQL Data Compare options requires SQL Change Automation version $minimumRequiredVersionDataCompareOptions or later. The current version is $currentVersion.\"\r
+}\r
+\r
+$release = New-DatabaseReleaseArtifact @releaseParams\r
+\r
+# Export the deployment resources to disk\r
+$release | Export-DatabaseReleaseArtifact -Path $exportPath\r
+\r
+# Import the changes summary, deployment warnings, and update script as Octopus artifacts, so you can review them.\r
+function UploadIfExists() {\r
+    Param(\r
+        [Parameter(Mandatory = $true)]\r
+        [string]$ArtifactPath,\r
+        [Parameter(Mandatory = $true)]\r
+        [string]$Name\r
+    )\r
+    if (Test-Path $ArtifactPath) {\r
+        New-OctopusArtifact $ArtifactPath -Name $Name\r
+    }\r
+}\r
+\r
+UploadIfExists -ArtifactPath \"$exportPath\\Reports\\Changes.html\" -Name \"Changes-$DLMAutomationDatabaseName.html\"\r
+UploadIfExists -ArtifactPath \"$exportPath\\Reports\\Drift.html\" -Name \"Drift-$DLMAutomationDatabaseName.html\"\r
+UploadIfExists -ArtifactPath \"$exportPath\\Reports\\Warnings.xml\" -Name \"Warnings-$DLMAutomationDatabaseName.xml\"\r
+UploadIfExists -ArtifactPath \"$exportPath\\Update.sql\" -Name \"Update-$DLMAutomationDatabaseName.sql\"\r
+UploadIfExists -ArtifactPath \"$exportPath\\TargetedDeploymentScript.sql\" -Name \"TargetedDeploymentScript-$DLMAutomationDatabaseName.sql\"\r
+UploadIfExists -ArtifactPath \"$exportPath\\DriftRevertScript.sql\" -Name \"DriftRevertScript-$DLMAutomationDatabaseName.sql\"\r
+\r
+# Sets a variable if there are changes to deploy. Useful if you want to have steps run only when this is set\r
+if ($release.UpdateSQL -notlike \u0027*This script is empty because the Target and Source schemas are equivalent*\u0027)\r
+{\r
+  Set-OctopusVariable -name \"ChangesToDeploy\" -value \"True\"\r
+}\r
+",
+                       "Octopus.Action.Script.Syntax":  "PowerShell"
+                   },
+    "SensitiveProperties":  {
+
+                            },
+    "Parameters":  [
+                       {
+                           "Name":  "DLMAutomationDeploymentResourcesPath",
+                           "Label":  "Export path",
+                           "HelpText":  "The path that the database deployment resources will be exported to.
+
+This path is used in the \"Redgate - Deploy from Database Release\" step, and must be accessible to all tentacles used in database deployment steps.",
+                           "DefaultValue":  null,
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "SingleLineText"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationDeleteExistingFiles",
+                           "Label":  "Delete files in export folder",
+                           "HelpText":  "If the folder that the deployment resources are exported to isn\u0027t empty, this step will fail. Select this option to delete any files in the folder.",
+                           "DefaultValue":  "True",
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "Checkbox"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationNuGetDbPackageDownloadStepName",
+                           "Label":  "Database package step",
+                           "HelpText":  "Select the step in this project which downloads the database package.",
+                           "DefaultValue":  null,
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "StepName"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationDatabaseServer",
+                           "Label":  "Target SQL Server instance",
+                           "HelpText":  "The fully qualified SQL Server instance name for the target database.",
+                           "DefaultValue":  null,
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "SingleLineText"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationDatabaseName",
+                           "Label":  "Target database name",
+                           "HelpText":  "The name of the database that the source schema (the database package) will be compared with to generate the deployment resources. This must be an existing database.",
+                           "DefaultValue":  null,
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "SingleLineText"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationDatabaseUsername",
+                           "Label":  "Username (optional)",
+                           "HelpText":  "The SQL Server username used to connect to the database. If you leave this field and \u0027Password\u0027 blank, Windows authentication will be used to connect instead, using the account that runs the Tentacle service.",
+                           "DefaultValue":  null,
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "SingleLineText"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationDatabasePassword",
+                           "Label":  "Password (optional)",
+                           "HelpText":  "You must enter a password if you entered a username.",
+                           "DefaultValue":  null,
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "Sensitive"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationEncrypt",
+                           "Label":  "Encrypt",
+                           "HelpText":  "Specify whether SSL encryption is used by SQL Server when a certificate is installed.",
+                           "DefaultValue":  "false",
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "Checkbox"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationTrustServerCertificate",
+                           "Label":  "Trust Server Certificate",
+                           "HelpText":  "Specify whether to force SQL Server to skip certificate validation.",
+                           "DefaultValue":  "false",
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "Checkbox"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationFilterPath",
+                           "Label":  "Filter path (optional)",
+                           "HelpText":  "Specify the location of a SQL Compare filter file (.scpf), which defines objects to include/exclude in the schema comparison. Filter files are generated by SQL Source Control.
+
+For more help see [Using SQL Compare filters in SQL Change Automation](http://www.red-gate.com/sca/ps/help/filters).",
+                           "DefaultValue":  null,
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "SingleLineText"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationCompareOptions",
+                           "Label":  "SQL Compare options (optional)",
+                           "HelpText":  "Enter SQL Compare options to apply when generating the update script. Use a comma-separated list to enter multiple values. For more help see [Using SQL Compare options in SQL Change Automation](http://www.red-gate.com/sca/add-ons/compare-options).",
+                           "DefaultValue":  null,
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "SingleLineText"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationDataCompareOptions",
+                           "Label":  "SQL Data Compare options (optional)",
+                           "HelpText":  "Enter SQL Data Compare options to apply when generating the update script. Use a comma-separated list to enter multiple values. For more help see [Using SQL Data Compare options in SQL Change Automation](http://www.red-gate.com/sca/ps/help/datacompareoptions).",
+                           "DefaultValue":  null,
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "SingleLineText"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationTransactionIsolationLevel",
+                           "Label":  "Transaction isolation level (optional)",
+                           "HelpText":  "Select the transaction isolation level to be used in deployment scripts.",
+                           "DefaultValue":  "Serializable",
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "Select",
+                                                   "Octopus.SelectOptions":  "Serializable
+Snapshot
+RepeatableRead
+ReadCommitted
+ReadUncommitted"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationIgnoreStaticData",
+                           "Label":  "Ignore static data",
+                           "HelpText":  "Exclude changes to static data when generating the deployment resources.",
+                           "DefaultValue":  null,
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "Checkbox"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationIncludeIdenticalsInReport",
+                           "Label":  "Include identical objects in the change report",
+                           "HelpText":  "By default, the change report only includes added, modified and removed objects. Choose this option to also include identical objects.",
+                           "DefaultValue":  "False",
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "Checkbox"
+                                               }
+                       },
+                       {
+                           "Name":  "SpecificModuleVersion",
+                           "Label":  "SQL Change Automation version (optional)",
+                           "HelpText":  "If you wish to use a specific version of SQL Change Automation rather than the latest, enter the version number here.",
+                           "DefaultValue":  null,
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "SingleLineText"
+                                               }
+                       },
+                       {
+                           "Name":  "UseInstalledModuleVersion",
+                           "Label":  "Only use a version of SQL Change Automation that is already installed",
+                           "HelpText":  "This prevents attempting to access PowerShell Gallery, which can be helpful when the build agent does not have access to the internet",
+                           "DefaultValue":  "False",
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "Checkbox"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationModuleInstallationFolder",
+                           "Label":  "Module Installation Folder (optional)",
+                           "HelpText":  "By default, module folders do not persist between steps. Setting this field to a specific folder will ensure that modules persist, and do not have to be downloaded again.",
+                           "DefaultValue":  null,
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "SingleLineText"
+                                               }
+                       },
+                       {
+                           "Name":  "DLMAutomationProxyUrl",
+                           "Label":  "Proxy URL (optional)",
+                           "HelpText":  "By default, no proxy is used when connecting to Powershell Gallery. Alternatively, a proxy URL can be specified here that can be used for Powershell Gallery.",
+                           "DefaultValue":  null,
+                           "DisplaySettings":  {
+                                                   "Octopus.ControlType":  "SingleLineText"
+                                               }
+                       }
+                   ],
+    "LastModifiedOn":  "2021-03-19T10:01:37.110+00:00",
+    "LastModifiedBy":  "support@red-gate.com",
+    "$Meta":  {
+                  "ExportedAt":  "2015-07-17T11:04:21.348Z",
+                  "OctopusVersion":  "2.6.5.1010",
+                  "Type":  "ActionTemplate"
+              },
+    "Category":  "redgate"
+}

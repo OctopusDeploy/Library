@@ -1,0 +1,91 @@
+{
+  "Id": "b3137de8-93c9-4a10-8f6a-5dd14175b843",
+  "Name": "Pin TeamCity Build Version",
+  "Description": "Try to pin the TeamCity build version. (Requires Octopus version to match TeamCity version)",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$buildNumber = $OctopusParameters['buildNumber']\r
+$buildTypeId = $OctopusParameters['buildTypeId']\r
+\r
+$tcUrl = $OctopusParameters['TeamCityUrl']\r
+$tcUser = $OctopusParameters['TeamCityUser']\r
+$tcPass = $OctopusParameters['TeamCityPassword']\r
+\r
+[string]$tcRestUrl = $tcUrl + '/httpAuth/app/rest/builds/buildType:{1},number:{0}/pin/'\r
+$url = $tcRestUrl -f $buildNumber,$buildTypeId\r
+\r
+Write-Host \"****************************\"\r
+Write-Host \"Pinning build in TeamCity at:\"$url \r
+Write-Host \"****************************\"\r
+\r
+$req = [System.Net.WebRequest]::Create($url)\r
+$req.Credentials = new-object System.Net.NetworkCredential($tcUser, $tcPass)\r
+$req.Method =\"PUT\"\r
+$req.ContentLength = 0\r
+\r
+$resp = $req.GetResponse()\r
+$reader = new-object System.IO.StreamReader($resp.GetResponseStream())\r
+$reader.ReadToEnd() | Write-Host\r
+",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "buildNumber",
+      "Label": "Build Number",
+      "HelpText": null,
+      "DefaultValue": "#{Octopus.Release.Number}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "buildTypeId",
+      "Label": "Build Configuration ID",
+      "HelpText": "The build configuration id to look for the build to pin.
+
+General Settings of the Build Configuration",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "TeamCityUrl",
+      "Label": "Url of TeamCity Server",
+      "HelpText": "The url to the TeamCity server.",
+      "DefaultValue": "http://localhost:8082",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "TeamCityUser",
+      "Label": "TeamCity User",
+      "HelpText": "The TeamCity user used for pinning the build",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "TeamCityPassword",
+      "Label": "TeamCity User Password",
+      "HelpText": "The password for the TeamCity user.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2015-02-11T08:20:13.192+00:00",
+    "OctopusVersion": "2.6.1.796",
+    "Type": "ActionTemplate"
+  },
+  "Category": "teamcity"
+}

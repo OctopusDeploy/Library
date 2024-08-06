@@ -1,0 +1,269 @@
+{
+  "Id": "dd76dee1-f5b1-4974-a5ae-bde643cf67af",
+  "Name": "Git - Tag repository",
+  "Description": "Tags a git repository with the specified tag",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "Function Invoke-Git
+{
+\t# Define parameters
+    param (
+    \t$GitRepositoryUrl,
+        $GitFolder,
+        $GitUsername,
+        $GitPassword,
+        $GitCommand,
+        $AdditionalArguments,
+        $SupressOutput = $false
+    )
+    
+    # Get current work folder
+    $workDirectory = Get-Location
+    
+    # Create arguments array
+    $gitArguments = @()
+    $gitArguments += $GitCommand
+    
+    # Check for url
+    if (![string]::IsNullOrWhitespace($GitRepositoryUrl))
+    {
+      # Convert url to URI object
+      $gitUri = [System.Uri]$GitRepositoryUrl
+      $gitUrl = \"{0}://{1}:{2}@{3}:{4}{5}\" -f $gitUri.Scheme, $GitUsername, $GitPassword, $gitUri.Host, $gitUri.Port, $gitUri.PathAndQuery
+      $gitArguments += $gitUrl
+
+      # Get the newly created folder name
+      $gitFolderName = $GitRepositoryUrl.SubString($GitRepositoryUrl.LastIndexOf(\"/\") + 1)
+      if ($gitFolderName.Contains(\".git\"))
+      {
+          $gitFolderName = $gitFolderName.SubString(0, $gitFolderName.IndexOf(\".\"))
+      }
+    }
+   
+    
+    # Check for additional arguments
+    if ($null -ne $AdditionalArguments)
+    {
+ \t\t# Add the additional arguments
+        $gitArguments += $AdditionalArguments
+    }
+    
+    # Execute git command
+    $results = Execute-Command \"git\" $gitArguments $GitFolder
+    
+    # Check to see if output is supposed to be suppressed
+    if ($SupressOutput -ne $true)
+    {
+    \tWrite-Host $results.stdout
+    }
+
+\t# Always display error messages
+    Write-Host $results.stderr
+    
+    # Store results into file
+    Add-Content -Path \"$PWD/$($GitCommand).txt\" -Value $results.stdout
+    
+    # Return the foldername
+   \treturn $gitFolderName
+}
+
+# Check to see if $IsWindows is available
+if ($null -eq $IsWindows) {
+    Write-Host \"Determining Operating System...\"
+    $IsWindows = ([System.Environment]::OSVersion.Platform -eq \"Win32NT\")
+    $IsLinux = ([System.Environment]::OSVersion.Platform -eq \"Unix\")
+}
+
+Function Execute-Command
+{
+\tparam (
+    \t$commandPath,
+        $commandArguments,
+        $workingDir
+    )
+
+\t$gitExitCode = 0
+    $executionResults = $null
+
+  Try {
+    $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+    $pinfo.FileName = $commandPath
+    $pinfo.WorkingDirectory = $workingDir
+    $pinfo.RedirectStandardError = $true
+    $pinfo.RedirectStandardOutput = $true
+    $pinfo.UseShellExecute = $false
+    $pinfo.Arguments = $commandArguments
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $pinfo
+    $p.Start() | Out-Null
+    $executionResults = [pscustomobject]@{
+        stdout = $p.StandardOutput.ReadToEnd()
+        stderr = $p.StandardError.ReadToEnd()
+        ExitCode = $null
+    }
+    $p.WaitForExit()
+    $gitExitCode = [int]$p.ExitCode
+    $executionResults.ExitCode = $gitExitCode
+    
+    if ($gitExitCode -ge 2) 
+    {
+\t\t# Fail the step
+        throw
+    }
+    
+    return $executionResults
+  }
+  Catch {
+    # Check exit code
+    Write-Error -Message \"$($executionResults.stderr)\" -ErrorId $gitExitCode
+    exit $gitExitCode
+  }
+
+}
+
+
+# Get variables
+$gitUrl = $OctopusParameters['Template.Git.Repo.Url']
+$gitUser = $OctopusParameters['Template.Git.User.Name']
+$gitPassword = $OctopusParameters['Template.Git.User.Password']
+$gitTag = $OctopusParameters['Template.Git.Tag']
+$gitAction = $OctopusParameters['Template.Git.Action']
+
+# Clone repository
+$folderName = Invoke-Git -GitRepositoryUrl $gitUrl -GitUsername $gitUser -GitPassword $gitPassword -GitCommand \"clone\"
+
+# Set user
+$gitAuthorName = $OctopusParameters['Octopus.Deployment.CreatedBy.DisplayName']
+$gitAuthorEmail = $OctopusParameters['Octopus.Deployment.CreatedBy.EmailAddress']
+
+# Check to see if user is system
+if ([string]::IsNullOrWhitespace($gitAuthorEmail) -and $gitAuthorName -eq \"System\")
+{
+\t# Initiated by the Octopus server via automated process, put something in for the email address
+    $gitAuthorEmail = \"system@octopus.local\"
+}
+
+# Configure user information
+Invoke-Git -GitCommand \"config\" -AdditionalArguments @(\"user.name\", $gitAuthorName) -GitFolder \"$($PWD)/$($folderName)\"
+Invoke-Git -GitCommand \"config\" -AdditionalArguments @(\"user.email\", $gitAuthorEmail) -GitFolder \"$($PWD)/$($folderName)\"
+
+# Record existing tags, if any
+Invoke-Git -GitCommand \"tag\" -GitFolder \"$($PWD)/$($folderName)\" -SupressOutput $true
+
+# Check the file
+$existingTags = Get-Content \"$PWD/tag.txt\"
+
+if (![String]::IsNullOrWhitespace($existingTags))
+{
+\t# Parse
+    $existingTags = $existingTags.Split(\"`n\",[System.StringSplitOptions]::RemoveEmptyEntries)
+    
+    # Check to see if tag already exists
+    if ($null -ne ($existingTags | Where-Object {$_ -eq $gitTag}))
+    {
+\t\t# Check the selected action
+        switch ($gitAction)
+        {
+        \t\"delete\"
+            {
+                # Delete the tag locally
+                Write-Host \"Deleting tag $gitTag from cloned repository ...\"
+                Invoke-Git -GitCommand \"tag\" -AdditionalArguments @(\"--delete\", \"$gitTag\") -GitFolder \"$($PWD)/$($folderName)\"
+                
+                # Delete the tag on remote
+                Write-Host \"Deleting tag from remote repository ...\"
+                Invoke-Git -GitCommand \"push\" -AdditionalArguments @(\":refs/tags/$gitTag\") -GitFolder \"$($PWD)/$($folderName)\" -GitRepositoryUrl $gitUrl -GitUsername $gitUser -GitPassword $gitPassword
+                
+                break
+            }
+            \"ignore\"
+            {
+            \t# Ignore and continue
+                Write-Host \"$gitTag already exists on $gitUrl.  Selected action is Ignore, exiting.\"
+                
+                exit 0
+            }
+            \"fail\"
+            {
+\t\t\t\t# Error, tag already exists
+        \t\tWrite-Error \"Error: $gitTag already exists on $gitUrl!\"
+            }
+        }
+    }
+}
+
+# Tag the repo
+Invoke-Git -GitCommand \"tag\" -AdditionalArguments @(\"-a\", $gitTag, \"-m\", \"`\"Tag from #{Octopus.Project.Name} release version #{Octopus.Release.Number}`\"\") -GitFolder \"$($PWD)/$($folderName)\"
+
+# Push the new tag
+Invoke-Git -Gitcommand \"push\" -AdditionalArguments @(\"--tags\") -GitFolder \"$($PWD)/$($folderName)\""
+  },
+  "Parameters": [
+    {
+      "Id": "674d5325-aa93-4779-a734-cee8e5690f17",
+      "Name": "Template.Git.Repo.Url",
+      "Label": "Git Repository URL",
+      "HelpText": "The URL used for the `git clone` operation.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f2d07c9c-85fc-485e-8057-5577efd9a26d",
+      "Name": "Template.Git.User.Name",
+      "Label": "Git Username",
+      "HelpText": "Username of the credentials to use to log into git.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "597ae9a5-1ef4-4062-a435-2d9bb1fb16a2",
+      "Name": "Template.Git.User.Password",
+      "Label": "Git User Password",
+      "HelpText": "Password for the git credential.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "7cfa6ba5-76c6-4b15-a30c-593e2cd8f914",
+      "Name": "Template.Git.Tag",
+      "Label": "Tag",
+      "HelpText": "The tag name to tag the repository with.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b7ae407f-f926-4478-af72-74397025e4b6",
+      "Name": "Template.Git.Action",
+      "Label": "Action if tag already exists",
+      "HelpText": "Select the action if the tag already exsists.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "delete|Delete and recreate
+fail|Fail
+ignore|Ignore"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-09-12T15:33:15.238Z",
+    "OctopusVersion": "2023.4.2661",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "git"
+}

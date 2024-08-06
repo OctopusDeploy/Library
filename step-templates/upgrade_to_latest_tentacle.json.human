@@ -1,0 +1,221 @@
+{
+  "Id": "349c64f5-c9bd-4b55-bff7-cc497a1f898e",
+  "Name": "Upgrade To Latest Tentacle",
+  "Description": "Upgrades a list of machines to the latest version of Tentacle. Machines can be targeted by Environment and/or Role or Machine Name.
+
+This needs to be run directly on a worker or the octopus server itself.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Define working variables
+$OctopusUrl       = [string]$OctopusParameters['UpdateTentacles.OctopusUrl'].Trim()
+$ApiKey           = [string]$OctopusParameters['UpdateTentacles.ApiKey'].Trim()
+$SpaceName        = [string]$OctopusParameters['UpdateTentacles.SpaceName'].Trim()
+$EnvironmentNames = [string[]]$OctopusParameters['UpdateTentacles.EnvironmentNames']
+$RoleNames        = [string[]]$OctopusParameters['UpdateTentacles.RoleNames']
+$MachineNames     = [string[]]$OctopusParameters['UpdateTentacles.MachineNames']
+$WhatIf           = [bool]::Parse($OctopusParameters['UpdateTentacles.WhatIf'])
+$Wait             = [bool]::Parse($OctopusParameters['UpdateTentacles.Wait'])
+
+# Remove white space and blank lines.
+if ($null -ne $EnvironmentNames) {
+    $EnvironmentNames = $EnvironmentNames.Split(\"`n\").Trim().Where({$_}) # Trim white space and blank lines.
+}
+if ($null -ne $RoleNames) {
+    $RoleNames = $RoleNames.Split(\"`n\").Trim().Where({$_}) # Trim white space and blank lines.
+}
+if ($null -ne $MachineNames) {
+    $MachineNames = $MachineNames.Split(\"`n\").Trim().Where({$_}) # Trim white space and blank lines.
+}
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+$ErrorActionPreference = \"Stop\"
+
+$header = @{ \"X-Octopus-ApiKey\" = $ApiKey }
+
+if ($null -eq $SpaceName) {
+    $baseUri = \"$OctopusUrl/api\"
+} else {
+    $space = (Invoke-RestMethod -Method Get -Uri \"$OctopusUrl/api/spaces/all\" -Headers $header) | Where-Object { $_.Name -eq $SpaceName }
+
+    if ($null -eq $space) {
+        throw \"Space Name $SpaceName does not exist.\"
+    } else {
+        Write-Verbose \"Using Space $SpaceName.\"
+    }
+
+    $baseUri = \"$OctopusUrl/api/$($space.Id)\"
+}
+
+# Start with no machines
+$allMachines = @()
+
+# Add machines for each requested environment.
+foreach ($environmentName in $EnvironmentNames) {
+    $environment = (Invoke-RestMethod -Method Get -Uri \"$baseUri/environments/all\" -Headers $header) | Where-Object { $_.Name -eq $environmentName }
+
+    if ($null -eq $environment) {
+        throw \"Environment $environmentName does not exist.\"
+    } else {
+        Write-Verbose \"Adding machines from Environment $environmentName.\"
+    }
+
+    $allMachines += (Invoke-RestMethod -Method Get -Uri \"$baseUri/environments/$($environment.Id)/machines?take=$([int32]::MaxValue)\" -Headers $header).Items
+}
+
+# If roles are specifed, include only machines in the specicied roles. Otherwise don't filter.
+if ($null -eq $RoleNames) {
+    $roleFilteredMachines += $allMachines
+} else {
+    $roleFilteredMachines = @()
+    foreach ($roleName in $RoleNames) {
+        $roleFilteredMachines += $allMachines | Where-Object { $_.Roles -contains $roleName }
+    }
+}
+
+# Add each specific machine requested.
+$roleFilteredMachines += (Invoke-RestMethod -Method Get -Uri \"$baseUri/machines/all\" -Headers $header) | Where-Object { $_.Name -in $MachineNames }
+
+# Create array of unique IDs to target.
+$uniqueIDs = [array]($roleFilteredMachines.Id | Sort-Object -Unique)
+
+if (-not $uniqueIDs) {
+    Write-Highlight \"No machines were targeted. Exiting...\"
+    exit
+}
+
+# Build json payload, targeting unique machine IDs.
+$jsonPayload = @{
+    Arguments = @{
+        MachineIds = $uniqueIDs
+    }
+    Description = \"Upgrade Tentacle version.\"
+    Name = \"Upgrade\"
+}
+
+if ($WhatIf) {
+    Write-Host \"Upgrading tentacles on:\"
+    Write-Host $(($roleFilteredMachines.Name | Sort-Object -Unique) -join \"`r\")
+} else {
+    Write-Verbose \"Upgrading tentacles on:\"
+    Write-Verbose $(($roleFilteredMachines.Name | Sort-Object -Unique) -join \"`r\")
+    $task = Invoke-RestMethod -Method Post -Uri \"$baseUri/tasks\" -Headers $header -Body ($jsonPayload | ConvertTo-Json -Depth 10)
+    Write-Highlight \"$($task.Id) started. Progress can be monitored [here]($OctopusUrl$($task.Links.Web)?activeTab=taskLog)\"
+    
+    if ($Wait) {
+        do {
+        \t# Output the current state of the task every five seconds.
+            $task = Invoke-RestMethod -Method Get -Uri \"$baseUri/tasks/$($task.Id)\" -Headers $header
+            $task
+            Start-Sleep -Seconds 5
+        } while ($task.IsCompleted -eq $false)
+    }
+}"
+  },
+  "Parameters": [
+    {
+      "Id": "51ea8dde-8df6-4621-8c8a-f5cacf485c5e",
+      "Name": "UpdateTentacles.OctopusUrl",
+      "Label": "Octopus Url",
+      "HelpText": "**Required**
+
+The url of the server where the upgrades will be performed.
+
+e.g. `https://octopus.server.com`",
+      "DefaultValue": "#{Octopus.Web.ServerUri}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b8d147e0-de55-488e-a69f-9b212fd99559",
+      "Name": "UpdateTentacles.ApiKey",
+      "Label": "API Key",
+      "HelpText": "**Required**
+
+The api key of a user permitted to perform tentacle upgrades.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "e0d7450e-01de-47b2-abd2-3b22aa12a295",
+      "Name": "UpdateTentacles.SpaceName",
+      "Label": "Space",
+      "HelpText": "The space to use when targeting machines.",
+      "DefaultValue": "#{Octopus.Space.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "fb2c3110-d597-4729-9c86-d6dc5314dfb7",
+      "Name": "UpdateTentacles.EnvironmentNames",
+      "Label": "Environments",
+      "HelpText": "A list of environments to be used for targeting machines. If no environments are specified, only `Machines Names` will be targeted.
+
+Multiple environments can be specified, one per line.",
+      "DefaultValue": "#{Octopus.Environment.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "2ec7ff8e-6dd3-46a8-9ef6-5869d14b6a03",
+      "Name": "UpdateTentacles.RoleNames",
+      "Label": "Roles",
+      "HelpText": "A list of roles to filter the machines found in the specified `Environments`. Only machines that are members of a specified role will be targeted.
+
+Multiple roles can be specified, one per line.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "e68ee3f0-bf4b-47ce-bba2-9a2e50c80595",
+      "Name": "UpdateTentacles.MachineNames",
+      "Label": "Machine Names",
+      "HelpText": "Additional machine names to upgrade. These will be added to the list after `Environments` and `Roles` have been processed.
+
+Multiple machines can be specified, one per line.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "9e742501-e215-4217-8e32-a6fb5ac16b6d",
+      "Name": "UpdateTentacles.WhatIf",
+      "Label": "What If",
+      "HelpText": "This can be used to test the targeting parameters. When selected, a list of target machines will be listed, but no machines will be upgraded.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "8e3f8d65-c117-40b6-b654-93f8ab65776d",
+      "Name": "UpdateTentacles.Wait",
+      "Label": "Wait",
+      "HelpText": "Wait until the upgrade is finished.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-11-21T00:42:08.257Z",
+    "OctopusVersion": "2023.2.13113",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "REOScotte",
+  "Category": "octopus"
+}

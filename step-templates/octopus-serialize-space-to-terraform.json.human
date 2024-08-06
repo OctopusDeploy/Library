@@ -1,0 +1,549 @@
+{
+  "Id": "e03c56a4-f660-48f6-9d09-df07e1ac90bd",
+  "Name": "Octopus - Serialize Space to Terraform",
+  "Description": "Serialize an Octopus space, excluding all projects, as a Terraform module and upload the resulting package to the Octopus built in feed.
+
+This step is expected to be used in conjunction with the [Octopus - Serialize Project to Terraform](https://library.octopus.com/step-templates/e9526501-09d5-490f-ac3f-5079735fe041/actiontemplate-octopus-serialize-project-to-terraform) step. This step will serialize the global space resources, which typically do not change much, and have those resources recreated in a downstream space. The `Octopus - Serialize Project to Terraform` step then serializes a project, using `data` blocks to reference space level resources by name.",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Script.ScriptBody": "import argparse
+import os
+import stat
+import re
+import socket
+import subprocess
+import sys
+from datetime import datetime
+from urllib.parse import urlparse
+from itertools import chain
+import platform
+from urllib.request import urlretrieve
+import zipfile
+import urllib.request
+import urllib.parse
+import json
+import tarfile
+import random, time
+
+# If this script is not being run as part of an Octopus step, return variables from environment variables.
+# Periods are replaced with underscores, and the variable name is converted to uppercase
+if \"get_octopusvariable\" not in globals():
+    def get_octopusvariable(variable):
+        return os.environ[re.sub('\\\\.', '_', variable.upper())]
+
+# If this script is not being run as part of an Octopus step, print directly to std out.
+if \"printverbose\" not in globals():
+    def printverbose(msg):
+        print(msg)
+
+
+def printverbose_noansi(output):
+    \"\"\"
+    Strip ANSI color codes and print the output as verbose
+    :param output: The output to print
+    \"\"\"
+    if not output:
+        return
+
+    # https://stackoverflow.com/questions/14693701/how-can-i-remove-the-ansi-escape-sequences-from-a-string-in-python
+    output_no_ansi = re.sub(r'\\x1B(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~])', '', output)
+    printverbose(output_no_ansi)
+
+
+def get_octopusvariable_quiet(variable):
+    \"\"\"
+    Gets an octopus variable, or an empty string if it does not exist.
+    :param variable: The variable name
+    :return: The variable value, or an empty string if the variable does not exist
+    \"\"\"
+    try:
+        return get_octopusvariable(variable)
+    except:
+        return ''
+
+
+def retry_with_backoff(fn, retries=5, backoff_in_seconds=1):
+    x = 0
+    while True:
+        try:
+            return fn()
+        except Exception as e:
+
+            print(e)
+
+            if x == retries:
+                raise
+
+            sleep = (backoff_in_seconds * 2 ** x +
+                     random.uniform(0, 1))
+            time.sleep(sleep)
+            x += 1
+
+
+def execute(args, cwd=None, env=None, print_args=None, print_output=printverbose_noansi):
+    \"\"\"
+        The execute method provides the ability to execute external processes while capturing and returning the
+        output to std err and std out and exit code.
+    \"\"\"
+    process = subprocess.Popen(args,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE,
+                               text=True,
+                               cwd=cwd,
+                               env=env)
+    stdout, stderr = process.communicate()
+    retcode = process.returncode
+
+    if print_args is not None:
+        print_output(' '.join(args))
+
+    if print_output is not None:
+        print_output(stdout)
+        print_output(stderr)
+
+    return stdout, stderr, retcode
+
+
+def is_windows():
+    return platform.system() == 'Windows'
+
+
+def init_argparse():
+    parser = argparse.ArgumentParser(
+        usage='%(prog)s [OPTION] [FILE]...',
+        description='Serialize an Octopus project to a Terraform module'
+    )
+    parser.add_argument('--terraform-backend',
+                        action='store',
+                        default=get_octopusvariable_quiet(
+                            'SerializeSpace.ThisInstance.Terraform.Backend') or get_octopusvariable_quiet(
+                            'ThisInstance.Terraform.Backend') or 'pg',
+                        help='Set this to the name of the Terraform backend to be included in the generated module.')
+    parser.add_argument('--server-url',
+                        action='store',
+                        default=get_octopusvariable_quiet(
+                            'SerializeSpace.ThisInstance.Server.Url') or get_octopusvariable_quiet(
+                            'ThisInstance.Server.Url'),
+                        help='Sets the server URL that holds the project to be serialized.')
+    parser.add_argument('--api-key',
+                        action='store',
+                        default=get_octopusvariable_quiet(
+                            'SerializeSpace.ThisInstance.Api.Key') or get_octopusvariable_quiet(
+                            'ThisInstance.Api.Key'),
+                        help='Sets the Octopus API key.')
+    parser.add_argument('--space-id',
+                        action='store',
+                        default=get_octopusvariable_quiet(
+                            'SerializeSpace.Exported.Space.Id') or get_octopusvariable_quiet(
+                            'Exported.Space.Id') or get_octopusvariable_quiet('Octopus.Space.Id'),
+                        help='Set this to the space ID containing the project to be serialized.')
+    parser.add_argument('--upload-space-id',
+                        action='store',
+                        default=get_octopusvariable_quiet(
+                            'SerializeSpace.Octopus.UploadSpace.Id') or get_octopusvariable_quiet(
+                            'Octopus.UploadSpace.Id') or get_octopusvariable_quiet('Octopus.Space.Id'),
+                        help='Set this to the space ID of the Octopus space where ' +
+                             'the resulting package will be uploaded to.')
+    parser.add_argument('--ignored-library-variable-sets',
+                        action='store',
+                        default=get_octopusvariable_quiet(
+                            'SerializeSpace.Exported.Space.IgnoredLibraryVariableSet') or get_octopusvariable_quiet(
+                            'Exported.Space.IgnoredLibraryVariableSet'),
+                        help='A comma separated list of library variable sets to ignore.')
+    parser.add_argument('--ignored-tenants',
+                        action='store',
+                        default=get_octopusvariable_quiet(
+                            'SerializeSpace.Exported.Space.IgnoredTenants') or get_octopusvariable_quiet(
+                            'Exported.Space.IgnoredTenants'),
+                        help='A comma separated list of tenants ignore.')
+
+    parser.add_argument('--ignored-tenants-with-tag',
+                        action='store',
+                        default=get_octopusvariable_quiet(
+                            'SerializeSpace.Exported.Space.IgnoredTenantTags') or get_octopusvariable_quiet(
+                            'Exported.Space.IgnoredTenants'),
+                        help='A comma separated list of tenant tags that identify tenants to ignore.')
+    parser.add_argument('--ignore-all-targets',
+                        action='store',
+                        default=get_octopusvariable_quiet(
+                            'SerializeSpace.Exported.Space.IgnoreTargets') or get_octopusvariable_quiet(
+                            'Exported.Space.IgnoreAllChanges') or 'false',
+                        help='Set to true to exlude targets from the exported module')
+
+    parser.add_argument('--dummy-secret-variables',
+                        action='store',
+                        default=get_octopusvariable_quiet(
+                            'SerializeSpace.Exported.Space.DummySecrets') or get_octopusvariable_quiet(
+                            'Exported.Space.DummySecrets') or 'false',
+                        help='Set to true to set secret values, like account and feed passwords, to a dummy value by default')
+    parser.add_argument('--include-step-templates',
+                        action='store',
+                        default=get_octopusvariable_quiet(
+                            'SerializeSpace.Exported.Space.IncludeStepTemplates') or get_octopusvariable_quiet(
+                            'Exported.Space.IncludeStepTemplates') or 'false',
+                        help='Set this to true to include step templates in the exported module. ' +
+                             'This disables the default behaviour of detaching step templates.')
+    parser.add_argument('--ignored-accounts',
+                        action='store',
+                        default=get_octopusvariable_quiet(
+                            'SerializeSpace.Exported.Space.IgnoredAccounts') or get_octopusvariable_quiet(
+                            'Exported.Space.IgnoredAccounts'),
+                        help='A comma separated list of accounts to ignore.')
+
+    return parser.parse_known_args()
+
+
+def get_latest_github_release(owner, repo, filename):
+    url = f\"https://api.github.com/repos/{owner}/{repo}/releases/latest\"
+    releases = urllib.request.urlopen(url).read()
+    contents = json.loads(releases)
+
+    download = [asset for asset in contents.get('assets') if asset.get('name') == filename]
+
+    if len(download) != 0:
+        return download[0].get('browser_download_url')
+
+    return None
+
+
+def ensure_octo_cli_exists():
+    if is_windows():
+        print(\"Checking for the Octopus CLI\")
+        try:
+            stdout, _, exit_code = execute(['octo.exe', 'help'])
+            printverbose(stdout)
+            if not exit_code == 0:
+                raise \"Octo CLI not found\"
+            return \"\"
+        except:
+            print(\"Downloading the Octopus CLI\")
+            urlretrieve('https://download.octopusdeploy.com/octopus-tools/9.0.0/OctopusTools.9.0.0.win-x64.zip',
+                        'OctopusTools.zip')
+            with zipfile.ZipFile('OctopusTools.zip', 'r') as zip_ref:
+                zip_ref.extractall(os.getcwd())
+            return os.getcwd()
+    else:
+        print(\"Checking for the Octopus CLI for Linux\")
+        try:
+            stdout, _, exit_code = execute(['octo', 'help'])
+            printverbose(stdout)
+            if not exit_code == 0:
+                raise \"Octo CLI not found\"
+            return \"\"
+        except:
+            print(\"Downloading the Octopus CLI for Linux\")
+            urlretrieve('https://download.octopusdeploy.com/octopus-tools/9.0.0/OctopusTools.9.0.0.linux-x64.tar.gz',
+                        'OctopusTools.tar.gz')
+            with tarfile.open('OctopusTools.tar.gz') as file:
+                file.extractall(os.getcwd())
+                os.chmod(os.path.join(os.getcwd(), 'octo'), stat.S_IRWXO | stat.S_IRWXU | stat.S_IRWXG)
+            return os.getcwd()
+
+
+def ensure_octoterra_exists():
+    if is_windows():
+        print(\"Checking for the Octoterra tool for Windows\")
+        try:
+            stdout, _, exit_code = execute(['octoterra.exe', '-version'])
+            printverbose(stdout)
+            if not exit_code == 0:
+                raise \"Octoterra not found\"
+            return \"\"
+        except:
+            print(\"Downloading Octoterra CLI for Windows\")
+            retry_with_backoff(lambda: urlretrieve(
+                \"https://github.com/OctopusSolutionsEngineering/OctopusTerraformExport/releases/latest/download/octoterra_windows_amd64.exe\",
+                'octoterra.exe'), 10, 30)
+            return os.getcwd()
+    else:
+        print(\"Checking for the Octoterra tool for Linux\")
+        try:
+            stdout, _, exit_code = execute(['octoterra', '-version'])
+            printverbose(stdout)
+            if not exit_code == 0:
+                raise \"Octoterra not found\"
+            return \"\"
+        except:
+            print(\"Downloading Octoterra CLI for Linux\")
+            retry_with_backoff(lambda: urlretrieve(
+                \"https://github.com/OctopusSolutionsEngineering/OctopusTerraformExport/releases/latest/download/octoterra_linux_amd64\",
+                'octoterra'), 10, 30)
+            os.chmod(os.path.join(os.getcwd(), 'octoterra'), stat.S_IRWXO | stat.S_IRWXU | stat.S_IRWXG)
+            return os.getcwd()
+
+
+octocli_path = ensure_octo_cli_exists()
+octoterra_path = ensure_octoterra_exists()
+parser, _ = init_argparse()
+
+# Variable precondition checks
+if len(parser.server_url) == 0:
+    print(\"--server-url, ThisInstance.Server.Url, or SerializeSpace.ThisInstance.Server.Url must be defined\")
+    sys.exit(1)
+
+if len(parser.api_key) == 0:
+    print(\"--api-key, ThisInstance.Api.Key, or SerializeSpace.ThisInstance.Api.Key must be defined\")
+    sys.exit(1)
+
+
+print(\"Octopus URL: \" + parser.server_url)
+print(\"Octopus Space ID: \" + parser.space_id)
+
+# Build the arguments to ignore library variable sets
+ignores_library_variable_sets = parser.ignored_library_variable_sets.split(',')
+ignores_library_variable_sets_args = [['-excludeLibraryVariableSetRegex', x] for x in ignores_library_variable_sets if
+                                      x.strip() != '']
+
+# Build the arguments to ignore tenants
+ignores_tenants = parser.ignored_tenants.split(',')
+ignores_tenants_args = [['-excludeTenants', x] for x in ignores_tenants if x.strip() != '']
+
+# Build the arguments to ignore tenants with tags
+ignored_tenants_with_tag = parser.ignored_tenants_with_tag.split(',')
+ignored_tenants_with_tag_args = [['-excludeTenantsWithTag', x] for x in ignored_tenants_with_tag if x.strip() != '']
+
+# Build the arguments to ignore accounts
+ignored_accounts = parser.ignored_accounts.split(',')
+ignored_accounts = [['-excludeAccountsRegex', x] for x in ignored_accounts]
+
+os.mkdir(os.getcwd() + '/export')
+
+export_args = [os.path.join(octoterra_path, 'octoterra'),
+               # the url of the instance
+               '-url', parser.server_url,
+               # the api key used to access the instance
+               '-apiKey', parser.api_key,
+               # add a postgres backend to the generated modules
+               '-terraformBackend', parser.terraform_backend,
+               # dump the generated HCL to the console
+               '-console',
+               # dump the project from the current space
+               '-space', parser.space_id,
+               # Use default dummy values for secrets (e.g. a feed password). These values can still be overridden if known,
+               # but allows the module to be deployed and have the secrets updated manually later.
+               '-dummySecretVariableValues=' + parser.dummy_secret_variables,
+               # Add support for experimental step templates
+               '-experimentalEnableStepTemplates=' + parser.include_step_templates,
+               # Don't export any projects
+               '-excludeAllProjects',
+               # Output variables allow the Octopus space and instance to be determined from the Terraform state file.
+               '-includeOctopusOutputVars',
+               # Provide an option to ignore targets.
+               '-excludeAllTargets=' + parser.ignore_all_targets,
+               # The directory where the exported files will be saved
+               '-dest', os.getcwd() + '/export'] + list(
+    chain(*ignores_library_variable_sets_args, *ignores_tenants_args, *ignored_tenants_with_tag_args,
+          *ignored_accounts))
+
+print(\"Exporting Terraform module\")
+_, _, octoterra_exit = execute(export_args)
+
+if not octoterra_exit == 0:
+    print(\"Octoterra failed. Please check the verbose logs for more information.\")
+    sys.exit(1)
+
+date = datetime.now().strftime('%Y.%m.%d.%H%M%S')
+
+print('Looking up space name')
+url = parser.server_url + '/api/Spaces/' + parser.space_id
+headers = {
+    'X-Octopus-ApiKey': parser.api_key,
+    'Accept': 'application/json'
+}
+request = urllib.request.Request(url, headers=headers)
+
+# Retry the request for up to a minute.
+response = None
+for x in range(12):
+    response = urllib.request.urlopen(request)
+    if response.getcode() == 200:
+        break
+    time.sleep(5)
+
+if not response or not response.getcode() == 200:
+    print('The API query failed')
+    sys.exit(1)
+
+data = json.loads(response.read().decode(\"utf-8\"))
+print('Space name is ' + data['Name'])
+
+print(\"Creating Terraform module package\")
+if is_windows():
+    execute([os.path.join(octocli_path, 'octo.exe'),
+             'pack',
+             '--format', 'zip',
+             '--id', re.sub('[^0-9a-zA-Z]', '_', data['Name']),
+             '--version', date,
+             '--basePath', os.getcwd() + '\\\\export',
+             '--outFolder', os.getcwd()])
+else:
+    _, _, _ = execute([os.path.join(octocli_path, 'octo'),
+                       'pack',
+                       '--format', 'zip',
+                       '--id', re.sub('[^0-9a-zA-Z]', '_', data['Name']),
+                       '--version', date,
+                       '--basePath', os.getcwd() + '/export',
+                       '--outFolder', os.getcwd()])
+
+print(\"Uploading Terraform module package\")
+if is_windows():
+    _, _, _ = execute([os.path.join(octocli_path, 'octo.exe'),
+                       'push',
+                       '--apiKey', parser.api_key,
+                       '--server', parser.server_url,
+                       '--space', parser.upload_space_id,
+                       '--package', os.getcwd() + \"\\\\\" +
+                       re.sub('[^0-9a-zA-Z]', '_', data['Name']) + '.' + date + '.zip',
+                       '--replace-existing'])
+else:
+    _, _, _ = execute([os.path.join(octocli_path, 'octo'),
+                       'push',
+                       '--apiKey', parser.api_key,
+                       '--server', parser.server_url,
+                       '--space', parser.upload_space_id,
+                       '--package', os.getcwd() + \"/\" +
+                       re.sub('[^0-9a-zA-Z]', '_', data['Name']) + '.' + date + '.zip',
+                       '--replace-existing'])
+
+print(\"##octopus[stdout-default]\")
+
+print(\"Done\")
+",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Python"
+  },
+  "Parameters": [
+    {
+      "Id": "b9a96f7f-d8bc-408b-a614-5646bf44d092",
+      "Name": "SerializeSpace.ThisInstance.Terraform.Backend",
+      "Label": "Terraform Backend",
+      "HelpText": "The [backed](https://developer.hashicorp.com/terraform/language/settings/backends/configuration) to define in the Terraform module.",
+      "DefaultValue": "s3",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "941e2310-7ea0-4e76-a528-c65c9b68f8e7",
+      "Name": "SerializeSpace.ThisInstance.Server.Url",
+      "Label": "Octopus Server URL",
+      "HelpText": "The URL of the Octopus Server hosting the project to be serialized.",
+      "DefaultValue": "#{Octopus.Web.ServerUri}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6799b358-e3a5-4668-a12f-5e10e092c1c9",
+      "Name": "SerializeSpace.ThisInstance.Api.Key",
+      "Label": "Octopus API Key",
+      "HelpText": "The Octopus API Key",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "950d7bb5-c80b-42a8-84a5-a7012d0fe7ca",
+      "Name": "SerializeSpace.Exported.Space.Id",
+      "Label": "Octopus Space ID",
+      "HelpText": "The Space ID containing the project to be exported",
+      "DefaultValue": "#{Octopus.Space.Id}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "64acb2fe-b713-4f69-b08b-34546dd808cd",
+      "Name": "SerializeSpace.Octopus.UploadSpace.Id",
+      "Label": "Octopus Upload Space ID",
+      "HelpText": "The ID of the space to upload the Terraform package to. Leave this blank to upload to the space defined in the `Octopus Space ID` parameter.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e6b3d298-87e8-4965-966e-230537b4dd4c",
+      "Name": "SerializeSpace.Exported.Space.IgnoredLibraryVariableSet",
+      "Label": "Ignored Library Variables Sets",
+      "HelpText": "A comma separated list of library variables sets that will not be included in the Terraform module. These library variable sets are often those used by Runbooks that are not included in the module, and so do not need to be referenced.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1208c54c-568a-4a48-9340-fbff710079b3",
+      "Name": "SerializeSpace.Exported.Space.IgnoredTenants",
+      "Label": "Ignored Tenants",
+      "HelpText": "A comma separated list of tenants that will not be included in the Terraform module. These tenants are often those used by Runbooks to identify managed spaces or instances, but which must not be recreated.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9121bc1d-df00-4ec7-ae1c-751261d2438d",
+      "Name": "SerializeSpace.Exported.Space.IgnoredAccounts",
+      "Label": "Ignored Accounts",
+      "HelpText": "A comma separated list of accounts that will not be included in the Terraform module. These accounts are often those used by Runbooks that are not included in the module, and so do not need to be referenced.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c33810ae-0f53-421d-b11a-9161bfdd0df8",
+      "Name": "SerializeSpace.Exported.Space.IgnoreTargets",
+      "Label": "Ignore All Targets",
+      "HelpText": "Check this option to ignore the targets when serializing the Terraform module. This is useful when downstream spaces require their own unique targets to work correctly.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "a8e8163e-0981-4496-a844-b16281d8ce1c",
+      "Name": "SerializeSpace.Exported.Space.DummySecrets",
+      "Label": "Default Secrets to Dummy Values",
+      "HelpText": "This option sets the default value of all secrets, like account and feed passwords, to a dummy value. This allows the resources to be created and then updated at a later time with the correct values. Note the default values can be overridden if they are known.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "e7cbd75d-39f1-40ad-a41a-8eed8a65902c",
+      "Name": "SerializeSpace.Exported.Space.IgnoredTenantTags",
+      "Label": "Ignore Tenants with Tag",
+      "HelpText": "A comma separated list of tenant tags that identify tenants to exclude from the export. Typically tenants that represent internal teams or business units will have a tag like `TenantType/InternalCustomer` to distinguish them from other kinds of tenants.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f312be91-cc8f-49d6-afd7-fc6a6e38926c",
+      "Name": "SerializeSpace.Exported.Space.IncludeStepTemplates",
+      "Label": "Include Step Templates",
+      "HelpText": "Enable this option to export step templates.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-10-24T05:39:19.004Z",
+    "OctopusVersion": "2023.4.6612",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "octopus"
+}

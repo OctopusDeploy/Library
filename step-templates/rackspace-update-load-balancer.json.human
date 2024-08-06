@@ -1,0 +1,147 @@
+{
+  "Id": "94aa35a3-0a0c-4c45-8781-98006bda3bcd",
+  "Name": "Rackspace - Update Load Balancer",
+  "Description": "Change the condition of a node in a Rackspace Cloud Load Balancer.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$username = $OctopusParameters['Username']
+$apiKey = $OctopusParameters['ApiKey']
+$loadbalanderId = $OctopusParameters['LoadBalancerID']
+$newNodeCondition = $OctopusParameters['NewCondition']
+$ipAddress = $OctopusParameters['NodeIpAddress']
+
+if ($newNodeCondition -ne \"ENABLED\" -and $newNodeCondition -ne \"DISABLED\" -and $newNodeCondition -ne \"DRAINING\")
+{
+    throw \"Condition must be one of 'ENABLED', 'DISABLED' or 'DRAINING'\"
+}
+
+# Get token and manipulation URL
+
+$tokensUri = \"https://lon.identity.api.rackspacecloud.com/v2.0/tokens\"
+$tokensBody = @\"
+{
+    \"auth\":
+    {
+       \"RAX-KSKEY:apiKeyCredentials\":
+       {  
+          \"username\": \"$username\",  
+          \"apiKey\": \"$apiKey\"
+       }
+    }  
+}
+\"@
+
+Write-Host \"Sending request $tokensBody to $tokensUri\"
+
+$tokensResponse = Invoke-WebRequest -Uri $tokensUri -Method Post -Body $tokensBody -ContentType \"application/json\" -UseBasicParsing
+
+if ($tokensResponse.StatusCode -ne 200)
+{
+    throw \"Authorisation failed\"
+}
+
+$tokensObj = ConvertFrom-Json -InputObject $tokensResponse.Content
+
+$loadBalancerDetails = $tokensObj.access.serviceCatalog | Where {$_.name -eq \"cloudLoadBalancers\"}
+$endpoints = $loadBalancerDetails.endpoints | Select -First 1
+$loadbalancerUrl = $endpoints.publicURL
+$token = $tokensObj.access.token.id
+
+# Update node
+
+$header = @{}
+$header.Add(\"X-Auth-Token\", $token)
+$nodesUrl = \"$loadbalancerUrl/loadbalancers/$loadbalancerId/nodes\"
+
+Write-Host \"Getting node details from $nodesUrl\"
+
+$nodesResponse = Invoke-WebRequest -Uri $nodesUrl -Method Get -Headers $header -ContentType \"application/json\" -UseBasicParsing
+
+if ($nodesResponse.StatusCode -ne 200)
+{
+    throw \"Getting load balancer details failed\"
+}
+
+$nodesObj = ConvertFrom-Json -InputObject $nodesResponse.Content
+$node = $nodesObj.nodes | Where {$_.address -eq $ipAddress}
+$nodeId = $node.id
+
+$updateBody = @\"
+{
+    \"node\": {
+        \"condition\" : \"$newNodeCondition\"
+    }
+}
+\"@
+$updateUrl = \"$loadbalancerUrl/loadbalancers/$loadbalancerId/nodes/$nodeId\"
+
+Write-Host \"Updating node $nodeId to $newNodeCondition\"
+Write-Host \"$updateBody\"
+Write-Host \"$updateUrl\"
+
+$updateResponse = Invoke-WebRequest -Uri $updateUrl -Body $updateBody -Method Put -Headers $header -ContentType \"application/json\" -UseBasicParsing
+
+if ($updateResponse.StatusCode -ne 202)
+{
+    throw \"Updating load balancer failed\"
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Username",
+      "Label": "Username",
+      "HelpText": "Rackspace control panel username",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ApiKey",
+      "Label": "API key",
+      "HelpText": "Rackspace control panel user API key",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "LoadBalancerID",
+      "Label": "Load Balancer ID",
+      "HelpText": "ID of the load balancer, found on the details page in the Rackspace control panel",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "NodeIpAddress",
+      "Label": "Node IP address",
+      "HelpText": "IP address of load balanced node. Found on the load balancer details page of the Rackspace control panel",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "NewCondition",
+      "Label": "New Node Condition",
+      "HelpText": "Condition to set the node to. Can either be 'ENABLED', 'DISABLED' or 'DRAINING'",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2014-05-16T10:29:42.481+00:00",
+    "OctopusVersion": "2.4.5.46",
+    "Type": "ActionTemplate"
+  },
+  "Category": "rackspace"
+}

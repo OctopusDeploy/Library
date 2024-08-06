@@ -1,0 +1,324 @@
+{
+  "Id": "a1c51946-abd0-434c-99f3-b7a1b5af74c5",
+  "Name": "Xamarin Insights dSYM Upload",
+  "Description": "Uploads a dSYM symbols file to Xamarin Insights, for more readable exceptions.",
+  "ActionType": "Octopus.Script",
+  "Version": 0,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "#####################################\r
+# Xamarin Insights dSYM Upload script\r
+#\r
+# Uploads a dSYM sybmols file to Xamarin insights from a Nuget file\r
+#  extracted in a previous Octopus Deploy step. Allows a variety of parameters.\r
+#\r
+# Uploads to configured application, by API Key.\r
+#\r
+# API Documentation is available at: https://developer.xamarin.com/guides/insights/user-interface/settings/#Uploading_a_dSYM_File\r
+#\r
+# The API key involved is provided in the \"Settings\" for the particular app on the Xamarin Insights portal.\r
+# https://insights.xamarin.com/\r
+# Log in, open the application, and click settings. The general \"settings\" tab has the API Key field.\r
+#\r
+# Example curl request:\r
+# curl -F \"dsym=@YOUR-APPS-DSYM.zip;type=application/zip\" https://xaapi.xamarin.com/api/dsym?apikey=13dd6c82159361ea13ad25a0d9100eb6e228bb17\r
+#\r
+# v0.1 - Initial version, uploads one dSYM file.\r
+# \r
+# The nuget package must contain the *.app.dSYM.zip file.  \r
+#\r
+# The following *.nuspec example will package a release IPA and associated *.app.dSYM.zip file.\r
+#\r
+# The upload script requires a search path (default package root) with exactly one *.app.dSYM.zip file.\r
+# \r
+# Specify package path relative to the nuspec file location\r
+#\r
+# https://docs.nuget.org/create/nuspec-reference#file-element-examples\r
+#\r
+# In some cases the ID, Version, and Description may need manually specified.\r
+#\r
+\r
+<#\r
+\r
+    <?xml version=\"1.0\"?>\r
+    <package>\r
+      <metadata>\r
+        <id>$id$</id>\r
+        <title>$id$</title>\r
+        <version>$version$</version>\r
+        <description>Mobile project packaged for Octopus deploy. $description$</description>\r
+      </metadata>\r
+      <files>\r
+        <!-- Matches mobile package files. Note this will only include the platform being built,\r
+\t         and should match only a single file. -->\r
+        \r
+        <!-- iOS -->\r
+        <file src=\"**/Release/**/*.ipa\" target=\"\" />\r
+\r
+        <!-- Include release dSYM symbols file -->\r
+        <file src=\"**/Release/*.app.dSYM.zip\" target=\"\" />\r
+\r
+      </files>\r
+    </package>\r
+\r
+#>\r
+\r
+#############################\r
+# Debug Parameter Overrides #\r
+#############################\r
+\r
+# These values are set explicitly durring debugging so that the script can\r
+#   be run in the editor.\r
+# For local debugging, uncomment these values and fill in appropriately.\r
+\r
+<#\r
+\r
+# debug folder with app files\r
+$stepPath = \"C:\\Temp\\powershellscript\\\"\r
+\r
+$OctopusParameters = @{\r
+\"InsightsAppSpecificApiToken\" = \"YourApiKeyhere\";\r
+# \"NugetSearchPath\" = \"bin\\iPhone\"; # Additional path information, reatlive to the nuget file root, e.g. release\r
+}\r
+\r
+# #>\r
+\r
+###################################\r
+# Octopus Deploy common functions #\r
+###################################\r
+\r
+# A collection of functions that can be used by script steps to determine where packages installed\r
+# by previous steps are located on the filesystem.\r
+ \r
+function Find-InstallLocations {\r
+    $result = @()\r
+    $OctopusParameters.Keys | foreach {\r
+        if ($_.EndsWith('].Output.Package.InstallationDirectoryPath')) {\r
+            $result += $OctopusParameters[$_]\r
+        }\r
+    }\r
+    return $result\r
+}\r
+ \r
+function Find-InstallLocation($stepName) {\r
+    $result = $OctopusParameters.Keys | where {\r
+        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\r
+    } | select -first 1\r
+ \r
+    if ($result) {\r
+        return $OctopusParameters[$result]\r
+    }\r
+ \r
+    throw \"No install location found for step: $stepName\"\r
+}\r
+\r
+function Find-SingleInstallLocation {\r
+    $all = @(Find-InstallLocations)\r
+    if ($all.Length -eq 1) {\r
+        return $all[0]\r
+    }\r
+    if ($all.Length -eq 0) {\r
+        throw \"No package steps found\"\r
+    }\r
+    throw \"Multiple package steps have run; please specify a single step\"\r
+}\r
+\r
+#####################\r
+# Utility functions #\r
+#####################\r
+\r
+function Get-ExactlyOneDsymFileInfo($searchPath)\r
+{\r
+    $symbolFiles = Get-ChildItem -Path $searchPath -Recurse -Filter *.app.dSYM.zip\r
+    \r
+    $fileCount = $symbolFiles.count\r
+\r
+    if($fileCount -ne 1)\r
+    {\r
+        throw \"Did not find exactly one (1) symbols file. Found $fileCount dSYM file(s). Searched under path: $searchPath\"\r
+    }\r
+\r
+    return $symbolFiles\r
+}\r
+\r
+####################\r
+# Basic Parameters #\r
+####################\r
+\r
+$apiToken = $OctopusParameters['InsightsAppSpecificApiToken']\r
+\r
+$octopusFilePathOverride = $OctopusParameters['NugetSearchPath']\r
+\r
+$stepName = $OctopusParameters['MobileAppPackageStepName']\r
+\r
+# set step path, if not already set\r
+If([string]::IsNullOrEmpty($stepPath))\r
+{\r
+    if (![string]::IsNullOrEmpty($stepName)) {\r
+        Write-Host \"Finding path to package step: $stepName\"\r
+        $stepPath = Find-InstallLocation $stepName\r
+    } else {\r
+        $stepPath = Find-SingleInstallLocation\r
+    }\r
+}\r
+\r
+Write-Host \"##octopus[stderr-progress]\"\r
+\r
+# if we were not provided a file name, search for a single package file\r
+if([string]::IsNullOrWhiteSpace($octopusFilePathOverride))\r
+{\r
+    $appFileInfo = Get-ExactlyOneDsymFileInfo $stepPath\r
+    $appFullFilePath = $appFileInfo.FullName\r
+}\r
+else\r
+{\r
+    $searchPathOverride = Join-Path $stepPath $octopusFilePathOverride\r
+    $appFileInfo = Get-ExactlyOneDsymFileInfo $searchPathOverride\r
+    $appFullFilePath = $appFileInfo.FullName\r
+}\r
+\r
+$fileName = [System.IO.Path]::GetFileName($appFullFilePath)\r
+\r
+$apiUploadUri = \"https://xaapi.xamarin.com/api/dsym?apikey=$apiToken\"\r
+\r
+# Request token details\r
+$uniqueBoundaryToken = [Guid]::NewGuid().ToString()\r
+\r
+$contentType = \"multipart/form-data; boundary=$uniqueBoundaryToken\"\r
+\r
+\r
+Write-Host \"File Location: $appFullFilePath\"\r
+\r
+################################\r
+# Set up Hockey App parameters #\r
+################################\r
+\r
+$formSectionSeparator = @\"\r
+\r
+--$uniqueBoundaryToken\r
+\r
+\"@\r
+\r
+############################\r
+# Prepare request wrappers #\r
+############################\r
+\r
+# Standard for multipart form data\r
+# http://www.w3.org/TR/html401/interact/forms.html#h-17.13.4\r
+\r
+$stringEncoding = [System.Text.Encoding]::ASCII\r
+\r
+# Note the hard-coded \"ipa\" name here is per HockeyApp API documentation\r
+#  and it applies to ALL platform application files.\r
+\r
+$preFileBytes = $stringEncoding.GetBytes(\r
+$formSectionSeparator +\r
+@\"\r
+Content-Disposition: form-data; name=\"dsym\"; filename=\"$fileName\"\r
+Content-Type: application/zip\r
+\r
+\r
+\"@)\r
+\r
+# file bytes will go in between\r
+\r
+$postFileBytes = $stringEncoding.GetBytes(@\"\r
+\r
+--$uniqueBoundaryToken--\r
+\"@)\r
+\r
+######################\r
+# Invoke the request #\r
+######################\r
+\r
+# Note, previous approach was Invoke-RestMethod based. It worked, but was NOT memory\r
+# efficient, leading to high memory usage and \"out of memory\" errors.\r
+\r
+# Based on examples from\r
+# http://stackoverflow.com/questions/566462/upload-files-with-httpwebrequest-multipart-form-data\r
+# and \r
+# https://gist.github.com/nolim1t/271018\r
+\r
+# Uses a dot net WebRequest and streaming to limit memory usage\r
+\r
+$WebRequest = [System.Net.WebRequest]::Create(\"$apiUploadUri\")\r
+\r
+$WebRequest.ContentType = $contentType\r
+$WebRequest.Method = \"POST\"\r
+$WebRequest.KeepAlive = $true;\r
+\r
+$RequestStream = $WebRequest.GetRequestStream()\r
+\r
+# before file bytes\r
+$RequestStream.Write($preFileBytes, 0, $preFileBytes.Length);\r
+\r
+#files bytes\r
+\r
+$fileMode = [System.IO.FileMode]::Open\r
+$fileAccess = [System.IO.FileAccess]::Read\r
+\r
+$fileStream = New-Object IO.FileStream $appFullFilePath,$fileMode,$fileAccess\r
+$bufferSize = 4096 # 4k at a time\r
+$byteBuffer = New-Object Byte[] ($bufferSize)\r
+\r
+# read bytes. While bytes are read...\r
+while(($bytesRead = $fileStream.Read($byteBuffer,0,$byteBuffer.Length)) -ne 0)\r
+{\r
+    # write those byes to the request stream\r
+    $RequestStream.Write($byteBuffer, 0, $bytesRead)\r
+}\r
+\r
+$fileStream.Close()\r
+\r
+# after file bytes\r
+$RequestStream.Write($postFileBytes, 0, $postFileBytes.Length);\r
+\r
+$RequestStream.Close()\r
+\r
+$response = $WebRequest.GetResponse();\r
+",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "InsightsAppSpecificApiToken",
+      "Label": "Insights Api Token",
+      "HelpText": "Your Xamarin API Key for the specific application you are uploading the symbol files to.
+
+Visit:
+https://insights.xamarin.com
+
+Log in, browse your application, and click Settings. Your application specific API Token should be visible under \"API Key\".",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "PackageStepName",
+      "Label": "Package Step Name",
+      "HelpText": "Name of the previously-deployed package step that contains the dSYM symbol file that you want to deploy.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Name": "NugetSearchPath",
+      "Label": "Nuget Search Path (Optional)",
+      "HelpText": "This fully optional search path allows you to look in a specific folder path in your nuget file, such as \"bin\\release\". This may be needed in cases when the nuget file has multiple dSYM files in different locations.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2016-01-12T21:54:21.496+00:00",
+  "LastModifiedBy": "Colin.Dabritz@Viewpoint.com",
+  "$Meta": {
+    "ExportedAt": "2016-01-12T23:40:54.635+00:00",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  },
+  "Category": "xamarin"
+}

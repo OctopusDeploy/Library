@@ -1,0 +1,303 @@
+{
+  "Id": "6f95a351-a1a1-43d1-a378-410a9acf0e60",
+  "Name": "Register Listening Deployment Target with Octopus",
+  "Description": "Step template to Register an Listening Deployment Target with Octopus Deploy using the API.  Useful when spinning up machines and you want to wait to register until the machine finishes installing all additional software.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Author": "octobob",
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$OctopusAPIKey = $OctopusParameters[\"RegisterListeningTarget.Octopus.Api.Key\"]
+$RegistrationName = $OctopusParameters[\"RegisterListeningTarget.Machine.Name\"]
+$RegistrationAddress = $OctopusParameters[\"RegisterListeningTarget.Machine.Address\"]
+$OctopusUrl = $OctopusParameters[\"RegisterListeningTarget.Octopus.Base.Url\"]
+$Roles = $OctopusParameters[\"RegisterListeningTarget.Roles.List\"]
+$Environments = $OctopusParameters[\"RegisterListeningTarget.Environment.List\"]
+$SpaceId = $OctopusParameters[\"Octopus.Space.Id\"]
+$MachinePolicyIdOrName = $OctopusParameters[\"RegisterListeningTarget.MachinePolicy.IdOrName\"]
+$Tenants = $OctopusParameters[\"RegisterListeningTarget.Tenant.List\"]
+$DeploymentType = $OctopusParameters[\"RegisterListeningTarget.Tenant.DeploymentType\"]
+$PortNumber = $OctopusParameters[\"RegisterListeningTarget.Machine.Port\"]
+$OverwriteExisting = $OctopusParameters[\"RegisterListeningTarget.Overwrite.Existing\"]
+$OverwriteExisting = $OverwriteExisting -eq \"True\"
+
+Write-Host \"Machine Name: $RegistrationName\"
+Write-Host \"Machine Address: $RegistrationAddress\"
+Write-Host \"Machine Port: $PortNumber\"
+Write-Host \"Octopus Url: $OctopusUrl\"
+Write-Host \"Role List: $Roles\"
+Write-Host \"Environments: $Environments\"
+Write-Host \"Machine Policy Name or Id: $MachinePolicyIdOrName\"
+Write-Host \"Tenant List: $Tenants\"
+Write-Host \"Deployment Type: $DeploymentType\"
+Write-Host \"Overwrite Existing: $OverwriteExisting\"
+
+$header = New-Object \"System.Collections.Generic.Dictionary[[String],[String]]\"
+$header.Add(\"X-Octopus-ApiKey\", $OctopusAPIKey)
+
+# If tenanted only deployments is set then you require at least one tenant in the tenant list
+if($tenantList -eq $null -and $DeploymentType -eq \"Tenanted\"){
+\tFail-Step \"Tenanted only deployments require at least one associated tenants!\"
+}
+
+$baseApiUrl = \"$OctopusUrl/api\"
+$baseApiInformation = Invoke-RestMethod $baseApiUrl -Headers $header
+if ((Get-Member -InputObject $baseApiInformation.Links -Name \"Spaces\" -MemberType Properties) -ne $null)
+{  \t
+\t$baseApiUrl = \"$baseApiUrl/$SpaceId\"    
+}
+
+Write-Host \"Base API Url: $baseApiUrl\"
+
+$existingMachineResultsUrl = \"$baseApiUrl/machines?partialName=$RegistrationName&skip=0&take=1000\"
+Write-Host \"Attempting to find existing machine with similar name at $existingMachineResultsUrl\"
+$existingMachineResponse = Invoke-RestMethod $existingMachineResultsUrl -Headers $header
+Write-Host $existingMachineResponse
+
+$machineFound = $false
+$machineId = $null
+foreach ($item in $existingMachineResponse.Items)
+{
+\tif ($item.Name -eq $RegistrationName)
+    {
+    \t$machineFound = $true
+        if ($OverwriteExisting)
+        {
+        \t$machineId = $item.Id 
+        }
+        break
+    }
+}
+
+if ($machineFound -and $OverwriteExisting -eq $false)
+{
+\tWrite-Highlight \"Machine already exists, skipping registration\"
+    Exit 0
+}
+
+$roleList = $Roles -split \",\"
+$environmentList = $Environments -split \",\"
+$environmentIdList = @()
+Write-Host \"Getting the ids for all environments specified\"
+foreach($environment in $environmentList)
+{
+\tWrite-Host \"Getting the id for the environment $environment\"
+    $environmentEscaped = $environment.Replace(\" \", \"%20\")
+    $environmentUrl = \"$baseApiUrl/environments?skip=0&take=1000&name=$environmentEscaped\"
+    $environmentResponse = Invoke-RestMethod $environmentUrl -Headers $header 
+
+    $environmentId = $environmentResponse.Items[0].Id
+    Write-Host \"The id for environment $environment is $environmentId\"
+    $environmentIdList += $environmentId
+}
+$tenantList = $Tenants -split \",\"
+$tenantIdList = @()
+
+# If tenant list is null then no need to go trhough this or it will pick the first tenant from all the tenants in Octopus
+if($tenantIdList -ne $null){
+
+\tforeach($tenant in $tenantList)
+\t{
+\t\tWrite-Host \"Getting the id for tenant $tenant\"
+\t\t$tenantEscaped = $tenant.Replace(\" \", \"%20\")
+\t\t$tenantUrl = \"$baseApiUrl/tenants?skip=0&take=1000&name=$tenantEscaped\"
+\t\t$tenantResponse = Invoke-RestMethod $tenantUrl -Headers $header 
+\t
+\t\t$tenantId = $tenantResponse.Items[0].Id
+\t\tWrite-Host \"The id for tenant $tenant is $tenantId\"
+\t\t$tenantIdList += $tenantId
+\t}
+\t
+}
+
+
+
+$machinePolicyId = $machinePolicyIdOrName
+if ($machinePolicyIdOrName.StartsWith(\"MachinePolicies-\") -eq $false)
+{
+\tWrite-Host \"The machine policy specified $machinePolicyIdOrName appears to be a name\"
+\t$machinePolicyNameEscaped = $machinePolicyIdOrName.Replace(\" \", \"%20\")
+\t$machinePolicyResponse = Invoke-RestMethod \"$baseApiUrl/machinepolicies?partialName=$machinePolicyNameEscaped\" -Headers $header
+        
+    $machinePolicyId = $machinePolicyResponse.Items[0].Id
+    Write-Host \"The machine policy id is $machinePolicyId\"
+}
+
+$discoverUrl = \"$baseApiUrl/machines/discover?host=$RegistrationAddress&port=$PortNumber&type=TentaclePassive\"
+Write-Host \"Discovering the machine $discoverUrl\"
+$discoverResponse = Invoke-RestMethod $discoverUrl -Headers $header 
+Write-Host \"ProjectResponse: $discoverResponse\"
+
+$machineThumbprint = $discoverResponse.EndPoint.Thumbprint
+Write-Host \"Thumbprint = $machineThumbprint\"
+
+$rawRequest = @{
+\tId = $machineId;
+\tMachinePolicyId = $machinePolicyId;
+\tName = $RegistrationName;
+\tIsDisabled = $false;
+\tHealthStatus = \"Unknown\";
+\tHasLatestCalamari = $true;
+\tStatusSummary = $null;
+\tIsInProcess = $true;
+\tEndpoint = @{
+    \t\tId = $null;
+\t\tCommunicationStyle = \"TentaclePassive\";
+\t\tLinks = $null;
+\t\tUri = \"https://$RegistrationAddress`:$PortNumber\";
+\t\tThumbprint = \"$machineThumbprint\";
+\t\tProxyId = $null
+\t};
+\tLinks = $null;\t
+\tRoles = $roleList;
+\tEnvironmentIds = $environmentIdList;
+\tTenantIds = $tenantIdList;
+\tTenantTags = $null;
+\tTenantedDeploymentParticipation = $DeploymentType
+}
+
+$jsonRequest = $rawRequest | ConvertTo-Json -Depth 10
+
+Write-Host \"Sending in the request $jsonRequest\"
+
+$machineUrl = \"$baseApiUrl/machines\"
+
+$method = \"POST\"
+if ($OverwriteExisting -and $machineId -ne $null)
+{
+\t$machineUrl = \"$machineUrl/$machineId\" 
+  \t$method = \"PUT\"
+}
+Write-Host \"Posting to url $machineUrl\"
+$machineResponse = Invoke-RestMethod $machineUrl -Headers $header -Method $method -Body $jsonRequest
+
+Write-Host \"Create machine's response: $machineResponse\""
+  },
+  "Parameters": [
+    {
+      "Id": "e98dc4e2-0766-4d2d-a753-eafe294fdeea",
+      "Name": "RegisterListeningTarget.Octopus.Base.Url",
+      "Label": "Octopus Base Url",
+      "HelpText": "The base url of your Octopus Deploy instance.  Example: https://samples.octopus.app",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "cb3cdd41-3d1f-49c6-820e-acfa24bf5a88",
+      "Name": "RegisterListeningTarget.Octopus.Api.Key",
+      "Label": "Octopus Api Key",
+      "HelpText": "The API key of a user in Octopus Deploy who has permissions to register the cluster.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "ca9d9733-2032-466b-9e80-2aa6abd3c977",
+      "Name": "RegisterListeningTarget.Machine.Name",
+      "Label": "Machine Name",
+      "HelpText": "The name of the machine to register with Octopus Deploy.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1d3d8695-27a3-4d3e-9457-6b483253a609",
+      "Name": "RegisterListeningTarget.Machine.Address",
+      "Label": "Machine Address",
+      "HelpText": "The machine address (IP Address or Domain Name) to connect to",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ea762a1e-07ee-4eec-af7a-b6e29bf274d8",
+      "Name": "RegisterListeningTarget.Machine.Port",
+      "Label": "Port Number",
+      "HelpText": "The port the tentacle is listening on",
+      "DefaultValue": "10933",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "fa4bd89d-bb86-4d3f-87ff-17125cd88f24",
+      "Name": "RegisterListeningTarget.Roles.List",
+      "Label": "Role CSV List",
+      "HelpText": "Comma separated list of environments to assign to the machine in Octopus Deploy.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0c80326d-cdc1-439d-be6b-fbab4da42cda",
+      "Name": "RegisterListeningTarget.Environment.List",
+      "Label": "Environment CSV List",
+      "HelpText": "Comma separated list of environments to assign to the the machine in Octopus Deploy.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "667a18b3-1694-4333-87a4-9be712b59122",
+      "Name": "RegisterListeningTarget.Tenant.List",
+      "Label": "Tenant CSV List",
+      "HelpText": "(Optional) If this is for a tenant, the a comma separated list of tenants to assign the machine to in Octopus Deploy",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "db2de612-45bb-4e4a-ab95-64083dd80393",
+      "Name": "RegisterListeningTarget.Tenant.DeploymentType",
+      "Label": "Tenanted Deployments",
+      "HelpText": "Choose the kind of deployment where this deployment target should be included.",
+      "DefaultValue": "Untenanted",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Untenanted|Exclude from tenanted deployments (default)
+Tenanted|Include only in tenanted deployments
+TenantedOrUntenanted|Include in both tenanted and untenanted deployments"
+      }
+    },
+    {
+      "Id": "5ef91f37-b13b-413d-955c-872c7f274c7e",
+      "Name": "RegisterListeningTarget.MachinePolicy.IdOrName",
+      "Label": "Machine Policy Id Or Name",
+      "HelpText": "Enter in the name or the Id of the Machine Policy in Octopus Deploy for the AKS Cluster.",
+      "DefaultValue": "Default Machine Policy",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5b2e0993-7f96-4447-b47b-029c8f225688",
+      "Name": "RegisterListeningTarget.Overwrite.Existing",
+      "Label": "Overwrite Existing Registration",
+      "HelpText": "Indicates if the existing listening tentacle should be overwritten in Octopus.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedBy": "adamoctoclose",
+  "$Meta": {
+    "ExportedAt": "2021-03-17T15:37:29.866Z",
+    "OctopusVersion": "2020.5.5",
+    "Type": "ActionTemplate"
+  },
+  "Category": "octopus"
+}

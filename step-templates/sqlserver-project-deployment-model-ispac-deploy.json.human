@@ -1,0 +1,344 @@
+{
+  "Id": "efe39ac7-3ab8-4f99-bfdc-aba342278d1a",
+  "Name": "SQL Server - Project Deployment Model - Deploy ISPAC",
+  "Description": "This is to deploy ssis packages using 'project deployment model' (ISPAC file )",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "#################################################################################################\r
+# Change source and destination properties\r
+#################################################################################################\r
+\r
+# Source\r
+$IspacFilePath = \"#{ISPAC_FILE_PATH}\"\r
+ \r
+# Destination\r
+$SsisServer =   $OctopusParameters['deploy.dts.server'] \r
+$FolderName = $OctopusParameters['SSIS_Folder']\r
+$ProjectName = $OctopusParameters['SSIS_Project']\r
+\r
+# Environment\r
+$EnvironmentName = $OctopusParameters['Environment_Name']  \r
+$EnvironmentFolderName = $OctopusParameters['SSIS_Folder']\r
+\r
+\r
+# Replace empty projectname with filename\r
+if (-not $ProjectName)\r
+{\r
+  $ProjectName = [system.io.path]::GetFileNameWithoutExtension($IspacFilePath)\r
+}\r
+# Replace empty Environment folder with project folder\r
+if (-not $EnvironmentFolderName)\r
+{\r
+  $EnvironmentFolderName = $FolderName\r
+}\r
+\r
+clear\r
+Write-Host \"========================================================================================================================================================\"\r
+Write-Host \"==                                                         Used parameters                                                                            ==\"\r
+Write-Host \"========================================================================================================================================================\"\r
+Write-Host \"Ispac File Path        : \" $IspacFilePath\r
+Write-Host \"SSIS Server            : \" $SsisServer\r
+Write-Host \"Project Folder Path    : \" $FolderName\r
+Write-Host \"Project Name           : \" $ProjectName\r
+Write-Host \"Environment Name       : \" $EnvironmentName\r
+Write-Host \"Environment Folder Path: \" $EnvironmentFolderName\r
+Write-Host \"========================================================================================================================================================\"\r
+Write-Host \"\"\r
+\r
+###########################\r
+########## ISPAC ##########\r
+###########################\r
+# Check if ispac file exists\r
+if (-Not (Test-Path $IspacFilePath))\r
+{\r
+    Throw  [System.IO.FileNotFoundException] \"Ispac file $IspacFilePath doesn't exists!\"\r
+}\r
+else\r
+{\r
+    $IspacFileName = split-path $IspacFilePath -leaf\r
+    Write-Host \"Ispac file\" $IspacFileName \"found\"\r
+}\r
+\r
+\r
+############################\r
+########## SERVER ##########\r
+############################\r
+# Load the Integration Services Assembly\r
+Write-Host \"Connecting to server $SsisServer \"\r
+$SsisNamespace = \"Microsoft.SqlServer.Management.IntegrationServices\"\r
+[System.Reflection.Assembly]::LoadWithPartialName($SsisNamespace) | Out-Null;\r
+\r
+# Create a connection to the server\r
+$SqlConnectionstring = \"Data Source=\" + $SsisServer + \";Initial Catalog=master;Integrated Security=SSPI;\"\r
+$SqlConnection = New-Object System.Data.SqlClient.SqlConnection $SqlConnectionstring\r
+\r
+# Create the Integration Services object\r
+$IntegrationServices = New-Object $SsisNamespace\".IntegrationServices\" $SqlConnection\r
+\r
+# Check if connection succeeded\r
+if (-not $IntegrationServices)\r
+{\r
+  Throw  [System.Exception] \"Failed to connect to server $SsisServer \"\r
+}\r
+else\r
+{\r
+   Write-Host \"Connected to server\" $SsisServer\r
+}\r
+\r
+\r
+#############################\r
+########## CATALOG ##########\r
+#############################\r
+# Create object for SSISDB Catalog\r
+$Catalog = $IntegrationServices.Catalogs[\"SSISDB\"]\r
+\r
+# Check if the SSISDB Catalog exists\r
+if (-not $Catalog)\r
+{\r
+    # Catalog doesn't exists. The user should create it manually.\r
+    # It is possible to create it, but that shouldn't be part of\r
+    # deployment of packages.\r
+    Throw  [System.Exception] \"SSISDB catalog doesn't exist. Create it manually!\"\r
+}\r
+else\r
+{\r
+    Write-Host \"Catalog SSISDB found\"\r
+}\r
+\r
+\r
+############################\r
+########## FOLDER ##########\r
+############################\r
+# Create object to the (new) folder\r
+$Folder = $Catalog.Folders[$FolderName]\r
+\r
+# Check if folder already exists\r
+if (-not $Folder)\r
+{\r
+    # Folder doesn't exists, so create the new folder.\r
+    Write-Host \"Creating new folder\" $FolderName\r
+    $Folder = New-Object $SsisNamespace\".CatalogFolder\" ($Catalog, $FolderName, $FolderName)\r
+    $Folder.Create()\r
+}\r
+else\r
+{\r
+    Write-Host \"Folder\" $FolderName \"found\"\r
+}\r
+\r
+\r
+#############################\r
+########## PROJECT ##########\r
+#############################\r
+# Deploying project to folder\r
+if($Folder.Projects.Contains($ProjectName)) {\r
+    Write-Host \"Deploying\" $ProjectName \"to\" $FolderName \"(REPLACE)\"\r
+}\r
+else\r
+{\r
+    Write-Host \"Deploying\" $ProjectName \"to\" $FolderName \"(NEW)\"\r
+}\r
+# Reading ispac file as binary\r
+[byte[]] $IspacFile = [System.IO.File]::ReadAllBytes($IspacFilePath)\r
+$Folder.DeployProject($ProjectName, $IspacFile)\r
+$Project = $Folder.Projects[$ProjectName]\r
+if (-not $Project)\r
+{\r
+    # Something went wrong with the deployment\r
+    # Don't continue with the rest of the script\r
+    return \"\"\r
+}\r
+\r
+\r
+#################################\r
+########## ENVIRONMENT ##########\r
+#################################\r
+# Check if environment name is filled\r
+if (-not $EnvironmentName)\r
+{\r
+    # Kill connection to SSIS\r
+    $IntegrationServices = $null \r
+\r
+    # Stop the deployment script\r
+    Return \"Ready deploying $IspacFileName without adding environment references\"\r
+}\r
+\r
+# Create object to the (new) folder\r
+$EnvironmentFolder = $Catalog.Folders[$EnvironmentFolderName]\r
+\r
+# Check if environment folder exists\r
+if (-not $EnvironmentFolder)\r
+{\r
+  Throw  [System.Exception] \"Environment folder $EnvironmentFolderName doesn't exist\"\r
+}\r
+\r
+# Check if environment exists\r
+if(-not $EnvironmentFolder.Environments.Contains($EnvironmentName))\r
+{\r
+  Throw  [System.Exception] \"Environment $EnvironmentName doesn't exist in $EnvironmentFolderName \"\r
+}\r
+else\r
+{\r
+    # Create object for the environment\r
+    $Environment = $Catalog.Folders[$EnvironmentFolderName].Environments[$EnvironmentName]\r
+\r
+    if ($Project.References.Contains($EnvironmentName, $EnvironmentFolderName))\r
+    {\r
+        Write-Host \"Reference to\" $EnvironmentName \"found\"\r
+    }\r
+    else\r
+    {\r
+        Write-Host \"Adding reference to\" $EnvironmentName\r
+        $Project.References.Add($EnvironmentName, $EnvironmentFolderName)\r
+        $Project.Alter() \r
+    }\r
+}\r
+\r
+\r
+########################################\r
+########## PROJECT PARAMETERS ##########\r
+########################################\r
+$ParameterCount = 0\r
+# Loop through all project parameters\r
+foreach ($Parameter in $Project.Parameters)\r
+{\r
+    # Get parameter name and check if it exists in the environment\r
+    $ParameterName = $Parameter.Name\r
+    if ($ParameterName.StartsWith(\"CM.\",\"CurrentCultureIgnoreCase\")) \r
+    { \r
+        # Ignoring connection managers \r
+    } \r
+    elseif ($ParameterName.StartsWith(\"INTERN_\",\"CurrentCultureIgnoreCase\")) \r
+    { \r
+        # Optional:\r
+        # Internal parameters are ignored (where name starts with INTERN_) \r
+        Write-Host \"Ignoring Project parameter\" $ParameterName \" (internal use only)\" \r
+    } \r
+    elseif ($Environment.Variables.Contains($Parameter.Name))\r
+    {\r
+        $ParameterCount = $ParameterCount + 1\r
+        Write-Host \"Project parameter\" $ParameterName \"connected to environment\"\r
+        $Project.Parameters[$Parameter.Name].Set([Microsoft.SqlServer.Management.IntegrationServices.ParameterInfo+ParameterValueType]::Referenced, $Parameter.Name)\r
+        $Project.Alter()\r
+    }\r
+    else\r
+    {\r
+        # Variable with the name of the project parameter is not found in the environment\r
+        # Throw an exeception or remove next line to ignore parameter\r
+        Throw  [System.Exception]  \"Project parameter $ParameterName doesn't exist in environment\"\r
+    }\r
+}\r
+Write-Host \"Number of project parameters mapped:\" $ParameterCount\r
+\r
+\r
+########################################\r
+########## PACKAGE PARAMETERS ##########\r
+########################################\r
+$ParameterCount = 0\r
+# Loop through all packages\r
+foreach ($Package in $Project.Packages)\r
+{\r
+    # Loop through all package parameters\r
+    foreach ($Parameter in $Package.Parameters)\r
+    {\r
+        # Get parameter name and check if it exists in the environment\r
+        $PackageName = $Package.Name\r
+        $ParameterName = $Parameter.Name \r
+        if ($ParameterName.StartsWith(\"CM.\",\"CurrentCultureIgnoreCase\")) \r
+        { \r
+            # Ignoring connection managers \r
+        } \r
+        elseif ($ParameterName.StartsWith(\"INTERN_\",\"CurrentCultureIgnoreCase\")) \r
+        { \r
+            # Optional:\r
+            # Internal parameters are ignored (where name starts with INTERN_) \r
+            Write-Host \"Ignoring Package parameter\" $ParameterName \" (internal use only)\" \r
+        } \r
+        elseif ($Environment.Variables.Contains($Parameter.Name))\r
+        {\r
+            $ParameterCount = $ParameterCount + 1\r
+            Write-Host \"Package parameter\" $ParameterName \"from package\" $PackageName \"connected to environment\"\r
+            $Package.Parameters[$Parameter.Name].Set([Microsoft.SqlServer.Management.IntegrationServices.ParameterInfo+ParameterValueType]::Referenced, $Parameter.Name)\r
+            $Package.Alter()\r
+        }\r
+        else\r
+        {\r
+            # Variable with the name of the package parameter is not found in the environment\r
+            # Throw an exeception or remove next line to ignore parameter\r
+            Throw  [System.Exception]  \"Package parameter $ParameterName from package $PackageName doesn't exist in environment\"\r
+        }\r
+    }\r
+}\r
+Write-Host \"Number of package parameters mapped:\" $ParameterCount\r
+\r
+\r
+###########################\r
+########## READY ##########\r
+###########################\r
+# Kill connection to SSIS\r
+$IntegrationServices = $null \r
+\r
+\r
+Return \"Ready deploying $IspacFileName \"",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "ISPAC_FILE_PATH",
+      "Label": "Ispac file path",
+      "HelpText": "Once the SSIS project is compiled \"ispac\" file gets created, this variable must hold the path of the ispac file.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "deploy.dts.server",
+      "Label": "SSIS Server name",
+      "HelpText": "SSIS Server name where this ssis packages must be deployed.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SSIS_Folder",
+      "Label": "SSIS Folder name",
+      "HelpText": "SSIS folder name which is created under SSISDB",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SSIS_Project",
+      "Label": "Project Name",
+      "HelpText": "SSIS Project name - this is the physical folder name where the OD is referring to .",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Environment_Name",
+      "Label": "Environment Name",
+      "HelpText": "This is the environment name where variables exists.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2016-07-20T10:15:20.241+00:00",
+    "OctopusVersion": "3.3.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

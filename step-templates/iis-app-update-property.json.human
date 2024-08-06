@@ -1,0 +1,139 @@
+{
+  "Id": "4eb08b60-142c-4443-92cf-2e069727f438",
+  "Name": "IIS App - Update Property",
+  "Description": "Updates property for specified application",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus
+param(
+    [string]$webSiteName,
+    [string]$applicationName,
+    [string]$propertyName,
+    [object]$propertyValue,
+    [switch]$whatIf
+) 
+
+$ErrorActionPreference = \"Stop\" 
+
+function Get-Param($Name, [switch]$Required, $Default) {
+    $result = $null
+
+    if ($OctopusParameters -ne $null) {
+        $result = $OctopusParameters[$Name]
+    }
+
+    if ($result -eq $null) {
+        $variable = Get-Variable $Name -EA SilentlyContinue   
+        if ($variable -ne $null) {
+            $result = $variable.Value
+        }
+    }
+
+    if ($result -eq $null -or $result -eq \"\") {
+        if ($Required) {
+            throw \"Missing parameter value $Name\"
+        } else {
+            $result = $Default
+        }
+    }
+
+    return $result
+}
+
+& {
+    param(
+        [string]$webSiteName,
+        [string]$applicationName,
+        [string]$propertyName,
+        [object]$propertyValue
+    ) 
+
+    Write-Host \"Setting $webSiteName\\$applicationName property $propertyName to $propertyValue\"
+
+    try {
+         Add-PSSnapin WebAdministration -ErrorAction SilentlyContinue
+         Import-Module WebAdministration -ErrorAction SilentlyContinue
+         
+         $oldValue = Get-ItemProperty \"IIS:\\Sites\\$webSiteName\\$applicationName\" -Name $propertyName
+         $oldValueString = \"\"
+
+         if ($oldValue.GetType() -eq [Microsoft.IIs.PowerShell.Framework.ConfigurationAttribute])
+         {
+             $oldValueString = ($oldValue | Select-Object -ExpandProperty \"Value\")
+         }
+         elseif ($oldValue.GetType() -eq [System.String])
+         {
+             $oldValueString = $oldValue
+         }
+         elseif ($oldValue.GetType() -eq [System.Management.Automation.PSCustomObject])
+         {
+             $oldValueString = ($oldValue | Select-Object -ExpandProperty $propertyName)
+         }
+
+         Write-Host \"Old value $oldValueString\"
+         Set-ItemProperty \"IIS:\\Sites\\$webSiteName\\$applicationName\" -Name $propertyName -Value $propertyValue
+         Write-Host \"New value $propertyValue\"
+         Write-Host \"Done\"
+    } catch {
+        Write-Host $_.Exception|format-list -force
+        Write-Host \"There was a problem setting property\"    
+    }
+
+ } `
+ (Get-Param 'webSiteName' -Required) (Get-Param 'applicationName' -Required) (Get-Param 'propertyName' -Required) (Get-Param 'propertyValue' -Required)
+",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Id": "41b1663e-f84a-4e8a-981a-fb86ec4176b9",
+      "Name": "webSiteName",
+      "Label": "Web site name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1d7a25f9-0900-4c5c-b76b-5afbb427249b",
+      "Name": "applicationName",
+      "Label": "Aplication name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b074c934-c903-45e3-a96b-6c5282840d60",
+      "Name": "propertyName",
+      "Label": "Name of the property to set",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "cdc37d1e-8a16-44bd-b80b-5c83c9d3022f",
+      "Name": "propertyValue",
+      "Label": "Value of the property to set",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2018-12-03T17:04:14.758Z",
+  "LastModifiedBy": "micdenny",
+  "$Meta": {
+    "ExportedAt": "2018-12-03T17:04:14.758Z",
+    "OctopusVersion": "2018.9.12",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}

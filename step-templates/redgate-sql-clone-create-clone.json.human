@@ -1,0 +1,210 @@
+{
+  "Id": "96d88bbf-2e0a-4630-b4b6-bd179effedd7",
+  "Name": "Redgate - SQL Clone, Create Clone",
+  "Description": "Creates a database clone with [Redgate SQL Clone](https://www.red-gate.com/products/dba/sql-clone/index).
+
+Requires SQL Clone.
+
+*Version date: 16th May 2019*",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = 'Stop'
+
+# The code for this step template is largely a copy/paste job from the
+# Azure DevOps Services step template which is maintained by Redgate:
+# https://github.com/red-gate/SqlCloneVSTSExtension/blob/master/ImageTask/SQLCloneCloneTask.ps1
+# The code was copied and adapted on 16th May 2019.
+
+Write-Verbose \"cloneServer is $cloneServer\"
+Write-Verbose \"cloneUser is $cloneUser\"
+Write-Verbose \"clonePassword is $clonePassword\"
+Write-Verbose \"imageNameForClone is $imageNameForClone\"
+Write-Verbose \"templateName is $templateName\"
+Write-Verbose \"cloneSqlServer is $cloneSqlServer\"
+Write-Verbose \"cloneName is $cloneName\"
+Write-Verbose \"deleteClone is $deleteClone\"
+
+Write-Debug \"Entering script SQLCloneCloneTask.ps1\"
+
+# This line is broken: Import-Module \"$PSScriptRoot\\Modules\\RedGate.SQLClone.PowerShell.dll\"
+
+if($cloneUser){
+    $password = ConvertTo-SecureString -String $clonePassword -AsPlainText -Force
+    $credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $cloneUser,$password
+
+}
+Connect-SqlClone -ServerUrl $cloneServer -Credential $credential
+Write-Output \"Connected to SQL Clone server\"
+
+        $sqlServerParts = $cloneSqlServer.Split('\\', [System.StringSplitOptions]::RemoveEmptyEntries)
+        if ($sqlServerParts.Count -ge 3)
+        {
+            write-error 'SQL Server instance ' + $cloneSqlServer + ' has not been recognised, if specifying a named instance please use \"machine\\instance\"'
+            exit 1
+        }
+        $cloneSqlServerHost = $sqlServerParts[0]
+        $instanceName = ''
+        if ($sqlServerParts.Count -ge 2)
+        {
+            $instanceName = $sqlServerParts[1]
+        }
+        
+        try
+        {
+            $instance = Get-SqlCloneSqlServerInstance -MachineName $cloneSqlServerHost -InstanceName $instanceName
+            Write-Output \"Found SQL Server instance\"
+        }
+        catch
+        {
+            $instances = Get-SqlCloneSqlServerInstance
+            $instanceNames = \"`n\"
+            Foreach ($cInstance in $instances)
+            {
+                $instanceNames += $cInstance.Name + \"`n\"
+            }
+            $message = 'SQL Server instance \"' + $cloneSqlServer + '\"  has not been added to SQL Clone, available instances:' + $instanceNames
+            write-error $message
+            exit 1
+        }
+        
+        try
+        {
+            $image = Get-SqlCloneImage -Name $imageNameForClone
+            Write-Output \"Found image\"
+        }
+        catch
+        {
+            $images = Get-SqlCloneImage
+            $imageNames = \"`n\"
+            Foreach ($cImage in $images)
+            {
+                $imageNames += $cImage.Name + \"`n\"
+            }
+            $message = 'SQL Clone image \"' + $imageNameForClone + '\"  has not been added to SQL Clone, available images:' + $imageNames
+            write-error $message
+            exit 1
+        }
+        
+        if($deleteClone)
+        {
+            try
+            {
+                $clone = Get-SqlClone -Name $cloneName -Location $instance
+                Write-Output \"Deleting existing clone\"
+                Remove-SqlClone -Clone $clone | Wait-SqlCloneOperation
+            }
+            catch
+            {
+                # Clone didn't exist so nothing to do
+            }
+        }
+        if($templateName)
+        {
+            Write-Output \"Creating clone with template:\" + $templateName
+            $image | New-SqlClone -Name $cloneName -Location $instance -Template $templateName | Wait-SqlCloneOperation
+        }
+        else
+        {            
+            Write-Output \"Creating clone\"
+            $image | New-SqlClone -Name $cloneName -Location $instance | Wait-SqlCloneOperation            
+        }
+        Write-Output \"Finished creating clone\"        
+
+Write-Debug \"Leaving script SQLCloneCloneTask.ps1\""
+  },
+  "Parameters": [
+    {
+      "Id": "8c140a4c-65a2-4341-a604-73d14775b3a0",
+      "Name": "cloneServer",
+      "Label": "SQL Clone Server (required)",
+      "HelpText": "The URL for your SQL Clone server (e.g. http://sql-clone.example.com:14145)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e5ac1d04-b8a5-440e-ba69-a5d66a53abba",
+      "Name": "cloneUser",
+      "Label": "SQL Clone User (optional)",
+      "HelpText": "User account to access SQL Clone. (If left blank Octopus tentacle account will be used.)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5f6288f2-57c9-4a11-91f2-b0c2e3cb9ccd",
+      "Name": "clonePassword",
+      "Label": "SQL Clone Password (optional)",
+      "HelpText": "User account to access SQL Clone. (If left blank Octopus tentacle account will be used.)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "ee5286d3-f233-410c-92ab-36743f8743e7",
+      "Name": "imageNameForClone",
+      "Label": "Image Name For Clone (required)",
+      "HelpText": "The name of the database image from which to create database clone.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0edb1e1f-0c27-428b-9ff0-7c76faf1369e",
+      "Name": "templateName",
+      "Label": "Template Name (optional)",
+      "HelpText": "A template to modify this clone (optional).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5e9f4d95-4776-4a0e-8245-05d645bd0997",
+      "Name": "cloneSqlServer",
+      "Label": "SQL Server (required)",
+      "HelpText": "The target SQL Server to create the clone on. This SQL Server instance must have already been added to the SQL Clone Server specified above.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "62da0567-35f5-4c3f-ac9e-61b75a399053",
+      "Name": "cloneName",
+      "Label": "Clone Name (required)",
+      "HelpText": "The name of the clone, which will also be the database name.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ab892024-c4b5-46c2-9434-2ad150e3e014",
+      "Name": "deleteClone",
+      "Label": "Delete clone if exists",
+      "HelpText": "Delete any existing clone with the same name prior to creating this clone.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+ "LastModifiedOn": "2019-05-16T11:37:47.360Z",
+  "LastModifiedBy": "alex-yates",
+  "$Meta": {
+    "ExportedAt": "2019-05-16T11:37:47.360Z",
+    "OctopusVersion": "2019.2.7",
+    "Type": "ActionTemplate"
+  },
+  "Category": "redgate"
+}

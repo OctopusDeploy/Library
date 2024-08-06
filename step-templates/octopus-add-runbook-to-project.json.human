@@ -1,0 +1,179 @@
+{
+  "Id": "8b8b0386-78f8-42c2-baea-2fdb9a57c32d",
+  "Name": "Octopus - Add Runbook to Project (S3 Backend)",
+  "Description": "This step exposes the fields required to deploy a runbook serialized with [octoterra](https://github.com/OctopusSolutionsEngineering/OctopusTerraformExport) using Terraform to a project.
+
+This step configures a Terraform S3 backend.
+
+It is recommended that this step be run with the `octopuslabs/terraform-workertools` worker image.",
+  "ActionType": "Octopus.TerraformApply",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "093b1515-15a9-4446-8dc2-6297018a77e7",
+      "Name": "",
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "SelectionMode": "deferred",
+        "PackageParameterName": "OctoterraApply.Terraform.Package.Id"
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.GoogleCloud.UseVMServiceAccount": "False",
+    "Octopus.Action.GoogleCloud.ImpersonateServiceAccount": "False",
+    "Octopus.Action.Terraform.GoogleCloudAccount": "False",
+    "Octopus.Action.Terraform.AzureAccount": "False",
+    "Octopus.Action.Terraform.ManagedAccount": "AWS",
+    "Octopus.Action.Terraform.AllowPluginDownloads": "True",
+    "Octopus.Action.Script.ScriptSource": "Package",
+    "Octopus.Action.Terraform.RunAutomaticFileSubstitution": "False",
+    "Octopus.Action.Terraform.PlanJsonOutput": "False",
+    "Octopus.Action.Terraform.Workspace": "#{OctoterraApply.Terraform.Workspace.Name}",
+    "Octopus.Action.Terraform.AdditionalInitParams": "-backend-config=\"bucket=#{OctoterraApply.AWS.S3.BucketName}\" -backend-config=\"region=#{OctoterraApply.AWS.S3.BucketRegion}\" -backend-config=\"key=#{OctoterraApply.AWS.S3.BucketKey}\" #{if OctoterraApply.Terraform.AdditionalInitParams}#{OctoterraApply.Terraform.AdditionalInitParams}#{/if}",
+    "Octopus.Action.Terraform.AdditionalActionParams": "-var=octopus_server=#{OctoterraApply.Octopus.ServerUrl} -var=octopus_apikey=#{OctoterraApply.Octopus.ApiKey} -var=octopus_space_id=#{OctoterraApply.Octopus.SpaceID} \"-var=parent_project_name=#{OctoterraApply.Octopus.Project}\" #{if OctoterraApply.Terraform.AdditionalApplyParams}#{OctoterraApply.Terraform.AdditionalApplyParams}#{/if}",
+    "Octopus.Action.Package.DownloadOnTentacle": "False",
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "False",
+    "Octopus.Action.AwsAccount.Variable": "OctoterraApply.AWS.Account",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.Aws.Region": "#{OctoterraApply.AWS.S3.BucketRegion}",
+    "Octopus.Action.Terraform.TemplateDirectory": "space_population",
+    "Octopus.Action.Terraform.FileSubstitution": ""
+  },
+  "Parameters": [
+    {
+      "Id": "95860b77-2c38-492c-bb84-ca1fbb4e4b72",
+      "Name": "OctoterraApply.Terraform.Workspace.Name",
+      "Label": "Terraform Workspace",
+      "HelpText": "The name of the Terraform workspace. This must be unique for every project this module is deployed to. The default value is based on the space ID and project name that the module is applied to: `#{OctoterraApply.Octopus.SpaceID}_#{OctoterraApply.Octopus.Project | Replace \"[^A-Za-z0-9]\" \"_\"}`. Leave this as the default value unless you have a specific reason to change it.",
+      "DefaultValue": "#{OctoterraApply.Octopus.SpaceID}_#{OctoterraApply.Octopus.Project | Replace \"[^A-Za-z0-9]\" \"_\"}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1acabadc-d1d6-477a-88ff-ae5a302a9d77",
+      "Name": "OctoterraApply.Terraform.Package.Id",
+      "Label": "Terraform Module Package",
+      "HelpText": "The package created by [octoterra](https://github.com/OctopusSolutionsEngineering/OctopusTerraformExport). It must include the `space_population` directory.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "1092f0a5-3e57-4009-9ed7-ee93e36e40cb",
+      "Name": "OctoterraApply.Octopus.ServerUrl",
+      "Label": "Octopus Server URL",
+      "HelpText": "The Octopus server URL.",
+      "DefaultValue": "#{Octopus.Web.ServerUri}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "03191aa9-d41f-4ae8-96ca-a35da790043a",
+      "Name": "OctoterraApply.Octopus.ApiKey",
+      "Label": "Octopus API key",
+      "HelpText": "The Octopus API key. See the [documentation](https://octopus.com/docs/octopus-rest-api/how-to-create-an-api-key) for details on creating an API key.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "59c7c097-7fd8-46e7-996c-64f74a80ef02",
+      "Name": "OctoterraApply.Octopus.SpaceID",
+      "Label": "Octopus Space ID",
+      "HelpText": "The Space ID to deploy the Terraform module into. The [Octopus - Lookup Space ID](https://library.octopus.com/step-templates/324f747e-e2cd-439d-a660-774baf4991f2/actiontemplate-octopus-lookup-space-id) step can be used to convert a space name to an ID.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ea0dd836-7490-45c6-8e5c-321569e8d07d",
+      "Name": "OctoterraApply.Octopus.Project",
+      "Label": "Octopus Project Name",
+      "HelpText": "The name of the project to import the runbook into",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "bc23db0c-381b-4796-9350-0f5a3cba0a66",
+      "Name": "OctoterraApply.AWS.Account",
+      "Label": "AWS Account Variable",
+      "HelpText": "The AWS account variable.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AmazonWebServicesAccount"
+      }
+    },
+    {
+      "Id": "553c3ed3-11cf-4b54-bd78-847062e64828",
+      "Name": "OctoterraApply.AWS.S3.BucketName",
+      "Label": "AWS S3 Bucket Name",
+      "HelpText": "The name of the S3 bucket used to hold the Terraform state. See the [Terraform documentation](https://developer.hashicorp.com/terraform/language/settings/backends/s3) for details on using S3 as a backend.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f21cd6e6-82c2-4b5f-8739-8e0a02be8deb",
+      "Name": "OctoterraApply.AWS.S3.BucketRegion",
+      "Label": "AWS S3 Bucket Region",
+      "HelpText": "The AWS region hosting the S3 bucket. See the [Terraform documentation](https://developer.hashicorp.com/terraform/language/settings/backends/s3) for details on using S3 as a backend.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "107214e9-b237-4255-894a-95163b28c1fe",
+      "Name": "OctoterraApply.AWS.S3.BucketKey",
+      "Label": "AWS S3 Bucket Key",
+      "HelpText": "The S3 file used to hold the Terraform state. See the [Terraform documentation](https://developer.hashicorp.com/terraform/language/settings/backends/s3) for details on using S3 as a backend. The combination of the workspace name and this key must be unique. 
+
+The default value is the name of the runbook (based on the name of the package) and a prefix to indicate the type of resource: `Runbook_#{Octopus.Action.Package.PackageId}`.",
+      "DefaultValue": "Runbook_#{Octopus.Action.Package.PackageId}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a4548b85-2a8c-4ab2-a604-ab1e9f7ef5ea",
+      "Name": "OctoterraApply.Terraform.AdditionalApplyParams",
+      "Label": "Terraform Additional Apply Params",
+      "HelpText": "This field can be used to define additional parameters passed to the `terraform apply` command. This field can be left blank. See the [Terraform documentation](https://developer.hashicorp.com/terraform/cli/commands/apply) for details on the `apply` command.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "fc28012d-5e51-4907-bae4-552697226fde",
+      "Name": "OctoterraApply.Terraform.AdditionalInitParams",
+      "Label": "Terraform Additional Init Params",
+      "HelpText": "This field can be used to define additional parameters passed to the `terraform init` command. This field can be left blank.  See the [Terraform documentation](https://developer.hashicorp.com/terraform/cli/commands/init) for details on the `init` command.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.TerraformApply",
+  "$Meta": {
+    "ExportedAt": "2023-11-09T01:10:53.027Z",
+    "OctopusVersion": "2024.1.895",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "octopus"
+}

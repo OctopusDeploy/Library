@@ -1,0 +1,292 @@
+{
+  "Id": "f8e2e47b-62ba-44a0-881c-d1911dc14428",
+  "Name": "Akamai - Content Fast Purge",
+  "Description": "Allows to purge content using the Content Control Utility (CCU) v3 REST API.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "$clientToken = $OctopusParameters['AkamaiClientToken']\r
+$clientAccessToken = $OctopusParameters['AkamaiClientAccessToken']\r
+$clientSecret = $OctopusParameters['AkamaiSecret']\r
+$hostname = $OctopusParameters['AkamaiHostname']\r
+$objects = $OctopusParameters['AkamaiObjects'] -split \",\"\r
+$action = $OctopusParameters['AkamaiAction']\r
+$domain = $OctopusParameters['AkamaiDomain']\r
+$proxyUser = $OctopusParameters['ProxyUser']\r
+$proxyPassword = $OctopusParameters['ProxyPassword']\r
+\r
+if ($proxyUser) {\r
+    $securePassword = ConvertTo-SecureString $proxyPassword -AsPlainText -Force\r
+    $proxyCredential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $proxyUser,$securePassword\r
+\r
+    (New-Object System.Net.WebClient).Proxy.Credentials=$proxyCredential\r
+}\r
+\r
+# Copied from https://github.com/akamai-open/AkamaiOPEN-powershell/blob/master/Invoke-AkamaiOPEN.ps1\r
+function Invoke-AkamaiOpenRequest {\r
+    param(\r
+        [Parameter(Mandatory=$true)][string]$Method, \r
+        [Parameter(Mandatory=$true)][string]$ClientToken, \r
+        [Parameter(Mandatory=$true)][string]$ClientAccessToken, \r
+        [Parameter(Mandatory=$true)][string]$ClientSecret, \r
+        [Parameter(Mandatory=$true)][string]$ReqURL, \r
+        [Parameter(Mandatory=$false)][string]$Body)\r
+\r
+    #Function to generate HMAC SHA256 Base64\r
+    Function Crypto ($secret, $message)\r
+    {\r
+\t    [byte[]] $keyByte = [System.Text.Encoding]::ASCII.GetBytes($secret)\r
+\t    [byte[]] $messageBytes = [System.Text.Encoding]::ASCII.GetBytes($message)\r
+\t    $hmac = new-object System.Security.Cryptography.HMACSHA256((,$keyByte))\r
+\t    [byte[]] $hashmessage = $hmac.ComputeHash($messageBytes)\r
+\t    $Crypt = [System.Convert]::ToBase64String($hashmessage)\r
+\r
+\t    return $Crypt\r
+    }\r
+\r
+    #ReqURL Verification\r
+    If (($ReqURL -as [System.URI]).AbsoluteURI -eq $null -or $ReqURL -notmatch \"akamai.com\")\r
+    {\r
+\t    throw \"Error: Ivalid Request URI\"\r
+    }\r
+\r
+    #Sanitize Method param\r
+    $Method = $Method.ToUpper()\r
+\r
+    #Split $ReqURL for inclusion in SignatureData\r
+    $ReqArray = $ReqURL -split \"(.*\\/{2})(.*?)(\\/)(.*)\"\r
+\r
+    #Timestamp for request signing\r
+    $TimeStamp = [DateTime]::UtcNow.ToString(\"yyyyMMddTHH:mm:sszz00\")\r
+\r
+    #GUID for request signing\r
+    $Nonce = [GUID]::NewGuid()\r
+\r
+    #Build data string for signature generation\r
+    $SignatureData = $Method + \"`thttps`t\"\r
+    $SignatureData += $ReqArray[2] + \"`t\" + $ReqArray[3] + $ReqArray[4]\r
+\r
+    if (($Body -ne $null) -and ($Method -ceq \"POST\"))\r
+    {\r
+\t    $Body_SHA256 = [System.Security.Cryptography.SHA256]::Create()\r
+\t    $Post_Hash = [System.Convert]::ToBase64String($Body_SHA256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($Body.ToString())))\r
+\r
+\t    $SignatureData += \"`t`t\" + $Post_Hash + \"`t\"\r
+    }\r
+    else\r
+    {\r
+\t    $SignatureData += \"`t`t`t\"\r
+    }\r
+\r
+    $SignatureData += \"EG1-HMAC-SHA256 \"\r
+    $SignatureData += \"client_token=\" + $ClientToken + \";\"\r
+    $SignatureData += \"access_token=\" + $ClientAccessToken + \";\"\r
+    $SignatureData += \"timestamp=\" + $TimeStamp  + \";\"\r
+    $SignatureData += \"nonce=\" + $Nonce + \";\"\r
+\r
+    #Generate SigningKey\r
+    $SigningKey = Crypto -secret $ClientSecret -message $TimeStamp\r
+\r
+    #Generate Auth Signature\r
+    $Signature = Crypto -secret $SigningKey -message $SignatureData\r
+\r
+    #Create AuthHeader\r
+    $AuthorizationHeader = \"EG1-HMAC-SHA256 \"\r
+    $AuthorizationHeader += \"client_token=\" + $ClientToken + \";\"\r
+    $AuthorizationHeader += \"access_token=\" + $ClientAccessToken + \";\"\r
+    $AuthorizationHeader += \"timestamp=\" + $TimeStamp + \";\"\r
+    $AuthorizationHeader += \"nonce=\" + $Nonce + \";\"\r
+    $AuthorizationHeader += \"signature=\" + $Signature\r
+\r
+    #Create IDictionary to hold request headers\r
+    $Headers = @{}\r
+\r
+    #Add Auth header\r
+    $Headers.Add('Authorization',$AuthorizationHeader)\r
+\r
+    #Add additional headers if POSTing or PUTing\r
+    If (($Method -ceq \"POST\") -or ($Method -ceq \"PUT\"))\r
+    {\r
+\t    $Body_Size = [System.Text.Encoding]::UTF8.GetByteCount($Body)\r
+\t    $Headers.Add('max-body',$Body_Size.ToString())\r
+\r
+        # turn off the \"Expect: 100 Continue\" header\r
+        # as it's not supported on the Akamai side.\r
+        [System.Net.ServicePointManager]::Expect100Continue = $false\r
+    }\r
+\r
+    #Check for valid Methods and required switches\r
+    If (($Method -ceq \"POST\") -and ($Body -ne $null))\r
+    {\r
+        Invoke-RestMethod -Method $Method -Uri $ReqURL -Headers $Headers -Body $Body -ContentType 'application/json'\r
+    }\r
+    elseif  (($Method -ceq \"PUT\") -and ($Body -ne $null))\r
+    {\r
+\t    #Invoke API call with PUT and return\r
+\t    Invoke-RestMethod -Method $Method -Uri $ReqURL -Headers $Headers -Body $Body -ContentType 'application/json'\r
+    }\r
+    elseif (($Method -ceq \"GET\") -or ($Method -ceq \"DELETE\"))\r
+    {\r
+\t    #Invoke API call with GET or DELETE and return\r
+\t    Invoke-RestMethod -Method $Method -Uri $ReqURL -Headers $Headers\r
+    }\r
+    else\r
+    {\r
+\t    throw \"Error: Invalid -Method specified or missing required parameter\"\r
+    }\r
+}\r
+\r
+function Perform-AkamaiRequest {\r
+    param (\r
+        [string]$request, \r
+        [string]$method=\"Get\", \r
+        [int]$expectedStatusCode=200, \r
+        $body)\r
+\r
+    $baseUrl = \"http://private-anon-3934daf8d-akamaiopen2purgeccuv3production.apiary-mock.com\"\r
+    # $baseUrl = \"https://api.ccu.akamai.com\"\r
+    $uri = \"{0}{1}\" -f $baseUrl,$request\r
+\r
+    if ($uri -match \"mock\"){\r
+        $requestHeaders = @{'Cache-Control'='no-cache,proxy-revalidate'}\r
+        $response = Invoke-RestMethod -Uri $uri -Method $method -DisableKeepAlive -Headers $requestHeaders -Body $body\r
+    } else {\r
+        $json = ConvertTo-Json $body -Compress\r
+        $response = Invoke-AkamaiOpenRequest -Method $method -ClientToken $clientToken -ClientAccessToken $clientAccessToken -ClientSecret $clientSecret -ReqURL $uri -Body $json\r
+    }\r
+\r
+    if ($response.httpStatus -ne $expectedStatusCode){\r
+        Write-Error \"Request not processed correctly: $($response.detail)\"\r
+    } elseif ($response.detail) {\r
+        Write-Verbose $response.detail\r
+    }\r
+\r
+    Write-Verbose $response\r
+\r
+    $response\r
+}\r
+\r
+function Request-Purge {\r
+    param ($objects,[string]$hostname,[string]$action=\"remove\",[string]$domain=\"production\")\r
+\r
+    $body = @{\r
+        objects = $objects\r
+    }\r
+\r
+    if ($hostname -ne $null -and $hostname -ne \"\") {\r
+        $body = @{\r
+            hostname = $hostname\r
+            objects = $objects\r
+        }\r
+    } \r
+\r
+    Perform-AkamaiRequest \"/ccu/v3/$action/$domain\" \"Post\" 201 $body\r
+}\r
+\r
+$purge = Request-Purge $objects $hostname $action $domain\r
+\r
+Write-Output \"Purge request created\"\r
+Write-Output \"PurgeId: $($purge.purgeId)\"\r
+Write-Output \"SupportId: $($purge.supportId)\" ",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "AkamaiClientToken",
+      "Label": "Client Token",
+      "HelpText": "Authentication token used in client authentication. Available in Luna Portal.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AkamaiClientAccessToken",
+      "Label": "Client Access Token",
+      "HelpText": "Authentication token used in client authentication. Available in Luna Portal.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AkamaiSecret",
+      "Label": "Secret",
+      "HelpText": "Authentication password used in client authentication. Available in Luna Portal.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "AkamaiHostname",
+      "Label": "Hostname",
+      "HelpText": "The hostname for which to execute the purge operation",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AkamaiObjects",
+      "Label": "Objects",
+      "HelpText": "A comma separated list of objects to purge, only URLs",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AkamaiAction",
+      "Label": "Action",
+      "HelpText": "The action to execute on the purge operation",
+      "DefaultValue": "invalidate",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "invalidate
+remove"
+      }
+    },
+    {
+      "Name": "AkamaiDomain",
+      "Label": "Domain",
+      "HelpText": "The Akamai domain to perform the purge operation on",
+      "DefaultValue": "production",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "production
+staging"
+      }
+    },
+    {
+      "Name": "ProxyUser",
+      "Label": "Proxy User",
+      "HelpText": "Optional, a user name for the proxy if required in the network",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ProxyPassword",
+      "Label": "Proxy Password",
+      "HelpText": "Optional, the password for the account to use if a Proxy User was specified",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "LastModifiedOn": "2016-07-11T14:00:00.000+00:00",
+  "LastModifiedBy": "roberto-mardeni",
+  "$Meta": {
+    "ExportedAt": "2016-07-11T14:30:28.569+00:00",
+    "OctopusVersion": "3.3.12",
+    "Type": "ActionTemplate"
+  },
+  "Category": "akamai"
+}

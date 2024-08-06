@@ -1,0 +1,327 @@
+{
+  "Id": "493fa039-fd5c-47d2-b830-63cc32a19d04",
+  "Name": "GitHub - Create Repository",
+  "Description": "This step creates a new GitHub repository if it does not exist.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Python",
+    "Octopus.Action.Script.ScriptBody": "# This script forks a GitHub repo. It creates a token from a GitHub App installation to avoid
+# having to use a regular user account.
+import subprocess
+import sys
+
+# Install our own dependencies
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'jwt', '--disable-pip-version-check'])
+
+import json
+import subprocess
+import sys
+import os
+import urllib.request
+import base64
+import re
+import jwt
+import time
+import argparse
+import platform
+from urllib.request import urlretrieve
+
+# If this script is not being run as part of an Octopus step, setting variables is a noop
+if 'set_octopusvariable' not in globals():
+    def set_octopusvariable(variable, value):
+        pass
+
+# If this script is not being run as part of an Octopus step, return variables from environment variables.
+# Periods are replaced with underscores, and the variable name is converted to uppercase
+if \"get_octopusvariable\" not in globals():
+    def get_octopusvariable(variable):
+        return os.environ[re.sub('\\\\.', '_', variable.upper())]
+
+# If this script is not being run as part of an Octopus step, print directly to std out.
+if 'printverbose' not in globals():
+    def printverbose(msg):
+        print(msg)
+
+
+def printverbose_noansi(output):
+    \"\"\"
+    Strip ANSI color codes and print the output as verbose
+    :param output: The output to print
+    \"\"\"
+    output_no_ansi = re.sub(r'\\x1b\\[[0-9;]*m', '', output)
+    printverbose(output_no_ansi)
+
+
+def get_octopusvariable_quiet(variable):
+    \"\"\"
+    Gets an octopus variable, or an empty string if it does not exist.
+    :param variable: The variable name
+    :return: The variable value, or an empty string if the variable does not exist
+    \"\"\"
+    try:
+        return get_octopusvariable(variable)
+    except:
+        return ''
+
+
+def execute(args, cwd=None, env=None, print_args=None, print_output=printverbose_noansi, raise_on_non_zero=False,
+            append_to_path=None):
+    \"\"\"
+        The execute method provides the ability to execute external processes while capturing and returning the
+        output to std err and std out and exit code.
+    \"\"\"
+
+    my_env = os.environ.copy() if env is None else env
+
+    if append_to_path is not None:
+        my_env[\"PATH\"] = append_to_path + os.pathsep + my_env['PATH']
+
+    process = subprocess.Popen(args,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE,
+                               stdin=open(os.devnull),
+                               text=True,
+                               cwd=cwd,
+                               env=my_env)
+    stdout, stderr = process.communicate()
+    retcode = process.returncode
+
+    if not retcode == 0 and raise_on_non_zero:
+        raise Exception('command returned exit code ' + retcode)
+
+    if print_args is not None:
+        print_output(' '.join(args))
+
+    if print_output is not None:
+        print_output(stdout)
+        print_output(stderr)
+
+    return stdout, stderr, retcode
+
+
+def init_argparse():
+    parser = argparse.ArgumentParser(
+        usage='%(prog)s [OPTION]',
+        description='Create a GitHub repo'
+    )
+    parser.add_argument('--new-repo-name', action='store',
+                        default=get_octopusvariable_quiet(
+                            'CreateGithubRepo.Git.Url.NewRepoName') or get_octopusvariable_quiet(
+                            'Git.Url.NewRepoName') or get_octopusvariable_quiet('Octopus.Project.Name'))
+    parser.add_argument('--new-repo-name-prefix', action='store',
+                        default=get_octopusvariable_quiet(
+                            'CreateGithubRepo.Git.Url.NewRepoNamePrefix') or get_octopusvariable_quiet(
+                            'Git.Url.NewRepoNamePrefix'))
+    parser.add_argument('--git-organization', action='store',
+                        default=get_octopusvariable_quiet(
+                            'CreateGithubRepo.Git.Url.Organization') or get_octopusvariable_quiet(
+                            'Git.Url.Organization'))
+    parser.add_argument('--github-app-id', action='store',
+                        default=get_octopusvariable_quiet(
+                            'CreateGithubRepo.GitHub.App.Id') or get_octopusvariable_quiet('GitHub.App.Id'))
+    parser.add_argument('--github-app-installation-id', action='store',
+                        default=get_octopusvariable_quiet(
+                            'CreateGithubRepo.GitHub.App.InstallationId') or get_octopusvariable_quiet(
+                            'GitHub.App.InstallationId'))
+    parser.add_argument('--github-app-private-key', action='store',
+                        default=get_octopusvariable_quiet(
+                            'CreateGithubRepo.GitHub.App.PrivateKey') or get_octopusvariable_quiet(
+                            'GitHub.App.PrivateKey'))
+    parser.add_argument('--github-access-token', action='store',
+                        default=get_octopusvariable_quiet(
+                            'CreateGithubRepo.Git.Credentials.AccessToken') or get_octopusvariable_quiet(
+                            'Git.Credentials.AccessToken'),
+                        help='The git password')
+
+    return parser.parse_known_args()
+
+
+def generate_github_token(github_app_id, github_app_private_key, github_app_installation_id):
+    # Generate the tokens used by git and the GitHub API
+    app_id = github_app_id
+    signing_key = jwt.jwk_from_pem(github_app_private_key.encode('utf-8'))
+
+    payload = {
+        # Issued at time
+        'iat': int(time.time()),
+        # JWT expiration time (10 minutes maximum)
+        'exp': int(time.time()) + 600,
+        # GitHub App's identifier
+        'iss': app_id
+    }
+
+    # Create JWT
+    jwt_instance = jwt.JWT()
+    encoded_jwt = jwt_instance.encode(payload, signing_key, alg='RS256')
+
+    # Create access token
+    url = 'https://api.github.com/app/installations/' + github_app_installation_id + '/access_tokens'
+    headers = {
+        'Authorization': 'Bearer ' + encoded_jwt,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+    }
+    request = urllib.request.Request(url, headers=headers, method='POST')
+    response = urllib.request.urlopen(request)
+    response_json = json.loads(response.read().decode())
+    return response_json['token']
+
+
+def generate_auth_header(token):
+    auth = base64.b64encode(('x-access-token:' + token).encode('ascii'))
+    return 'Basic ' + auth.decode('ascii')
+
+
+def verify_new_repo(token, cac_org, new_repo):
+    # Attempt to view the new repo
+    try:
+        url = 'https://api.github.com/repos/' + cac_org + '/' + new_repo
+        headers = {
+            'Accept': 'application/vnd.github+json',
+            'Authorization': 'Bearer ' + token,
+            'X-GitHub-Api-Version': '2022-11-28'
+        }
+        request = urllib.request.Request(url, headers=headers)
+        urllib.request.urlopen(request)
+        return True
+    except:
+        return False
+
+
+def create_new_repo(token, cac_org, new_repo):
+    # If we could not view the repo, assume it needs to be created.
+    # https://docs.github.com/en/rest/repos/repos?apiVersion=2022-11-28#create-an-organization-repository
+    # Note you have to use the token rather than the JWT:
+    # https://stackoverflow.com/questions/39600396/bad-credentails-for-jwt-for-github-integrations-api
+
+    headers = {
+        'Authorization': 'token ' + token,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+
+    try:
+        # First try to create an organization repo:
+        # https://docs.github.com/en/free-pro-team@latest/rest/repos/repos#create-an-organization-repository
+        url = 'https://api.github.com/orgs/' + cac_org + '/repos'
+        body = {'name': new_repo}
+        request = urllib.request.Request(url, headers=headers, data=json.dumps(body).encode('utf-8'))
+        urllib.request.urlopen(request)
+    except urllib.error.URLError as ex:
+        # Then fall back to creating a repo for the user:
+        # https://docs.github.com/en/free-pro-team@latest/rest/repos/repos?apiVersion=2022-11-28#create-a-repository-for-the-authenticated-user
+        if ex.code == 404:
+            url = 'https://api.github.com/user/repos'
+            body = {'name': new_repo}
+            request = urllib.request.Request(url, headers=headers, data=json.dumps(body).encode('utf-8'))
+            urllib.request.urlopen(request)
+        else:
+            raise ValueError(\"Failed to create thew new repository. This could indicate bad credentials.\") from ex
+
+
+def is_windows():
+    return platform.system() == 'Windows'
+
+
+parser, _ = init_argparse()
+
+if not parser.github_access_token.strip() and not (
+        parser.github_app_id.strip() and parser.github_app_private_key.strip() and parser.github_app_installation_id.strip()):
+    print(\"You must supply the GitHub token, or the GitHub App ID and private key and installation ID\")
+    sys.exit(1)
+
+if not parser.new_repo_name.strip():
+    print(\"You must define the new repo name\")
+    sys.exit(1)
+
+# The access token is generated from a github app or supplied directly as an access token
+token = generate_github_token(parser.github_app_id, parser.github_app_private_key, parser.github_app_installation_id) \\
+    if not parser.github_access_token.strip() else parser.github_access_token.strip()
+
+cac_org = parser.git_organization.strip()
+new_repo_custom_prefix = re.sub('[^a-zA-Z0-9-]', '_', parser.new_repo_name_prefix.strip())
+project_repo_sanitized = re.sub('[^a-zA-Z0-9-]', '_', parser.new_repo_name.strip())
+
+# The prefix is optional
+new_repo_prefix_with_separator = new_repo_custom_prefix + '_' if new_repo_custom_prefix else ''
+
+# The new repo name is the prefix + the name of thew new project
+new_repo = new_repo_prefix_with_separator + project_repo_sanitized
+
+# This is the value of the forked git repo
+set_octopusvariable('NewRepoUrl', 'https://github.com/' + cac_org + '/' + new_repo)
+set_octopusvariable('NewRepo', new_repo)
+
+if not verify_new_repo(token, cac_org, new_repo):
+    create_new_repo(token, cac_org, new_repo)
+    print(
+        'New repo was created at https://github.com/' + cac_org + '/' + new_repo)
+else:
+    print('Repo at https://github.com/' + cac_org + '/' + new_repo + ' already exists and has not been modified')
+
+print('New repo URL is defined in the output variable \"NewRepoUrl\": #{Octopus.Action[' +
+      get_octopusvariable_quiet('Octopus.Step.Name') + '].Output.NewRepoUrl}')
+print('New repo name is defined in the output variable \"NewRepo\": #{Octopus.Action[' +
+      get_octopusvariable_quiet('Octopus.Step.Name') + '].Output.NewRepo}')
+"
+  },
+  "Parameters": [
+    {
+      "Id": "5845b0e2-d679-4cec-9022-c233031e6b35",
+      "Name": "CreateGithubRepo.Git.Url.NewRepoName",
+      "Label": "Repository Name",
+      "HelpText": "The name of the new GitHub repository.",
+      "DefaultValue": "#{Octopus.Project.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b85e4a76-bc9c-4a51-8ac0-653991824db2",
+      "Name": "CreateGithubRepo.Git.Url.NewRepoNamePrefix",
+      "Label": "Repository Name Prefix",
+      "HelpText": "An optional prefix to apply to the name of the new repository. The repository name will often be generated from the project name, and the prefix will be based on a tenant name (`#{Octopus.Deployment.Tenant.Name}`) to ensure each tenant has a unique repo.
+
+
+This value can be left blank.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b0d86188-fbb8-475e-89de-4b994170f2b7",
+      "Name": "CreateGithubRepo.Git.Url.Organization",
+      "Label": "GitHub Owner or Organization",
+      "HelpText": "This is the GitHub owner or organisation where the new repo is created.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0ffd12dd-59ce-401a-b1df-cf3d6711e2eb",
+      "Name": "CreateGithubRepo.Git.Credentials.AccessToken",
+      "Label": "GitHub Access Token",
+      "HelpText": "The access token used to authenticate with GitHub. See the [GitHub documentation](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) for more details.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-10-17T02:12:09.605Z",
+    "OctopusVersion": "2023.4.5667",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "github"
+}

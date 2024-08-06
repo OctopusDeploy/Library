@@ -1,0 +1,139 @@
+{
+  "Id": "24ab7967-8ae5-4852-bfdf-4e81d57245f6",
+  "Name": "Azure - Copy Storage Account Containers AZCopy Inline",
+  "Description": "Copies Storage Account containers, from a source storage account to destination. It copies the containers with the same names.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$SourceStorageAccountName = $OctopusParameters['SourceStorageAccountName'];\r
+$SourceStorageAccountKey = $OctopusParameters['SourceStorageAccountKey'];\r
+$DestinationStorageAccountName = $OctopusParameters['DestinationStorageAccountName'];\r
+$DestinationStorageAccountKey = $OctopusParameters['DestinationStorageAccountKey'];\r
+$ContainersIncluded = $OctopusParameters['ContainersIncluded'];\r
+$ContainersExcluded = $OctopusParameters['ContainersExcluded'];\r
+\r
+$AzCopy = Join-Path ${env:ProgramFiles(x86)} \"Microsoft SDKs\\Azure\\AzCopy\\AzCopy.exe\"\r
+\r
+function AzCopyContainer($containerName)\r
+{\r
+    &$AzCopy /Source:http://$($SourceStorageAccountName).blob.core.windows.net/$containerName `\r
+\t/Dest:http://$($DestinationStorageAccountName).blob.core.windows.net/$containerName `\r
+\t/SourceKey:$SourceStorageAccountKey `\r
+\t/DestKey:$DestinationStorageAccountKey `\r
+\t/S /XO /XN /V | Out-Host\r
+}\r
+\r
+# List all Containers\r
+$ctx = New-AzureStorageContext -StorageAccountName $SourceStorageAccountName -StorageAccountKey $SourceStorageAccountKey\r
+$containers = Get-AzureStorageContainer -Context $ctx\r
+\r
+\t\r
+# If Containers Included is there  => Copy Included Only \r
+if($ContainersIncluded)\r
+{\r
+\t# Parse the Included list\r
+\t$ContainersIncluded.Split(\",\") | foreach {\r
+\t\tAzCopyContainer $_\r
+\t}\r
+}\r
+\r
+# If Containers Excluded is there, and no Included => Copy all except excluded\r
+elseif(!$ContainersIncluded -and $ContainersExcluded)\r
+{\r
+\t#Parse the exclusion list\r
+\t[Collections.Generic.List[String]]$lst = $ContainersExcluded.Split(\",\")\r
+\r
+\t# Loop through all the containers, and\r
+\tforeach ($container in $containers) \r
+\t{\r
+\t\tif($lst.Contains($container.Name)) {\r
+\t\t\tcontinue\r
+\t\t}\r
+\t\telse \r
+\t\t{\r
+\t\t\t$containerName = $container.Name\r
+            AzCopyContainer $containerName\r
+\t\t}\r
+\t} \r
+}\r
+\r
+# Copy all containers\r
+else\r
+{\r
+\t# Loop through all the containers, and\r
+\tforeach ($container in $containers) \r
+\t{\r
+\t\t$containerName = $container.Name\r
+        AzCopyContainer $containerName\r
+\t} \r
+}",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "SourceStorageAccountName",
+      "Label": "Source Storage Account Name",
+      "HelpText": "Storage Account Name of the source storage account",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SourceStorageAccountKey",
+      "Label": "Source Storage Account Key",
+      "HelpText": "Storage Account Key of the source storage account",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DestinationStorageAccountName",
+      "Label": "Destination Storage Account Name",
+      "HelpText": "Storage Account Name of the destination storage account",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DestinationStorageAccountKey",
+      "Label": "Destination Storage Account Key",
+      "HelpText": "Storage Account key of the destination storage account",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ContainersIncluded",
+      "Label": "Containers Included",
+      "HelpText": "A comma separated list of containers that will be copied only, and all the rest will be excluded. If this value is filled with a value, the \"Containers Excluded\" value will be neglected.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ContainersExcluded",
+      "Label": "Containers Excluded",
+      "HelpText": "A comma separated list of containers that will be excluded. All containers in source storage account will be copied to destination except these containers. Please note that if the \"Containers Included\" has a value, the \"Containers Excluded\" will be neglected.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "ahmedig",
+  "$Meta": {
+    "ExportedAt": "2016-07-24T12:55:38.909+00:00",
+    "OctopusVersion": "3.3.22",
+    "Type": "ActionTemplate"
+  },
+  "Category": "azure"
+}

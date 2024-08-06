@@ -1,0 +1,155 @@
+{
+    "Id": "143ba6fd-968f-4f24-980b-49e47aa98f71",
+    "Name": "Azure Web App - Disable app_offline",
+    "Description": "This step template will remove an app_offline file from an Azure WebApp to safely bring the app domain online following a deployment.
+
+It requires a set of [deployment credentials](https://docs.microsoft.com/en-gb/azure/app-service/deploy-configure-credentials) for the Azure Web App.
+
+**Required:** 
+- Credentials with access to the [Kudu VFS API](https://github.com/projectkudu/kudu/wiki/REST-API#vfs)
+
+Notes:
+
+- Tested on Octopus `2021.2`.
+- Tested with both Windows PowerShell and PowerShell Core on Linux.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\";
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# Variables
+$AzWebAppName = $OctopusParameters[\"AzWebApp.DisableAppOffline.AzWebAppName\"]
+$Filename = $OctopusParameters[\"AzWebApp.DisableAppOffline.Filename\"]
+$DeployUsername = $OctopusParameters[\"AzWebApp.DisableAppOffline.Deployment.Username\"]
+$DeployPassword = $OctopusParameters[\"AzWebApp.DisableAppOffline.Deployment.Password\"]
+$DeploymentUrl = $OctopusParameters[\"AzWebApp.DisableAppOffline.Deployment.KuduRestApiUrl\"]
+
+# Validation
+if ([string]::IsNullOrWhiteSpace($AzWebAppName)) {
+    throw \"Required parameter AzWebApp.DisableAppOffline.AzWebAppName not specified\"
+}
+
+if ([string]::IsNullOrWhiteSpace($Filename)) {
+    throw \"Required parameter AzWebApp.DisableAppOffline.Filename not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($DeployUsername)) {
+    throw \"Required parameter AzWebApp.DisableAppOffline.Deployment.Username not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($DeployPassword)) {
+    throw \"Required parameter AzWebApp.DisableAppOffline.Deployment.Password not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($DeploymentUrl)) {
+    throw \"Required parameter AzWebApp.DisableAppOffline.Deployment.KuduRestApiUrl not specified\"
+}
+
+$DeploymentUrl = $DeploymentUrl.TrimEnd('/')
+
+# Local variables
+$StepName = $OctopusParameters[\"Octopus.Step.Name\"]
+
+Write-Verbose \"AzWebApp.DisableAppOffline.AzWebAppName: $AzWebAppName\"
+Write-Verbose \"AzWebApp.DisableAppOffline.Filename: $FileName\"
+Write-Verbose \"AzWebApp.DisableAppOffline.Deployment.Username: $DeployUsername\"
+Write-Verbose \"AzWebApp.DisableAppOffline.Deployment.Password: ********\"
+Write-Verbose \"AzWebApp.DisableAppOffline.Deployment.KuduRestApiUrl: $DeploymentUrl\"
+
+Write-Verbose \"Step Name: $StepName\"
+
+try {
+    $credPair = \"$($DeployUsername):$($DeployPassword)\"
+    $encodedCredentials = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($credPair))
+    $headers = @{ 
+        Authorization = \"Basic $encodedCredentials\"
+        # Ignore E-Tag
+        \"If-Match\"    = \"*\" 
+    }
+
+    $filePathUri = \"$DeploymentUrl/site/wwwroot/$filename\"
+    Write-Host \"Invoking Delete request for '$filePathUri'\"
+    $response = Invoke-RestMethod -Method Delete -Uri $filePathUri -Headers $headers
+
+    Write-Verbose \"Response: $response\"
+}
+catch {
+    $ExceptionMessage = $_.Exception.Message
+    $ErrorDetails = $_.ErrorDetails.Message
+    $Message = \"An error occurred invoking the Azure Web App REST API: $ExceptionMessage\"
+    if (![string]::IsNullOrWhiteSpace($ErrorDetails)) {
+        $Message += \"`nDetail: $ErrorDetails\"
+    }
+
+    Write-Error $Message -Category ConnectionError
+}"
+    },
+    "Parameters": [
+      {
+        "Id": "b847fd97-bc71-4c89-99fb-bd5c2327027a",
+        "Name": "AzWebApp.DisableAppOffline.AzWebAppName",
+        "Label": "Azure Web App name",
+        "HelpText": "Provide the Azure Web App name.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0b2edf69-da0d-4750-882a-4036c67f0129",
+        "Name": "AzWebApp.DisableAppOffline.Filename",
+        "Label": "AppOffline file name",
+        "HelpText": "*Optional:* Choose the variation of the name of the app offline file. Default: `app_offline.htm`
+
+Available options:
+
+- `app_offline.htm`
+- `app_offline.html`",
+        "DefaultValue": "app_offline.htm",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "app_offline.htm|app_offline.htm
+app_offline.html|app_offline.html"
+        }
+      },
+      {
+        "Id": "c873f396-0ca1-4df9-b083-860541d24b61",
+        "Name": "AzWebApp.DisableAppOffline.Deployment.Username",
+        "Label": "Deployment username",
+        "HelpText": "Provide the user or application-scoped [deployment](https://docs.microsoft.com/en-gb/azure/app-service/deploy-configure-credentials) username for the Azure Web App. Default: `$#{AzWebApp.DisableAppOffline.WebAppName}`.",
+        "DefaultValue": "$#{AzWebApp.DisableAppOffline.WebAppName}",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "1c18f666-c91d-411c-a86b-b92d0bddc4ed",
+        "Name": "AzWebApp.DisableAppOffline.Deployment.Password",
+        "Label": "Deployment password",
+        "HelpText": "Provide the user or application-scoped [deployment](https://docs.microsoft.com/en-gb/azure/app-service/deploy-configure-credentials) password for the Azure Web App.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "023c4e13-2a25-4e29-916f-aaafea1d8284",
+        "Name": "AzWebApp.DisableAppOffline.Deployment.KuduRestApiUrl",
+        "Label": "Deployment REST API Url",
+        "HelpText": "*Optional:* Provide a custom deployment REST API URL. Default is: `https://#{AzWebApp.DisableAppOffline.AzWebAppName}.scm.azurewebsites.net/api/vfs`.",
+        "DefaultValue": "https://#{AzWebApp.DisableAppOffline.AzWebAppName}.scm.azurewebsites.net/api/vfs",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-09-17T17:52:46.792Z",
+      "OctopusVersion": "2021.2.7536",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "harrisonmeister",
+    "Category": "azure"
+  }

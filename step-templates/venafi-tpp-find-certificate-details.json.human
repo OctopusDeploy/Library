@@ -1,0 +1,267 @@
+{
+    "Id": "91ea41ae-5b12-4854-8994-90c06ba4b7f1",
+    "Name": "Venafi TPP - Find Certificate details",
+    "Description": "This step template will authenticate against a Venafi TPP instance using an existing OAuth access token, and find a matching certificate based on the certificate subject common name. This is achieved using a combination of two functions from the VenafiPS PowerShell module:
+
+1. [Find-TppCertificate](https://venafips.readthedocs.io/en/latest/functions/Find-TppCertificate/) function.
+2. [Get-VenafiCertificate](https://venafips.readthedocs.io/en/latest/functions/Get-VenafiCertificate/) function.
+
+If multiple certificate matches are found, additional (optional) search criteria can be provided to further filter the results:
+
+- Certificate serial number
+- Full Issuer Distinguished Name (DN)
+- Expires before
+
+After any filtering is complete, if multiple matches are found, only the first certificate will be returned, and a warning will be logged that multiple matches were found.
+
+You can also store the entire certificate result in `JSON` format in an [Octopus output variable](https://octopus.com/docs/projects/variables/output-variables)
+
+This output variable can then be used in additional deployment or runbook steps.
+
+On successful completion, you can also *optionally* revoke the access token used.
+
+---
+
+**Required:** 
+- The `VenafiPS` PowerShell module installed on the deployment target or worker. If the module can't be found, the step will attempt to download a version from the [PowerShell gallery](https://www.powershellgallery.com/packages/VenafiPS).
+
+Notes:
+
+- Tested on Octopus `2021.2`.
+- Tested with VenafiPS `3.1.5`.
+- Tested with both Windows PowerShell and PowerShell Core on Linux.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$ErrorActionPreference = 'Stop'
+
+# Variables
+$Server = $OctopusParameters[\"Venafi.TPP.FindCert.Server\"]
+$Token = $OctopusParameters[\"Venafi.TPP.FindCert.AccessToken\"]
+$SubjectCommonName = $OctopusParameters[\"Venafi.TPP.FindCert.SubjectCN\"]
+
+# Optional 
+$CertSerialNumber = $OctopusParameters[\"Venafi.TPP.FindCert.SerialNumber\"]
+$Issuer = $OctopusParameters[\"Venafi.TPP.FindCert.Issuer\"]
+$ExpireBefore = $OctopusParameters[\"Venafi.TPP.FindCert.ExpireBefore\"]
+$OutputVariableName = $OctopusParameters[\"Venafi.TPP.FindCert.CertDetails.OutputVariableName\"]
+$RevokeTokenOnCompletion = $OctopusParameters[\"Venafi.TPP.FindCert.RevokeTokenOnCompletion\"]
+
+# Validation
+if ([string]::IsNullOrWhiteSpace($Server)) {
+    throw \"Required parameter Venafi.TPP.FindCert.Server not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($Token)) {
+    throw \"Required parameter Venafi.TPP.FindCert.AccessToken not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($SubjectCommonName)) {
+    throw \"Required parameter Venafi.TPP.FindCert.SubjectCN not specified\"
+}
+
+$SecureToken = ConvertTo-SecureString $Token -AsPlainText -Force
+[PSCredential]$AccessToken = New-Object System.Management.Automation.PsCredential(\"token\", $SecureToken)
+
+# Clean-up
+$Server = $Server.TrimEnd('/')
+
+# Required Modules
+function Get-NugetPackageProviderNotInstalled {
+    # See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+# Check to see if the package provider has been installed
+if ((Get-NugetPackageProviderNotInstalled) -ne $false) {
+    Write-Host \"Nuget package provider not found, installing ...\"    
+    Install-PackageProvider -Name Nuget -Force -Scope CurrentUser
+}
+
+Write-Host \"Checking for required VenafiPS module ...\"
+$required_venafips_version = 3.1.5
+$module_available = Get-Module -ListAvailable -Name VenafiPS | Where-Object { $_.Version -ge $required_venafips_version }
+if (-not ($module_available)) {
+    Write-Host \"Installing VenafiPS module ...\"
+    Install-Module -Name VenafiPS -MinimumVersion 3.1.5 -Scope CurrentUser -Force
+}
+else {
+    $first_match = $module_available | Select-Object -First 1 
+    Write-Host \"Found version: $($first_match.Version)\"
+}
+
+Write-Host \"Importing VenafiPS module ...\"
+Import-Module VenafiPS
+
+$StepName = $OctopusParameters[\"Octopus.Step.Name\"]
+
+Write-Verbose \"Venafi.TPP.FindCert.Server: $Server\"
+Write-Verbose \"Venafi.TPP.FindCert.AccessToken: ********\"
+Write-Verbose \"Venafi.TPP.FindCert.SubjectCN: $SubjectCommonName\"
+Write-Verbose \"Venafi.TPP.FindCert.SerialNumber: $CertSerialNumber\"
+Write-Verbose \"Venafi.TPP.FindCert.Issuer: $Issuer\"
+Write-Verbose \"Venafi.TPP.FindCert.ExpireBefore: $ExpireBefore\"
+Write-Verbose \"Venafi.TPP.FindCert.CertDetails.OutputVariableName: $OutputVariableName\"
+Write-Verbose \"Venafi.TPP.FindCert.RevokeTokenOnCompletion: $RevokeTokenOnCompletion\"
+Write-Verbose \"Step Name: $StepName\"
+
+Write-Host \"Requesting new session from $Server\"
+New-VenafiSession -Server $Server -AccessToken $AccessToken
+
+$FindCert_Params = @{
+    First      = 5;
+    CommonName = $SubjectCommonName;
+}
+
+# Optional SerialNumber field
+if ([string]::IsNullOrWhiteSpace($CertSerialNumber) -eq $False) {
+    $FindCert_Params += @{ SerialNumber = $CertSerialNumber }
+}
+# Optional Issuer field
+if ([string]::IsNullOrWhiteSpace($Issuer) -eq $False) {
+    # Issuer DN should be the complete DN enclosed in double quotes. e.g. \"CN=Example Root CA, O=Venafi,Inc., L=Salt Lake City, S=Utah, C=US\"
+    # If a value DN already contains double quotes, the string should be enclosed in a second set of double quotes. 
+    if ($Issuer.StartsWith(\"`\"\") -or $Issuer.EndsWith(\"`\"\")) {
+        Write-Verbose \"Removing double quotes from start and end of Issuer DN.\"
+        $Issuer = $Issuer.Trim(\"`\"\")
+    }
+    $FindCert_Params += @{ Issuer = \"`\"$Issuer`\"\" }
+}
+# Optional ExpireBefore field
+if ([string]::IsNullOrWhiteSpace($ExpireBefore) -eq $False) {
+    $FindCert_Params += @{ ExpireBefore = $ExpireBefore }
+}
+
+Write-Host \"Searching for certificates matching Subject CN: $SubjectCommonName.\"
+$MatchingCertificates = @(Find-TppCertificate @FindCert_Params)
+$MatchingCount = $MatchingCertificates.Length
+if ($null -eq $MatchingCertificates -or $MatchingCount -eq 0) {
+    Write-Warning \"No matching certificates found for Subject CN: $SubjectCommonName. Check any additional search criteria and try again.\"
+}
+else {
+    $MatchingCertificate = $MatchingCertificates | Select-Object -First 1
+    if ($MatchingCount -gt 1) {
+        Write-Warning \"Multiple matching certificates found ($MatchingCount) for Subject CN: $SubjectCommonName, retrieving details for first match.\"
+    }
+    
+    Write-Highlight \"Retrieving certificate details for Subject CN: $SubjectCommonName ($($MatchingCertificate.Path))\"
+    $Certificate = Get-VenafiCertificate -CertificateId $MatchingCertificate.Path
+    if ($null -eq $Certificate) {
+        Write-Warning \"No certificate details returned for Subject CN: $SubjectCommonName ($($MatchingCertificate.Path))\"
+    }
+    else {
+        Write-Host \"Retrieved certificate details for Subject CN: $SubjectCommonName ($($MatchingCertificate.Path))\"
+        $Certificate | Format-List
+
+        if ([string]::IsNullOrWhiteSpace($OutputVariableName) -eq $False) {
+            $CertificateJson = $Certificate | ConvertTo-Json -Compress -Depth 10 
+            Set-OctopusVariable -Name $OutputVariableName -Value $CertificateJson
+            Write-Highlight \"Created output variable: ##{Octopus.Action[$StepName].Output.$OutputVariableName}\"
+        }
+    }
+}
+
+if ($RevokeTokenOnCompletion -eq $True) {
+    # Revoke TPP access token
+    Write-Host \"Revoking access token with $Server\"
+    Revoke-TppToken -AuthServer $Server -AccessToken $AccessToken -Force
+}"
+    },
+    "Parameters": [
+      {
+        "Id": "cf0b3c21-9249-4aa9-bf19-1fffdaa58939",
+        "Name": "Venafi.TPP.FindCert.Server",
+        "Label": "Venafi TPP Server",
+        "HelpText": "*Required*: The URL of the Venafi TPP instance you want to find a certificate from.
+
+For example: `https://mytppserver.example.com`.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "f0d9bb77-7980-45f5-97c6-eefe6ccb3398",
+        "Name": "Venafi.TPP.FindCert.AccessToken",
+        "Label": "Venafi TPP Access Token",
+        "HelpText": "*Required*: The access token to authenticate against the TPP instance.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "0b7565f5-1ca1-4738-b13f-4b8a4ab99cf0",
+        "Name": "Venafi.TPP.FindCert.SubjectCN",
+        "Label": "Certificate Subject Common Name",
+        "HelpText": "*Required*: Enter the certificate subject common name (CN) to search for.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "44bb491d-1249-4893-a9fb-903daf2df6b4",
+        "Name": "Venafi.TPP.FindCert.SerialNumber",
+        "Label": "Certificate serial number (Optional)",
+        "HelpText": "*Optional*: In case of multiple certificates matched on the subject common name (CN), provide the certificate serial number to filter to a single certificate match.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "fcac21e8-34b6-48c6-b40f-2448c0c598a5",
+        "Name": "Venafi.TPP.FindCert.Issuer",
+        "Label": "Certificate Issuer Distinguished Name (Optional)",
+        "HelpText": "*Optional*: In case of multiple certificates matched on the subject common name (CN), provide the full Issuer distinguished name (DN) to filter to a single certificate match. 
+
+For example: `CN=Example Root CA, O=Venafi,Inc., L=Salt Lake City, S=Utah, C=US`",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "c15020cd-b722-49c2-89c2-a2a2349d41eb",
+        "Name": "Venafi.TPP.FindCert.ExpireBefore",
+        "Label": "Certificate Expires Before (Optional)",
+        "HelpText": "*Optional*: In case of multiple certificates matched on the subject common name (CN), provide the expires before date in the format `yyyy-MM-dd` e.g. `2021-08-15`",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "19f60dd0-887e-4379-94b3-b3227b3073be",
+        "Name": "Venafi.TPP.FindCert.CertDetails.OutputVariableName",
+        "Label": "Certificate output variable name (Optional)",
+        "HelpText": "*Optional*: Create an output variable with the certificate details found from the search. The certificate details will be stored in `JSON` format.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "74dbacbe-6192-45e6-8a10-e714966c4150",
+        "Name": "Venafi.TPP.FindCert.RevokeTokenOnCompletion",
+        "Label": "Revoke access token on completion?",
+        "HelpText": "Should the access token used be revoked once the step has been completed successfully? Default: `False`.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      }
+    ],
+    "LastModifiedAt": "2021-08-16T09:51:20.800Z",
+    "LastModifiedBy": "harrisonmeister",
+    "$Meta": {
+      "ExportedAt": "2021-08-16T09:51:20.800Z",
+      "OctopusVersion": "2021.2.7207",
+      "Type": "ActionTemplate"
+    },
+    "Category": "venafi"
+  }

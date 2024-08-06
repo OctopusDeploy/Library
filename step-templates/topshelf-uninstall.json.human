@@ -1,0 +1,70 @@
+{
+  "Id": "b5a4ed5a-7fb3-4d0c-b4a5-02616d0ed919",
+  "Name": "Uninstall TopShelf service",
+  "Description": "This step can be used before unpacking a package with your TopShelf service to stop and remove the previous installation, if there is one.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$step = $OctopusParameters['Unpackage step']
+$previous = $OctopusParameters[\"Octopus.Action[$step].Package.CustomInstallationDirectory\"]
+$customExeFilename = $OctopusParameters['Exe filename'];
+
+if(!$previous -or (-not (Test-Path $previous)) )
+{
+    Write-Host \"No installation found in: $previous\"
+\t
+    $previous = $OctopusParameters[\"Octopus.Action[$step].Output.Package.InstallationDirectoryPath\"]
+    if(!$previous -or (-not (Test-Path $previous)) )
+    {
+        Write-Host \"No installation found in: $previous\"
+        Break
+    }
+}
+
+
+$defaultExeFilename = $OctopusParameters[\"Octopus.Action[$step].Package.NuGetPackageId\"] + \".exe\"
+$exeFilename = If ($customExeFilename) {$customExeFilename} Else {$defaultExeFilename}
+$path = Join-Path $previous $exeFilename
+
+Write-Host \"Previous installation: $path\"
+
+Start-Process $path -ArgumentList \"stop\" -NoNewWindow -Wait | Write-Host
+Start-Process $path -ArgumentList \"uninstall\" -NoNewWindow -Wait | Write-Host
+"
+  },
+  "Parameters": [
+    {
+      "Id": "14d4b5e5-98ff-48ee-aeba-c062e294a18c",
+      "Name": "Unpackage step",
+      "Label": "",
+      "HelpText": "The step where you unpack the topshelf service",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "75418f4b-48fb-4475-93a1-a6d793495693",
+      "Name": "Exe filename",
+      "Label": "",
+      "HelpText": "Name of exe file for service, if empty, package Id+\".exe.\" will be used as default",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "sphinxy",
+  "$Meta": {
+    "ExportedAt": "2018-02-22T16:57:20.068Z",
+    "OctopusVersion": "4.0.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "topshelf"
+}

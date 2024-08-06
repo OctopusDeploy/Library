@@ -1,0 +1,104 @@
+{
+    "Id": "43cfc12d-5ae9-425d-ab01-7124ffdd9ee6",
+    "Name": "Azure Web App - Rolling Restart",
+    "Description": "Performs a delayed rolling restart of all instances within an Azure Web App
+<hr />
+
+*<p>Note This template is designed to run against an azure web app octopus target </p>*
+*<p>Depends on Azure CLI and powershell to be installed on the running machine</p>*",
+    "ActionType": "Octopus.AzurePowerShell",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "OctopusUseBundledTooling": "False",
+      "Octopus.Action.Azure.AccountId": "#{azWebApp.AzureAcct}",
+      "Octopus.Action.Script.ScriptBody": "try {az --version}
+catch
+{
+    throw \"az CLI not installed\"
+}
+
+$webAppName = $OctopusParameters[\"azWebApp.WebAppName\"]
+$resourceGroup = $OctopusParameters[\"azWebApp.ResourceGroup\"]
+$restartDelay = $OctopusParameters[\"azWebApp.RestartDelay\"]
+
+
+
+Write-Host \"Web App Name: $webAppName\"
+Write-Host \"Resource Group: $resourceGroup\"
+Write-Host \"Restart Delay: $restartDelay\"
+
+Write-Host \"Checking $webAppName status in resource group $resourceGroup\"
+
+$appState = az webapp list --resource-group $resourceGroup --query \"[?name=='$webAppName'].{state: state, hostName: defaultHostName}\" | ConvertFrom-Json
+
+# only execute if running
+if($appState.state -eq \"running\")
+{
+    $appInstances = az webapp list-instances -n $webAppName --resource-group $resourceGroup --query '[].{Id: id}' | ConvertFrom-Json
+    Write-Host \"\" $appInstances.Count \"Instance(s) found`r`n\" -ForegroundColor Green
+
+    if($appInstances.count -gt 0){
+        foreach ($instance in $appInstances){
+            Write-Host \"Restarting Instance: $instance\"
+            az webapp restart --ids $instance.Id
+            Write-Host \"Pausing $restartDelay second(s)`r`n\" -ForegroundColor Yellow
+            Start-Sleep -Seconds $restartDelay
+        }
+    }
+}
+"
+    },
+    "Parameters": [
+      {
+        "Id": "6670dc01-4323-41b8-87f4-a824608bad71",
+        "Name": "azWebApp.AzureAcct",
+        "Label": "Azure Account",
+        "HelpText": "The azure account that has access to the web app",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "AzureAccount"
+        }
+      },
+      {
+        "Id": "56dc3fcb-237d-4618-944a-441bd3d089c5",
+        "Name": "azWebApp.WebAppName",
+        "Label": "App Service Name",
+        "HelpText": "The azure web app name",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "7fc59af9-00cf-4e3f-995d-1ccca3057324",
+        "Name": "azWebApp.ResourceGroup",
+        "Label": "Azure Resource Group",
+        "HelpText": "The azure resource group",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "8fda8110-e3bb-4881-89dc-c148a7bd1943",
+        "Name": "azWebApp.RestartDelay",
+        "Label": "Restart Delay",
+        "HelpText": "Delay between instance restart",
+        "DefaultValue": "30",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-04-08T20:19:36.856Z",
+      "OctopusVersion": "2020.5.6",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "tekguy",
+    "Category": "azure"
+  }

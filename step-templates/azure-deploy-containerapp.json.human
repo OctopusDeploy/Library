@@ -1,0 +1,523 @@
+{
+  "Id": "db701b9a-5dbe-477e-b820-07f9e354f634",
+  "Name": "Azure - Deploy Container App",
+  "Description": "Deploys a container to an Azure Container App Environment",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "636b2191-09f6-4f86-a59c-97e1891475db",
+      "Name": "Template.Azure.Container.Image",
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "NotAcquired",
+      "Properties": {
+        "Extract": "False",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "Template.Azure.Container.Image",
+        "Purpose": ""
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+	"Octopus.Action.Script.ScriptBody": "# Define functions
+function Get-ModuleInstalled
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName
+    )
+
+    # Check to see if the module is installed
+    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))
+    {
+        # It is installed
+        return $true
+    }
+    else
+    {
+        # Module not installed
+        return $false
+    }
+}
+
+function Get-NugetPackageProviderNotInstalled
+{
+\t# See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+function Install-PowerShellModule
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName,
+        $LocalModulesPath
+    )
+
+\t# Check to see if the package provider has been installed
+    if ((Get-NugetPackageProviderNotInstalled) -ne $false)
+    {
+    \t# Display that we need the nuget package provider
+        Write-Host \"Nuget package provider not found, installing ...\"
+        
+        # Install Nuget package provider
+        Install-PackageProvider -Name Nuget -Force
+    }
+
+\t# Save the module in the temporary location
+    Write-Host \"Saving module $PowerShellModuleName to temporary folder ...\"
+    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force
+    Write-Host \"Save successful!\"
+}
+
+# Check to see if $IsWindows is available
+if ($null -eq $IsWindows)
+{
+     Write-Host \"Determining Operating System...\"
+    $IsWindows = ([System.Environment]::OSVersion.Platform -eq \"Win32NT\")
+    $IsLinux = ([System.Environment]::OSVersion.Platform -eq \"Unix\")
+}
+
+# Check to see if it's running on Windows
+if ($IsWindows)
+{
+\t# Disable the progress bar so downloading files via Invoke-WebRequest are faster
+    $ProgressPreference = 'SilentlyContinue'
+}
+
+if ($PSEdition -eq \"Core\") {
+    $PSStyle.OutputRendering = \"PlainText\"
+}
+
+# Define PowerShell Modules path
+$LocalModules = (New-Item \"$PWD/modules\" -ItemType Directory -Force).FullName
+$env:PSModulePath = \"$LocalModules$([IO.Path]::PathSeparator)$env:PSModulePath\"
+$azureModule = \"Az.App\"
+
+# Get variables
+$templateAzureAccountClient = $OctopusParameters['Template.Azure.Account.ClientId']
+$templateAzureAccountPassword = $OctopusParameters['Template.Azure.Account.Password']
+$templateAzureAccountTenantId = $OctopusParameters['Template.Azure.Account.TenantId']
+$templateAzureResourceGroup = $OctopusParameters['Template.Azure.ResourceGroup.Name']
+$templateAzureSubscriptionId = $OctopusParameters['Template.Azure.Account.SubscriptionId']
+$templateEnvironmentName = $OctopusParameters['Template.ContainerApp.Environment.Name']
+$templateAzureLocation = $OctopusParameters['Template.Azure.Location.Name']
+$templateAzureContainer = $OctopusParameters['Template.Azure.Container.Image']
+$templateAzureContainerIngressPort = $OctopusParameters['Template.Azure.Container.Ingress.Port']
+$templateAzureContainerIngressExternal = $OctopusParameters['Template.Azure.Container.ExternalIngress']
+$vmMetaData = $null
+$secretRef = @()
+$templateAzureContainerSecrets = $null
+
+if (![string]::IsNullOrWhitespace($OctopusParameters['Template.Azure.Container.Variables']))
+{
+    $templateAzureContainerEnvVars = ($OctopusParameters['Template.Azure.Container.Variables'] | ConvertFrom-JSON)
+}
+else
+{
+\t$templateAzureContainerEnvVars = $null
+}
+
+if (![string]::IsNullOrWhitespace($OctopusParameters['Template.Azure.Container.Secrets']))
+{
+    $templateAzureContainerSecrets = ($OctopusParameters['Template.Azure.Container.Secrets'] | ConvertFrom-JSON)
+}
+else
+{
+\t$templateAzureContainerSecrets = $null
+}
+
+$templateAzureContainerCPU = $OctopusParameters['Template.Azure.Container.Cpu']
+$templateAzureContainerMemory = $OctopusParameters['Template.Azure.Container.Memory']
+
+# Check for required PowerShell module
+Write-Host \"Checking for module $azureModule ...\"
+
+if ((Get-ModuleInstalled -PowerShellModuleName $azureModule) -eq $false)
+{
+\t# Install the module
+    Install-PowerShellModule -PowerShellModuleName $azureModule -LocalModulesPath $LocalModules
+}
+
+# Import the necessary module
+Write-Host \"Importing module $azureModule ...\"
+Import-Module $azureModule
+
+# Check to see if the account was specified
+if (![string]::IsNullOrWhitespace($templateAzureAccountClient))
+{
+\t# Login using the provided account
+    Write-Host \"Logging in as specified account ...\"
+    
+\t# Create credential object for az module
+\t$securePassword = ConvertTo-SecureString $templateAzureAccountPassword -AsPlainText -Force
+\t$azureCredentials = New-Object System.Management.Automation.PSCredential ($templateAzureAccountClient, $securePassword)  
+
+    Connect-AzAccount -Credential $azureCredentials -ServicePrincipal -Tenant $templateAzureAccountTenantId | Out-Null
+    
+    Write-Host \"Login successful!\"
+}
+else
+{
+\tWrite-Host \"Using machine Managed Identity ...\"
+    $vmMetaData = Invoke-RestMethod -Headers @{\"Metadata\"=\"true\"} -Method GET -Uri \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\"
+    
+    Connect-AzAccount -Identity
+    
+    # Get Identity context
+    $identityContext = Get-AzContext
+    
+    # Set variables
+    $templateAzureSubscriptionId = $vmMetaData.compute.subscriptionId
+    
+    if ([string]::IsNullOrWhitespace($templateAzureAccountTenantId))
+    {
+    \t$templateAzureAccountTenantId = $identityContext.Tenant
+    }
+    
+    Set-AzContext -Tenant $templateAzureAccountTenantId | Out-Null
+\tWrite-Host \"Successfully set context for Managed Identity!\"
+}
+
+# Check to see if the environment name is a / in it
+if ($templateEnvironmentName.Contains(\"/\") -ne $true)
+{
+\t# Lookup environment id by name
+    Write-Host \"Looking up Managed Environment by Name ...\"
+    $templateEnvironmentName = (Get-AzContainerAppManagedEnv -ResourceGroupName $templateAzureResourceGroup -EnvName $templateEnvironmentName -SubscriptionId $templateAzureSubscriptionId).Id
+}
+
+# Build parameter list to pass to New-AzContainerAppTemplateObject
+$PSBoundParameters.Add(\"Image\", $OctopusParameters[\"Octopus.Action.Package[Template.Azure.Container.Image].Image\"])
+$PSBoundParameters.Add(\"Name\", $OctopusParameters[\"Template.Azure.Container.Name\"])
+
+if (![string]::IsNullOrWhitespace($templateAzureContainerCPU))
+{
+    $PSBoundParameters.Add(\"ResourceCpu\", \"$templateAzureContainerCPU\")
+}
+
+if (![string]::IsNullOrWhitespace($templateAzureContainerMemory))
+{
+    $PSBoundParameters.Add(\"ResourceMemory\", \"$templateAzureContainerMemory\")
+}
+
+if ($null -ne $templateAzureContainerEnvVars)
+{
+    # Loop through list
+    $envVars = @()
+    foreach ($envVar in $templateAzureContainerEnvVars)
+    {
+    \t$envEntry = @{}
+        $envEntry.Add(\"Name\", $envVar.Name)
+        
+        # Check for specific property
+        if ($envVar.SecretRef)
+        {
+        \t$envEntry.Add(\"SecretRef\", $envVar.SecretRef)
+        }
+        else
+        {
+        \t$envEntry.Add(\"Value\", $envVar.Value)
+        }
+        
+        # Add to collection
+        $envVars += $envEntry
+    }
+    
+    $PSBoundParameters.Add(\"Env\", $envVars)
+}
+
+if ($null -ne $templateAzureContainerSecrets)
+{
+\t# Loop through list
+    foreach ($secret in $templateAzureContainerSecrets)
+    {
+        # Create new secret object and add to array
+        $secretRef += New-AzContainerAppSecretObject -Name $secret.Name -Value $secret.Value
+    }
+}
+
+# Create new container app
+$containerDefinition = New-AzContainerAppTemplateObject @PSBoundParameters
+$PSBoundParameters.Clear()
+
+# Define ingress components
+if (![string]::IsNullOrWhitespace($templateAzureContainerIngressPort))
+{
+\t$PSBoundParameters.Add(\"IngressExternal\", [System.Convert]::ToBoolean($templateAzureContainerIngressExternal))
+    $PSBoundParameters.Add(\"IngressTargetPort\", $templateAzureContainerIngressPort)
+}
+
+# Check the image
+if ($OctopusParameters[\"Octopus.Action.Package[Template.Azure.Container.Image].Image\"].Contains(\"azurecr.io\"))
+{
+\t# Define local parameters
+    $registryCredentials = @{}
+    $registrySecret = @{}
+    
+    # Accessing an ACR repository, configure credentials
+    if (![string]::IsNullOrWhitespace($templateAzureAccountClient))
+    {
+
+\t\t# Use configured client, name must be lower case
+        $registryCredentials.Add(\"Username\", $templateAzureAccountClient)
+        $registryCredentials.Add(\"PasswordSecretRef\", \"clientpassword\")
+
+\t\t$secretRef += New-AzContainerAppSecretObject -Name \"clientpassword\" -Value $templateAzureAccountPassword
+    }
+    else
+    {
+    \t# Using Managed Identity
+        $registryCredentials.Add(\"Identity\", \"system\")
+        
+    }
+    
+    $registryServer = $OctopusParameters[\"Octopus.Action.Package[Template.Azure.Container.Image].Image\"]
+    $registryServer = $registryServer.Substring(0, $registryServer.IndexOf(\"/\"))
+    $registryCredentials.Add(\"Server\", $registryServer)
+       
+    # Add credentials
+    $PSBoundParameters.Add(\"Registry\", $registryCredentials)
+}
+
+# Define secrets component
+if ($secretRef.Count -gt 0)
+{
+\t# Add to parameters
+    $PSBoundParameters.Add(\"Secret\", $secretRef)
+}
+
+# Create new configuration object
+Write-Host \"Creating new Configuration Object ...\"
+$configurationObject = New-AzContainerAppConfigurationObject @PSBoundParameters
+$PSBoundParameters.Clear()
+
+# Define parameters
+$PSBoundParameters.Add(\"Name\", $OctopusParameters[\"Template.Azure.Container.Name\"])
+$PSBoundParameters.Add(\"TemplateContainer\", $containerDefinition)
+$PSBoundParameters.Add(\"ResourceGroupName\", $templateAzureResourceGroup)
+$PSBoundParameters.Add(\"Configuration\", $configurationObject)
+
+
+# Check to see if the container app already exists
+$containerApp = Get-AzContainerApp -Name $OctopusParameters[\"Template.Azure.Container.Name\"] -ResourceGroupName $templateAzureResourceGroup
+if ($null -eq $containerApp)
+{
+\t# Add parameters required for creating container app
+\t$PSBoundParameters.Add(\"EnvironmentId\", $templateEnvironmentName)
+\t$PSBoundParameters.Add(\"Location\", $templateAzureLocation)
+\t
+\t# Deploy container
+    Write-Host \"Creating new container app ...\"
+\tNew-AzContainerApp @PSBoundParameters
+}
+else
+{
+\tWrite-Host \"Updating existing container app ...\"
+    Update-AzContainerApp @PSBoundParameters
+}
+"
+  },
+  "Parameters": [
+    {
+      "Id": "a1ae1b6c-99d0-4ee5-9c3c-08c345966842",
+      "Name": "Template.Azure.ResourceGroup.Name",
+      "Label": "Azure Resource Group Name",
+      "HelpText": "Provide the resource group name to create the environment in.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "fb92b5d7-5e48-485d-9222-dc2c97b58535",
+      "Name": "Template.Azure.Account.SubscriptionId",
+      "Label": "Azure Account Subscription Id",
+      "HelpText": "The subscription ID of the Azure account to use.  This value can be retrieved from an Azure Account variable type.  Add an Azure Account to your project , then assign the `SubscriptionNumber` property to for this entry.  Leave blank to use the Managed Identity.
+
+For example, if your Azure Account variable is called MyAccount, the value for this input would be `#{MyAccount.SubscriptionNumber}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e1ce647f-956e-48d1-8002-44d958f1c8a4",
+      "Name": "Template.Azure.Account.ClientId",
+      "Label": "Azure Account Client Id",
+      "HelpText": "The subscription ID of the Azure account to use.  This value can be retrieved from an Azure Account variable type.  Add an Azure Account to your project , then assign the `Client` property to for this entry.   Leave blank to use the Managed Identity.
+
+For example, if your Azure Account variable is called MyAccount, the value for this input would be `#{MyAccount.Client}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a02e3fd0-9d91-4106-84a4-ff0d68e5de7c",
+      "Name": "Template.Azure.Account.TenantId",
+      "Label": "Azure Account Tenant Id",
+      "HelpText": "The subscription ID of the Azure account to use.  This value can be retrieved from an Azure Account variable type.  Add an Azure Account to your project , then assign the `TenantId` property to for this entry.   If blank, it will use the Managed Identity tenant.
+
+For example, if your Azure Account variable is called MyAccount, the value for this input would be `#{MyAccount.TenantId}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7bd73320-1889-41eb-a1c0-c8788e5eed9d",
+      "Name": "Template.Azure.Account.Password",
+      "Label": "Azure Account Password",
+      "HelpText": "The subscription ID of the Azure account to use.  This value can be retrieved from an Azure Account variable type.  Add an Azure Account to your project , then assign the `Password` property to for this entry.   Leave blank to use the Managed Identity.
+
+For example, if your Azure Account variable is called MyAccount, the value for this input would be `#{MyAccount.Password}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "f7fafc7e-2658-4a6f-ac30-7d9f738b9f52",
+      "Name": "Template.ContainerApp.Environment.Name",
+      "Label": "Container App Environment Name",
+      "HelpText": "The name or ID of the container app environment to deploy to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "31f02b7e-4822-49de-97dc-ee981b12268c",
+      "Name": "Template.Azure.Location.Name",
+      "Label": "Azure Location",
+      "HelpText": "The location in which to create the container app environment.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d74123b0-4104-45b9-ae12-b1f808b8b948",
+      "Name": "Template.Azure.Container.Name",
+      "Label": "Container Name",
+      "HelpText": "The name of the container to create/update.  If you want to use the image name, specify `#{Octopus.Action.Package[Template.Azure.Container.Image].PackageId}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1bdb6d31-4b97-4eab-aca3-5a60891b3455",
+      "Name": "Template.Azure.Container.Image",
+      "Label": "Container Image",
+      "HelpText": "Select the container image to deploy.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "9e7aa5cf-9bab-4303-a851-1b8757f2f486",
+      "Name": "Template.Azure.Container.Variables",
+      "Label": "Environment variables",
+      "HelpText": "JSON formatted key/value pair of environment variables to pass to the container.  This supports use of OctoStache.
+
+```
+[
+  {
+    \"name\": \"ConnectionStrings__CatalogConnection\",
+    \"value\": \"Server=#{Project.SQL.DNS},1433;Integrated Security=true;Initial Catalog=#{Project.Catalog.Database.Name};User Id=#{Project.SQL.Admin.Username};Password=#{Project.SQL.Admin.Password};Trusted_Connection=false;Trust Server Certificate=True;\"
+  },
+ {
+  \"name\": \"MyPasswordFromSecret\",
+  \"secretref\": \"Name of my secret\"
+ },
+ ...
+]
+```",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "498f308d-a94c-4364-b0be-8d739ac63f4e",
+      "Name": "Template.Azure.Container.Secrets",
+      "Label": "Secrets",
+      "HelpText": "JSON formatted key/value pair of secrets to create/update.  This supports use of OctoStache.
+
+**Note:** The name of the secret must be lowercase.
+
+```
+[
+  {
+    \"name\": \"mysecret\",
+    \"value\": \"#{Project.SQL.Admin.Password}\"
+  },
+ ...
+]
+```",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "20e3e428-62b9-4eef-9cdc-780a0eedee79",
+      "Name": "Template.Azure.Container.Cpu",
+      "Label": "Resource CPU",
+      "HelpText": "The amount of CPU to allocate to the container app.
+
+Example: 0.5",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d804f749-625e-4ca5-9bef-13fc2c2a463c",
+      "Name": "Template.Azure.Container.Memory",
+      "Label": "Resource Memory",
+      "HelpText": "The amount of memory to allocate to the container app.
+
+Examples: 250Mb or 4.0Gi",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a506b328-4e10-49fe-947b-6623d4d392c1",
+      "Name": "Template.Azure.Container.Ingress.Port",
+      "Label": "Container Ingress Port",
+      "HelpText": "The port to allow traffic to the container.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "682d68a4-f1eb-469c-9557-9577ed9f1505",
+      "Name": "Template.Azure.Container.ExternalIngress",
+      "Label": "External Ingress",
+      "HelpText": "Whether the ingress is externally accessible or not.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-07-05T15:57:10.891Z",
+    "OctopusVersion": "2023.3.4541",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "azure"
+}

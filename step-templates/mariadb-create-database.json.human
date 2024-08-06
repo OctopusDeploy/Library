@@ -1,0 +1,238 @@
+{
+    "Id": "2bdfe600-e205-43f9-b174-67ee5d36bf5b",
+    "Name": "MariaDB - Create Database If Not Exists",
+    "Description": "Creates a MariaDB database if it doesn't already exist.",
+    "ActionType": "Octopus.Script",
+    "Version": 6,
+    "Author": "twerthi",
+    "Packages": [],
+    "Properties": {
+        "Octopus.Action.Script.ScriptSource": "Inline",
+        "Octopus.Action.Script.Syntax": "PowerShell",
+        "Octopus.Action.Script.ScriptBody": "# Define functions
+function Get-ModuleInstalled {
+    # Define parameters
+    param(
+        $PowerShellModuleName
+    )
+
+    # Check to see if the module is installed
+    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName)) {
+        # It is installed
+        return $true
+    }
+    else {
+        # Module not installed
+        return $false
+    }
+}
+
+function Install-PowerShellModule {
+    # Define parameters
+    param(
+        $PowerShellModuleName,
+        $LocalModulesPath
+    )
+
+    # Check to see if the package provider has been installed
+    if ((Get-NugetPackageProviderNotInstalled) -ne $false) {
+        # Display that we need the nuget package provider
+        Write-Host \"Nuget package provider not found, installing ...\"
+        
+        # Install Nuget package provider
+        Install-PackageProvider -Name Nuget -Force
+    }
+
+    # Save the module in the temporary location
+    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force
+}
+
+function Get-NugetPackageProviderNotInstalled {
+    # See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+function Get-DatabaseExists {
+    # Define parameters
+    param ($DatabaseName)
+    
+    # Execute query
+    return Invoke-SqlQuery \"SHOW DATABASES LIKE '$DatabaseName';\"
+}
+
+# Define PowerShell Modules path
+$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName
+$env:PSModulePath = \"$LocalModules$([System.IO.Path]::PathSeparator)$env:PSModulePath\"
+$PowerShellModuleName = \"SimplySql\"
+
+# Set secure protocols
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Check to see if SimplySql module is installed
+if ((Get-ModuleInstalled -PowerShellModuleName $PowerShellModuleName) -ne $true) {
+    # Tell user what we're doing
+    Write-Output \"PowerShell module $PowerShellModuleName is not installed, downloading temporary copy ...\"
+
+    # Install temporary copy
+    Install-PowerShellModule -PowerShellModuleName $PowerShellModuleName -LocalModulesPath $LocalModules
+}
+
+# Display
+Write-Output \"Importing module $PowerShellModuleName ...\"
+
+# Check to see if it was downloaded
+if ((Test-Path -Path \"$LocalModules\\$PowerShellModuleName\") -eq $true) {
+    # Use specific location
+    $PowerShellModuleName = \"$LocalModules\\$PowerShellModuleName\"
+}
+
+
+# Declare initial connection string
+$connectionString = \"Server=$createMariaDBServerName;Port=$createPort;\"
+
+# Update the connection string based on authentication method
+switch ($mariaDbAuthenticationMethod) {
+    \"awsiam\" {
+        # Region is part of the RDS endpoint, extract
+        $region = ($createMariaDBServerName.Split(\".\"))[2]
+
+        Write-Host \"Generating AWS IAM token ...\"
+        $createUserPassword = (aws rds generate-db-auth-token --hostname $createMariaDBServerName --region $region --port $createPort --username $createUsername)
+        
+        # Append remaining portion of connection string
+        $connectionString += \";Uid=$createUsername;Pwd=`\"$createUserPassword`\";\"
+
+        break
+    }
+    \"usernamepassword\" {
+        # Append remaining portion of connection string
+        $connectionString += \";Uid=$createUsername;Pwd=`\"$createUserPassword`\";\"
+        
+        break    
+    }
+    \"windowsauthentication\" {
+        # Append remaining portion of connection string
+        $connectionString += \";IntegratedSecurity=yes;Uid=$createUsername;\"
+
+        break
+    }
+}
+
+# Import the module
+Import-Module -Name $PowerShellModuleName
+
+try {
+    # Connect to MySQL
+    Open-MySqlConnection -ConnectionString $connectionString
+
+    # See if database exists
+    $databaseExists = Get-DatabaseExists -DatabaseName $createDatabaseName
+
+    if ($databaseExists.ItemArray.Count -eq 0) {
+        # Create database
+        Write-Output \"Creating database $createDatabaseName ...\"
+        $executionResult = Invoke-SqlUpdate \"CREATE DATABASE $createDatabaseName;\"
+
+        # Check result
+        if ($executionResult -ne 1) {
+            # Commit transaction
+            Write-Error \"Create schema failed.\"
+        }
+        else {
+            # See if it was created
+            $databaseExists = Get-DatabaseExists -DatabaseName $createDatabaseName
+            
+            # Check array
+            if ($databaseExists.ItemArray.Count -eq 1) {
+                # Success
+                Write-Output \"$createDatabaseName created successfully!\"
+            }
+            else {
+                # Failed
+                Write-Error \"$createDatabaseName was not created!\"
+            }
+        }
+    }
+    else {
+        # Display message
+        Write-Output \"Database $createDatabaseName already exists.\"
+    }
+}
+finally {
+    Close-SqlConnection
+}
+"
+    },
+    "Parameters": [
+      {
+        "Id": "8fc92b80-5122-44a0-b3d8-a1d022a35055",
+        "Name": "createMariaDBServerName",
+        "Label": "Server",
+        "HelpText": "Hostname (or IP) of the MariaDB database server.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "df993ccf-71ab-48de-9a67-e2af6653d35e",
+        "Name": "createUsername",
+        "Label": "Username",
+        "HelpText": "Username to use for the connection",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "8a07f25d-a7db-466e-a356-9155cbc5f258",
+        "Name": "createUserPassword",
+        "Label": "Password",
+        "HelpText": "Password for the user account",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "2af18465-c8d1-48f6-afce-1b1b30ae9559",
+        "Name": "createDatabaseName",
+        "Label": "Database Name",
+        "HelpText": "Name of the database to create",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "f55e2a34-7a82-4d92-83bb-a19f304774d8",
+        "Name": "createPort",
+        "Label": "Port",
+        "HelpText": "Port for the database instance.",
+        "DefaultValue": "3306",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "22bcb486-c796-412d-a7bc-e1a3e0d854a3",
+        "Name": "mariaDbAuthenticationMethod",
+        "Label": "Authentication Method",
+        "HelpText": "Method used to authenticate to the MariaDB server.",
+        "DefaultValue": "usernamepassword",
+        "DisplaySettings": {
+            "Octopus.ControlType": "Select",
+            "Octopus.SelectOptions": "awsiam|AWS EC2 IAM Role
+usernamepassword|Username\\Password"
+        }
+    }
+    ],
+    "LastModifiedBy": "coryreid",
+    "StepPackageId": "Octopus.Script",
+    "$Meta": {
+        "ExportedAt": "2022-07-12T19:34:19.067Z",
+        "OctopusVersion": "2022.3.2617-hotfix.4278",
+        "Type": "ActionTemplate"
+    },
+    "Category": "mariadb"
+  }

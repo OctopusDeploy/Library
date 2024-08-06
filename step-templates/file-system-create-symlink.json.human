@@ -1,0 +1,123 @@
+{
+  "Id": "f0cae939-caef-4979-93ac-6c9b3a3c4986",
+  "Name": "File System - Create Symlink",
+  "Description": "Creates a Symbolic Link",
+  "ActionType": "Octopus.Script",
+  "Version": 23,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function New-Symlink {
+    <#
+    .SYNOPSIS
+        Creates a symbolic link.
+    #>
+    param (
+        [Parameter(Position=0, Mandatory=$true)]
+        [string] $Link,
+        [Parameter(Position=1, Mandatory=$true)]
+        [string] $Target
+    )
+
+    Write-Host \"New-Symlink $Link to $Target\"
+    
+    Invoke-MKLINK -Link $Link -Target $Target
+}
+
+function Invoke-MKLINK {
+    <#
+    .SYNOPSIS
+        Creates a symbolic link.
+    #>
+    param (
+        [Parameter(Position=0, Mandatory=$true)]
+        [string] $Link,
+        [Parameter(Position=1, Mandatory=$true)]
+        [string] $Target
+    )
+    
+    # Resolve the paths incase a relative path was passed in.
+    $Link = (Force-Resolve-Path $Link)
+    $Target = (Force-Resolve-Path $Target)
+
+    # Ensure target exists.
+    if (-not(Test-Path $Target)) {
+        throw \"Target does not exist.`nTarget: $Target\"
+    }
+
+    # Ensure link does not exist.
+    if (Test-Path $Link) {
+        Write-Host \"A file or directory already exists at the link path.`nLink: $Link\"
+        return
+    }
+
+    $isDirectory = (Get-Item $Target).PSIsContainer
+
+    # Capture the MKLINK output so we can return it properly.
+    # Includes a redirect of STDERR to STDOUT so we can capture it as well.
+    $output = cmd /c mklink /D `\"$Link`\" `\"$Target`\" 2>&1
+    
+    Write-Host \"output : $output\"
+    if ($lastExitCode -ne 0) {
+        Write-Host \"MKLINK failed. Exit code: $lastExitCode`n$output\"
+        throw \"MKLINK failed. Exit code: $lastExitCode`n$output\"
+    }
+    else {
+        Write-Output $output
+    }
+}
+
+function Force-Resolve-Path {
+    <#
+    .SYNOPSIS
+        Calls Resolve-Path but works for files that don't exist.
+    .REMARKS
+        From http://devhawk.net/2010/01/21/fixing-powershells-busted-resolve-path-cmdlet/
+    #>
+    param (
+        [string] $FileName
+    )
+    
+    $FileName = Resolve-Path $FileName -ErrorAction SilentlyContinue `
+                                       -ErrorVariable _frperror
+    if (-not($FileName)) {
+        $FileName = $_frperror[0].TargetObject
+    }
+    
+    return $FileName
+}
+
+New-Symlink $link_path $target_path
+
+
+",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "link_path",
+      "Label": "LinkPath",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "target_path",
+      "Label": "TargetPath",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2014-08-26T15:58:31.623+00:00",
+  "LastModifiedBy": "diegoavanzini",
+  "$Meta": {
+    "ExportedAt": "2014-08-26T15:58:34.242+00:00",
+    "OctopusVersion": "2.5.7.384",
+    "Type": "ActionTemplate"
+  },
+  "Category": "filesystem"
+}

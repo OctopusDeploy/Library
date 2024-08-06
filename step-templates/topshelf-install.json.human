@@ -1,0 +1,97 @@
+{
+  "Id": "24189509-ae05-434b-9a28-080b81875e10",
+  "Name": "Install TopShelf service",
+  "Description": null,
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$step = $OctopusParameters['Unpackage step']
+$username = $OctopusParameters['Username'];
+$password = $OctopusParameters['Password'];
+$customExeFilename = $OctopusParameters['Exe filename'];
+
+$outputPath = $OctopusParameters[\"Octopus.Action[$step].Package.CustomInstallationDirectory\"]
+if(!$outputPath) 
+{
+    $outputPath = $OctopusParameters[\"Octopus.Action[$step].Output.Package.InstallationDirectoryPath\"]
+}
+
+$defaultExeFilename = $OctopusParameters[\"Octopus.Action[$step].Package.NuGetPackageId\"] + \".exe\"
+$exeFilename = If ($customExeFilename) {$customExeFilename} Else {$defaultExeFilename}
+$path = Join-Path $outputPath $exeFilename
+
+if(-not (Test-Path $path) )
+{
+    Throw \"$path was not found\"
+}
+
+Write-Host \"Installing from: $path\"
+if(!$username)
+{
+    Start-Process $path -ArgumentList \"install\" -NoNewWindow -Wait | Write-Host
+} 
+else 
+{
+    Start-Process $path -ArgumentList @(\"install\", \"-username\", $username, \"-password\", $password) -NoNewWindow -Wait | Write-Host
+}
+Start-Process $path -ArgumentList \"start\" -NoNewWindow -Wait | Write-Host
+"
+  },
+  "Parameters": [
+    {
+      "Id": "463159e1-62fa-4150-bdb9-dfb7dac6ecfa",
+      "Name": "Unpackage step",
+      "Label": "",
+      "HelpText": "The step where you unpack the topshelf service",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "d5d3e88e-b16a-4864-ac1e-614f11c861ed",
+      "Name": "Username",
+      "Label": "Service username",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "0fcca6af-0ba4-495c-b120-b06ac8de2ebd",
+      "Name": "Password",
+      "Label": "Service password",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "40da9228-33db-402a-9404-8e06c2817d7d",
+      "Name": "Exe filename",
+      "Label": "",
+      "HelpText": "Name of exe file for service, if empty, package Id+\".exe.\" will be used as default",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "sphinxy",
+  "$Meta": {
+    "ExportedAt": "2018-02-22T16:54:25.613Z",
+    "OctopusVersion": "4.0.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "topshelf"
+}

@@ -1,0 +1,130 @@
+{
+    "Id": "e4255fcb-fe7d-4d5b-8ec0-0243e5f48a9c",
+    "Name": "Delete Target or Worker Registration From Octopus",
+    "Description": "Step that will attempt to delete a target or worker from Octopus Deploy using the API.  If it cannot delete the target or worker it will disable the target and rename it.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "Author": "octobob",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.RunOnServer": "true",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$OctopusAPIKey = $OctopusParameters[\"DeleteTarget.Octopus.Api.Key\"]
+$TargetName = $OctopusParameters[\"DeleteTarget.Target.Name\"]
+$OctopusUrl = $OctopusParameters[\"DeleteTarget.Octopus.Base.Url\"]
+$SpaceId = $OctopusParameters[\"Octopus.Space.Id\"]
+$TargetType = $OctopusParameters[\"DeleteTarget.Target.TargetType\"]
+
+Write-Host \"Target Name: $TargetName\"
+Write-Host \"Octopus URL: $OctopusUrl\"
+Write-Host \"Space Id: $SpaceId\"
+Write-Host \"Target Type: $TargetType\"
+
+$header = New-Object \"System.Collections.Generic.Dictionary[[String],[String]]\"
+$header.Add(\"X-Octopus-ApiKey\", $OctopusAPIKey)
+
+$baseApiUrl = \"$OctopusUrl/api\"
+$baseApiInformation = Invoke-RestMethod $baseApiUrl -Headers $header
+if ((Get-Member -InputObject $baseApiInformation.Links -Name \"Spaces\" -MemberType Properties) -ne $null)
+{
+\t$baseApiUrl = \"$baseApiUrl/$SpaceId\"
+}
+
+$baseTargetUrl = \"$baseApiUrl/machines\"
+
+if ($TargetType -eq \"Worker\")
+{
+\t$baseTargetUrl = \"$baseApiUrl/workers\"
+    Write-Host \"Worker was selected, switching over to use the URL $baseTargetUrl\"
+}
+
+$targetListUrl = \"$($baseTargetUrl)?skip=0&take=1000&partialName=$TargetName\"
+Write-Host \"Get a list of all machine using the URL $targetListUrl\"
+
+$targetList = (Invoke-RestMethod $targetListUrl -Headers $header)
+
+foreach($target in $targetList.Items)
+{
+    if ($target.Name -eq $TargetName)
+    {
+        $targetId = $target.Id
+        $itemToDeleteEndPoint = \"$baseTargetUrl/$targetId\"
+        try
+        {        \t
+        \tWrite-Highlight \"Deleting the machine $targetId because the name $($target.Name) matches the $TargetName $itemToDeleteEndPoint\"
+        \t$deleteResponse = (Invoke-RestMethod $itemToDeleteEndPoint -Headers $header -Method Delete)
+            Write-Highlight \"Successfully deleted machine $TargetName\"
+            Write-Host \"Delete Response $deleteResponse\"
+        }
+        catch
+        {          \t
+        \t$currentDate = Get-Date -Format \"_MMddyyyy_HHmm\"
+        \t$target.Name = \"$($target.Name)-old$currentdate\"
+            $target.IsDisabled = $True
+            
+            $jsonRequest = $target | ConvertTo-Json
+                        
+            Write-Highlight \"There was an error deleting the machine, renaming it to $($target.name) and disabling it\"
+          \tWrite-Host $_
+            $machineResponse = Invoke-RestMethod $itemToDeleteEndPoint -Headers $header -Method PUT -Body $jsonRequest
+        } 
+        
+        break
+    }
+}"
+    },
+    "Parameters": [
+      {
+        "Id": "f287ffbb-9b6b-48b8-bea6-2ba399ae570c",
+        "Name": "DeleteTarget.Octopus.Base.Url",
+        "Label": "Octopus Base Url",
+        "HelpText": "The Base URL of the Octopus Deploy Server.  Example: https://samples.octopus.app",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "cabd24c3-3eb3-4913-b73a-0df2df02e82d",
+        "Name": "DeleteTarget.Octopus.Api.Key",
+        "Label": "Octopus API Key",
+        "HelpText": "The API key of a user who has permissions to delete a target from Octopus Deploy",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "396591f9-8bd0-4acb-9de6-2dacf0ca2c50",
+        "Name": "DeleteTarget.Target.Name",
+        "Label": "Target Name",
+        "HelpText": "The Name of the Target to delete from Octopus Deploy",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "e01b6695-1cef-423b-b53f-b1185cc3b894",
+        "Name": "DeleteTarget.Target.TargetType",
+        "Label": "Target Type",
+        "HelpText": "What kind of registration is it, a worker or a deployment target",
+        "DefaultValue": "Target",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "Target|Deployment Target
+Worker|Worker"
+        }
+      }
+    ],
+    "LastModifiedBy": "octobob",
+    "$Meta": {
+      "ExportedAt": "2020-04-13T15:37:29.866Z",
+      "OctopusVersion": "2020.1.10",
+      "Type": "ActionTemplate"
+    },
+    "Category": "octopus"
+  }

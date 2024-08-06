@@ -1,0 +1,118 @@
+{
+  "Id": "7f4f6d86-50aa-43b1-be7b-f0ab27e4a0ac",
+  "Name": "JSON - Validate object",
+  "Description": "Validates the consistency of an input JSON object against provided JSON schema",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Python",
+    "Octopus.Action.Script.ScriptBody": "import json
+from jsonschema import validate
+
+def validateJSON(jsonData):
+    try:
+        #jsonData must be STRING type
+        json.loads(jsonData)
+    except Exception as e:
+        #print(str(e))
+        #print(e.message)
+        return str(e)
+    return None
+
+def validateSchema(jsonData, jsonSchema):
+    try:
+        validate(instance=json.loads(jsonData), schema=json.loads(jsonSchema))
+    except Exception as e:
+        #print(e.message)
+        #print(str(e))
+        return e.message
+    return None
+
+vSchema = get_octopusvariable(\"vSchema\")
+vJsonData = get_octopusvariable(\"vJsonData\")
+
+vError = validateJSON(vJsonData)
+if vError == None:
+   vRslt = 'Correct!'
+   print('JSON Structure is valid !','\
+')
+
+   if vSchema:
+      vError = validateSchema(vJsonData, vSchema)
+      if vError == None:
+         vRslt = 'Correct!'
+         print('JSON Schema is valid !','\
+')
+      else:
+         vRslt = 'Wrong !'        
+         print('JSON Schema error:', vError, file=sys.stderr)
+else:
+    vRslt = 'Wrong!'
+    print('JSON structure error:', vError, file=sys.stderr)
+
+print ('Result:', vRslt)"
+  },
+  "Parameters": [
+    {
+      "Id": "1905df72-1da7-446b-8857-4df1795fb19a",
+      "Name": "vJsonData",
+      "Label": "JSON input object",
+      "HelpText": "JSON object to be validates
+
+Ejem:
+
+```
+{
+   \"name\" : \"John\",
+   \"age\" : 45
+}
+```",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "3089fe56-964f-4d5f-b940-31ca81e358cb",
+      "Name": "vSchema",
+      "Label": "Schema",
+      "HelpText": "JSON object called schema, who defines the layout of the JSON input object
+
+```
+{
+   \"type\":\"object\",
+   \"properties\":{
+      \"name\":{
+         \"type\":\"string\",
+         \"minimum\":1
+      },
+      \"age\":{
+         \"type\":\"number\",
+         \"minimum\":1
+      }
+   },
+   \"additionalProperties\":false,
+   \"required\":[
+      \"name\",
+      \"age\"
+   ]
+}
+```",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2022-06-02T19:54:24.484Z",
+    "OctopusVersion": "2022.1.2121",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "cramoscr",
+  "Category": "json"
+}

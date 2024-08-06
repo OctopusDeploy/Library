@@ -1,0 +1,46 @@
+{
+  "Id": "3f78a32f-d074-43cc-a009-793f72b204f3",
+  "Name": "Install Docker on Windows Server",
+  "Description": "Automates the steps from [here](https://docs.microsoft.com/en-us/virtualization/windowscontainers/quick-start/set-up-environment?tabs=Windows-Server#install-docker).
+
+This step reboots the machine.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "Find-PackageProvider -Name 'Nuget' -ForceBootstrap -IncludeDependencies
+
+$DockerModule = Get-Module -ListAvailable -Name DockerMsftProvider 
+if (-Not $DockerModule) {
+    Write-Host \"Installing DockerMsftProvider module\"
+    Install-Module -Name DockerMsftProvider -Repository PSGallery -Force
+} else {
+    Write-Host \"DockerMsftProvider module already installed\"
+}
+
+try {
+\t$DockerPackage = Get-Package -Name docker
+} catch [Exception] {}
+
+if (-Not $DockerPackage) {
+    Write-Host \"Installing docker package\"
+    Install-Package -Name docker -ProviderName DockerMsftProvider -Force
+
+    Write-Host \"Restarting machine...\"
+    Restart-Computer -Force
+} else {
+    Write-Host \"docker package already installed\"
+}"
+  },
+  "Parameters": [],
+  "$Meta": {
+    "ExportedAt": "2020-05-19T03:10:21.233Z",
+    "OctopusVersion": "2020.2.4",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "MJRichardson",
+  "Category": "docker"
+}

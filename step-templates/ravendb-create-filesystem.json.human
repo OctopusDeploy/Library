@@ -1,0 +1,258 @@
+{
+  "Id": "35e74a1b-3d6a-4d68-be07-51d0dfb56f23",
+  "Name": "RavenDB - Create File System",
+  "Description": "Used to create a new file system on a server",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "#--------------------------------------------------------------------\r
+#File System Octopus Variables\r
+\r
+#URL of RavenFS that is being deleted \r
+$ravenFileSystemURL = $OctopusParameters[\"ravenFileSystemURL\"]\r
+\r
+#name of the RavenFS that is being deleted\r
+$ravenFileSystemName = $OctopusParameters[\"ravenFileSystemName\"]\r
+\r
+#--------------------------------------------------------------------\r
+#Settings Octopus Variables\r
+\r
+#Name of Active Bundles (Replication; Versioning; etc) (Default is none)\r
+$ravenActiveBundles = $OctopusParameters[\"ravenActiveBundles\"]\r
+\r
+#storage Type Name (esent or voron)\r
+$ravenStorageTypeName = $OctopusParameters[\"ravenStorageTypeName\"]\r
+\r
+#directory the database will be located on the server\r
+$ravenDataDir = $OctopusParameters[\"ravenDataDir\"]\r
+\r
+#allow incremental back ups: boolean\r
+$allowIncrementalBackups = $OctopusParameters[\"allowIncrementalBackups\"]\r
+\r
+#temporary files will be created at this location\r
+$voronTempPath = $OctopusParameters[\"voronTempPath\"]\r
+\r
+#The path for the esent logs\r
+$esentLogsPath = $OctopusParameters[\"esentLogsPath\"]\r
+\r
+#The path for the indexes on a disk\r
+$indexStoragePath = $OctopusParameters[\"indexStoragePath\"]\r
+\r
+\r
+#--------------------------------------------------------------------\r
+\r
+#checks to see if the entered file system exists, return a Boolean value depending on the outcome\r
+function doesRavenFSExist([string] $FSChecking, [string]$URL)\r
+{\r
+    #retrieves the list of File Systems at the specified URL\r
+    $fs_list = Invoke-RestMethod -Uri \"$URL/fs\" -Method Get\r
+    #checks if the File System is at the specified URL\r
+    if ($fs_list -contains $FSChecking.ToString()) \r
+    {\r
+        return $TRUE\r
+    }\r
+    else \r
+    {\r
+        return $FALSE\r
+    }\r
+\r
+    \r
+}#ends does File System exist function\r
+\r
+\r
+Write-Output \"`n-------------------------`n\"\r
+\r
+#--------------------------------------------------------------------\r
+#check to see if File System exists\r
+\r
+Write-Output \"Checking if $ravenFileSystemName exists\"\r
+\r
+$fs_exists = doesRavenFSExist -FSChecking $ravenFileSystemName -URL $ravenFileSystemURL\r
+\r
+if($fs_exists -eq $TRUE)\r
+{\r
+    Write-Error \"$ravenFileSystemName already exists\" -ErrorId E4\r
+    Exit 1\r
+}\r
+else\r
+{\r
+    Write-Output \"$ravenFileSystemName doesn't exist. Creating $ravenFileSystemName now\"\r
+}\r
+\r
+\r
+Write-Output \"`n-------------------------`n\"\r
+\r
+#--------------------------------------------------------------------\r
+#check setting variables \r
+\r
+if($ravenActiveBundles -eq $null)\r
+{\r
+   $ravenActiveBundles = \"\" \r
+}\r
+\r
+if($ravenDataDir -eq \"\")\r
+{\r
+    Write-Warning \"A directory for the database has NOT been entered. The default directory ~\\Databases\\System is being used.\"\r
+    $ravenDataDir  = \"~\\Databases\\System\"\r
+}\r
+\r
+if($esentLogsPath -eq \"\")\r
+{\r
+    Write-Warning \"The path for the esent logs has NOT been entered. The default path of ~/Data/Logs will be used\"\r
+    $esentLogsPath =  \"~/Data/Logs\"\r
+}\r
+\r
+if($indexStoragePath -eq \"\")\r
+{\r
+    Write-Warning \"The path for the indexes has NOT been entered. The default path of ~/Data/Indexes will be used\"\r
+    $indexStoragePath = \"~/Data/Indexes\"\r
+}\r
+\r
+\r
+$ravenDataDir = $ravenDataDir.Replace(\"\\\", \"\\\\\")\r
+\r
+$voronTempPath = $voronTempPath.Replace(\"\\\", \"\\\\\")\r
+\r
+$esentLogsPath = $esentLogsPath.Replace(\"\\\", \"\\\\\")\r
+\r
+$indexStoragePath = $indexStoragePath.Replace(\"\\\", \"\\\\\")\r
+\r
+$ravenDataDir = $ravenDataDir.Replace(\"DB\", \"FS\")\r
+\r
+$voronTempPath = $voronTempPath.Replace(\"DB\", \"FS\")\r
+\r
+$esentLogsPath = $esentLogsPath.Replace(\"DB\", \"FS\")\r
+\r
+$indexStoragePath = $indexStoragePath.Replace(\"DB\", \"FS\")\r
+\r
+Write-Output \"`n-------------------------`n\"\r
+\r
+#--------------------------------------------------------------------\r
+#file system settings\r
+\r
+\r
+$fs_settings = @\"\r
+{\r
+   \"Settings\":\r
+   {\r
+   \"Raven/ActiveBundles\": \"$ravenActiveBundles\",\r
+    \"Raven/StorageTypeName\": \"$ravenStorageTypeName\",\r
+    \"Raven/DataDir\": \"$ravenDataDir\",\r
+    \"Raven/Voron/AllowIncrementalBackups\": \"$allowIncrementalBackups\",\r
+    \"Raven/Voron/TempPath\": \"$voronTempPath\",\r
+    \"Raven/Esent/LogsPath\": \"$esentLogsPath\",\r
+    \"Raven/IndexStoragePath\": \"$indexStoragePath\"\r
+   }\r
+}\r
+\"@\r
+\r
+#--------------------------------------------------------------------\r
+#Create File System\r
+\r
+Write-Output \"Creating File System: $ravenFileSystemName\"\r
+\r
+$createURI = \"$ravenFileSystemURL/admin/fs/$ravenFileSystemName\"\r
+\r
+Invoke-RestMethod -Uri $createURI -Body $fs_settings -Method Put\r
+\r
+Write-Output \"$ravenFileSystemName created.\"\r
+"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ravenFileSystemURL",
+      "Label": "URL of RavenDB",
+      "HelpText": "URL of the RavenDB, where you would like the file system to be created. 
+
+For example **http://localhost:8080/**",
+      "DefaultValue": "http://localhost:8080/",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ravenFileSystemName",
+      "Label": "Name of the File System",
+      "HelpText": "Name the new File System will be called. Make sure the name is not being used already within this instance of RavenDB",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ravenActiveBundles",
+      "Label": "Active Bundles",
+      "HelpText": "A settings option, Active Bundles refers bundles that RavenDB has (Replication;Versioning; etc)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ravenStorageTypeName",
+      "Label": "Name of the Storage Type",
+      "HelpText": "What storage type to use",
+      "DefaultValue": "Esent",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Esent| Esent
+Voron| Voron"
+      }
+    },
+    {
+      "Name": "ravenDataDir",
+      "Label": "Path for the database directory",
+      "HelpText": "The path for the database directory on the server",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "allowIncrementalBackups",
+      "Label": "Allow Incremental Backups",
+      "HelpText": "Allow Incremental Backups to be perform on this Database",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "voronTempPath",
+      "Label": "Path to Temporary Files",
+      "HelpText": "A different path where the temporary files will be stored",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "esentLogsPath",
+      "Label": "Path for the Esent Logs",
+      "HelpText": "The path for the Esent logs",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "indexStoragePath",
+      "Label": "Path for the Indexes",
+      "HelpText": "The path for the indexes on a disk, if you want to store the indexes on another HDD for performance reasons",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-11-12T22:39:11.556+00:00",
+  "LastModifiedBy": "timhunt303",
+  "$Meta": {
+    "ExportedAt": "2015-11-15T22:10:59.092+00:00",
+    "OctopusVersion": "3.1.7",
+    "Type": "ActionTemplate"
+  },
+  "Category": "ravendb"
+}

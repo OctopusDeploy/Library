@@ -1,0 +1,129 @@
+{
+  "Id": "cb1b825e-d945-43e4-a572-d945654ca9cc",
+  "Name": "Determine Rolling Deploy Window Size",
+  "Description": "Determine Window Size for Rolling Deploy.",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "#region Verify variables
+
+#No need to verify PerformRollingDeploy as this is a checkbox and will always have a boolean value. Report value back for logging.
+Try
+{
+  $performRollingDeploy = [System.Convert]::ToBoolean($OctopusParameters['DRDWSPerformRollingDeploy'])
+  Write-Host ('Perform Rolling Deploy: ' + $performRollingDeploy)
+}
+Catch
+{
+  Throw \"Cannot convert Perform Rolling Deploy: '\" + $OctopusParameters['DRDWSPerformRollingDeploy'] + \"' to boolean value. Try having the expression or variable evaluate to 'True' or 'False'.\"
+}
+
+#Verify ServerPercentageToDeploy can be converted to integer.
+If ([string]::IsNullOrEmpty($OctopusParameters['DRDWSServerPercentageToDeploy']))
+{
+  Throw 'Server percentage to deploy cannot be null.'
+}
+
+[int]$serverPercentageToDeploy = 0
+[bool]$result = [int]::TryParse($OctopusParameters['DRDWSServerPercentageToDeploy'], [ref]$serverPercentageToDeploy)
+
+If ($result)
+{
+  Write-Host ('Server percentage to deploy: ' + $serverPercentageToDeploy + '%')
+  $serverPercentToDisconnect = $serverPercentageToDeploy / 100
+}
+Else
+{
+  Throw \"Cannot convert Server percentage to deploy: '\" + $OctopusParameters['DRDWSServerPercentageToDeploy'] + \"' to integer.\"
+}
+
+#Verify ServerRole is not null.
+If ([string]::IsNullOrEmpty($OctopusParameters['DRDWSServerRole']))
+{
+  Throw 'Server Role for Rolling Deploy cannot be null.'
+}
+$role = $OctopusParameters['DRDWSServerRole']
+Write-Host ('Server Role for Rolling Deploy: ' + $role)
+
+#endregion
+
+
+#region Process
+
+$serverCountToDeployTo = 9999
+
+If ($performRollingDeploy)
+{
+  $servers = $OctopusParameters['Octopus.Environment.MachinesInRole[' + $role + ']']
+  $totalMachines = If ([string]::IsNullOrEmpty($servers)) { 0 } else { ($servers.Split(',')).Count }
+  $serverCountToDeployTo = [math]::Round(($totalMachines * $serverPercentToDisconnect))
+
+  Write-Host ('Total machines: ' + $totalMachines)
+
+  If ($serverCountToDeployTo -eq 0)
+  {
+    $serverCountToDeployTo++
+  }
+}
+
+Write-Host ('Window Size: ' + $serverCountToDeployTo)
+
+#To use this value, set Window size value to: #{Octopus.Action[Determine Rolling Deploy Window Size].Output.WindowSize}
+Set-OctopusVariable -name \"WindowSize\" -value $serverCountToDeployTo
+
+#endregion
+",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "561333cc-14ea-44be-aca2-ccb06e0c582f",
+      "Name": "DRDWSPerformRollingDeploy",
+      "Label": "Perform Rolling Deploy?",
+      "HelpText": "If checkbox is unchecked, all servers will be deployed to.  
+NOTE: This can be set to use a variable or expression.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ecf32591-130c-41cb-b8f5-405e3b1c5d28",
+      "Name": "DRDWSServerPercentageToDeploy",
+      "Label": "Server percentage to deploy",
+      "HelpText": "Percentage of servers to perform rolling deploy on at a time. Enter as whole number.  
+Example for 25%: 25",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "bed9618f-6ede-4c6b-a4b1-a6f0d0a685d4",
+      "Name": "DRDWSServerRole",
+      "Label": "Server Role for Rolling Deploy",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "LastModifiedBy": "mcasperson",
+  "$Meta": {
+    "ExportedAt": "2023-08-15T07:55:04.446Z",
+    "OctopusVersion": "2023.3.11489",
+    "Type": "ActionTemplate"
+  },
+  "Category": "Octopus"
+}

@@ -1,0 +1,124 @@
+{
+  "Id": "87cbaa94-4477-4474-a9c3-7943b5668d30",
+  "Name": "File System - Find and Replace",
+  "Description": "Find and replace text in one or more files.",
+  "ActionType": "Octopus.Script",
+  "Version": 7,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function Execute-FindReplace($target, $find, $replace, $ignoreCase) {
+    $options = [System.Text.RegularExpressions.RegexOptions]::None
+    if ($ignoreCase) {
+        $options = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    }
+    
+    Write-Output \"Searching $target...\"
+    $orig = [System.IO.File]::ReadAllText($target)
+    
+    $escFind = [System.Text.RegularExpressions.Regex]::Escape($find)
+    $regex = new-object System.Text.RegularExpressions.Regex($escFind, $options)
+    $removed = $regex.Replace($orig, '')
+    
+    $occurrences = ($orig.Length - $removed.Length) / $find.Length
+    if ($occurrences -gt 0) {
+        Write-Output \"Found $occurrences occurrence(s), replacing...\"
+        
+        $escReplace = $replace.Replace('$', '$$')
+        $replaced = $regex.Replace($orig, $escReplace)
+        [System.IO.File]::WriteAllText($target, $replaced)
+    }
+}
+
+if ([string]::IsNullOrEmpty($FRFindText)) {
+    throw \"A non-empty 'Find' text block is required\"
+}
+
+Write-Output \"Replacing occurrences of '$FRFindText' with '$FRReplaceText'\"
+if ([Boolean] $FRIgnoreCase) {
+    Write-Output \"Case will be ignored\"
+}
+
+$FRCandidatePathGlobs.Split(\";\") | foreach {
+    $glob = $_.Trim()
+    Write-Output \"Searching for files that match $glob...\"
+
+    $matches = $null
+    $splits = $glob.Split(@('/**/'), [System.StringSplitOptions]::RemoveEmptyEntries)
+
+    if ($splits.Length -eq 1) {
+        $splits = $glob.Split(@('\\**\\'), [System.StringSplitOptions]::RemoveEmptyEntries)
+    }
+    
+    if ($splits.Length -eq 1) {
+        $matches = ls $glob
+    } else {
+        if ($splits.Length -eq 2) {
+            pushd $splits[0]
+            $matches = ls $splits[1] -Recurse
+            popd
+        } else {
+            $splits
+            throw \"The segment '**' can only appear once, as a directory name, in the glob expression\"
+
+        }
+    }
+
+    $matches | foreach {
+        
+        $target = $_.FullName
+
+        Execute-FindReplace -target $target -find $FRFindText -replace $FRReplaceText -ignoreCase ([Boolean] $FRIgnoreCase)
+    }
+}
+
+
+Write-Output \"Done.\"",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "FRCandidatePathGlobs",
+      "Label": "Files",
+      "HelpText": "The files to search. Wildcards `*` and `**` are supported. Paths must be fully-qualified, e.g. `C:\\MyApp\\**\\*.xml`. Separate multiple paths with `;` semicolons.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "FRFindText",
+      "Label": "Find",
+      "HelpText": "The text to find in the target files.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "FRReplaceText",
+      "Label": "Replace with",
+      "HelpText": "The replacement text to insert in place of each occurrence of _Find_.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "FRIgnoreCase",
+      "Label": "Ignore case",
+      "HelpText": "If **True**, variations on the character case of _Find_ will be considered a match, for example `Bar` will match `BAR` and `bar`. If **False** only exact matches will be considered.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2014-05-14T05:38:42.041+00:00",
+    "OctopusVersion": "2.4.4.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "filesystem"
+}

@@ -1,0 +1,600 @@
+{
+    "Id": "6da0afee-ed55-4c75-a13b-5e8ce42ef027",
+    "Name": "RoundhousE Database Migrations",
+    "Description": "Database migrations using [RoundhousE](https://github.com/chucknorris/roundhouse).
+With this template you can either include RoundhousE with your package or use the `Download RoundhousE?` feature to download it at deploy time.  If you're downloading, you can choose the version by specifying it in the `Version of RoundhousE`.
+
+NOTE: 
+ - AWS EC2 IAM Role authentication requires the AWS CLI be installed.
+ - To run on Linux, the machine must have both PowerShell Core and .NET Core 3.1 installed.
+
+Note - The RoundhousE GitHub Project has been abandoned and as a result this template is now deprecated.  Version 9 will be the last release of this template.",
+    "ActionType": "Octopus.Script",
+    "Version": 9,
+    "Author": "twerthi",
+    "Packages": [
+      {
+        "Id": "249cd84b-2e41-4001-8222-f1a60f9a50ea",
+        "Name": "roundhousePackage",
+        "PackageId": null,
+        "FeedId": null,
+        "AcquisitionLocation": "Server",
+        "Properties": {
+          "Extract": "True",
+          "SelectionMode": "deferred",
+          "PackageParameterName": "roundhousePackage"
+        }
+      }
+    ],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Configure template
+
+# Check to see if $IsWindows is available
+if ($null -eq $IsWindows)
+{
+\tWrite-Host \"Determining Operating System...\"
+    switch ([System.Environment]::OSVersion.Platform)
+    {
+    \t\"Win32NT\"
+        {
+        \t# Set variable
+            $IsWindows = $true
+            $IsLinux = $false
+        }
+        \"Unix\"
+        {
+        \t$IsWindows = $false
+            $IsLinux = $true
+        }
+    }
+}
+
+# Define parameters
+$roundhouseExecutable = \"\"
+$roundhouseOutputPath = [System.IO.Path]::Combine($OctopusParameters[\"Octopus.Action.Package[RoundhousEPackage].ExtractedPath\"], \"output\")
+$roundhouseSsl = [System.Convert]::ToBoolean($roundhouseSsl)
+
+# Determines latest version of github repo
+Function Get-LatestVersionNumber
+{
+    # Define parameters
+    param ($GitHubRepository)
+        
+    # Define local variables
+    $releases = \"https://api.github.com/repos/$GitHubRepository/releases\"
+    
+    # Get latest version
+    Write-Host \"Determining latest release ($releases) ...\"
+    
+    $tags = (Invoke-WebRequest $releases -UseBasicParsing | ConvertFrom-Json)
+    
+    # Find the latest version with a downloadable asset
+    foreach ($tag in $tags)
+    {
+        if ($tag.assets.Count -gt 0)
+        {
+            #return $tag.assets.browser_download_url
+            return $tag.tag_name
+        }
+    }
+
+    # Return the version
+    return $null    
+}
+
+# Change the location to the extract path
+Set-Location -Path $OctopusParameters[\"Octopus.Action.Package[RoundhousEPackage].ExtractedPath\"]
+
+# Check to see if download is specified
+if ([System.Boolean]::Parse($roundhouseDownloadNuget))
+{
+    # Set secure protocols
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+
+\t# Check to see if version number specified
+    if ([string]::IsNullOrEmpty($roundhouseNugetVersion))
+    {
+    \t# Get the latest version number
+        $roundhouseNugetVersion = Get-LatestVersionNumber -GitHubRepository \"chucknorris/roundhouse\"
+    }
+
+    # Check for download folder
+    if ((Test-Path -Path \"$PSSCriptRoot\\roundhouse\") -eq $false)
+    {
+        # Create the folder
+        New-Item -ItemType Directory -Path \"$PSSCriptRoot\\roundhouse\"
+    }
+    
+    # Download nuget package
+    Write-Output \"Downloading https://github.com/chucknorris/roundhouse/releases/download/$roundhouseNugetVersion/dotnet-roundhouse.$roundhouseNugetVersion.nupkg ...\"
+    Invoke-WebRequest -Uri \"https://github.com/chucknorris/roundhouse/releases/download/$roundhouseNugetVersion/dotnet-roundhouse.$roundhouseNugetVersion.nupkg\" -OutFile \"$PSSCriptRoot\\roundhouse\\dotnet-roundhouse.$roundhouseNugetVersion.nupkg\"
+
+    # Change file extension
+    $nugetPackage = Get-ChildItem -Path \"$PSSCriptRoot\\roundhouse\\dotnet-roundhouse.$roundhouseNugetVersion.nupkg\"
+    $nugetPackage | Rename-Item -NewName $nugetPackage.Name.Replace(\".nupkg\", \".zip\")
+    
+    # Extract the package
+    Write-Output \"Extracting dotnet-roundhouse.$roundhouseNugetVersion.nupkg ...\"
+    Expand-Archive -Path \"$PSSCriptRoot\\roundhouse\\dotnet-roundhouse.$roundhouseNugetVersion.zip\" -DestinationPath \"$PSSCriptRoot\\roundhouse\"
+}
+
+# Set Executable depending on OS
+if ($IsWindows)
+{
+  # Look for older .exe
+  $roundhouseExecutable = Get-ChildItem -Path $PSSCriptRoot -Recurse | Where-Object {$_.Name -eq \"rh.exe\"}
+}
+
+if ([string]::IsNullOrWhitespace($roundhouseExecutable))
+{
+\t# Look for just rh.dll
+    $roundhouseExecutable = Get-ChildItem -Path $PSSCriptRoot -Recurse | Where-Object {$_.Name -eq \"rh.dll\"}
+}
+
+if ([string]::IsNullOrWhitespace($roundhouseExecutable))
+{
+    # Couldn't find RoundhousE
+    Write-Error \"Couldn't find the RoundhousE executable!\"
+}
+
+# Build the arguments
+$roundhouseSwitches = @()
+
+# Update the connection string based on authentication method
+switch ($roundhouseAuthenticationMethod)
+{
+    \"awsiam\"
+    {
+        # Region is part of the RDS endpoint, extract
+        $region = ($roundhouseServerName.Split(\".\"))[2]
+
+        Write-Host \"Generating AWS IAM token ...\"
+        $roundhouseUserPassword = (aws rds generate-db-auth-token --hostname $roundhouseServerName --region $region --port $roundhouseServerPort --username $roundhouseUserName)       
+        $roundhouseUserInfo = \"Uid=$roundhouseUserName;Pwd=$roundhouseUserPassword;\"
+
+        break
+    }
+
+    \"usernamepassword\"
+    {
+    \t# Append remaining portion of connection string
+        $roundhouseUserInfo = \"Uid=$roundhouseUserName;Pwd=$roundhouseUserPassword;\"
+
+\t\tbreak    
+\t}
+
+    \"windowsauthentication\"
+    {
+      # Append remaining portion of connection string
+\t  $roundhouseUserInfo = \"integrated security=true;\"
+      
+      # Append username (required for non
+      $roundhouseUserInfo += \"Uid=$roundhouseUserName;\"
+    }
+}
+
+
+# Configure connnection string based on technology
+switch ($roundhouseDatabaseServerType)
+{
+    \"sqlserver\"
+    {
+        # Check to see if port has been defined
+        if (![string]::IsNullOrEmpty($roundhouseServerPort))
+        {
+            # Append to servername
+            $roundhouseServerName += \",$roundhouseServerPort\"
+
+            # Empty the port
+            $roundhouseServerPort = [string]::Empty
+        }
+    }
+    \"mariadb\"
+    {
+    \t# Use the MySQL client
+        $roundhouseDatabaseServerType = \"mysql\"
+        $roundhouseServerPort = \"Port=$roundhouseServerPort;\"
+    }
+    default
+    {
+        $roundhouseServerPort = \"Port=$roundhouseServerPort;\"
+    }
+}
+
+# Build base connection string
+$roundhouseServerConnectionString = \"--connectionstring=Server=$roundhouseServerName;$roundhouseServerPort $roundhouseUserInfo Database=$roundhouseDatabaseName;\"
+
+if ($roundhouseSsl -eq $true)
+{
+\tif (($roundhouseDatabaseServerType -eq \"mariadb\") -or ($roundhouseDatabaseServerType -eq \"mysql\") -or ($roundhouseDatabaseServerType -eq \"postgres\"))
+    {
+    \t# Add sslmode
+        $roundhouseServerConnectionString += \"SslMode=Require;Trust Server Certificate=true;\"
+    }
+    else
+    {
+    \tWrite-Warning \"Invalid Database Server Type selection for SSL, ignoring setting.\"
+    }
+}
+
+$roundhouseSwitches += $roundhouseServerConnectionString
+
+$roundhouseSwitches += \"--databasetype=$roundhouseDatabaseServerType\"
+$roundhouseSwitches += \"--silent\"
+
+
+# Check for folder definitions
+if (![string]::IsNullOrEmpty($roundhouseUpFolder))
+{
+    # Add up folder
+    $roundhouseSwitches += \"--up=$roundhouseUpFolder\"
+}
+
+if (![string]::IsNullOrEmpty($roundhouseAlterDatabaseFolder))
+{
+    $roundhouseSwitches += \"--alterdatabasefolder=$roundhouseAlterDatabaseFolder\"
+}
+
+if (![string]::IsNullOrEmpty($roundhouseRunBeforeUpFolder))
+{
+    $roundhouseSwitches += \"--runbeforeupfolder=$roundhouseRunBeforeUpFolder\"
+}
+
+if (![string]::IsNullOrEmpty($roundhouseFunctionsFolder))
+{
+    $roundhouseSwitches += \"--functionsfolder=$roundhouseFunctionsFolder\"
+}
+
+if (![string]::IsNullOrEmpty($roundhouseViewsFolder))
+{
+    $roundhouseSwitches += \"--viewsfolder=$roundhouseViewsFolder\"
+}
+
+if (![string]::IsNullOrEmpty($roundhouseSprocsFolder))
+{
+    $roundhouseSwitches += \"--sprocsfolder=$roundhouseSprocsFolder\"
+}
+
+if (![string]::IsNullOrEmpty($roundhouseIndexFolder))
+{
+    $roundhouseSwitches += \"--indexesfolder=$roundhouseIndexFolder\"
+}
+
+if (![string]::IsNullOrEmpty($roundhouseRunAfterAnyTimeFolder))
+{
+    $roundhouseSwitches += \"--runAfterOtherAnyTimeScriptsFolder=$roundhouseRunAfterAnyTimeFolder\"
+}
+
+if (![string]::IsNullOrEmpty($roundhousePermissionsFolder))
+{
+    $roundhouseSwitches += \"--permissionsfolder=$roundhousePermissionsFolder\"
+}
+
+if (![string]::IsNullOrEmpty($roundhouseTriggerFolder))
+{
+    $roundhouseSwitches += \"--triggersfolder=$roundhouseTriggerFolder\"
+}
+
+if ([System.Boolean]::Parse($roundhouseDryRun))
+{
+    $roundhouseSwitches += \"--dryrun\"
+}
+
+if ([System.Boolean]::Parse($roundhouseRecordOutput))
+{
+    $roundhouseSwitches += \"--outputpath=$roundhouseOutputPath\"
+}
+
+# Add transaction switch
+$roundhouseSwitches += \"--withtransaction=$($roundhouseWithTransaction.ToLower())\"
+
+# Check for version
+if (![string]::IsNullOrEmpty($roundhouseVersion))
+{
+    # Add version
+    $roundhouseSwitches += \"--version=$roundhouseVersion\"
+}
+
+# Display what's going to be run
+if (![string]::IsNullOrWhitespace($roundhouseUserPassword))
+{
+\tWrite-Host \"Executing $($roundhouseExecutable.FullName) with $($roundhouseSwitches.Replace($roundhouseUserPassword, \"****\"))\"
+}
+else
+{
+\tWrite-Host \"Executing $($roundhouseExecutable.FullName) with $($roundhouseSwitches)\"
+}
+
+# Execute RoundhousE
+if ($roundhouseExecutable.FullName.EndsWith(\".dll\"))
+{
+\t& dotnet $roundhouseExecutable.FullName $roundhouseSwitches
+}
+else
+{
+\t& $roundhouseExecutable.FullName $roundhouseSwitches
+}
+
+# If the output path was specified, attach artifacts
+if ([System.Boolean]::Parse($roundhouseRecordOutput))
+{    
+    # Zip up output folder content
+    Add-Type -Assembly 'System.IO.Compression.FileSystem'
+    
+    $zipFile = \"$($OctopusParameters[\"Octopus.Action.Package[RoundhousEPackage].ExtractedPath\"])/output.zip\"
+    
+\t[System.IO.Compression.ZipFile]::CreateFromDirectory($roundhouseOutputPath, $zipFile)
+    New-OctopusArtifact -Path \"$zipFile\" -Name \"output.zip\"
+}
+"
+    },
+    "Parameters": [
+      {
+        "Id": "7ab35b02-b5c7-4818-b282-4915a93d78ce",
+        "Name": "roundhousePackage",
+        "Label": "RoundhousEPackage",
+        "HelpText": "The package containing the scripts for RoundhousE to deploy.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Package"
+        }
+      },
+      {
+        "Id": "b2bb212c-cf5a-4c48-88c7-045ae7841fcc",
+        "Name": "roundhouseServerName",
+        "Label": "Database Server Name",
+        "HelpText": "Name or IP address of the server being deployed to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "7d78b1fb-e45a-484a-bcc7-e3360ab69342",
+        "Name": "roundhouseServerPort",
+        "Label": "Database Server Port",
+        "HelpText": "Port number for the database server.  Uses default server port if left blank.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "8363dfa2-4509-4c57-9784-5baf27e96397",
+        "Name": "roundhouseAuthenticationMethod",
+        "Label": "Authentication Method",
+        "HelpText": "Method used to authenticate to the database server.",
+        "DefaultValue": "usernamepassword",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "awsiam|AWS EC2 IAM Role
+usernamepassword|Username\\Password
+windowsauthentication|Windows Authentication"
+        }
+      },  
+      {
+        "Id": "a49823d8-9269-48e1-92fb-819712fb56a4",
+        "Name": "roundhouseDatabaseName",
+        "Label": "Database Name",
+        "HelpText": "Name of the database to deploy to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "c4988c69-539d-48c7-8218-51b82b6253a6",
+        "Name": "roundhouseSsl",
+        "Label": "Force SSL",
+        "HelpText": "Check this box for force connection string to use SSL.  Only applicable to MariaDB, MySQL, and PostgreSQL database types.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },      
+      {
+        "Id": "99efe391-c705-4124-9b89-b8c95481d537",
+        "Name": "roundhouseVersion",
+        "Label": "Database Version",
+        "HelpText": "Version number of your database migration.  Default value is the version of the RoundhousE package.",
+        "DefaultValue": "#{Octopus.Action.Package[RoundhousEPackage].PackageVersion}",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "2e27695f-4789-456a-9158-a847b2059d32",
+        "Name": "roundhouseUsername",
+        "Label": "Database Username",
+        "HelpText": "Username of the account with sufficient permissions to execute scripts.  (Leave blank for Integrated Authentication.)",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "2bf4e801-263f-49d0-af19-339310c63856",
+        "Name": "roundhouseUserPassword",
+        "Label": "Database User Password",
+        "HelpText": "Password for the Database Username account.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "9ddd49a7-92a9-419a-aa07-70c569d88540",
+        "Name": "roundhouseDatabaseServerType",
+        "Label": "Database Server Type",
+        "HelpText": "The database technology being deployed to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "mariadb|MariaDB
+mysql|MySQL
+oracle|Oracle
+postgres|PostgreSQL
+sqlserver|SQL Server"
+        }
+      },
+      {
+        "Id": "0d748383-fd88-4dc2-ad8e-7b6f12137e3b",
+        "Name": "roundhouseWithTransaction",
+        "Label": "Use Transaction?",
+        "HelpText": "Check this box if you want all scripts to be run within the same transaction.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "06f538af-087a-4d59-958d-90c2e4decebf",
+        "Name": "roundhouseDryRun",
+        "Label": "Dry Run?",
+        "HelpText": "Check this box if you want to perform a dry run.  Results are recorded and attached as deployment artifacts if you check Record Output.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "ec772c86-c12a-4f4f-8710-6426152faa72",
+        "Name": "roundhouseRecordOutput",
+        "Label": "Record Output?",
+        "HelpText": "Check this box to record the output of the run.  Useful for gathering what would be changed for approval purposes.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "46ee4671-67b2-4e45-b484-6773b41c2bf8",
+        "Name": "roundhouseUpFolder",
+        "Label": "Up Folder Path",
+        "HelpText": "Relative location of the Up folder.  If left blank, .\\up is used.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "55e0bf86-b675-4204-9e0b-d39d20b15eea",
+        "Name": "roundhouseAlterDatabaseFolder",
+        "Label": "AlterDatabase Folder Path",
+        "HelpText": "AlterDatabase folder path.  If left blank, .\\alterDatabase is used.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "cd473440-f9a9-4a5d-b48c-46ee63a92e7a",
+        "Name": "roundhouseRunBeforeUpFolder",
+        "Label": "RunBeforeUp Folder Path",
+        "HelpText": "RunBeforeUp folder path.  If left blank, .\\runbeforeUp is used.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "53fab9f0-f310-482c-985c-e6efdf206117",
+        "Name": "roundhouseFunctionsFolder",
+        "Label": "Functions Folder Path",
+        "HelpText": "Filepath for user defined functions.  If left blank, .\\functions is used.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "66e7ce09-798a-42a6-9e4e-f4c952789af8",
+        "Name": "roundhouseViewsFolder",
+        "Label": "Views Folder Path",
+        "HelpText": "Filepath for view scripts.  If left blank, .\\views is used.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "5d905d17-c041-4981-9521-7a827bac3a87",
+        "Name": "roundhouseSprocsFolder",
+        "Label": "Sprocs Folder Path",
+        "HelpText": "File path for stored procedures.  If left blank, .\\sprocs is used.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "d9994dc7-3118-45c6-b8eb-80501daf03e9",
+        "Name": "roundhouseTriggerFolder",
+        "Label": "Trigger folder path",
+        "HelpText": "File path for database triggers.  If left blank .\\triggers is used.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "fa34cd00-3479-47cd-94d1-637263ebab71",
+        "Name": "roundhouseIndexFolder",
+        "Label": "Index Folder Path",
+        "HelpText": "File path for Index scripts.  If left blank, .\\indexes is used.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "e97ba5b9-da0d-4395-887f-f49dcce521f3",
+        "Name": "roundhouseRunAfterAnyTimeFolder",
+        "Label": "RunAfterAnytime Folder Path",
+        "HelpText": "File path for running scripts after the Other Anytime scripts.  If left blank, .\\runAfterOtherAnyTimeScripts is used.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "ac179614-fa54-4a5c-a736-7a0cbaa7e4bf",
+        "Name": "roundhousePermissionsFolder",
+        "Label": "Permissions Folder path",
+        "HelpText": "Folder path that holds permission scripts.  If left blank, .\\permissions is used.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "fcf2e6c4-db73-4b44-bf36-44e7b1cdc8c1",
+        "Name": "roundhouseDownloadNuget",
+        "Label": "Download RoundhousE?",
+        "HelpText": "Check this box if you want the template to download RoundhousE and use the downloaded version for deployment.  Requires .NET Core be installed on the machine executing the deployment.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "62b65afa-1a88-4013-83ab-0b23e162d3cf",
+        "Name": "roundhouseNugetVersion",
+        "Label": "Version of RoundhousE",
+        "HelpText": "Version of RoundhousE to download (used with Download RoundhousE option), leave blank for latest.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "LastModifiedBy": "twerthi",
+    "$Meta": {
+      "ExportedAt": "2022-06-15T00:15:18.003Z",
+      "OctopusVersion": "2022.3.1591",
+      "Type": "ActionTemplate"
+    },
+    "Category": "roundhouse"
+  }

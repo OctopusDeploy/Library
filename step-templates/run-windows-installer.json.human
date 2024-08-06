@@ -1,0 +1,405 @@
+{
+  "Id": "f56647ac-7762-4986-bc98-c3fb74bb844f",
+  "Name": "Run - Windows Installer",
+  "Description": "Runs the Windows Installer to non-interactively install an MSI",
+  "ActionType": "Octopus.Script",
+  "Version": 13,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus
+param(
+    [string]$MsiFilePath,
+\t[ValidateSet(\"Install\", \"Repair\", \"Remove\", IgnoreCase=$true)]
+\t[string]$Action,
+\t[string]$ActionModifier,
+    [string]$LoggingOptions = \"*\",
+    [ValidateSet(\"False\", \"True\")]
+    [string]$LogAsArtifact,
+\t[string]$Properties,
+\t[int[]]$IgnoredErrorCodes,
+    [switch]$WhatIf
+) 
+
+$ErrorActionPreference = \"Stop\"
+
+$ErrorMessages = @{
+\t\"0\" = \"Action completed successfully.\";
+\t\"13\" = \"The data is invalid.\";
+\t\"87\" = \"One of the parameters was invalid.\";
+\t\"1601\" = \"The Windows Installer service could not be accessed. Contact your support personnel to verify that the Windows Installer service is properly registered.\";
+\t\"1602\" = \"User cancel installation.\";
+\t\"1603\" = \"Fatal error during installation.\";
+\t\"1604\" = \"Installation suspended, incomplete.\";
+\t\"1605\" = \"This action is only valid for products that are currently installed.\";
+\t\"1606\" = \"Feature ID not registered.\";
+\t\"1607\" = \"Component ID not registered.\";
+\t\"1608\" = \"Unknown property.\";
+\t\"1609\" = \"Handle is in an invalid state.\";
+\t\"1610\" = \"The configuration data for this product is corrupt. Contact your support personnel.\";
+\t\"1611\" = \"Component qualifier not present.\";
+\t\"1612\" = \"The installation source for this product is not available. Verify that the source exists and that you can access it.\";
+\t\"1613\" = \"This installation package cannot be installed by the Windows Installer service. You must install a Windows service pack that contains a newer version of the Windows Installer service.\";
+\t\"1614\" = \"Product is uninstalled.\";
+\t\"1615\" = \"SQL query syntax invalid or unsupported.\";
+\t\"1616\" = \"Record field does not exist.\";
+\t\"1618\" = \"Another installation is already in progress. Complete that installation before proceeding with this install.\";
+\t\"1619\" = \"This installation package could not be opened. Verify that the package exists and that you can access it, or contact the application vendor to verify that this is a valid Windows Installer package.\";
+\t\"1620\" = \"This installation package could not be opened. Contact the application vendor to verify that this is a valid Windows Installer package.\";
+\t\"1621\" = \"There was an error starting the Windows Installer service user interface. Contact your support personnel.\";
+\t\"1622\" = \"Error opening installation log file. Verify that the specified log file location exists and is writable.\";
+\t\"1623\" = \"This language of this installation package is not supported by your system.\";
+\t\"1624\" = \"Error applying transforms. Verify that the specified transform paths are valid.\";
+\t\"1625\" = \"This installation is forbidden by system policy. Contact your system administrator.\";
+\t\"1626\" = \"Function could not be executed.\";
+\t\"1627\" = \"Function failed during execution.\";
+\t\"1628\" = \"Invalid or unknown table specified.\";
+\t\"1629\" = \"Data supplied is of wrong type.\";
+\t\"1630\" = \"Data of this type is not supported.\";
+\t\"1631\" = \"The Windows Installer service failed to start. Contact your support personnel.\";
+\t\"1632\" = \"The temp folder is either full or inaccessible. Verify that the temp folder exists and that you can write to it.\";
+\t\"1633\" = \"This installation package is not supported on this platform. Contact your application vendor.\";
+\t\"1634\" = \"Component not used on this machine.\";
+\t\"1635\" = \"This patch package could not be opened. Verify that the patch package exists and that you can access it, or contact the application vendor to verify that this is a valid Windows Installer patch package.\";
+\t\"1636\" = \"This patch package could not be opened. Contact the application vendor to verify that this is a valid Windows Installer patch package.\";
+\t\"1637\" = \"This patch package cannot be processed by the Windows Installer service. You must install a Windows service pack that contains a newer version of the Windows Installer service.\";
+\t\"1638\" = \"Another version of this product is already installed. Installation of this version cannot continue. To configure or remove the existing version of this product, use Add/Remove Programs on the Control Panel.\";
+\t\"1639\" = \"Invalid command line argument. Consult the Windows Installer SDK for detailed command line help.\";
+\t\"1640\" = \"Installation from a Terminal Server client session not permitted for current user.\";
+\t\"1641\" = \"The installer has started a reboot.\";
+\t\"1642\" = \"The installer cannot install the upgrade patch because the program being upgraded may be missing, or the upgrade patch updates a different version of the program. Verify that the program to be upgraded exists on your computer and that you have the correct upgrade patch.\";
+\t\"3010\" = \"A restart is required to complete the install. This does not include installs where the ForceReboot action is run. Note that this error will not be available until future version of the installer.\"
+};
+
+function Get-Param($Name, [switch]$Required, $Default) {
+    $result = $null
+
+    if ($OctopusParameters -ne $null) {
+        $result = $OctopusParameters[$Name]
+    }
+
+    if ($result -eq $null) {
+        $variable = Get-Variable $Name -EA SilentlyContinue   
+        if ($variable -ne $null) {
+            $result = $variable.Value
+        }
+    }
+
+    if ($result -eq $null) {
+        if ($Required) {
+            throw \"Missing parameter value $Name\"
+        } else {
+            $result = $Default
+        }
+    }
+
+    return $result
+}
+
+function Resolve-PotentialPath($Path) {
+\t[Environment]::CurrentDirectory = $pwd
+\treturn [IO.Path]::GetFullPath($Path)
+}
+
+function Get-LogOptionFile($msiFile, $streamLog) {
+\t$logPath = Resolve-PotentialPath \"$msiFile.log\"
+\t
+\tif (Test-Path $logPath) {
+\t\tRemove-Item $logPath
+\t}
+\t
+\treturn $logPath
+}
+
+function Exec
+{
+    [CmdletBinding()]
+    param(
+        [Parameter(Position=0,Mandatory=1)][scriptblock]$cmd,
+        [string]$errorMessage = ($msgs.error_bad_command -f $cmd),
+\t\t[switch]$ReturnCode
+    )
+
+\t$lastexitcode = 0
+    & $cmd
+\t
+\tif ($ReturnCode) {
+\t\treturn $lastexitcode
+\t} else  {
+\t\tif ($lastexitcode -ne 0) {
+\t\t\tthrow (\"Exec: \" + $errorMessage)
+\t\t}\t\t
+\t}
+}
+
+function Wrap-Arguments($Arguments)
+{
+\treturn $Arguments | % { 
+\t\t
+\t\t[string]$val = $_
+\t\t
+\t\t#calling msiexec fails when arguments are quoted
+\t\tif (($val.StartsWith(\"/\") -and $val.IndexOf(\" \") -eq -1) -or ($val.IndexOf(\"=\") -ne -1) -or ($val.IndexOf('\"') -ne -1)) {
+\t\t\treturn $val
+\t\t}
+\t
+\t\treturn '\"{0}\"' -f $val
+\t}
+}
+
+function Start-Process2($FilePath, $ArgumentList, [switch]$showCall, [switch]$whatIf)
+{
+\t$ArgumentListString = (Wrap-Arguments $ArgumentList) -Join \" \"
+
+\t$pinfo = New-Object System.Diagnostics.ProcessStartInfo
+\t$pinfo.FileName = $FilePath
+\t$pinfo.UseShellExecute = $false
+\t$pinfo.CreateNoWindow = $true
+\t$pinfo.RedirectStandardOutput = $true
+\t$pinfo.RedirectStandardError = $true
+\t$pinfo.Arguments = $ArgumentListString;
+\t$pinfo.WorkingDirectory = $pwd
+
+\t$exitCode = 0
+\t
+\tif (!$whatIf) {
+\t
+\t\tif ($showCall) {
+\t\t\t$x = Write-Output \"$FilePath $ArgumentListString\"
+\t\t}
+\t\t
+\t\t$p = New-Object System.Diagnostics.Process
+\t\t$p.StartInfo = $pinfo
+\t\t$started = $p.Start()
+\t\t$p.WaitForExit()
+
+\t\t$stdout = $p.StandardOutput.ReadToEnd()
+\t\t$stderr = $p.StandardError.ReadToEnd()
+\t\t$x = Write-Output $stdout
+\t\t$x = Write-Output $stderr
+\t\t
+\t\t$exitCode = $p.ExitCode
+\t} else {
+\t\tWrite-Output \"skipping: $FilePath $ArgumentListString\"
+\t}
+\t
+\treturn $exitCode
+}
+
+function Get-EscapedFilePath($FilePath)
+{
+    return [Management.Automation.WildcardPattern]::Escape($FilePath)
+}
+
+& {
+    param(
+        [string]$MsiFilePath,
+\t\t[string]$Action,
+\t\t[string]$ActionModifier,
+        [string]$LoggingOptions,
+        [bool]$LogAsArtifact,
+\t\t[string]$Properties,
+\t\t[int[]]$IgnoredErrorCodes
+    ) 
+
+    $MsiFilePathLeaf = Split-Path -Path $MsiFilePath -Leaf
+    $EscapedMsiFilePath = Get-EscapedFilePath (Split-Path -Path $MsiFilePath)
+    
+\t$MsiFilePath = Get-EscapedFilePath (Resolve-Path \"$EscapedMsiFilePath\\$MsiFilePathLeaf\" | Select-Object -First 1).ProviderPath
+
+    Write-Output \"Installing MSI\"
+    Write-Host \" MsiFilePath: $MsiFilePath\" -f Gray
+\tWrite-Host \" Action: $Action\" -f Gray
+\tWrite-Host \" Properties: $Properties\" -f Gray
+\tWrite-Host
+
+\tif ((Get-Command msiexec) -Eq $Null) {
+\t\tthrow \"Command msiexec could not be found\"
+\t}
+\t
+\tif (!(Test-Path $MsiFilePath)) {
+\t\tthrow \"Could not find the file $MsiFilePath\"
+\t}
+
+\t$actions = @{
+\t\t\"Install\" = \"/i\";
+\t\t\"Repair\" = \"/f\";
+\t\t\"Remove\" = \"/x\";
+\t};
+\t
+\t$actionOption = $actions[$action]
+\t$actionOptionFile = $MsiFilePath
+\tif ($ActionModifier)
+\t{
+\t\t$actionOption += $ActionModifier
+\t}
+\t
+    if ($LoggingOptions) {
+\t    $logOption = \"/L$LoggingOptions\"
+\t    $logOptionFile = Get-LogOptionFile $MsiFilePath
+\t}
+\t$quiteOption = \"/qn\"
+\t$noRestartOption = \"/norestart\"
+\t
+\t$parameterOptions = $Properties -Split \"\\r\
+?|\
+\" | ? { !([string]::IsNullOrEmpty($_)) } | % { $_.Trim() }
+\t
+\t$options = @($actionOption, $actionOptionFile, $logOption, $logOptionFile, $quiteOption, $noRestartOption) + $parameterOptions
+
+\t$exePath = \"msiexec.exe\"
+
+\t$exitCode = Start-Process2 -FilePath $exePath -ArgumentList $options -whatIf:$whatIf -ShowCall
+\t
+\tWrite-Output \"Exit Code was! $exitCode\"
+\t
+\tif (Test-Path $logOptionFile) {
+
+\t\tWrite-Output \"Reading installer log\"
+
+        # always write out these (http://robmensching.com/blog/posts/2010/8/2/the-first-thing-i-do-with-an-msi-log/)
+        (Get-Content $logOptionFile) | Select-String -SimpleMatch \"value 3\" -Context 10,0 | ForEach-Object { Write-Warning $_ }
+
+        if ($LogAsArtifact) {
+            New-OctopusArtifact -Path $logOptionFile -Name \"$Action-$([IO.Path]::GetFileNameWithoutExtension($MsiFilePath)).log\"
+        } else {
+\t    \tGet-Content $logOptionFile | Write-Output
+        }
+
+\t} else {
+\t\tWrite-Output \"No logs were generated\"
+\t}
+
+\tif ($exitCode -Ne 0) {
+\t\t$errorCodeString = $exitCode.ToString()
+\t\t$errorMessage = $ErrorMessages[$errorCodeString]
+\t\t
+\t\tif ($IgnoredErrorCodes -notcontains $exitCode) {
+
+\t\t\tthrow \"Error code $exitCodeString was returned: $errorMessage\"
+\t\t}
+\t\telse {
+\t\t\tWrite-Output \"Error code [$exitCodeString] was ignored because it was in the IgnoredErrorCodes [$($IgnoredErrorCodes -join ',')] parameter. Error Message [$errorMessage]\"
+\t\t}
+\t}
+\t
+} `
+(Get-Param 'MsiFilePath' -Required) `
+(Get-Param 'Action' -Required) `
+(Get-Param 'ActionModifier') `
+(Get-Param 'LoggingOptions') `
+((Get-Param 'LogAsArtifact') -eq \"True\") `
+(Get-Param 'Properties') `
+(Get-Param 'IgnoredErrorCodes')
+",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false"
+  },
+  "Parameters": [
+    {
+      "Id": "381f31f3-2cad-45fa-96ea-d99b2299667c",
+      "Name": "MsiFilePath",
+      "Label": "Msi File Path",
+      "HelpText": "This is the path of the MSI file that will be installed. If the path includes wildcards, then the first match will be used.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6e056c08-d73e-4e3e-bf45-c12e0d3d1d24",
+      "Name": "Action",
+      "Label": "Action",
+      "HelpText": "The task to perform with the MSI, options include install, repair or remove.",
+      "DefaultValue": "Install",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Install
+Repair
+Remove"
+      }
+    },
+    {
+      "Id": "7343a832-0673-472c-ae8f-1a328d65cafe",
+      "Name": "ActionModifier",
+      "Label": "Action Modifier",
+      "HelpText": "Use this to specify a different behavior for the Repair action",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "698d3bfb-2c14-4783-aa19-2a2ae2f49645",
+      "Name": "Properties",
+      "Label": "Properties",
+      "HelpText": "Properties that will be passed to the MSI separated by lines. Properties are in the format key=value, note that values with spaces in the must be quoted. 
+
+    Key=Value
+    Key=\"Value\"",
+      "DefaultValue": "REBOOT=ReallySuppress",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "d78748d0-2f38-485d-b76e-c41e5dbde429",
+      "Name": "LoggingOptions",
+      "Label": "Logging Options",
+      "HelpText": "One or more of:
+
+    [i|w|e|a|r|u|c|m|o|p|v|x|+|!|*]
+
+-  i - Status messages
+-  w - Nonfatal warnings
+-  e - All error messages
+-  a - Start-up of actions
+-  r - Action-specific records
+-  u - User requests
+-  c - Initial UI parameters
+-  m - Out-of-memory or fatal exit information
+-  o - Out-of-disk-space messages
+-  p - Terminal properties
+-  v - Verbose output
+-  x - Extra debugging information
+-  \\+ - Append to existing log file
+-  ! - Flush each line to the log
+-  \\* - Log all information, except for v and x options",
+      "DefaultValue": "*",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "532b5a46-9510-4558-a17c-a580153fbaff",
+      "Name": "LogAsArtifact",
+      "Label": "Log as artifact",
+      "HelpText": "If selected, then return log output as an artifact.
+If unselected then return log output as inline content",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "dc10c5e9-d988-4136-9f3e-c0c881a103b3",
+      "Name": "IgnoredErrorCodes",
+      "Label": "Ignored Error Codes",
+      "HelpText": "Use commas to separate integer values.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2019-11-07T17:00:00.000+00:00",
+  "LastModifiedBy": "jzabroski",
+  "SpaceId": "Spaces-1",
+  "$Meta": {
+    "ExportedAt": "2019-11-07T16:37:00.415Z",
+    "OctopusVersion": "2019.3.3",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}

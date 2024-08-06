@@ -1,0 +1,346 @@
+{
+    "Id": "2bd3b8ef-35b4-43e9-b6de-8e0c515f3f10",
+    "Name": "SQL - Execute SQL Script Files",
+    "Description": "Executes SQL script file(s) against the specified database using the `SQLServer` Powershell Module.  This template includes an `Authentication` selector and supports SQL Authentication, Windows Authentication, and Azure Managed Identity.
+
+Note: If the `SqlServer` PowerShell module is not present, the template will download a temporary copy to perform the task.",
+    "ActionType": "Octopus.Script",
+    "Version": 6,
+    "CommunityActionTemplateId": null,
+    "Packages": [
+      {
+        "Id": "8473acaf-aaeb-4c23-923a-91f664290f16",
+        "Name": "template.Package",
+        "PackageId": null,
+        "FeedId": null,
+        "AcquisitionLocation": "Server",
+        "Properties": {
+          "Extract": "True",
+          "SelectionMode": "deferred",
+          "PackageParameterName": "template.Package",
+          "Purpose": ""
+        }
+      }
+    ],
+    "Properties": {
+      "Octopus.Action.Script.ScriptBody": "
+function Get-ModuleInstalled {
+    # Define parameters
+    param(
+        $PowerShellModuleName
+    )
+
+    # Check to see if the module is installed
+    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName)) {
+        # It is installed
+        return $true
+    }
+    else {
+        # Module not installed
+        return $false 
+    }
+}
+
+function Get-NugetPackageProviderNotInstalled {
+    # See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+function Install-PowerShellModule {
+    # Define parameters
+    param(
+        $PowerShellModuleName,
+        $LocalModulesPath
+    )
+    
+    # Set TLS order
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+
+    # Check to see if the package provider has been installed
+    if ((Get-NugetPackageProviderNotInstalled) -ne $false) {
+        # Display that we need the nuget package provider
+        Write-Output \"Nuget package provider not found, installing ...\"
+        
+        # Install Nuget package provider
+        Install-PackageProvider -Name Nuget -Force
+    }
+
+    # Save the module in the temporary location
+    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force
+}
+
+
+function Invoke-ExecuteSQLScript {
+
+    [CmdletBinding()]
+    param
+    (
+        [parameter(Mandatory = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $serverInstance,
+
+        [parameter(Mandatory = $true, Position = 1)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $dbName,
+
+        [string]
+        $Authentication,
+
+        [string]
+        $SQLScripts,
+
+        [bool]
+        $DisplaySqlServerOutput,
+        
+        [bool]
+        $TrustServerCertificate
+    )
+    
+    # Check to see if SqlServer module is installed
+    if ((Get-ModuleInstalled -PowerShellModuleName \"SqlServer\") -ne $true) {
+        # Display message
+        Write-Output \"PowerShell module SqlServer not present, downloading temporary copy ...\"
+
+        # Download and install temporary copy
+        Install-PowerShellModule -PowerShellModuleName \"SqlServer\" -LocalModulesPath $LocalModules
+    }
+
+    # Display
+    Write-Output \"Importing module SqlServer ...\"
+
+    # Import the module
+    Import-Module -Name \"SqlServer\"
+    
+    $ExtractedPackageLocation = $($OctopusParameters['Octopus.Action.Package[template.Package].ExtractedPath'])
+
+    $matchingScripts = @()
+
+    # 1. Locate matching scripts
+    foreach ($SQLScript in $SQLScripts.Split(\"`n\", [System.StringSplitOptions]::RemoveEmptyEntries)) {
+        try {
+            
+            Write-Verbose \"Searching for scripts matching '$($SQLScript)'\"
+            $scripts = @()
+            $parent = Split-Path -Path $SQLScript -Parent
+            $leaf = Split-Path -Path $SQLScript -Leaf
+            Write-Verbose \"Parent: '$parent', Leaf: '$leaf'\"
+            if (-not [string]::IsNullOrWhiteSpace($parent)) {
+                $path = Join-Path $ExtractedPackageLocation $parent
+                if (Test-Path $path) {
+                    Write-Verbose \"Searching for items in '$path' matching '$leaf'\"
+                    $scripts += @(Get-ChildItem -Path $path -Filter $leaf)
+                }
+                else {
+                    Write-Warning \"Path '$path' not found. Please check the path exists, and is relative to the package contents.\"
+                }
+            }
+            else {
+                Write-Verbose \"Searching in root of package for '$leaf'\"
+                $scripts += @(Get-ChildItem -Path $ExtractedPackageLocation -Filter $leaf)
+            }
+    
+            Write-Output \"Found $($scripts.Count) SQL scripts matching input '$SQLScript'\"
+
+            $matchingScripts += $scripts
+        }
+        catch {
+            Write-Error $_.Exception
+        }
+    }
+    
+    # Create arguments hash table
+    $sqlcmdArguments = @{}
+
+\t# Add bound parameters
+    $sqlcmdArguments.Add(\"ServerInstance\", $serverInstance)
+    $sqlcmdArguments.Add(\"Database\", $dbName)
+    #$sqlcmdArguments.Add(\"Query\", $SQLScripts)
+    
+    if ($DisplaySqlServerOutput)
+    {
+    \tWrite-Host \"Adding Verbose to argument list to display output ...\"
+        $sqlcmdArguments.Add(\"Verbose\", $DisplaySqlServerOutput)
+    }
+    
+    if ($TrustServerCertificate)
+    {
+    \t$sqlcmdArguments.Add(\"TrustServerCertificate\", $TrustServerCertificate)
+    }
+
+    # Only execute if we have matching scripts
+    if ($matchingScripts.Count -gt 0) {
+        foreach ($script in $matchingScripts) {
+            $sr = New-Object System.IO.StreamReader($script.FullName)
+            $scriptContent = $sr.ReadToEnd()
+        
+            # Execute based on selected authentication method
+            switch ($Authentication) {
+                \"AzureADManaged\" {
+                    # Get login token
+                    Write-Verbose \"Authenticating with Azure Managed Identity ...\"
+                
+                    $response = Invoke-WebRequest -Uri 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fdatabase.windows.net%2F' -Method GET -Headers @{Metadata = \"true\" } -UseBasicParsing
+                    $content = $response.Content | ConvertFrom-Json
+                    $AccessToken = $content.access_token
+                    
+                    $sqlcmdArguments.Add(\"AccessToken\", $AccessToken)
+
+                    break
+                }
+                \"SqlAuthentication\" {
+                    Write-Verbose \"Authentication with SQL Authentication ...\"
+                    $sqlcmdArguments.Add(\"Username\", $username)
+                    $sqlcmdArguments.Add(\"Password\", $password)
+
+                    break
+                }
+                \"WindowsIntegrated\" {
+                    Write-Verbose \"Authenticating with Windows Authentication ...\"
+                    break
+                }
+            }
+            
+            $sqlcmdArguments.Add(\"Query\", $scriptContent)
+            
+            # Invoke sql cmd
+            Invoke-SqlCmd @sqlcmdArguments
+        
+            $sr.Close()
+
+            Write-Verbose (\"Executed manual script - {0}\" -f $script.Name)
+        }
+    }
+}
+
+# Define PowerShell Modules path
+$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName
+$env:PSModulePath = \"$LocalModules$([System.IO.Path]::PathSeparator)$env:PSModulePath\"
+
+if (Test-Path Variable:OctopusParameters) {
+    Write-Verbose \"Locating scripts from the literal entry of Octopus Parameter SQLScripts\"
+    $ScriptsToExecute = $OctopusParameters[\"SQLScripts\"]
+    $DisplaySqlServerOutput = $OctopusParameters[\"ExecuteSQL.DisplaySQLServerOutput\"] -ieq \"True\"
+    $TemplateTrustServerCertificate = [System.Convert]::ToBoolean($OctopusParameters[\"ExecuteSQL.TrustServerCertificate\"])
+    
+    Invoke-ExecuteSQLScript -serverInstance $OctopusParameters[\"serverInstance\"] `
+        -dbName $OctopusParameters[\"dbName\"] `
+        -Authentication $OctopusParameters[\"Authentication\"] `
+        -SQLScripts $ScriptsToExecute `
+        -DisplaySqlServerOutput $DisplaySqlServerOutput `
+        -TrustServerCertificate $TemplateTrustServerCertificate
+}",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.RunOnServer": "false"
+    },
+    "Parameters": [
+      {
+        "Id": "1f2b60c9-b85c-4c23-a313-fc18e82cd500",
+        "Name": "serverInstance",
+        "Label": "Server Instance Name",
+        "HelpText": "The SQL Server Instance name",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "9884b8c1-01a0-4c6f-97b1-ff5146fa0836",
+        "Name": "dbName",
+        "Label": "Database Name",
+        "HelpText": "The database name",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "05dc20d9-f75c-4971-9efb-e9aaad82a3a9",
+        "Name": "Authentication",
+        "Label": "Authentication",
+        "HelpText": "The authentication method",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "SqlAuthentication|SQL Authentication
+WindowsIntegrated|Windows Integrated
+AzureADManaged|Azure Active Directory Managed Identity"
+        }
+      },
+      {
+        "Id": "4c2fc1b4-bdd0-4a9a-adb1-da1e818e62bc",
+        "Name": "Username",
+        "Label": "Username",
+        "HelpText": "The username to use to connect (only applies with SqlAuthentication selected)",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "819f9b19-042d-42d8-9d19-5f5bf28c06b7",
+        "Name": "Password",
+        "Label": "Password",
+        "HelpText": "The password to use to connect (only applies with SqlAuthentication selected)",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "dd22f955-8317-4d58-8173-fc7d44df1192",
+        "Name": "SQLScripts",
+        "Label": "SQL Scripts",
+        "HelpText": "Provide the path to search for matching scripts, each one on a new line. Wildcards for filenames only are accepted, e.g.
+- `/Scripts/*.sql`
+- `/Scripts/SQL/Deploy*.sql`
+- `src/Permissions/Pre*Permissions.sql`
+
+**Please Note:** The step looks for files relative to the extracted package location, and does *not* recursively search the folder hierarchy.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "MultiLineText"
+        }
+      },
+      {
+        "Id": "3bfed638-6649-438f-a02b-353e36a63c87",
+        "Name": "template.Package",
+        "Label": "Package",
+        "HelpText": "Package containing the SQL scripts to be executed.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Package"
+        }
+      },
+      {
+        "Id": "c6b85a12-bf2f-4963-8526-ebbe8f14707d",
+        "Name": "ExecuteSQL.DisplaySQLServerOutput",
+        "Label": "Display SQL Output",
+        "HelpText": "You can display SQL Server message output, such as those that result from the SQL `PRINT` statement, by checking this parameter",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "52d8f897-696b-4f77-87b5-383d6ce559c3",
+        "Name": "ExecuteSQL.TrustServerCertificate",
+        "Label": "Trust Server Certificate",
+        "HelpText": "Force connection to trust the server certificate.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      }
+    ],
+    "StepPackageId": "Octopus.Script",
+    "$Meta": {
+      "ExportedAt": "2024-07-12T22:26:51.480Z",
+      "OctopusVersion": "2024.2.9303",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "twerthi",
+    "Category": "sql"
+  }

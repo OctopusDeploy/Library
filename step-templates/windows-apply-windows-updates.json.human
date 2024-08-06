@@ -1,0 +1,111 @@
+{
+    "Id": "3472f207-3934-44db-a4ac-1390167cf7ed",
+    "Name": "Windows - Apply Windows Updates",
+    "Description": "Step template to check for and apply Windows Updates with optional automatic reboot.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "Author": "twerthi",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "function Get-NugetPackageProviderNotInstalled
+{
+\t# See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+function Get-ModuleInstalled
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName
+    )
+
+    # Check to see if the module is installed
+    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))
+    {
+        # It is installed
+        return $true
+    }
+    else
+    {
+        # Module not installed
+        return $false
+    }
+}
+
+
+# Force use of TLS 1.2
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$autoReboot = [System.Convert]::ToBoolean(\"$windowsUpdateAutoReboot\")
+
+# Check to see if the NuGet package provider is installed
+if ((Get-NugetPackageProviderNotInstalled) -ne $false)
+{
+  # Display that we need the nuget package provider
+  Write-Host \"Nuget package provider not found, installing ...\"
+
+  # Install Nuget package provider
+  Install-PackageProvider -Name Nuget -Force
+
+  Write-Output \"Nuget package provider succesfully installed ...\"
+}
+
+
+Write-Output \"Checking for PowerShell module PSWindowsUpdate ...\"
+
+if ((Get-ModuleInstalled -PowerShellModuleName \"PSWindowsUpdate\") -ne $true)
+{
+\tWrite-Output \"PSWindowsUpdate not found, installing ...\"
+    
+    # Install PSWindowsUpdate
+    Install-Module PSWindowsUpdate -Force
+    
+    Write-Output \"Installation of PSWindowsUpdate complete ...\"
+}
+
+Write-Output \"Checking for updates ...\"
+
+$windowsUpdates = Get-WindowsUpdate 
+
+# Check to see if there's anything to install
+if ($windowsUpdates.Count -gt 0)
+{
+\tWrite-Output \"Installing updates ...\"
+    if ($autoReboot)
+    {
+\t\tInstall-WindowsUpdate -AcceptAll -AutoReboot
+    }
+    else
+    {
+    \tInstall-WindowsUpdate -AcceptAll
+    }
+}
+else
+{
+\tWrite-Output \"There are no updates available.\"
+}",
+      "Octopus.Action.EnabledFeatures": ""
+    },
+    "Parameters": [
+      {
+        "Id": "004de404-ec52-47d3-ad49-ea96224182c6",
+        "Name": "windowsUpdateAutoReboot",
+        "Label": "Auto reboot",
+        "HelpText": "Check the box to allow an automatic reboot. **Warning**: using this option will cause the machine to reboot after installing the first update that requires a reboot.  If there are multiple updates that require a reboot, the rest of the updates will not be installed.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2020-07-22T23:47:53.859Z",
+      "OctopusVersion": "2020.3.1",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "twerthi",
+    "Category": "windows"
+  }

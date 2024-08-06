@@ -1,0 +1,122 @@
+{
+  "Id": "183c1676-cb8e-44e8-a348-bbcb2b77536e",
+  "Name": "IIS AppPool - Update Property",
+  "Description": "Updates property for specified AppPool, useful for example to change startMode to AlwaysRunning.",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus
+param(
+    [string]$appPoolName,
+    [string]$propertyName,
+    [object]$propertyValue,
+    [switch]$whatIf
+)
+
+$ErrorActionPreference = \"Stop\"
+
+function Get-Param($Name, [switch]$Required, $Default) {
+    $result = $null
+
+    if ($OctopusParameters -ne $null) {
+        $result = $OctopusParameters[$Name]
+    }
+
+    if ($result -eq $null) {
+        $variable = Get-Variable $Name -EA SilentlyContinue
+        if ($variable -ne $null) {
+            $result = $variable.Value
+        }
+    }
+
+    if ($result -eq $null -or $result -eq \"\") {
+        if ($Required) {
+            throw \"Missing parameter value $Name\"
+        } else {
+            $result = $Default
+        }
+    }
+
+    return $result
+}
+
+& {
+    param(
+        [string]$appPoolName,
+        [string]$propertyName,
+        [object]$propertyValue
+    )
+
+    Write-Host \"Setting $appPoolName property $propertyName to $propertyValue\"
+
+    try {
+         Add-PSSnapin WebAdministration -ErrorAction SilentlyContinue
+         Import-Module WebAdministration -ErrorAction SilentlyContinue
+
+         $oldValue = Get-ItemProperty \"IIS:\\AppPools\\$appPoolName\" -Name $propertyName
+         $oldValueString = \"\"
+
+         if ($oldValue.GetType() -eq [Microsoft.IIs.PowerShell.Framework.ConfigurationAttribute])
+         {
+             $oldValueString = ($oldValue | Select-Object -ExpandProperty \"Value\");
+             $convertedValue = $propertyValue -as $oldValueString.GetType();
+         }
+         else
+         {
+             $oldValueString = $oldValue;
+             $convertedValue = $propertyValue -as $oldValue.GetType();
+         }
+
+         Write-Host \"Old value $oldValueString\"
+         Set-ItemProperty \"IIS:\\AppPools\\$appPoolName\" -Name $propertyName -Value $convertedValue
+         Write-Host \"New value $propertyValue\"
+         Write-Host \"Done\"
+    } catch {
+        Write-Host $_.Exception|format-list -force
+        Write-Host \"There was a problem setting property\"
+    }
+
+ } `
+ (Get-Param 'appPoolName' -Required) (Get-Param 'propertyName' -Required) (Get-Param 'propertyValue' -Required)
+",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "appPoolName",
+      "Label": "Application pool name",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "propertyName",
+      "Label": "Name of the property to set",
+      "HelpText": "",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "propertyValue",
+      "Label": "Value of the property to set",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2019-09-05T00:59:58.662+00:00",
+  "LastModifiedBy": "olsh",
+  "$Meta": {
+    "ExportedAt": "2015-10-23T02:15:10.732+00:00",
+    "OctopusVersion": "2.6.5.1010",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}

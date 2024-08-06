@@ -1,0 +1,160 @@
+{
+  "Id": "8a446e55-6554-40fa-bbd9-70bd2a69a13e",
+  "Name": "SQL Server __DeployLog: Read",
+  "Description": "To be used with:
+SQL Server __DeployLog: Update\r
+\r
+Requires sqlserver PowerShell module on target machine.\r
+\r
+For more information: https://octopus.com/blog/100x-faster-db-deploys",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$errorActionPreference = \"stop\"
+
+# Verifying that sqlserver module is installed
+If (-not(Get-InstalledModule sqlserver -ErrorAction silentlycontinue)) {
+  Write-Error \"This step requires the sqlserver PowerShell module. Please install it and try again.\"
+}
+Else {
+  Write-Output \"PowerShell module sqlserver is already installed.\"
+}
+
+# Declaring variabes
+$deployed_by = ([Environment]::UserDomainName + \"\\\" + [Environment]::UserName)
+$currentPackageVersion = $OctopusParameters[\"Octopus.Action[$DLM_PackageStep].Package.PackageVersion\"]
+$deployRequired = \"False\"
+
+# Logging input variables
+Write-Verbose \"DLM_PackageStep step is: $DLM_PackageStep\"
+Write-Verbose \"DLM_ServerInstance instance is: $DLM_ServerInstance\"
+Write-Verbose \"DLM_Database is: $DLM_Database\"
+Write-Verbose \"deployed_by is: $deployed_by\"
+Write-Verbose \"currentPackageVersion is: $currentPackageVersion\"
+
+# For invoke-sqlcmd authentication
+$auth=@{}
+if($DLM_Username){$auth=@{UserName=$DLM_Username;Password=$DLM_Password}}
+
+# Script to check whether __DeployLog exists in target database
+$CheckDeployLogExists = @'
+IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES
+           WHERE TABLE_NAME = N'__DeployLog')
+    BEGIN
+    SELECT 'TRUE'
+    END 
+ELSE
+    BEGIN
+    SELECT 'FALSE'
+    End
+'@
+
+# Verifying whether _DeployLog exists
+$DeployLogExists = Invoke-Sqlcmd -ServerInstance $DLM_ServerInstance -Database $DLM_Database -Query $CheckDeployLogExists @Auth 
+$DeployLogExists = $DeployLogExists[0]
+if($DeployLogExists -eq 'FALSE') {
+    Write-Warning \"Table __DeployLog does not exist in $DLM_Database on $DLM_ServerInstance pre-deployment.\"
+}
+
+# Script to read the last successful package version from __DeployLog
+$getLastPackageVersion = @'
+SELECT TOP (1) package_version 
+FROM [dbo].[__DeployLog]
+WHERE  status_code='Succeeded'
+ORDER BY utc_time DESC
+'@
+
+# Condition 1: If there is no __DeployLog table we don't know the prior state so we need to deploy the package
+if($DeployLogExists -eq 'FALSE') {
+    Write-Output \"There is no __DeployLog table on target database. Assuming re-deployment is required.\"
+    $deployRequired = \"True\"}
+else{
+    # Condition 2: If the package version has changed we need to deploy the new package
+    $lastPackageVersion = Invoke-Sqlcmd -ServerInstance $DLM_ServerInstance -Database $DLM_Database -Query $getLastPackageVersion @Auth
+    try{
+        $lastPackageVersion = $lastPackageVersion[0]
+    }
+    catch{
+        Write-Warning \"__DeployLog is empty\"
+        $lastPackageVersion = \"NULL\"
+    }
+    if($lastPackageVersion -ne $currentPackageVersion){
+        Write-Output \"Package version ($currentPackageVersion) differs from previous package version ($lastPackageVersion), re-deployment is required.\"
+        $deployRequired = \"True\"
+    }
+}
+
+# If neither condition 1 or 2 above are met, __DeployLog indicates that this 
+# package has already been successfully deployed - so we can skip the deployment
+if($deployRequired -like \"False\"){
+    Write-Output \"Skipping the deployment because the __DeployLog table in $DLM_Database on $DLM_ServerInstance indicates that package $currentPackageVersion has already been successfully deployed.\"
+}
+
+Set-OctopusVariable -name \"Deploy:$DLM_ServerInstance-$DLM_Database\" -value $deployRequired
+"
+  },
+  "Parameters": [
+    {
+      "Id": "a2328977-2df7-42bb-9f23-263031f27fe7",
+      "Name": "DLM_PackageStep",
+      "Label": "Database package deployment step (Required)",
+      "HelpText": "The step that deploys the package containing the database source code to the target machine.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Id": "871c40e6-9435-4cc5-8f52-a54eaf8c71ad",
+      "Name": "DLM_ServerInstance",
+      "Label": "Target SQL Server Instance (Required)",
+      "HelpText": "The name of the target SQL Server instance.
+e.g. SQLSERVER01\\myInstance",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "553359a5-9ee8-43a8-b6fc-aa7e5f9d9d9e",
+      "Name": "DLM_Database",
+      "Label": "Target SQL Server Database (Required)",
+      "HelpText": "The name of the target database.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "61f123b1-cb7d-423f-bf3e-da979c3aa539",
+      "Name": "DLM_Username",
+      "Label": "SQL Auth User (Optional)",
+      "HelpText": "The SQL Auth user used to authenticate against the target database. (For Windows Auth, leave blank.)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b373aa81-7807-4653-928b-acf39f6a4888",
+      "Name": "DLM_Password",
+      "Label": "SQL Auth Password (Optional)",
+      "HelpText": "The SQL Auth password used to authenticate against the target database. (For Windows Auth, leave blank.)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-10-02T14:36:09.349Z",
+    "OctopusVersion": "2020.4.2",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "Alex-Yates",
+  "Category": "dlm"
+}

@@ -1,0 +1,183 @@
+{
+  "Id": "7bf5fc6b-9174-48ab-8da5-abf0eeef297a",
+  "Name": "SQL - Execute SQL Agent Job",
+  "Description": "Execute a SQL Agent Job and wait for results.",
+  "ActionType": "Octopus.Script",
+  "Version": 14,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$connection = New-Object System.Data.SqlClient.SqlConnection\r
+$connection.ConnectionString = $OctopusParameters['ConnectionString']\r
+Register-ObjectEvent -inputobject $connection -eventname InfoMessage -action {\r
+    write-host $event.SourceEventArgs\r
+} | Out-Null\r
+\r
+function Run-SqlAgentJob($jobname,$timeout,$stepid) {\r
+\t$sqlstring = @\"\r
+\t\tSET NOCOUNT ON\r
+\r
+\t\t--Declaration\r
+\t\tDECLARE @jobtorun VARCHAR(MAX) = '<JobName>'\r
+\t\tDECLARE @jobid\tVARCHAR(50) = ''\r
+\t\tDECLARE @previousid INT\r
+        DECLARE @previous_status INT \r
+\t\tdeclare @newid\tINT\r
+\t\tDECLARE @runstatus\tINT\r
+\r
+\t\tCREATE TABLE #results\r
+\t\t(\r
+\t\t\tinstance_id INT,\r
+\t\t\tjob_id\tvarchar(255),\r
+\t\t\tjob_name VARCHAR(255),\r
+\t\t\tstep_id\tINT,\r
+\t\t\tstep_name VARCHAR(255),\r
+\t\t\tsql_message_id INT,\r
+\t\t\tsql_severity INT,\r
+\t\t\tmessage VARCHAR(MAX),\r
+\t\t\trun_status INT,\r
+\t\t\trun_date INT,\r
+\t\t\trun_time INT,\r
+\t\t\trun_duration INT,\r
+\t\t\toperator_emailed VARCHAR(255),\r
+\t\t\toperator_netsent VARCHAR(255),\r
+\t\t\toperator_paged VARCHAR(255),\r
+\t\t\tretries_attempted INT,\r
+\t\t\tserver sysname\r
+\t\t)\r
+\r
+\t\t--Get Job ID\r
+\t\tSELECT @jobid = job_id FROM msdb.dbo.sysjobs where name = @jobtorun\r
+\t\tIF @jobid = ''\r
+        BEGIN \r
+        \tRAISERROR ('Job Name Not Found.', -- Message text.\r
+        \t\t\t\t16, -- Severity.\r
+        \t\t\t\t1 -- State.\r
+        \t\t\t\t);\r
+        \tRETURN\r
+        END\r
+\r
+\t\t--Store previous job history\r
+\t\tINSERT INTO #results\r
+\t\tEXEC sp_help_jobhistory @job_id = @jobid, @mode = 'full', @step_id = <StepId>\r
+        SELECT @previousid = t.instance_id, @previous_status = t.run_status FROM (SELECT TOP 1 instance_id, run_status FROM #results ORDER BY instance_id DESC) t\r
+        PRINT 'Previous job ID: ' + CAST(@previousid AS VARCHAR(5)) + '\t\tRun Status:' + CAST(@previous_status AS VARCHAR(5))\r
+\t\tSET @newid = @previousid\r
+\r
+\t\t--Start SQL Agent Job\r
+\t\tEXEC msdb.dbo.sp_start_job @jobtorun\r
+\r
+\t\t--Loop for x seconds or until jobhistory has been updated with a new record\r
+\t\tDECLARE @loopct\tINT = 1\r
+\t\tWHILE (@newid = @previousid) and (@loopct < <Timeout>)\r
+\t\tBEGIN\r
+\t\t\tTRUNCATE TABLE #results\r
+\t\t\tINSERT INTO #results\r
+\t\t\t\tEXEC sp_help_jobhistory @job_id = @jobid, @mode = 'full', @step_id = <StepId>\r
+\r
+\t\t\tSELECT @newid = instance_id, @runstatus = run_status FROM #results WHERE instance_id = (SELECT MAX(instance_id) FROM #results)\r
+\r
+\t\t\tPRINT 'Poll ' + CAST(@loopct AS VARCHAR(5)) + '\t\tTime: ' + CONVERT(VARCHAR(8), GETDATE(), 108) \r
+\r
+\t\t\tSET @loopct += 1\r
+\t\t\tWAITFOR DELAY '00:00:05'\r
+\t\tEND\r
+\r
+\t\tIF @newid = @previousid\r
+\t\t\tRAISERROR ('Job did not complete in time.', -- Message text.\r
+\t\t\t\t\t   16, -- Severity.\r
+\t\t\t\t\t   1 -- State.\r
+\t\t\t\t\t   );\r
+\t\tIF @runstatus <> 1\r
+\t\t\tRAISERROR ('Job did not complete successfully.', -- Message text.\r
+\t\t\t\t\t   16, -- Severity.\r
+\t\t\t\t\t   1 -- State.\r
+\t\t\t\t\t   );\r
+\r
+\t\tPRINT ''\r
+\t\tPRINT 'Time: ' + CONVERT(VARCHAR(8), GETDATE(), 108) + '\tNew Job ID:' + CAST(@newid AS VARCHAR(5)) + '\t\tRun Status:' + CAST(@runstatus AS VARCHAR(5))\r
+\r
+\t\t--Cleanup\r
+\t\tDROP TABLE #results\r
+\"@\r
+\r
+    $jobname = $jobname -replace \"'\", \"''\"\r
+\t$sqlstring = $sqlstring -replace \"<JobName>\", $jobname\r
+\t$sqlstring = $sqlstring -replace \"<Timeout>\", $timeout\r
+\t$sqlstring = $sqlstring -replace \"<StepId>\", $stepid\r
+\t\r
+\t#Debug Code\r
+\t#Write-Host $sqlstring\r
+\t\r
+\t$command = $connection.CreateCommand()\r
+\t$command.CommandText = $sqlstring\r
+\t$command.CommandTimeout = 0\r
+\t$command.ExecuteNonQuery() | Out-Null\r
+}\r
+\r
+Write-Host \"Connecting\"\r
+try {\r
+    $connection.Open()\r
+\r
+    Write-Host \"Running SQL Agent Job\"\r
+    Run-SqlAgentJob -jobname $OctopusParameters['JobName'] -timeout $OctopusParameters['Timeout'] -step $OctopusParameters['Step']\r
+}\r
+finally {\r
+    Write-Host \"Closing connection\"\r
+    $connection.Dispose()\r
+}\r
+",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ConnectionString",
+      "Label": "Connection String",
+      "HelpText": "Connection string for the SQL connection. Example:
+
+Server=.\\SQLExpress;Database=OctoFX;Integrated Security=True;
+Bind to a variable to provide different values for different environments.",
+      "DefaultValue": "Server=;Database=msdb;Integrated Security=True;",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "JobName",
+      "Label": "Job Name",
+      "HelpText": "SQL Agent job to run. Can be bound to a variable split. 
+Text output by the PRINT statement in SQL will be logged to the deployment log.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Timeout",
+      "Label": "Timeout Value",
+      "HelpText": "The maximum length of time in 5 second intervals to wait for job completion. 
+The default value is 600 seconds (120 intervals x 5s = 600s)",
+      "DefaultValue": "120",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Step",
+      "Label": "Last Job Step",
+      "HelpText": "The number of the last step to run for the given job. 
+The default value is 1",
+      "DefaultValue": 1,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-04-06T20:01:31.948+00:00",
+  "LastModifiedBy": "chrisgelhaus",
+  "$Meta": {
+    "ExportedAt": "2015-04-06T20:01:54.552+00:00",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}
