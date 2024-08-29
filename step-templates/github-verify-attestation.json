@@ -1,0 +1,112 @@
+{
+    "Id": "3c76dffc-b524-438f-b04d-f1a103bdbfc7",
+    "Name": "Verify GitHub Attestation",
+    "Description": "This step calls the GitHub cli to verify an attestation. It currently supports non-container packages. OCI container images will be added in the future.\n\nMore info on [Artifact Attestations](https://github.blog/changelog/2024-06-25-artifact-attestations-is-generally-available/).\n\nGitHub cli docs for [gh attestation verify](https://cli.github.com/manual/gh_attestation_verify).\n\nThe step will capture the json output from the GitHub cli and store it as an [output variable](https://octopus.com/docs/projects/variables/output-variables) named `Json`.\n\nThe json can also be captured as an [artifact](https://octopus.com/docs/projects/deployment-process/artifacts) on the deployment by checking the `Create Artifact?` parameter on the step.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "CommunityActionTemplateId": null,
+    "Packages": [
+      {
+        "Id": "bc290bbb-cc08-4046-b72b-7ef18b2076fd",
+        "Name": "VerifyAttestation.Package",
+        "PackageId": null,
+        "FeedId": "Feeds-2119",
+        "AcquisitionLocation": "Server",
+        "Properties": {
+          "Extract": "False",
+          "SelectionMode": "deferred",
+          "PackageParameterName": "VerifyAttestation.Package",
+          "Purpose": ""
+        }
+      }
+    ],
+    "GitDependencies": [],
+    "Properties": {
+      "Octopus.Action.RunOnServer": "true",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "Bash",
+      "Octopus.Action.Script.ScriptBody": "token=$(get_octopusvariable \"VerifyAttestation.Token\")\npackage=$(get_octopusvariable \"Octopus.Action.Package[VerifyAttestation.Package].PackageFilePath\")\nowner=$(get_octopusvariable \"VerifyAttestation.Owner\")\nrepo=$(get_octopusvariable \"VerifyAttestation.Repo\")\nflags=$(get_octopusvariable \"VerifyAttestation.Flags\")\nprintCommand=$(get_octopusvariable \"VerifyAttestation.PrintCommand\")\ncreateArtifact=$(get_octopusvariable \"VerifyAttestation.CreateArtifact\")\ndeploymentId=\"#{Octopus.Deployment.Id | ToLower}\"\nstepName=$(get_octopusvariable \"Octopus.Step.Name\")\n\nechoerror() { echo \"$@\" 1>&2; }\n\nexport GITHUB_TOKEN=$token\n\nif ! command -v gh &> /dev/null\nthen\n    echoerror \"gh could not be found, please ensure that it is installed on your worker or in the execution container image\"\n    exit 1\nfi\n\nif [ \"$token\" = \"\" ] ; then\n    fail_step \"'GitHub Access Token' is a required parameter for this step.\"\nfi\n\nif [ \"$owner\" = \"\" ] &&  [ \"$repo\" = \"\" ]; then\n    fail_step \"Either 'Owner' or 'Repo' must be provided to this step.\"\nfi\n\n\ngh_cmd=\"gh attestation verify $package ${owner:+ -o $owner} ${repo:+ -R $owner} --format json ${flags:+ $flags}\"\n\nif [ \"$printCommand\" = \"True\" ] ; then\n  echo $gh_cmd\nfi\n\njson=$($gh_cmd)\n\nif [ $? = 0 ]\nthen\n  set_octopusvariable \"Json\" $json\n  echo \"Created output variable: ##{Octopus.Action[$stepName].Output.Json}\"\n\n  if [ \"$createArtifact\" = \"True\" ] ; then\n    echo $json > \"$PWD/attestation-$deploymentId.json\"\n    new_octopusartifact \"$PWD/attestation-$deploymentId.json\"\n  fi\nelse\n  fail_step \"Failed to verify attestation for $package\"\nfi",
+      "OctopusUseBundledTooling": "False"
+    },
+    "Parameters": [
+      {
+        "Id": "fd8cdcff-09af-41b0-a814-464c52308f48",
+        "Name": "VerifyAttestation.Token",
+        "Label": "GitHub Access Token",
+        "HelpText": "The access token used to authenticate with GitHub. See the [GitHub documentation](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) for more details.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "406de5a6-8a71-4a7a-91cf-dc0aee73d89b",
+        "Name": "VerifyAttestation.Package",
+        "Label": "Package to verify",
+        "HelpText": "The package to verify using `gh attestation verify`",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Package"
+        }
+      },
+      {
+        "Id": "e7b6ab3a-3522-4b97-b601-d9e51ef5dea9",
+        "Name": "VerifyAttestation.Owner",
+        "Label": "Owner",
+        "HelpText": "The `--owner` flag value must match the name of the GitHub organization that the artifact's linked repository belongs to.\n\nDo not provide both `Owner` and `Repo`.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0bdc7d4d-778a-498f-a950-3f2ce4e23b5d",
+        "Name": "VerifyAttestation.Repo",
+        "Label": "Repo",
+        "HelpText": "The `--repo` flag value must match the name of the GitHub repository that the artifact is linked with.\n\nDo not provide both `Owner` and `Repo`.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "f282b9eb-a6b4-4d79-9fc0-2f985e94b1ec",
+        "Name": "VerifyAttestation.Flags",
+        "Label": "Flags",
+        "HelpText": "See [gh attestation verify](https://cli.github.com/manual/gh_attestation_verify) for available flags.\n\nDo not provide the `--format` flag as it is set to `json` by the step.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "06e3e2ad-f2e0-4ecb-b856-e709d552f3e9",
+        "Name": "VerifyAttestation.PrintCommand",
+        "Label": "Print Command?",
+        "HelpText": "Prints the command in the logs using set -x. This will cause a warning when the step runs.\n",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "eb4f5f79-7d44-4511-a8a8-1dc68f2c450d",
+        "Name": "VerifyAttestation.CreateArtifact",
+        "Label": "Create Artifact?",
+        "HelpText": "Check to save the attestation result json as an Octopus artifact on the deployment.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      }
+    ],
+    "StepPackageId": "Octopus.Script",
+    "$Meta": {
+      "ExportedAt": "2024-08-29T19:36:57.549Z",
+      "OctopusVersion": "2024.3.11587",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "ryanrousseau",
+    "Category": "github"
+  }
+  
