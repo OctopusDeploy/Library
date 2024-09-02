@@ -426,6 +426,7 @@ gulp.task(
     gulp.watch("step-templates/*.json", gulp.series("step-templates"));
 
     gulp.watch(`${buildDir}/**/*.*`).on("change", reload);
+    done();
   })
 );
 
