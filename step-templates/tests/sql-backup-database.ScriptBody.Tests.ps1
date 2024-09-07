@@ -51,6 +51,14 @@ function SetupTestEnvironment {
         $fileName = "$DatabaseName" + "_$dateSuffix" + $deviceSuffix + $fileExtension
         $filePath = Join-Path -Path $BackupDirectory -ChildPath $fileName
         New-Item -Path $filePath -ItemType "file" -Force | Out-Null
+
+        # Validate that the file was created
+        if (-not (Test-Path -Path $filePath)) {
+          throw "Failed to create backup file: $filePath"
+        }
+        else {
+          #Write-Host "Created std. backup file: $filePath"
+        }
       }
     }
   }
@@ -64,54 +72,65 @@ function SetupTestEnvironment {
   foreach ($filename in $challengingFilenames) {
     $filePath = Join-Path -Path $BackupDirectory -ChildPath $filename
     New-Item -Path $filePath -ItemType "file" -Force | Out-Null
+      # Validate that the challenging file was created
+      if (-not (Test-Path -Path $filePath)) {
+        throw "Failed to create challenging file: $filePath"
+      }
+      else {
+        #Write-Host "Created challenging file: $filePath"
+      }
   }
 }
 
 Describe "ApplyRetentionPolicy Tests" {
 
   BeforeAll {
-    $script:BackupDirectory = "C:\Backups"
-    $script:DatabaseName = "ExampleDB"
-    $script:StartDate = Get-Date
-    $script:timestampFormat = "yyyy-MM-dd-HHmmss"
-    $script:challengingFilenames = @(
-        # similar DB name noted during PR review
-        "ExampleDB_final_2024-03-18-1030.bak",
-        # Similar DB name, valid timestamp. Might be confused with a backup for a different but similarly named database.
-        "ExampleDB1_2024-03-18-1030.bak",
-        # Same DB, different valid timestamp. Tests accuracy of timestamp matching.
-        "ExampleDB_2024-03-19-1030.bak",
-        # Similar timestamp format, but different. Might test pattern matching robustness.
-        "ExampleDB_20240318_1030.bak",
-        # Different DB, valid timestamp. Should not be matched if script correctly identifies DB name.
-        "TestDB_2024-03-18-1030.bak",
-        # Non-backup file type with valid naming. Should be ignored by the cleanup script.
-        "ExampleDB_2024-03-18-1030.log",
-        # Completely unrelated file. Should always be ignored by the cleanup script.
-        "RandomFile.txt",
-        # Similar DB name with underscore. Might be confused with main database name if script uses loose matching.
-        "Example_DB_2024-03-18-1030.bak",
-        # Same DB name, lowercase. Tests case sensitivity of the script.
-        "exampledb_2024-03-18-1030.bak",
-        # Similar timestamp, underscore separator. Variation in timestamp format might challenge pattern matching.
-        "ExampleDB_2024-03-18_1030.bak",
-        # Different DB, valid timestamp for trn. Tests database name matching accuracy with incremental backups.
-        "AnotherDB_2024-03-18-1030.trn"
-      )
+  $script:BackupDirectory = "C:\Backups"
+  $script:DatabaseName = "ExampleDB"
+  $script:StartDate = Get-Date
+  $script:timestampFormat = "yyyy-MM-dd-HHmmss"
+  $script:challengingFilenames = @(
+    # similar DB name noted during PR review
+    "ExampleDB_final_2024-03-18-1030.bak",
+    # Similar DB name, valid timestamp. Might be confused with a backup for a different but similarly named database.
+    "ExampleDB1_2024-03-18-1030.bak",
+    # Same DB, different valid timestamp. Tests accuracy of timestamp matching.
+    "ExampleDB_2024-03-19-1030.bak",
+    # Similar timestamp format, but different. Might test pattern matching robustness.
+    "ExampleDB_20240318_1030.bak",
+    # Different DB, valid timestamp. Should not be matched if script correctly identifies DB name.
+    "TestDB_2024-03-18-1030.bak",
+    # Non-backup file type with valid naming. Should be ignored by the cleanup script.
+    "ExampleDB_2024-03-18-1030.log",
+    # Completely unrelated file. Should always be ignored by the cleanup script.
+    "RandomFile.txt",
+    # Similar DB name with underscore. Might be confused with main database name if script uses loose matching.
+    "Example_DB_2024-03-18-1030.bak",
+    # Same DB name, lowercase. Tests case sensitivity of the script.
+    "exampledb_2024-03-18-1030.bak",
+    # Similar timestamp, underscore separator. Variation in timestamp format might challenge pattern matching.
+    "ExampleDB_2024-03-18_1030.bak",
+    # Different DB, valid timestamp for trn. Tests database name matching accuracy with incremental backups.
+    "AnotherDB_2024-03-18-1030.trn"
+  )
+  }
+
+  BeforeEach {
+    $Devices = 1
+    $IncrementalFiles = 10
+    $FullBackupFiles = 10
+    SetupTestEnvironment -BackupDirectory $BackupDirectory -DatabaseName $DatabaseName -IncrementalFiles $IncrementalFiles -FullBackupFiles $FullBackupFiles -StartDate $StartDate -Devices $Devices -timestampFormat $timestampFormat -challengingFilenames $challengingFilenames -Verbose:$VerbosePreference
+  }
+
+  AfterEach {
+    Remove-Item -Path $BackupDirectory -Recurse -Force
   }
 
   Context "ApplyRetentionPolicy functionality for single device backups" {
-    BeforeAll {
-      $Devices = 1
-      $IncrementalFiles = 10
-      $FullBackupFiles = 10
-      SetupTestEnvironment -BackupDirectory $BackupDirectory -DatabaseName $DatabaseName -IncrementalFiles $IncrementalFiles -FullBackupFiles $FullBackupFiles -StartDate $StartDate -Devices $Devices -timestampFormat $timestampFormat -challengingFilenames $challengingFilenames
-    }
-
-    It "Retains the specified number of the most recent backups"  {
+    It "Retains the specified number of the most recent backups" {
       $RetentionPolicyCount = 3
 
-      ApplyRetentionPolicy -BackupDirectory $BackupDirectory -dbName $DatabaseName -RetentionPolicyCount $RetentionPolicyCount -Incremental $false -Devices $Devices -timestampFormat $timestampFormat
+      ApplyRetentionPolicy -BackupDirectory $BackupDirectory -dbName $DatabaseName -RetentionPolicyCount $RetentionPolicyCount -Incremental $false -Devices $Devices -timestampFormat $timestampFormat -Verbose:$VerbosePreference
 
       $extension = '.bak'
       $devicePattern = if ($Devices -gt 1) { "(_\d+)" } else { "" }
@@ -184,14 +203,10 @@ Describe "ApplyRetentionPolicy Tests" {
       $retainedFiles = @(Get-ChildItem -Path $BackupDirectory -Filter "*$extension" | Where-Object { $_.Name -match $regexPattern })
       $retainedFiles.Count | Should Be $RetentionPolicyCount
     }
-
-    AfterAll {
-      Remove-Item -Path $BackupDirectory -Recurse -Force
-    }
   }
 
   Context "ApplyRetentionPolicy functionality for multi-device backups" {
-    BeforeAll {
+    BeforeEach {
       $Devices = 4
       SetupTestEnvironment -BackupDirectory $BackupDirectory -DatabaseName $DatabaseName -IncrementalFiles $IncrementalFiles -FullBackupFiles $FullBackupFiles -StartDate $StartDate -Devices $Devices -timestampFormat $timestampFormat -challengingFilenames $challengingFilenames
     }
@@ -235,10 +250,6 @@ Describe "ApplyRetentionPolicy Tests" {
       $retainedFiles = Get-ChildItem -Path $BackupDirectory -Filter "*$extension" | Where-Object { $_.Name -match $regexPattern }
       $totalExpectedRetainedFiles = $RetentionPolicyCount * $Devices
       $retainedFiles.Count | Should Be $totalExpectedRetainedFiles
-    }
-
-    AfterAll {
-      Remove-Item -Path $BackupDirectory -Recurse -Force
     }
   }
 }
