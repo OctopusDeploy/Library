@@ -119,7 +119,7 @@ Describe "ApplyRetentionPolicy Tests" {
     $Devices = 1
     $IncrementalFiles = 10
     $FullBackupFiles = 10
-    SetupTestEnvironment -BackupDirectory $BackupDirectory -DatabaseName $DatabaseName -IncrementalFiles $IncrementalFiles -FullBackupFiles $FullBackupFiles -StartDate $StartDate -Devices $Devices -timestampFormat $timestampFormat -challengingFilenames $challengingFilenames -Verbose:$VerbosePreference
+    SetupTestEnvironment -BackupDirectory $BackupDirectory -DatabaseName $DatabaseName -IncrementalFiles $IncrementalFiles -FullBackupFiles $FullBackupFiles -StartDate $StartDate -Devices $Devices -timestampFormat $timestampFormat -challengingFilenames $challengingFilenames
   }
 
   AfterEach {

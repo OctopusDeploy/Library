@@ -53,8 +53,7 @@ function Run-Tests {
   # Find and run all Pester test files in the tests directory
   foreach ($testFile in $testFiles) {
       Write-Host "Running tests in: $($testFile.FullName)"
-      #Invoke-Pester -Path $testFile.FullName
-      Invoke-Pester -Script @{Path=$testFile.FullName ; Parameters = @{ Verbose = $True }}
+      Invoke-Pester -Path $testFile.FullName
   }
 }
 
