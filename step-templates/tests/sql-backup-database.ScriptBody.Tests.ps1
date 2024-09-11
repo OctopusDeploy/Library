@@ -79,34 +79,34 @@ function SetupTestEnvironment {
 Describe "ApplyRetentionPolicy Tests" {
 
   BeforeAll {
-  $script:BackupDirectory = "C:\Backups"
-  $script:DatabaseName = "ExampleDB"
-  $script:StartDate = Get-Date
-  $script:timestampFormat = "yyyy-MM-dd-HHmmss"
-  $script:challengingFilenames = @(
-    # similar DB name noted during PR review
-    "ExampleDB_final_2024-03-18-1030.bak",
-    # Similar DB name, valid timestamp. Might be confused with a backup for a different but similarly named database.
-    "ExampleDB1_2024-03-18-1030.bak",
-    # Same DB, different valid timestamp. Tests accuracy of timestamp matching.
-    "ExampleDB_2024-03-19-1030.bak",
-    # Similar timestamp format, but different. Might test pattern matching robustness.
-    "ExampleDB_20240318_1030.bak",
-    # Different DB, valid timestamp. Should not be matched if script correctly identifies DB name.
-    "TestDB_2024-03-18-1030.bak",
-    # Non-backup file type with valid naming. Should be ignored by the cleanup script.
-    "ExampleDB_2024-03-18-1030.log",
-    # Completely unrelated file. Should always be ignored by the cleanup script.
-    "RandomFile.txt",
-    # Similar DB name with underscore. Might be confused with main database name if script uses loose matching.
-    "Example_DB_2024-03-18-1030.bak",
-    # Same DB name, lowercase. Tests case sensitivity of the script.
-    "exampledb_2024-03-18-1030.bak",
-    # Similar timestamp, underscore separator. Variation in timestamp format might challenge pattern matching.
-    "ExampleDB_2024-03-18_1030.bak",
-    # Different DB, valid timestamp for trn. Tests database name matching accuracy with incremental backups.
-    "AnotherDB_2024-03-18-1030.trn"
-  )
+    $script:BackupDirectory = "C:\Backups"
+    $script:DatabaseName = "ExampleDB"
+    $script:StartDate = Get-Date
+    $script:timestampFormat = "yyyy-MM-dd-HHmmss"
+    $script:challengingFilenames = @(
+      # similar DB name noted during PR review
+      "ExampleDB_final_2024-03-18-1030.bak",
+      # Similar DB name, valid timestamp. Might be confused with a backup for a different but similarly named database.
+      "ExampleDB1_2024-03-18-1030.bak",
+      # Same DB, different valid timestamp. Tests accuracy of timestamp matching.
+      "ExampleDB_2024-03-19-1030.bak",
+      # Similar timestamp format, but different. Might test pattern matching robustness.
+      "ExampleDB_20240318_1030.bak",
+      # Different DB, valid timestamp. Should not be matched if script correctly identifies DB name.
+      "TestDB_2024-03-18-1030.bak",
+      # Non-backup file type with valid naming. Should be ignored by the cleanup script.
+      "ExampleDB_2024-03-18-1030.log",
+      # Completely unrelated file. Should always be ignored by the cleanup script.
+      "RandomFile.txt",
+      # Similar DB name with underscore. Might be confused with main database name if script uses loose matching.
+      "Example_DB_2024-03-18-1030.bak",
+      # Same DB name, lowercase. Tests case sensitivity of the script.
+      "exampledb_2024-03-18-1030.bak",
+      # Similar timestamp, underscore separator. Variation in timestamp format might challenge pattern matching.
+      "ExampleDB_2024-03-18_1030.bak",
+      # Different DB, valid timestamp for trn. Tests database name matching accuracy with incremental backups.
+      "AnotherDB_2024-03-18-1030.trn"
+    )
   }
 
   BeforeEach {
