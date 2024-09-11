@@ -160,48 +160,47 @@ Describe "ApplyRetentionPolicy Tests" {
 
     It "Retains only the most recent backup when the RetentionPolicyCount is 1" {
       $RetentionPolicyCount = 1
-
-      ApplyRetentionPolicy -BackupDirectory $BackupDirectory -dbName $DatabaseName -RetentionPolicyCount $RetentionPolicyCount -Incremental $false -Devices $Devices -timestampFormat $timestampFormat
+      $InitialFileCount = (Get-ChildItem -Path $BackupDirectory).Count
 
       $extension = '.bak'
       $devicePattern = if ($Devices -gt 1) { "(_\d+)" } else { "" }
       $dateRegex = $timestampFormat -replace "yyyy", "\d{4}" -replace "MM", "\d{2}" -replace "dd", "\d{2}" -replace "HH", "\d{2}" -replace "mm", "\d{2}" -replace "ss", "\d{2}"
       $regexPattern = "^${DatabaseName}_${dateRegex}${devicePattern}${extension}$"
+      $affectedFiles = @(Get-ChildItem -Path $BackupDirectory -Filter "*$extension" | Where-Object { $_.Name -match $regexPattern })
+
+      ApplyRetentionPolicy -BackupDirectory $BackupDirectory -dbName $DatabaseName -RetentionPolicyCount $RetentionPolicyCount -Incremental $false -Devices $Devices -timestampFormat $timestampFormat
+
       $retainedFiles = @(Get-ChildItem -Path $BackupDirectory -Filter "*$extension" | Where-Object { $_.Name -match $regexPattern })
       $retainedFiles.Count | Should Be $RetentionPolicyCount
+      $deletedFiles = $affectedFiles.Count - $RetentionPolicyCount
+      $deletedFiles | Should Be ($affectedFiles.Count - $retainedFiles.Count)
     }
 
     It "Does not delete files that do not match the backup file naming pattern" {
-      # Define the extension based on whether we're dealing with incremental backups or full backups
       $extension = '.bak'
-      # Define the regex pattern to match the backup files
       $regexPattern = "^${DatabaseName}_\d{4}-\d{2}-\d{2}-\d{6}${extension}$"
-
-      # Count files that do not match the backup file naming convention before applying the retention policy
       $initialUnrelatedFileCount = @(Get-ChildItem -Path $BackupDirectory -File | Where-Object { -not ($_.Name -match $regexPattern) }).Count
 
-      # Apply the retention policy
       ApplyRetentionPolicy -BackupDirectory $BackupDirectory -dbName $DatabaseName -RetentionPolicyCount 3 -Incremental $false -Devices $Devices -timestampFormat $timestampFormat
 
-      # Count files that do not match the backup file naming convention after applying the retention policy
       $finalUnrelatedFileCount = @(Get-ChildItem -Path $BackupDirectory -File | Where-Object { -not ($_.Name -match $regexPattern) }).Count
-
-      # The count of unrelated files should remain the same before and after applying the retention policy
       $finalUnrelatedFileCount | Should Be $initialUnrelatedFileCount
     }
 
     It "Retains the specified number of the most recent incremental backups" {
       $RetentionPolicyCount = 5
-
-      ApplyRetentionPolicy -BackupDirectory $BackupDirectory -dbName $DatabaseName -RetentionPolicyCount $RetentionPolicyCount -Incremental $true -Devices $Devices -timestampFormat $timestampFormat
-
       $extension = '.trn'
       $devicePattern = if ($Devices -gt 1) { "(_\d+)" } else { "" }
       $dateRegex = $timestampFormat -replace "yyyy", "\d{4}" -replace "MM", "\d{2}" -replace "dd", "\d{2}" -replace "HH", "\d{2}" -replace "mm", "\d{2}" -replace "ss", "\d{2}"
       $regexPattern = "^${DatabaseName}_${dateRegex}${devicePattern}${extension}$"
+      $affectedFiles = @(Get-ChildItem -Path $BackupDirectory -Filter "*$extension" | Where-Object { $_.Name -match $regexPattern })
+
+      ApplyRetentionPolicy -BackupDirectory $BackupDirectory -dbName $DatabaseName -RetentionPolicyCount $RetentionPolicyCount -Incremental $true -Devices $Devices -timestampFormat $timestampFormat
 
       $retainedFiles = @(Get-ChildItem -Path $BackupDirectory -Filter "*$extension" | Where-Object { $_.Name -match $regexPattern })
       $retainedFiles.Count | Should Be $RetentionPolicyCount
+      $deletedFiles = $affectedFiles.Count - $RetentionPolicyCount
+      $deletedFiles | Should Be ($affectedFiles.Count - $retainedFiles.Count)
     }
   }
 
@@ -213,17 +212,20 @@ Describe "ApplyRetentionPolicy Tests" {
 
     It "Retains the specified number of the most recent backups" {
       $RetentionPolicyCount = 3
-
-      ApplyRetentionPolicy -BackupDirectory $BackupDirectory -dbName $DatabaseName -RetentionPolicyCount $RetentionPolicyCount -Incremental $false -Devices $Devices -timestampFormat $timestampFormat
-
       $extension = '.bak'
       $timestampFormat = "yyyy-MM-dd-HHmmss"
       $devicePattern = if ($Devices -gt 1) { "(_\d+)" } else { "" }
       $dateRegex = $timestampFormat -replace "yyyy", "\d{4}" -replace "MM", "\d{2}" -replace "dd", "\d{2}" -replace "HH", "\d{2}" -replace "mm", "\d{2}" -replace "ss", "\d{2}"
       $regexPattern = "^${DatabaseName}_${dateRegex}${devicePattern}${extension}$"
+      $affectedFiles = @(Get-ChildItem -Path $BackupDirectory -Filter "*$extension" | Where-Object { $_.Name -match $regexPattern })
+
+      ApplyRetentionPolicy -BackupDirectory $BackupDirectory -dbName $DatabaseName -RetentionPolicyCount $RetentionPolicyCount -Incremental $false -Devices $Devices -timestampFormat $timestampFormat
+
       $retainedFiles = Get-ChildItem -Path $BackupDirectory -Filter "*$extension" | Where-Object { $_.Name -match $regexPattern }
       $totalExpectedRetainedFiles = $RetentionPolicyCount * $Devices
       $retainedFiles.Count | Should Be $totalExpectedRetainedFiles
+      $deletedFiles = $affectedFiles.Count - $RetentionPolicyCount * $Devices
+      $deletedFiles | Should Be ($affectedFiles.Count - $retainedFiles.Count)
     }
 
     It "Does not delete files that do not match the backup file naming pattern for multiple devices" {
@@ -239,14 +241,14 @@ Describe "ApplyRetentionPolicy Tests" {
     It "Correctly retains the specified number of the most recent incremental backups for multiple devices" {
       $RetentionPolicyCount = 5
       $Incremental = $true
-
-      ApplyRetentionPolicy -BackupDirectory $BackupDirectory -dbName $DatabaseName -RetentionPolicyCount $RetentionPolicyCount -Incremental $Incremental -Devices $Devices -timestampFormat $timestampFormat
-
       $extension = '.trn'
       $timestampFormat = "yyyy-MM-dd-HHmmss"
       $devicePattern = if ($Devices -gt 1) { "(_\d+)" } else { "" }
       $dateRegex = $timestampFormat -replace "yyyy", "\d{4}" -replace "MM", "\d{2}" -replace "dd", "\d{2}" -replace "HH", "\d{2}" -replace "mm", "\d{2}" -replace "ss", "\d{2}"
       $regexPattern = "^${DatabaseName}_${dateRegex}${devicePattern}${extension}$"
+
+      ApplyRetentionPolicy -BackupDirectory $BackupDirectory -dbName $DatabaseName -RetentionPolicyCount $RetentionPolicyCount -Incremental $Incremental -Devices $Devices -timestampFormat $timestampFormat
+
       $retainedFiles = Get-ChildItem -Path $BackupDirectory -Filter "*$extension" | Where-Object { $_.Name -match $regexPattern }
       $totalExpectedRetainedFiles = $RetentionPolicyCount * $Devices
       $retainedFiles.Count | Should Be $totalExpectedRetainedFiles
