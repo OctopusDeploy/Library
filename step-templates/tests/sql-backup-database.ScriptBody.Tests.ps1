@@ -56,9 +56,6 @@ function SetupTestEnvironment {
         if (-not (Test-Path -Path $filePath)) {
           throw "Failed to create backup file: $filePath"
         }
-        else {
-          #Write-Host "Created std. backup file: $filePath"
-        }
       }
     }
   }
@@ -75,9 +72,6 @@ function SetupTestEnvironment {
       # Validate that the challenging file was created
       if (-not (Test-Path -Path $filePath)) {
         throw "Failed to create challenging file: $filePath"
-      }
-      else {
-        #Write-Host "Created challenging file: $filePath"
       }
   }
 }
