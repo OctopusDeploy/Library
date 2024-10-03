@@ -1,0 +1,66 @@
+{
+  "Id": "8ce3eb55-2c35-45c2-be8c-27e71ffbf032",
+  "Name": "Octopus - Prompt AI",
+  "Description": "Prompt the Octopus AI service with a message and store the result in a variable. See https://octopus.com/docs/administration/copilot for more information.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Python",
+    "Octopus.Action.Script.ScriptBody": "import os\nimport re\nimport http.client\nimport json\n\n# If this script is not being run as part of an Octopus step, return variables from environment variables.\n# Periods are replaced with underscores, and the variable name is converted to uppercase\nif 'get_octopusvariable' not in globals():\n    def get_octopusvariable(variable):\n        return os.environ.get(re.sub('\\\\.', '_', variable.upper()))\n\nif 'set_octopusvariable' not in globals():\n    def set_octopusvariable(variable, value):\n        print(f\"Setting {variable} to {value}\")\n\n# If this script is not being run as part of an Octopus step, print directly to std out.\nif 'printverbose' not in globals():\n    def printverbose(msg):\n        print(msg)\n\ndef make_post_request(message, github_token, octopus_api_key, octopus_server):\n    \"\"\"\n    Query the Octopus AI service with a message.\n    :param message: The prompt message\n    :param github_token: The GitHub token\n    :param octopus_api_key: The Octopus API key\n    :param octopus_server: The Octopus URL\n    :return: The AI response\n    \"\"\"\n    headers = {\n        \"X-GitHub-Token\": github_token,\n        \"X-Octopus-ApiKey\": octopus_api_key,\n        \"X-Octopus-Server\": octopus_server,\n        \"Content-Type\": \"application/json\"\n    }\n    body = json.dumps({\"messages\": [{\"content\": message}]}).encode(\"utf8\")\n\n    conn = http.client.HTTPSConnection(\"aiagent.octopus.com\")\n    conn.request(\"POST\", \"/api/form_handler\", body, headers)\n    response = conn.getresponse()\n    response_data = response.read().decode(\"utf8\")\n    conn.close()\n\n    return convert_from_sse_response(response_data)\n\n\ndef convert_from_sse_response(sse_response):\n    \"\"\"\n    Converts an SSE response into a string.\n    :param sse_response: The SSE response to convert.\n    :return: The string representation of the SSE response.\n    \"\"\"\n\n    responses = map(\n        lambda line: json.loads(line.replace(\"data: \", \"\")),\n        filter(lambda line: line.strip(), sse_response.split(\"\\n\")),\n    )\n    content_responses = filter(\n        lambda response: \"content\" in response[\"choices\"][0][\"delta\"], responses\n    )\n    return \"\\n\".join(\n        map(\n            lambda line: line[\"choices\"][0][\"delta\"][\"content\"].strip(),\n            content_responses,\n        )\n    )\n\nstep_name = get_octopusvariable(\"Octopus.Step.Name\")\nmessage = get_octopusvariable(\"OctopusAI.Prompt\")\ngithub_token = get_octopusvariable(\"OctopusAI.GitHub.Token\")\noctopus_api = get_octopusvariable(\"OctopusAI.Octopus.APIKey\")\noctopus_url = get_octopusvariable(\"OctopusAI.Octopus.Url\")\n\nresult = make_post_request(message, github_token, octopus_api, octopus_url)\n\nset_octopusvariable(\"AIResult\", result)\n\nprint(result)\nprint(f\"AI result is available in the variable: Octopus.Action[{step_name}].Output.AIResult\")"
+  },
+  "Parameters": [
+    {
+      "Id": "10c6b0c8-92e0-4bce-91a7-0d1d0b275c1a",
+      "Name": "OctopusAI.Prompt",
+      "Label": "The prompt to send to the AI service",
+      "HelpText": null,
+      "DefaultValue": "Describe deployment \"#{Octopus.Release.Number}\" for project \"#{Octopus.Project.Name}\" to environment \"#{Octopus.Environment.Name}\" in space \"#{Octopus.Space.Name}\"",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "831e4eda-0ad3-460a-9375-42ce580bfd7d",
+      "Name": "OctopusAI.GitHub.Token",
+      "Label": "The GitHub Token",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "7d6a276d-fcb5-4dd9-b5a3-b7a3b48782c1",
+      "Name": "OctopusAI.Octopus.APIKey",
+      "Label": "The Octopus API Key",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "3eb54042-8169-4ae4-8910-a02b14325e71",
+      "Name": "OctopusAI.Octopus.Url",
+      "Label": "The Octopus URL",
+      "HelpText": null,
+      "DefaultValue": "#{Octopus.Web.ServerUri}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2024-10-03T20:35:41.372Z",
+    "OctopusVersion": "2024.4.3391",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "octopus"
+}
