@@ -1,0 +1,212 @@
+{
+    "Id": "4de90708-1f76-4103-ab27-e9fd1916fa07",
+    "Name": "MongoDB - Create Database if not exists",
+    "Description": "Creates a new database on a MongoDB server with an initial collection.",
+    "ActionType": "Octopus.Script",
+    "Version": 3,
+    "Author": "twerthi",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Define functions
+function Get-ModuleInstalled
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName
+    )
+
+    # Check to see if the module is installed
+    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))
+    {
+        # It is installed
+        return $true
+    }
+    else
+    {
+        # Module not installed
+        return $false
+    }
+}
+
+function Install-PowerShellModule
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName,
+        $LocalModulesPath
+    )
+
+\t# Check to see if the package provider has been installed
+    if ((Get-NugetPackageProviderNotInstalled) -ne $false)
+    {
+    \t# Display that we need the nuget package provider
+        Write-Host \"Nuget package provider not found, installing ...\"
+        
+        # Install Nuget package provider
+        Install-PackageProvider -Name Nuget -Force
+    }
+
+\t# Save the module in the temporary location
+    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force
+}
+
+function Get-NugetPackageProviderNotInstalled
+{
+\t# See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+function Get-DatabaseExists
+{
+\t# Define parameters
+    param ($DatabaseName)
+    
+\t# Execute query
+    $mongodbDatabases = Get-MdbcDatabase
+    
+    return $mongodbDatabases.DatabaseNamespace -contains $DatabaseName
+}
+
+# Define PowerShell Modules path
+$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName
+$env:PSModulePath = \"$LocalModules$([System.IO.Path]::PathSeparator)$env:PSModulePath\"
+$PowerShellModuleName = \"Mdbc\"
+
+# Set secure protocols
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Check to see if SimplySql module is installed
+if ((Get-ModuleInstalled -PowerShellModuleName $PowerShellModuleName) -ne $true)
+{
+    # Tell user what we're doing
+    Write-Output \"PowerShell module $PowerShellModuleName is not installed, downloading temporary copy ...\"
+
+    # Install temporary copy
+    Install-PowerShellModule -PowerShellModuleName $PowerShellModuleName -LocalModulesPath $LocalModules
+}
+
+# Display
+Write-Output \"Importing module $PowerShellModuleName ...\"
+
+# Check to see if it was downloaded
+if ((Test-Path -Path \"$LocalModules\\$PowerShellModuleName\") -eq $true)
+{
+\t# Use specific location
+    $PowerShellModuleName = \"$LocalModules\\$PowerShellModuleName\"
+}
+
+# Import the module
+Import-Module -Name $PowerShellModuleName
+
+# Connect to mongodb instance
+$connectionUrl = \"mongodb://$($MongoDBUsername):$($MogoDBUserpassword)@$($MongoDBServerName):$($MongoDBPort)\"
+
+# Connect to MongoDB server
+Connect-Mdbc $connectionUrl \"admin\"
+
+# Get whether the database exits
+if ((Get-DatabaseExists -DatabaseName $MongoDBDatabaseName) -ne $true)
+{
+\t# Create database
+    Write-Output \"Database $MongoDBDatabaseName doesn't exist.\"
+    Connect-Mdbc $connectionUrl \"$MongoDBDatabaseName\"
+    
+    # Databases don't get created unless some data has been added
+    Add-MdbcCollection $MongoDBInitialCollection
+    
+    # Check to make sure it was successful
+    if ((Get-DatabaseExists -DatabaseName $MongoDBDatabaseName))
+    {
+    \t# Display success
+        Write-Output \"$MongoDBDatabaseName created successfully.\"        
+    }
+    else
+    {
+    \tWrite-Error \"Failed to create $MongoDBDatabaseName!\"
+    }
+}
+else
+{
+\tWrite-Output \"Database $MongoDBDatabaseName already exists.\"
+}
+
+
+
+
+
+
+"
+    },
+    "Parameters": [
+      {
+        "Id": "d6343cb6-40d3-47a8-898f-ff3aeb6f9c1a",
+        "Name": "MongoDBServerName",
+        "Label": "Server Name",
+        "HelpText": "Name or IP address of the MongoDB server instance.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "75eae92c-0081-481b-b79a-73524a798349",
+        "Name": "MongoDBPort",
+        "Label": "Port",
+        "HelpText": "Port number the MongoDB instance is listening on.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "dbb4ef7a-ab79-4036-ac7b-466d683341f5",
+        "Name": "MongoDBDatabaseName",
+        "Label": "Database Name",
+        "HelpText": "Name of the database to create.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "8fabfc02-2f33-4663-9af3-b8c2f74e0175",
+        "Name": "MongoDBInitialCollection",
+        "Label": "Initial Collection",
+        "HelpText": "Name of the Initial Collection in the database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+      },
+      {
+        "Id": "0f0612d3-e039-4940-bcb7-a3333266ae95",
+        "Name": "MongoDBUsername",
+        "Label": "Username",
+        "HelpText": "Username to connect with.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "fbdb0e70-33d5-41a6-b316-66f1be7e5a18",
+        "Name": "MogoDBUserpassword",
+        "Label": "Password",
+        "HelpText": "Password for the user to connect with.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2020-12-02T20:27:29.307Z",
+      "OctopusVersion": "2020.5.0",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+    "LastModifiedBy": "bobjwalker",
+    "Category": "mongodb"
+  }

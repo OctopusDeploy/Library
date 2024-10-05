@@ -1,0 +1,95 @@
+{
+  "Id": "4841c8e6-3f23-4b52-90d0-c363eb0bc526",
+  "Name": "PagerDuty - Close Maintenance Window",
+  "Description": "Closes a maintenance window by Id.",
+  "ActionType": "Octopus.Script",
+  "Version": 8,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "param(
+    [string]$OpeningStepName = \"\",
+    [string]$Token = \"\"
+) 
+
+function Get-Param($Name, [switch]$Required, $Default) {
+    $Result = $null
+
+    if ($OctopusParameters -ne $null) {
+        $Result = $OctopusParameters[$Name]
+    }
+
+    if ($Result -eq $null) {
+        $variable = Get-Variable $Name -EA SilentlyContinue   
+        if ($variable -ne $null) {
+            $Result = $variable.Value
+        }
+    }
+
+    if ($Result -eq $null -or $Result -eq \"\") {
+        if ($Required) {
+            throw \"Missing parameter value $Name\"
+        } else {
+            $Result = $Default
+        }
+    }
+
+    return $Result
+}
+
+& {
+    param([string]$OpeningStepName, [string]$Token)
+
+\t$WindowId = $OctopusParameters[\"Octopus.Action[$OpeningStepName].Output.WindowId\"]
+    $Uri = \"https://api.pagerduty.com/maintenance_windows/$WindowId\"
+    $Headers = @{
+          \"Authorization\" = \"Token token=$Token\"
+          \"Accept\" = \"application/vnd.pagerduty+json;version=2\"
+\t\t}
+
+\ttry {
+\t\tInvoke-RestMethod -Uri $Uri -Method Delete -ContentType \"application/json\" -Headers $Headers
+\t\tWrite-Host \"PagerDuty window closed for window_id: $WindowId\"
+\t} catch [System.Exception] {
+        Write-Host $_.Exception.Message
+        
+        $ResponseStream = $_.Exception.Response.GetResponseStream()
+        $Reader = New-Object System.IO.StreamReader($ResponseStream)
+        $Reader.ReadToEnd() | Write-Host
+
+\t\tExit 0
+    }
+} (Get-Param 'OpeningStepName' -Required) (Get-Param 'Token' -Required)"
+  },
+  "Parameters": [
+    {
+      "Name": "Token",
+      "Label": "Token",
+      "HelpText": "The API token of the PagerDuty instance.
+
+Found here: https://mydomain.pagerduty.com/api_keys",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "OpeningStepName",
+      "Label": "OpeningStepName",
+      "HelpText": "The **previous** step in which the window to close was opened.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    }
+  ],
+  "LastModifiedOn": "2020-07-23T07:38:49.056Z",
+  "LastModifiedBy": "tfbryan",
+  "$Meta": {
+    "ExportedAt": "2020-07-23T07:38:49.056Z",
+    "OctopusVersion": "2020.1.14",
+    "Type": "ActionTemplate"
+  },
+  "Category": "pagerduty"
+}
