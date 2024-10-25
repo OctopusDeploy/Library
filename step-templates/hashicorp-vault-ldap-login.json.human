@@ -1,0 +1,211 @@
+{
+    "Id": "de807003-3b05-4649-9af3-11a2c7722b3f",
+    "Name": "HashiCorp Vault - LDAP Login",
+    "Description": "This step logs into a HashiCorp Vault server using the [LDAP](https://www.vaultproject.io/docs/auth/ldap) auth method.
+
+The `client_token` from the response will be made available as a sensitive [Output variable](https://octopus.com/docs/projects/variables/output-variables#sensitive-output-variables) named `LDAPAuthToken` for use in other step templates.
+
+This step template makes use of the [Rest API](https://www.vaultproject.io/api/auth/ldap#login-with-ldap-user), so no other dependencies are needed. 
+
+**Required:** 
+- The Vault server must be [unsealed](https://www.vaultproject.io/docs/concepts/seal).
+- You must supply the full path where the LDAP auth method is mounted.
+- You must supply both a `Username` and `Password`.
+
+*Optional*:
+- A Vault [namespace](https://www.vaultproject.io/docs/enterprise/namespaces) to use. Nested namespaces can also be supplied, e.g. `ns1/ns2`. **Note:** This field is only supported on [Vault Enterprise](https://www.hashicorp.com/products/vault) .
+
+Notes:
+
+- Tested on Vault Server `1.11.3`.
+- Tested on both PowerShell Desktop and PowerShell Core.",
+    "ActionType": "Octopus.Script",
+    "Version": 5,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# Variables
+$VAULT_LDAP_LOGIN_ADDRESS = $OctopusParameters[\"Vault.LDAP.Login.VaultAddress\"]
+$VAULT_LDAP_LOGIN_API_VERSION = $OctopusParameters[\"Vault.LDAP.Login.ApiVersion\"]
+$VAULT_LDAP_LOGIN_NAMESPACE = $OctopusParameters[\"Vault.LDAP.Login.Namespace\"]
+$VAULT_LDAP_LOGIN_AUTH_PATH = $OctopusParameters[\"Vault.LDAP.Login.AuthPath\"]
+$VAULT_LDAP_LOGIN_USERNAME = $OctopusParameters[\"Vault.LDAP.Login.Username\"]
+$VAULT_LDAP_LOGIN_PASSWORD = $OctopusParameters[\"Vault.LDAP.Login.Password\"]
+
+# Validation
+if ([string]::IsNullOrWhiteSpace($VAULT_LDAP_LOGIN_ADDRESS)) {
+    throw \"Required parameter VAULT_LDAP_LOGIN_ADDRESS not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($VAULT_LDAP_LOGIN_API_VERSION)) {
+    throw \"Required parameter VAULT_LDAP_LOGIN_API_VERSION not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($VAULT_LDAP_LOGIN_AUTH_PATH)) {
+    throw \"Required parameter VAULT_LDAP_LOGIN_AUTH_PATH not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($VAULT_LDAP_LOGIN_USERNAME)) {
+    throw \"Required parameter VAULT_LDAP_LOGIN_USERNAME not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($VAULT_LDAP_LOGIN_PASSWORD)) {
+    throw \"Required parameter VAULT_LDAP_LOGIN_PASSWORD not specified\"
+}
+
+# Helper functions
+###############################################################################
+function Get-WebRequestErrorBody {
+    param (
+        $RequestError
+    )
+
+    # Powershell < 6 you can read the Exception
+    if ($PSVersionTable.PSVersion.Major -lt 6) {
+        if ($RequestError.Exception.Response) {
+            $reader = New-Object System.IO.StreamReader($RequestError.Exception.Response.GetResponseStream())
+            $reader.BaseStream.Position = 0
+            $reader.DiscardBufferedData()
+            $rawResponse = $reader.ReadToEnd()
+            $response = \"\"
+            try { $response = $rawResponse | ConvertFrom-Json } catch { $response = $rawResponse }
+            return $response
+        }
+    }
+    else {
+        return $RequestError.ErrorDetails.Message
+    }
+}
+###############################################################################
+
+$VAULT_LDAP_LOGIN_ADDRESS = $VAULT_LDAP_LOGIN_ADDRESS.TrimEnd('/')
+$VAULT_LDAP_LOGIN_AUTH_PATH = $VAULT_LDAP_LOGIN_AUTH_PATH.TrimStart('/').TrimEnd('/')
+
+# Local variables
+$StepName = $OctopusParameters[\"Octopus.Step.Name\"]
+
+try {
+    $payload = @{
+        password = $VAULT_LDAP_LOGIN_PASSWORD
+    }
+    
+    $Headers = @{}
+    if (-not [string]::IsNullOrWhiteSpace($VAULT_LDAP_LOGIN_NAMESPACE)) {
+        Write-Verbose \"Setting 'X-Vault-Namespace' header to: $VAULT_LDAP_LOGIN_NAMESPACE\"
+        $Headers.Add(\"X-Vault-Namespace\", $VAULT_LDAP_LOGIN_NAMESPACE)
+    }
+    
+    $uri = \"$VAULT_LDAP_LOGIN_ADDRESS/$VAULT_LDAP_LOGIN_API_VERSION/$VAULT_LDAP_LOGIN_AUTH_PATH/login/$([uri]::EscapeDataString($VAULT_LDAP_LOGIN_USERNAME))\"
+    Write-Verbose \"Making request to $uri\"
+    $response = Invoke-RestMethod -Method Post -Uri $uri -Body ($payload | ConvertTo-Json -Depth 10) -Headers $Headers
+    if ($null -ne $response) {
+        Set-OctopusVariable -Name \"LDAPAuthToken\" -Value $response.auth.client_token -Sensitive
+        Write-Host \"Created output variable: ##{Octopus.Action[$StepName].Output.LDAPAuthToken}\"
+    }
+    else {
+        Write-Error \"Null or Empty response returned from Vault server\" -Category InvalidResult
+    }
+}
+catch {
+    $ExceptionMessage = $_.Exception.Message
+    $ErrorBody = Get-WebRequestErrorBody -RequestError $_
+    $Message = \"An error occurred logging in with LDAP: $ExceptionMessage\"
+    $AdditionalDetail = \"\"
+    if (![string]::IsNullOrWhiteSpace($ErrorBody)) {
+        if ($null -ne $ErrorBody.errors) {
+            $AdditionalDetail = $ErrorBody.errors -Join \",\"   
+        }
+        else {
+            $errorDetails = $null
+            try { $errorDetails = ConvertFrom-Json $ErrorBody } catch {}
+            $AdditionalDetail += if ($null -ne $errorDetails) { $errorDetails.errors -Join \",\" } else { $ErrorBody } 
+        }
+    }
+    
+    if (![string]::IsNullOrWhiteSpace($AdditionalDetail)) {
+        $Message += \"`n`tDetail: $AdditionalDetail\"
+    }
+
+    Write-Error $Message -Category ConnectionError
+}"
+    },
+    "Parameters": [
+      {
+        "Id": "d0e95468-4f9e-4272-9dfa-d964c610a279",
+        "Name": "Vault.LDAP.Login.VaultAddress",
+        "Label": "Vault Server URL",
+        "HelpText": "The URL of the Vault instance you are connecting to. Port should be included (The default is `8200`). For example:
+
+
+`https://myvault.local:8200/`",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "98d2a264-0466-4e0d-b5a3-4d172c81f405",
+        "Name": "Vault.LDAP.Login.ApiVersion",
+        "Label": "API version",
+        "HelpText": "All API routes are prefixed with a version e.g. `/v1/`.
+
+See the [API documentation](https://www.vaultproject.io/api-docs) for further details.",
+        "DefaultValue": "v1",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "v1|v1"
+        }
+      },
+      {
+        "Id": "74fa0a75-0ab4-4a9d-a417-c9b9b391c640",
+        "Name": "Vault.LDAP.Login.Namespace",
+        "Label": "Namespace (Optional)",
+        "HelpText": "The _optional_ [namespace](https://www.vaultproject.io/docs/enterprise/namespaces) to use. Nested namespaces can also be supplied, e.g. `ns1/ns2`.
+
+**Note:** This field is only supported on [Vault Enterprise](https://www.hashicorp.com/products/vault) .",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "c56afe5a-6506-497f-99b0-ae8776f03269",
+        "Name": "Vault.LDAP.Login.AuthPath",
+        "Label": "LDAP Auth Login path",
+        "HelpText": "The path that the LDAP method is mounted at. The default is `/auth/ldap`. If the LDAP auth method was enabled at a different path, for example `my-path`, then specify `/my-path` instead.
+",
+        "DefaultValue": "/auth/ldap",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "7803e08c-026f-4d59-b902-f75a0992be48",
+        "Name": "Vault.LDAP.Login.Username",
+        "Label": "Username",
+        "HelpText": "The LDAP Username.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "7a00c426-43f1-4229-a036-37b018d089a6",
+        "Name": "Vault.LDAP.Login.Password",
+        "Label": "LDAP Password",
+        "HelpText": "The LDAP Password.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      }
+    ],
+    "LastModifiedAt": "2022-09-18T08:25:57.132Z",
+    "LastModifiedBy": "harrisonmeister",
+    "$Meta": {
+      "ExportedAt": "2022-09-18T08:25:57.132Z",
+    "OctopusVersion": "2022.4.2266",
+      "Type": "ActionTemplate"
+    },
+    "Category": "hashicorp-vault"
+  }
