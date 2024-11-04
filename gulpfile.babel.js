@@ -103,6 +103,8 @@ gulp.task(
 
 function humanize(categoryId) {
   switch (categoryId) {
+    case "1password-connect":
+      return "1Password Connect";
     case "amazon-chime":
       return "Amazon Chime";
     case "ansible":
