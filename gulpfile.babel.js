@@ -203,6 +203,8 @@ function humanize(categoryId) {
       return "MariaDB";
     case "microsoft-teams":
       return "Microsoft Teams";
+    case "microsoft-power-automate":
+      return "Microsoft Power Automate";
     case "mongodb":
       return "MongoDB";
     case "mulesoft":
