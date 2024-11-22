@@ -1,0 +1,99 @@
+{
+  "Id": "5ca37bfb-ebbc-4b4c-ab1e-06d462e7f910",
+  "Name": "File System - Rename File",
+  "Description": "Renames a file on the file system.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$filePath = $OctopusParameters['FilePath']\r
+$newName = $OctopusParameters['NewName']\r
+\r
+function Test-FileLocked([string]$filePath)\r
+{\r
+  Rename-Item $filePath $filePath -ErrorVariable errs -ErrorAction SilentlyContinue\r
+  return ($errs.Count -ne 0)\r
+}\r
+\r
+$fileExists = Test-Path -Path $filePath\r
+\r
+if (!$fileExists)\r
+{\r
+  Write-Warning \"File not found at $filePath\"\r
+\r
+  return\r
+}\r
+\r
+$fileIsLocked = Test-FileLocked($filePath)\r
+\r
+function Wait-ForFileUnlock\r
+{\r
+  for ($attemptNo = 1; $attemptNo -lt 6; $attemptNo++) {\r
+    Write-Host \"Waiting for the file to become unlocked $attemptNo/5\"\r
+\r
+    Start-Sleep -Seconds 10\r
+\r
+    $fileIsLocked = Test-FileLocked($filePath)\r
+\r
+    if (!$fileIsLocked)\r
+    {\r
+      return\r
+    }\r
+\r
+    if ($attemptNo -eq 5) {\r
+      Write-Error \"File at location $filePath is locked and cannot be renamed\"\r
+\r
+      return\r
+    }\r
+  }\r
+}\r
+\r
+if ($fileIsLocked)\r
+{\r
+  Wait-ForFileUnlock\r
+}\r
+\r
+Rename-Item -Path $filePath -NewName $newName\r
+\r
+Write-Host \"Successfully renamed file at location: $filePath to $newName\"",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "37fd875e-f5f7-493c-bb8c-30354bf39678",
+      "Name": "FilePath",
+      "Type": "String",
+      "Label": "File Path",
+      "HelpText": "The location of the file you wish to rename.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "facc1261-1b0e-476e-a520-13e682c4f8b7",
+      "Name": "NewName",
+      "Type": "String",
+      "Label": "New Name",
+      "HelpText": "The new name for the file you're renaming.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "daviesaus",
+  "$Meta": {
+    "ExportedAt": "2017-06-01T11:11:00.134Z",
+    "OctopusVersion": "3.11.11",
+    "Type": "ActionTemplate"
+  },
+  "Category": "filesystem"
+}

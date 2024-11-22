@@ -1,0 +1,284 @@
+{
+    "Id": "f035cbb1-3400-4808-bfde-d5a8aaf36cf1",
+    "Name": "MySQL - Execute Command",
+    "Description": "Enables ad-hoc command execution on a MySQL server",
+    "ActionType": "Octopus.Script",
+    "Version": 3,
+    "Author": "coryreid",
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+        "Octopus.Action.Script.ScriptSource": "Inline",
+        "Octopus.Action.Script.Syntax": "PowerShell",
+        "Octopus.Action.Script.ScriptBody": "# Define functions
+function Get-ModuleInstalled {
+    # Define parameters
+    param(
+        $PowerShellModuleName
+    )
+
+    # Check to see if the module is installed
+    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName)) {
+        # It is installed
+        return $true
+    }
+    else {
+        # Module not installed
+        return $false
+    }
+}
+
+function Install-PowerShellModule {
+    # Define parameters
+    param(
+        $PowerShellModuleName,
+        $LocalModulesPath
+    )
+
+    # Check to see if the package provider has been installed
+    if ((Get-NugetPackageProviderNotInstalled) -ne $false) {
+        # Display that we need the nuget package provider
+        Write-Host \"Nuget package provider not found, installing ...\"
+        
+        # Install Nuget package provider
+        Install-PackageProvider -Name Nuget -Force
+    }
+
+    # Save the module in the temporary location
+    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force
+}
+
+function Get-NugetPackageProviderNotInstalled {
+    # See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+# Define PowerShell Modules path
+$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName
+$env:PSModulePath = \"$LocalModules$([System.IO.Path]::PathSeparator)$env:PSModulePath\"
+$PowerShellModuleName = \"SimplySql\"
+
+# Set secure protocols
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Check to see if SimplySql module is installed
+if ((Get-ModuleInstalled -PowerShellModuleName $PowerShellModuleName) -ne $true) {
+    # Tell user what we're doing
+    Write-Output \"PowerShell module $PowerShellModuleName is not installed, downloading temporary copy ...\"
+
+    # Install temporary copy
+    Install-PowerShellModule -PowerShellModuleName $PowerShellModuleName -LocalModulesPath $LocalModules
+}
+
+# Display
+Write-Output \"Importing module $PowerShellModuleName ...\"
+
+# Check to see if it was downloaded
+if ((Test-Path -Path \"$LocalModules\\$PowerShellModuleName\") -eq $true) {
+    # Use specific version
+    $PowerShellModuleName = \"$LocalModules\\$PowerShellModuleName\"
+}
+
+# Import the module
+Import-Module -Name $PowerShellModuleName
+
+# Get whether trust certificate is necessary
+$mySqlTrustSSL = [System.Convert]::ToBoolean(\"$mySqlTrustSSL\")
+
+try {
+    # Declare initial connection string
+    $connectionString = \"Server=$mySqlServerName;Port=$mySqlServerPort;Database=$mySqlDatabaseName;\"
+    
+    # Check to see if we need to trust the ssl cert
+    if ($mySqlTrustSSL -eq $true) {
+        # Append SSL connection string components
+        $connectionString += \"SslMode=Required;\"
+    }
+
+    # Update the connection string based on authentication method
+    switch ($mySqlAuthenticationMethod) {
+        \"azuremanagedidentity\" {
+            # Get login token
+            Write-Host \"Generating Azure Managed Identity token ...\"
+            $token = Invoke-RestMethod -Method GET -Uri \"http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://ossrdbms-aad.database.windows.net\" -Headers @{\"MetaData\" = \"true\" }
+            
+            # Append remaining portion of connection string
+            $connectionString += \";Uid=$mySqlUsername;Pwd=`\"$($token.access_token)`\";\"
+            
+            break
+        }
+        \"awsiam\" {
+            # Region is part of the RDS endpoint, extract
+            $region = ($mySqlServerName.Split(\".\"))[2]
+
+            Write-Host \"Generating AWS IAM token ...\"
+            $mySqlPassword = (aws rds generate-db-auth-token --hostname $mySqlServerName --region $region --port $mySqlServerPort --username $mySqlUsername)
+
+            # Append remaining portion of connection string
+            $connectionString += \";Uid=$mySqlUsername;Pwd=`\"$mySqlPassword`\";\"
+
+            break
+        }
+        \"gcpserviceaccount\" {
+            # Define header
+            $header = @{ \"Metadata-Flavor\" = \"Google\" }
+
+            # Retrieve service accounts
+            $serviceAccounts = Invoke-RestMethod -Method Get -Uri \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/\" -Headers $header
+
+            # Results returned in plain text format, get into array and remove empty entries
+            $serviceAccounts = $serviceAccounts.Split([Environment]::NewLine, [StringSplitOptions]::RemoveEmptyEntries)
+
+            # Retreive the specific service account assigned to the VM
+            $serviceAccount = $serviceAccounts | Where-Object { $_.Contains(\"iam.gserviceaccount.com\") }
+
+            Write-Host \"Generating GCP IAM token ...\"
+            # Retrieve token for account
+            $token = Invoke-RestMethod -Method Get -Uri \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/$serviceAccount/token\" -Headers $header
+            
+            # Check to see if there was a username provided
+            if ([string]::IsNullOrWhitespace($mySqlUsername)) {
+                # Use the service account name, but strip off the .gserviceaccount.com part
+                $mySqlUsername = $serviceAccount.SubString(0, $serviceAccount.IndexOf(\".gserviceaccount.com\"))
+            }
+
+            # Append remaining portion of connection string
+            $connectionString += \";Uid=$mySqlUsername;Pwd=`\"$($token.access_token)`\";\"
+
+            break
+        }
+        \"usernamepassword\" {
+            # Append remaining portion of connection string
+            $connectionString += \";Uid=$mySqlUsername;Pwd=`\"$mySqlPassword`\";\"
+
+            break    
+        }
+
+        \"windowsauthentication\" {
+            # Append remaining portion of connection string
+            $connectionString += \";Integrated Security=True;\"
+        }
+    }
+
+    # Open connection
+    Open-MySqlConnection -ConnectionString $connectionString
+
+    # Execute the statement
+    $executionResult = Invoke-SqlUpdate -Query \"$mySqlCommand\" -CommandTimeout $mySqlCommandTimeout
+    
+    # Display the result
+    Get-SqlMessage
+}
+finally {
+    Close-SqlConnection
+}
+
+
+"
+    },
+    "Parameters": [
+        {
+            "Id": "c1126889-66f0-4bcf-8fca-8164097e73ee",
+            "Name": "mySqlServerName",
+            "Label": "Server",
+            "HelpText": "Hostname (or IP) of the MySQL database server.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "28f4f93c-c6a0-40fd-a0db-5d6830c9779a",
+            "Name": "mySqlAuthenticationMethod",
+            "Label": "Authentication Method",
+            "HelpText": "Method used to authenticate to the MySQL server.",
+            "DefaultValue": "usernamepassword",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Select",
+                "Octopus.SelectOptions": "awsiam|AWS EC2 IAM Role
+azuremanagedidentity|Azure Managed Identity
+gcpserviceaccount|GCP Service Account
+usernamepassword|Username\\Password
+windowsauthentication|Windows Authentication"
+            }
+        },
+        {
+            "Id": "a8563d9f-6ce3-4965-9f04-9fab03ec9385",
+            "Name": "mySqlUsername",
+            "Label": "Username",
+            "HelpText": "Username to use for the connection",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "19693759-b161-454f-86cc-535788da366e",
+            "Name": "mySqlPassword",
+            "Label": "Password",
+            "HelpText": "Password for the user account",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Sensitive"
+            }
+        },
+        {
+            "Id": "a5e1378b-990a-4ffe-a675-16d6c5f6b802",
+            "Name": "mySqlDatabaseName",
+            "Label": "Database Name",
+            "HelpText": "Name of the database to execute against.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "b2206d1e-cf1e-4305-b58a-0abf835ccc9a",
+            "Name": "mySqlServerPort",
+            "Label": "Server Port",
+            "HelpText": "Port for the database instance.",
+            "DefaultValue": "3306",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "fda16aec-ebcc-47f2-9294-7b37b985209c",
+            "Name": "mySqlTrustSSL",
+            "Label": "Trust SSL Certificate",
+            "HelpText": "Force trusting an SSL Certificate.",
+            "DefaultValue": "False",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Checkbox"
+            }
+        },
+        {
+            "Id": "786d615c-e7cd-4f1d-adb0-7787bd26c476",
+            "Name": "mySqlCommandTimeout",
+            "Label": "Command Timeout",
+            "HelpText": "Timeout value (in seconds) for SQL commands.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "0b10867f-b061-4cab-8044-175e6469e1e1",
+            "Name": "mySqlCommand",
+            "Label": "Command",
+            "HelpText": "SQL statement(s) to execute.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "MultiLineText"
+            }
+        }
+    ],
+    "StepPackageId": "Octopus.Script",
+    "$Meta": {
+        "ExportedAt": "2022-06-22T18:37:20.847Z",
+        "OctopusVersion": "2022.3.1455",
+        "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "coryreid",
+    "Category": "mysql"
+}

@@ -1,0 +1,146 @@
+{
+  "Id": "28a8ba94-d4cd-4638-b0e9-6e0e415300fc",
+  "Name": "SQL - Change User Mode Using SMO",
+  "Description": "This uses Sql Management Objects to change user access mode.  If the username and password are both empty then it will attempt a trusted connection using integrated security.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.SqlServer.SMO\") | out-null
+
+$SqlUsername = $OctopusParameters['SqlUsername']
+$SqlServer = $OctopusParameters['SqlServer']
+$SqlPassword = $OctopusParameters['SqlPassword']
+$SqlDatabase = $OctopusParameters['SqlDatabase']
+$UserAccess = $OctopusParameters['UserAccess']
+$Condition = $OctopusParameters['Condition']
+
+try
+{    
+    $server = new-object ('Microsoft.SqlServer.Management.Smo.Server') $SqlServer
+  
+    if ($SqlUsername -and $SqlPassword)
+    {
+        Write-Host \"Connecting to $SqlServer as $SqlUsername\"
+        $server.ConnectionContext.LoginSecure = $false
+        $server.ConnectionContext.set_Login($SqlUsername)
+        $server.ConnectionContext.set_Password($SqlPassword)      
+    } 
+    else {
+        Write-Host \"Connecting to $SqlServer with integrated security\"
+        $server.ConnectionContext.LoginSecure = $true
+    }
+    
+    $db = $server.Databases[$SqlDatabase]
+\tif ($db -eq $null)
+\t{
+        Write-Host \"Database $SqlDatabase not found, skipping step...\"
+\t} else {
+\t    Write-Host \"Setting user mode to $UserAccess for database $SqlDatabase with condition $Condition\"
+        $db.UserAccess = $UserAccess
+
+        if ($Condition -eq 'Force'){
+            $db.Alter([Microsoft.SqlServer.Management.Smo.TerminationClause]::RollbackTransactionsImmediately)
+        } elseif ($Condition -eq 'Fail'){
+            $db.Alter([Microsoft.SqlServer.Management.Smo.TerminationClause]::FailOnOpenTransactions)
+        } else {
+            $db.Alter()
+        }
+\t}
+}
+catch
+{    
+    $error[0] | format-list -force
+    Exit 1
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "98edcfe4-ffdf-483b-b3a5-ac4ba499cb6e",
+      "Name": "SqlServer",
+      "Label": "Sql Server",
+      "HelpText": "SQL Server Instance with Port",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "65fa5933-9e1d-498e-afd1-36a58bf7a4f6",
+      "Name": "SqlUsername",
+      "Label": "Sql Username (optional)",
+      "HelpText": "The SQL Account which has access to Create SQL Database",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b9e77f91-c083-47b4-b6ac-514929dd96f6",
+      "Name": "SqlPassword",
+      "Label": "Sql Password (optional)",
+      "HelpText": "The password for the SQL Account",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "df1c87f9-786e-4d87-9c69-4dd447ac6f81",
+      "Name": "SqlDatabase",
+      "Label": "Sql Database",
+      "HelpText": "Name of Database to be created if not already there",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "23a3485a-56c3-47ae-9755-9095eb2005f4",
+      "Name": "UserAccess",
+      "Label": "User Access",
+      "HelpText": "The User Access mode to set database to",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Multiple|Multiple
+Restricted|Restricted
+Single|Single"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "92f2235d-6010-4387-b19d-5a23b57f7125",
+      "Name": "Condition",
+      "Type": "String",
+      "Label": "Alter Condition",
+      "HelpText": "Condition to use when calling [Alter](https://msdn.microsoft.com/en-us/library/ms205110.aspx) method.",
+      "DefaultValue": "Force",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Force|Force
+Fail|Fail on open transactions
+Wait|Wait for no connections"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2017-03-29T12:50:15.802Z",
+    "OctopusVersion": "3.10.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}
