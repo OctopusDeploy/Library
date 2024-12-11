@@ -1,0 +1,226 @@
+{
+  "Id": "ba8581a6-c463-40fb-ab98-3800e761b6f4",
+  "Name": "Web Deploy - Publish Website (MSDeploy)",
+  "Description": "Ensure that Web Deploy 3.5 is installed on the system. The installer is downloaded from http://www.iis.net/downloads/microsoft/web-deploy if required.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.Web.Deployment\")\r
+\r
+# A collection of functions that can be used by script steps to determine where packages installed\r
+# by previous steps are located on the filesystem.\r
+ \r
+function Find-InstallLocations {\r
+    $result = @()\r
+    $OctopusParameters.Keys | foreach {\r
+        if ($_.EndsWith('].Output.Package.InstallationDirectoryPath')) {\r
+            $result += $OctopusParameters[$_]\r
+        }\r
+    }\r
+    return $result\r
+}\r
+ \r
+function Find-InstallLocation($stepName) {\r
+    $result = $OctopusParameters.Keys | where {\r
+        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\r
+    } | select -first 1\r
+ \r
+    if ($result) {\r
+        return $OctopusParameters[$result]\r
+    }\r
+ \r
+    throw \"No install location found for step: $stepName\"\r
+}\r
+ \r
+function Find-SingleInstallLocation {\r
+    $all = @(Find-InstallLocations)\r
+    if ($all.Length -eq 1) {\r
+        return $all[0]\r
+    }\r
+    if ($all.Length -eq 0) {\r
+        throw \"No package steps found\"\r
+    }\r
+    throw \"Multiple package steps have run; please specify a single step\"\r
+}\r
+\r
+function Test-LastExit($cmd) {\r
+    if ($LastExitCode -ne 0) {\r
+        Write-Host \"##octopus[stderr-error]\"\r
+        write-error \"$cmd failed with exit code: $LastExitCode\"\r
+    }\r
+}\r
+\r
+$stepName = $OctopusParameters['WebDeployPackageStepName']\r
+\r
+$stepPath = \"\"\r
+if (-not [string]::IsNullOrEmpty($stepName)) {\r
+    Write-Host \"Finding path to package step: $stepName\"\r
+    $stepPath = Find-InstallLocation $stepName\r
+} else {\r
+    $stepPath = Find-SingleInstallLocation\r
+}\r
+Write-Host \"Package was installed to: $stepPath\"\r
+\r
+Write-Host \"##octopus[stderr-progress]\"\r
+ \r
+$websiteName = $OctopusParameters['WebsiteName']\r
+$publishUrl = $OctopusParameters['PublishUrl']\r
+\r
+$destBaseOptions = new-object Microsoft.Web.Deployment.DeploymentBaseOptions\r
+$destBaseOptions.UserName = $OctopusParameters['Username']\r
+$destBaseOptions.Password = $OctopusParameters['Password']\r
+$destBaseOptions.ComputerName = \"https://$publishUrl/msdeploy.axd?site=$websiteName\"\r
+$destBaseOptions.AuthenticationType = \"Basic\"\r
+\r
+$syncOptions = new-object Microsoft.Web.Deployment.DeploymentSyncOptions\r
+$syncOptions.WhatIf = $false\r
+$syncOptions.UseChecksum = $true\r
+\r
+$enableAppOfflineRule = $OctopusParameters['EnableAppOfflineRule']\r
+if($enableAppOfflineRule -eq $true)\r
+{\r
+    $appOfflineRule = $null\r
+    $availableRules = [Microsoft.Web.Deployment.DeploymentSyncOptions]::GetAvailableRules()\r
+    if (!$availableRules.TryGetValue('AppOffline', [ref]$appOfflineRule))\r
+    {\r
+        throw \"Failed to find AppOffline Rule\"\r
+    }\r
+    else\r
+    {\r
+        $syncOptions.Rules.Add($appOfflineRule)\r
+        Write-Host \"Enabled AppOffline Rule\"\r
+    }\r
+}\r
+\r
+$preserveAppData = [boolean]::Parse($OctopusParameters['PreserveApp_Data'])\r
+\r
+if ($preserveAppData -eq $true) {\r
+    \r
+    Write-Host \"Skipping delete actions on App_Data\"\r
+    $skipAppDataFiles = new-object Microsoft.Web.Deployment.DeploymentSkipRule(\"appDataFiles\", \"Delete\", \"filePath\", \"\\App_Data\\.*\", $null)\r
+    $skipAppDataDirectories = new-object Microsoft.Web.Deployment.DeploymentSkipRule(\"appDataDirectories\", \"Delete\", \"dirPath\", \"\\App_Data(\\.*|$)\", $null)\r
+\r
+    $syncOptions.Rules.Add($skipAppDataFiles);\r
+    $syncOptions.Rules.Add($skipAppDataDirectories);\r
+}\r
+\r
+$SkipSyncPaths = $OctopusParameters['SkipSyncPaths']\r
+if ([string]::IsNullOrEmpty($SkipSyncPaths) -eq $false)\r
+{\r
+    $skipPaths = $SkipSyncPaths.Split(\";\", [System.StringSplitOptions]::RemoveEmptyEntries)\r
+    foreach($item in $skipPaths) {\r
+        $index = $skipPaths.IndexOf($item)\r
+        Write-Host \"Skipping sync of AbsolutePath: $item.\"\r
+        $name = \"SkipDirective$index\"\r
+        $value = \"absolutePath=$item\"\r
+        $skipDirective = new-object Microsoft.Web.Deployment.DeploymentSkipDirective($name, $value)\r
+        $destBaseOptions.SkipDirectives.Add($skipDirective)\r
+    }\r
+}\r
+\r
+if ($OctopusParameters['AllowUntrustedCertificate'] -eq $true) {\r
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { return $true; }\r
+}\r
+\r
+Write-Host \"Publishing Website\"\r
+$deploymentObject = [Microsoft.Web.Deployment.DeploymentManager]::CreateObject(\"contentPath\", $stepPath)\r
+\r
+$changes = $deploymentObject.SyncTo(\"contentPath\", $websiteName, $destBaseOptions, $syncOptions)\r
+\r
+#Write out all the changes.\r
+$changes | Select-Object -Property *",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "PublishUrl",
+      "Label": "Publish Url",
+      "HelpText": "Publish url to use when publishing the website.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AllowUntrustedCertificate",
+      "Label": "Allow Untrusted Certificate",
+      "HelpText": "Allow untrusted certificate at the publish URL.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "WebsiteName",
+      "Label": "Website Name",
+      "HelpText": "Website name to use when publishing the website.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Username",
+      "Label": "Username",
+      "HelpText": "Username to use when authenticating with the HTTPS server.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Password",
+      "Label": null,
+      "HelpText": "Password to use when authenticating with the HTTPS server. You should create a sensitive variable in your project variables, and then bind this value.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "WebDeployPackageStepName",
+      "Label": "Package Step Name",
+      "HelpText": "Name of the previously-deployed package step that contains the files that you want to deploy.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "EnableAppOfflineRule",
+      "Label": "Enable App Offline Rule",
+      "HelpText": "Enables the App Offline Rule. [See here for more details](http://www.iis.net/learn/publish/deploying-application-packages/taking-an-application-offline-before-publishing)",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "SkipSyncPaths",
+      "Label": "Skip Paths From Sync",
+      "HelpText": "Semi-colon separated, absolute reg-ex paths to skip/not-sync during deployment. Handy for folders that you don't want deleted etc. (Escape slashes)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "PreserveApp_Data",
+      "Label": "Preserve App_Data",
+      "HelpText": "The App_Data and its files will not be deleted when this option is enabled",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2015-07-25T22:00:43.204+00:00",
+    "OctopusVersion": "2.6.5.1010",
+    "Type": "ActionTemplate"
+  },
+  "Category": "webDeploy"
+}

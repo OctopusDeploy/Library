@@ -1,0 +1,80 @@
+{
+  "Id": "bb2a8fef-1407-405b-9251-a259c1868bad",
+  "Name": "HTTP - Invoke URL",
+  "Description": "Invoke HTTP Get request using provided url. Doesn't throw exception when request fails.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Running outside octopus\r
+param(\r
+    [string]$url,\r
+    [switch]$whatIf\r
+) \r
+\r
+$ErrorActionPreference = \"Stop\" \r
+\r
+function Get-Param($Name, [switch]$Required, $Default) {\r
+    $result = $null\r
+\r
+    if ($OctopusParameters -ne $null) {\r
+        $result = $OctopusParameters[$Name]\r
+    }\r
+\r
+    if ($result -eq $null) {\r
+        $variable = Get-Variable $Name -EA SilentlyContinue   \r
+        if ($variable -ne $null) {\r
+            $result = $variable.Value\r
+        }\r
+    }\r
+\r
+    if ($result -eq $null -or $result -eq \"\") {\r
+        if ($Required) {\r
+            throw \"Missing parameter value $Name\"\r
+        } else {\r
+            $result = $Default\r
+        }\r
+    }\r
+\r
+    return $result\r
+}\r
+\r
+& {\r
+    param(\r
+        [string]$url\r
+    ) \r
+\r
+    Write-Host \"Invoke Url: $url\"\r
+\r
+    try {\r
+    \r
+        Invoke-WebRequest -Uri $url -Method Get -UseBasicParsing\r
+\r
+    } catch {\r
+        Write-Host \"There was a problem invoking Url\"    \r
+    }\r
+\r
+ } `\r
+ (Get-Param 'url' -Required)",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "url",
+      "Label": "Url",
+      "HelpText": "Web request Url",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-08-31T12:06:43.681+00:00",
+  "LastModifiedBy": "jmalczak",
+  "$Meta": {
+    "ExportedAt": "2015-08-31T12:25:19.923+00:00",
+    "OctopusVersion": "2.6.5.1010",
+    "Type": "ActionTemplate"
+  },
+  "Category": "http"
+}
