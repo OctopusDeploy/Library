@@ -1,0 +1,254 @@
+{
+    "Id": "d93bcfdc-d3f8-4c83-9fd7-d35c9a8d1f2b",
+    "Name": "MongoDB - Add or update user roles ",
+    "Description": "Adds roles to an existing user in a MongoDB database.",
+    "ActionType": "Octopus.Script",
+    "Version": 2,
+    "Author": "twerthi",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Define functions
+function Get-ModuleInstalled
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName
+    )
+
+    # Check to see if the module is installed
+    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))
+    {
+        # It is installed
+        return $true
+    }
+    else
+    {
+        # Module not installed
+        return $false
+    }
+}
+
+function Install-PowerShellModule
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName,
+        $LocalModulesPath
+    )
+
+\t# Check to see if the package provider has been installed
+    if ((Get-NugetPackageProviderNotInstalled) -ne $false)
+    {
+    \t# Display that we need the nuget package provider
+        Write-Host \"Nuget package provider not found, installing ...\"
+        
+        # Install Nuget package provider
+        Install-PackageProvider -Name Nuget -Force
+    }
+
+\t# Save the module in the temporary location
+    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force
+}
+
+function Get-NugetPackageProviderNotInstalled
+{
+\t# See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+function Get-DatabaseUserExists
+{
+\t# Define parameters
+    param ($UserName)
+    
+    # Define working variables
+    $userExists = $false
+    
+\t# Get users for database
+    $command = @\"
+{ usersInfo: 1 }
+\"@
+
+\t$results = Invoke-MdbcCommand -Command $command
+    $users = $results[\"users\"]
+    
+    # Loop through returned results
+    foreach ($user in $users)
+    {
+    \tif ($user[\"user\"] -eq $UserName)
+        {
+        \treturn $true
+        }
+    }
+    
+    return $false
+}
+
+# Define PowerShell Modules path
+$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName
+$env:PSModulePath = \"$LocalModules$([System.IO.Path]::PathSeparator)$env:PSModulePath\"
+$PowerShellModuleName = \"Mdbc\"
+
+# Set secure protocols
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Check to see if SimplySql module is installed
+if ((Get-ModuleInstalled -PowerShellModuleName $PowerShellModuleName) -ne $true)
+{
+    # Tell user what we're doing
+    Write-Output \"PowerShell module $PowerShellModuleName is not installed, downloading temporary copy ...\"
+
+    # Install temporary copy
+    Install-PowerShellModule -PowerShellModuleName $PowerShellModuleName -LocalModulesPath $LocalModules
+}
+
+# Display
+Write-Output \"Importing module $PowerShellModuleName ...\"
+
+# Check to see if it was downloaded
+if ((Test-Path -Path \"$LocalModules\\$PowerShellModuleName\") -eq $true)
+{
+\t# Use specific location
+    $PowerShellModuleName = \"$LocalModules\\$PowerShellModuleName\"
+}
+
+# Import the module
+Import-Module -Name $PowerShellModuleName
+
+# Connect to mongodb instance
+$connectionUrl = \"mongodb://$($MongoDBAdminUsername):$($MogoDBAdminUserpassword)@$($MongoDBServerName):$($MongoDBPort)\"
+
+# Connect to MongoDB server
+Connect-Mdbc $connectionUrl $MongoDBDatabaseName
+
+# Get whether the database exits
+if ((Get-DatabaseUserExists -UserName $MongoDBUsername) -eq $true)
+{
+\t# Create user
+    Write-Output \"Adding $MongoDBRoles to $MongoDBUsername.\"
+    
+    # Create Roles array for adding
+    $roles = @()
+    foreach ($MongoDBRole in $MongoDBRoles.Split(\",\"))
+    {
+    \t$roles += @{
+        \trole = $MongoDBRole.Trim()
+            db = $MongoDBDatabaseName
+        }
+    }
+
+    # Define create user command
+    $command = @\"
+{
+\tupdateUser: `\"$MongoDBUsername`\"    
+    roles: $(ConvertTo-Json $roles)
+}
+\"@
+
+\t# Create user account
+    $result = Invoke-MdbcCommand -Command $command
+    
+    # Check to make sure it was created successfully
+    if ($result.ContainsKey(\"ok\"))
+    {
+    \tWrite-Output \"Successfully added role(s) $MongoDBRoles to $MongoDBUsername in database $MongoDBDatabaseName.\"
+    }
+    else
+    {
+    \tWrite-Error \"Failed, $result\"
+    }
+}
+else
+{
+\tWrite-Error \"Unable to add role(s) to $MongoDBUsername, user does not exist in $MongoDBDatabaseName.\"
+}
+
+
+
+
+
+
+"
+    },
+    "Parameters": [
+      {
+        "Id": "d6343cb6-40d3-47a8-898f-ff3aeb6f9c1a",
+        "Name": "MongoDBServerName",
+        "Label": "Server Name",
+        "HelpText": "Name or IP address of the MongoDB server instance.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "75eae92c-0081-481b-b79a-73524a798349",
+        "Name": "MongoDBPort",
+        "Label": "Port",
+        "HelpText": "Port number the MongoDB instance is listening on.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "dbb4ef7a-ab79-4036-ac7b-466d683341f5",
+        "Name": "MongoDBDatabaseName",
+        "Label": "Database Name",
+        "HelpText": "Name of the database to use.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0f0612d3-e039-4940-bcb7-a3333266ae95",
+        "Name": "MongoDBAdminUsername",
+        "Label": "Admin Username",
+        "HelpText": "User account with rights to query the users in the database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "fbdb0e70-33d5-41a6-b316-66f1be7e5a18",
+        "Name": "MogoDBAdminUserpassword",
+        "Label": "Admin Password",
+        "HelpText": "Password for the admin account.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "c151f9f5-36f3-47ab-80b7-7dcb18bb7ff8",
+        "Name": "MongoDBUsername",
+        "Label": "Username",
+        "HelpText": "Username to add roles to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "c705b32d-c416-40fc-869d-88fc307fe94f",
+        "Name": "MongoDBRoles",
+        "Label": "Roles",
+        "HelpText": "A comma-delimited list of roles to add the user account.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2020-12-02T20:31:19.166Z",
+      "OctopusVersion": "2020.5.0",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "twerthi",
+    "Category": "mongodb"
+  }

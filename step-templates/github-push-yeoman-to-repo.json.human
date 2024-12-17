@@ -1,0 +1,631 @@
+{
+  "Id": "14ffc4b7-1cab-4f81-a835-7da41fa47123",
+  "Name": "GitHub - Push Yeoman Generator",
+  "Description": "Clones a GitHub repo, runs Yeoman in the cloned directory, and pushes the changes. Note that the Yeoman generators can only use arguments or options, as prompts can not be provided.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "6bd0fbd2-442e-4ae9-9192-b93a041cfdd1",
+      "Name": "YeomanGenerator",
+      "AcquisitionLocation": "Server",
+      "FeedId": null,
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "PopulateGithubRepo.Yeoman.Generator.Package",
+        "Purpose": ""
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Python",
+    "Octopus.Action.Script.ScriptBody": "# This script forks a GitHub repo. It creates a token from a GitHub App installation to avoid
+# having to use a regular user account.
+import subprocess
+import sys
+
+# Install our own dependencies
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'jwt', '--disable-pip-version-check'])
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'requests', '--disable-pip-version-check'])
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'anyascii', '--disable-pip-version-check'])
+
+import requests
+import json
+import subprocess
+import sys
+import os
+import urllib.request
+import base64
+import re
+import jwt
+import time
+import argparse
+import platform
+import zipfile
+import lzma
+import tarfile
+import shutil
+import urllib3
+from shlex import split
+from anyascii import anyascii
+
+# Disable insecure http request warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# If this script is not being run as part of an Octopus step, setting variables is a noop
+if 'set_octopusvariable' not in globals():
+    def set_octopusvariable(variable, value):
+        pass
+
+# If this script is not being run as part of an Octopus step, return variables from environment variables.
+# Periods are replaced with underscores, and the variable name is converted to uppercase
+if \"get_octopusvariable\" not in globals():
+    def get_octopusvariable(variable):
+        return os.environ[re.sub('\\\\.', '_', variable.upper())]
+
+# If this script is not being run as part of an Octopus step, print directly to std out.
+if 'printverbose' not in globals():
+    def printverbose(msg):
+        print(msg)
+
+
+def printverbose_noansi(output):
+    \"\"\"
+    Strip ANSI color codes and print the output as verbose
+    :param output: The output to print
+    \"\"\"
+    output_no_ansi = re.sub(r'\\x1b\\[[0-9;]*m', '', output)
+    printverbose(output_no_ansi)
+
+
+def get_octopusvariable_quiet(variable):
+    \"\"\"
+    Gets an octopus variable, or an empty string if it does not exist.
+    :param variable: The variable name
+    :return: The variable value, or an empty string if the variable does not exist
+    \"\"\"
+    try:
+        return get_octopusvariable(variable)
+    except Exception as inst:
+        return ''
+
+
+def execute(args, cwd=None, env=None, print_args=None, print_output=printverbose_noansi, raise_on_non_zero=False,
+            append_to_path=None):
+    \"\"\"
+        The execute method provides the ability to execute external processes while capturing and returning the
+        output to std err and std out and exit code.
+    \"\"\"
+
+    my_env = os.environ.copy() if env is None else env
+
+    if append_to_path is not None:
+        my_env[\"PATH\"] = append_to_path + os.pathsep + my_env['PATH']
+
+    process = subprocess.Popen(args,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE,
+                               stdin=open(os.devnull),
+                               text=True,
+                               cwd=cwd,
+                               env=my_env)
+    stdout, stderr = process.communicate()
+    retcode = process.returncode
+
+    if not retcode == 0 and raise_on_non_zero:
+        raise Exception('command returned exit code ' + retcode)
+
+    if print_args is not None:
+        print_output(' '.join(args))
+
+    if print_output is not None:
+        print_output(stdout)
+        print_output(stderr)
+
+    return stdout, stderr, retcode
+
+
+def init_argparse():
+    parser = argparse.ArgumentParser(
+        usage='%(prog)s [OPTION]',
+        description='Fork a GitHub repo'
+    )
+    parser.add_argument('--generator', action='store',
+                        default=get_octopusvariable_quiet(
+                            'PopulateGithubRepo.Yeoman.Generator.Name') or get_octopusvariable_quiet(
+                            'Yeoman.Generator.Name'))
+    parser.add_argument('--sub-generator', action='store',
+                        default=get_octopusvariable_quiet(
+                            'PopulateGithubRepo.Yeoman.Generator.SubGenerator') or get_octopusvariable_quiet(
+                            'Yeoman.Generator.SubGenerator'))
+    parser.add_argument('--generator-arguments', action='store',
+                        default=get_octopusvariable_quiet(
+                            'PopulateGithubRepo.Yeoman.Generator.Arguments') or get_octopusvariable_quiet(
+                            'Yeoman.Generator.Arguments'),
+                        help='The arguments to pas to yo. Pass all arguments as a single string. This string is then parsed as if it were yo arguments.')
+    parser.add_argument('--repo', action='store',
+                        default=get_octopusvariable_quiet(
+                            'PopulateGithubRepo.Git.Url.Repo') or get_octopusvariable_quiet(
+                            'Git.Url.Repo'))
+    parser.add_argument('--git-organization', action='store',
+                        default=get_octopusvariable_quiet(
+                            'PopulateGithubRepo.Git.Url.Organization') or get_octopusvariable_quiet(
+                            'Git.Url.Organization'))
+    parser.add_argument('--github-app-id', action='store',
+                        default=get_octopusvariable_quiet(
+                            'PopulateGithubRepo.GitHub.App.Id') or get_octopusvariable_quiet('GitHub.App.Id'))
+    parser.add_argument('--github-app-installation-id', action='store',
+                        default=get_octopusvariable_quiet(
+                            'PopulateGithubRepo.GitHub.App.InstallationId') or get_octopusvariable_quiet(
+                            'GitHub.App.InstallationId'))
+    parser.add_argument('--github-app-private-key', action='store',
+                        default=get_octopusvariable_quiet(
+                            'PopulateGithubRepo.GitHub.App.PrivateKey') or get_octopusvariable_quiet(
+                            'GitHub.App.PrivateKey'))
+    parser.add_argument('--git-password', action='store',
+                        default=get_octopusvariable_quiet(
+                            'PopulateGithubRepo.Git.Credentials.Password') or get_octopusvariable_quiet(
+                            'Git.Credentials.Password'),
+                        help='The git password. This takes precedence over the --github-app-id,  --github-app-installation-id, and --github-app-private-key')
+    parser.add_argument('--git-username', action='store',
+                        default=get_octopusvariable_quiet(
+                            'PopulateGithubRepo.Git.Credentials.Username') or get_octopusvariable_quiet(
+                            'Git.Credentials.Username'),
+                        help='The git username. This will be used for both the git authentication and the username associated with any commits.')
+
+    return parser.parse_known_args()
+
+
+def generate_github_token(github_app_id, github_app_private_key, github_app_installation_id):
+    # Generate the tokens used by git and the GitHub API
+    app_id = github_app_id
+    signing_key = jwt.jwk_from_pem(github_app_private_key.encode('utf-8'))
+
+    payload = {
+        # Issued at time
+        'iat': int(time.time()),
+        # JWT expiration time (10 minutes maximum)
+        'exp': int(time.time()) + 600,
+        # GitHub App's identifier
+        'iss': app_id
+    }
+
+    # Create JWT
+    jwt_instance = jwt.JWT()
+    encoded_jwt = jwt_instance.encode(payload, signing_key, alg='RS256')
+
+    # Create access token
+    url = 'https://api.github.com/app/installations/' + github_app_installation_id + '/access_tokens'
+    headers = {
+        'Authorization': 'Bearer ' + encoded_jwt,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+    }
+    request = urllib.request.Request(url, headers=headers, method='POST')
+    response = urllib.request.urlopen(request)
+    response_json = json.loads(response.read().decode())
+    return response_json['token']
+
+
+def generate_auth_header(token):
+    auth = base64.b64encode(('x-access-token:' + token).encode('ascii'))
+    return 'Basic ' + auth.decode('ascii')
+
+
+def verify_new_repo(token, cac_org, new_repo):
+    # Attempt to view the new repo
+    try:
+        url = 'https://api.github.com/repos/' + cac_org + '/' + new_repo
+        headers = {
+            'Accept': 'application/vnd.github+json',
+            'Authorization': 'Bearer ' + token,
+            'X-GitHub-Api-Version': '2022-11-28'
+        }
+        request = urllib.request.Request(url, headers=headers)
+        urllib.request.urlopen(request)
+        return True
+    except Exception as inst:
+        return False
+
+
+def is_windows():
+    return platform.system() == 'Windows'
+
+
+def download_file(url, filename, verify_ssl=True):
+    r = requests.get(url, verify=verify_ssl)
+    with open(filename, 'wb') as file:
+        file.write(r.content)
+
+
+def ensure_git_exists():
+    if is_windows():
+        print(\"Checking git is installed\")
+        try:
+            stdout, _, exit_code = execute(['git', 'version'])
+            printverbose(stdout)
+            if not exit_code == 0:
+                raise \"git not found\"
+        except:
+            print(\"Downloading git\")
+            download_file('https://www.7-zip.org/a/7zr.exe', '7zr.exe')
+            download_file(
+                'https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.2/PortableGit-2.42.0.2-64-bit.7z.exe',
+                'PortableGit.7z.exe')
+            print(\"Installing git\")
+            print(\"Consider installing git on the worker or using a standard worker-tools image\")
+            execute(['7zr.exe', 'x', 'PortableGit.7z.exe', '-o' + os.path.join(os.getcwd(), 'git'), '-y'])
+            return os.path.join(os.getcwd(), 'git', 'bin', 'git')
+
+    return 'git'
+
+
+def install_npm_linux():
+    print(\"Downloading node\")
+    download_file(
+        'https://nodejs.org/dist/v18.18.2/node-v18.18.2-linux-x64.tar.xz',
+        'node.tar.xz')
+    print(\"Installing node on Linux\")
+    with lzma.open(\"node.tar.xz\", \"r\") as lzma_ref:
+        with open(\"node.tar\", \"wb\") as fdst:
+            shutil.copyfileobj(lzma_ref, fdst)
+    with tarfile.open(\"node.tar\", \"r\") as tar_ref:
+        tar_ref.extractall(os.getcwd())
+
+    try:
+        _, _, exit_code = execute([os.getcwd() + '/node-v18.18.2-linux-x64/bin/npm', '--version'],
+                                  append_to_path=os.getcwd() + '/node-v18.18.2-linux-x64/bin')
+        if not exit_code == 0:
+            raise Exception(\"Failed to run npm\")
+    except Exception as ex:
+        print('Failed to install npm ' + str(ex))
+        sys.exit(1)
+    return os.getcwd() + '/node-v18.18.2-linux-x64/bin/npm', os.getcwd() + '/node-v18.18.2-linux-x64/bin'
+
+
+def install_npm_windows():
+    print(\"Downloading node\")
+    download_file('https://nodejs.org/dist/v18.18.2/node-v18.18.2-win-x64.zip', 'node.zip', False)
+    print(\"Installing node on Windows\")
+    with zipfile.ZipFile(\"node.zip\", \"r\") as zip_ref:
+        zip_ref.extractall(os.getcwd())
+    try:
+        _, _, exit_code = execute([os.path.join(os.getcwd(), 'node-v18.18.2-win-x64', 'npm.cmd'), '--version'],
+                                  append_to_path=os.path.join(os.getcwd(), 'node-v18.18.2-win-x64'))
+        if not exit_code == 0:
+            raise Exception(\"Failed to run npm\")
+    except Exception as ex:
+        print('Failed to install npm ' + str(ex))
+        sys.exit(1)
+
+    return (os.path.join(os.getcwd(), 'node-v18.18.2-win-x64', 'npm.cmd'),
+            os.path.join(os.getcwd(), 'node-v18.18.2-win-x64'))
+
+
+def ensure_node_exists():
+    try:
+        print(\"Checking node is installed\")
+        _, _, exit_code = execute(['npm', '--version'])
+        if not exit_code == 0:
+            raise Exception(\"npm not found\")
+    except:
+        if is_windows():
+            return install_npm_windows()
+        else:
+            return install_npm_linux()
+
+    return 'npm', None
+
+
+def ensure_yo_exists(npm_executable, npm_path):
+    try:
+        print(\"Checking Yeoman is installed\")
+        _, _, exit_code = execute(['yo', '--version'])
+        if not exit_code == 0:
+            raise Exception(\"yo not found\")
+    except:
+        print('Installing Yeoman')
+
+        _, _, retcode = execute([npm_executable, 'install', '-g', 'yo'], append_to_path=npm_path)
+
+        if not retcode == 0:
+            print(\"Failed to set install Yeoman. Check the verbose logs for details.\")
+            sys.exit(1)
+
+        npm_bin, _, retcode = execute([npm_executable, 'config', 'get', 'prefix'], append_to_path=npm_path)
+
+        if not retcode == 0:
+            print(\"Failed to set get the npm prefix directory. Check the verbose logs for details.\")
+            sys.exit(1)
+
+        try:
+            if is_windows():
+                _, _, exit_code = execute([os.path.join(npm_bin.strip(), 'yo.cmd'), '--version'],
+                                          append_to_path=npm_path)
+            else:
+                _, _, exit_code = execute([os.path.join(npm_bin.strip(), 'bin', 'yo'), '--version'],
+                                          append_to_path=npm_path)
+
+            if not exit_code == 0:
+                raise Exception(\"Failed to run yo\")
+        except Exception as ex:
+            print('Failed to install yo ' + str(ex))
+            sys.exit(1)
+
+        # Windows and Linux save NPM binaries in different directories
+        if is_windows():
+            return os.path.join(npm_bin.strip(), 'yo.cmd')
+
+        return os.path.join(npm_bin.strip(), 'bin', 'yo')
+
+    return 'yo'
+
+
+git_executable = ensure_git_exists()
+npm_executable, npm_path = ensure_node_exists()
+yo_executable = ensure_yo_exists(npm_executable, npm_path)
+parser, _ = init_argparse()
+
+if not parser.git_password.strip() and not (
+        parser.github_app_id.strip() and parser.github_app_private_key.strip() and parser.github_app_installation_id.strip()):
+    print(\"You must supply the GitHub token, or the GitHub App ID and private key and installation ID\")
+    sys.exit(1)
+
+if not parser.git_organization.strip():
+    print(\"You must define the organization\")
+    sys.exit(1)
+
+if not parser.repo.strip():
+    print(\"You must define the repo name\")
+    sys.exit(1)
+
+if not parser.generator.strip():
+    print(\"You must define the Yeoman generator\")
+    sys.exit(1)
+
+# Create a dir for the git clone
+if os.path.exists('downstream'):
+    shutil.rmtree('downstream')
+
+os.mkdir('downstream')
+
+# Create a dir for yeoman to use
+if os.path.exists('downstream-yeoman'):
+    shutil.rmtree('downstream-yeoman')
+
+os.mkdir('downstream-yeoman')
+# Yeoman will use a less privileged user to write to this directory, so grant full access
+if not is_windows():
+    os.chmod('downstream-yeoman', 0o777)
+
+downstream_dir = os.path.join(os.getcwd(), 'downstream')
+downstream_yeoman_dir = os.path.join(os.getcwd(), 'downstream-yeoman')
+
+# The access token is generated from a github app or supplied directly as an access token
+token = generate_github_token(parser.github_app_id, parser.github_app_private_key,
+                              parser.github_app_installation_id) if len(
+    parser.git_password.strip()) == 0 else parser.git_password.strip()
+
+if not verify_new_repo(token, parser.git_organization, parser.repo):
+    print('Repo at https://github.com/' + parser.git_organization + '/' + parser.repo + ' could not be accessed')
+    sys.exit(1)
+
+# We need to disable the credentials helper prompt, which will pop open a GUI prompt that we can never close
+if is_windows():
+    _, _, retcode = execute([git_executable, 'config', '--system', 'credential.helper', 'manager'])
+
+    if not retcode == 0:
+        print(\"Failed to set the credential.helper setting. Check the verbose logs for details.\")
+        sys.exit(1)
+
+    _, _, retcode = execute([git_executable, 'config', '--system', 'credential.modalprompt', 'false'])
+
+    if not retcode == 0:
+        print(\"Failed to srt the credential.modalprompt setting. Check the verbose logs for details.\")
+        sys.exit(1)
+
+    # We need to disable the credentials helper prompt, which will pop open a GUI prompt that we can never close
+    _, _, retcode = execute(
+        [git_executable, 'config', '--system', 'credential.microsoft.visualstudio.com.interactive', 'never'])
+
+    if not retcode == 0:
+        print(
+            \"Failed to set the credential.microsoft.visualstudio.com.interactive setting. Check the verbose logs for details.\")
+        sys.exit(1)
+
+_, _, retcode = execute([git_executable, 'config', '--global', 'user.email', 'octopus@octopus.com'])
+
+if not retcode == 0:
+    print(\"Failed to set the user.email setting. Check the verbose logs for details.\")
+    sys.exit(1)
+
+_, _, retcode = execute([git_executable, 'config', '--global', 'core.autocrlf', 'input'])
+
+if not retcode == 0:
+    print(\"Failed to set the core.autocrlf setting. Check the verbose logs for details.\")
+    sys.exit(1)
+
+username = parser.git_username if len(parser.git_username) != 0 else 'Octopus'
+_, _, retcode = execute([git_executable, 'config', '--global', 'user.name', username])
+
+if not retcode == 0:
+    print(\"Failed to set the git username. Check the verbose logs for details.\")
+    sys.exit(1)
+
+_, _, retcode = execute([git_executable, 'config', '--global', 'credential.helper', 'cache'])
+
+if not retcode == 0:
+    print(\"Failed to set the git credential helper. Check the verbose logs for details.\")
+    sys.exit(1)
+
+print('Cloning repo')
+
+_, _, retcode = execute(
+    [git_executable, 'clone',
+     'https://' + username + ':' + token + '@github.com/' + parser.git_organization + '/' + parser.repo + '.git',
+     'downstream'])
+
+if not retcode == 0:
+    print(\"Failed to clone the git repo. Check the verbose logs for details.\")
+    sys.exit(1)
+
+print('Configuring Yeoman Generator')
+
+_, _, retcode = execute([npm_executable, 'install'], cwd=os.path.join(os.getcwd(), 'YeomanGenerator'), append_to_path=npm_path)
+
+if not retcode == 0:
+    print(\"Failed to install the generator dependencies. Check the verbose logs for details.\")
+    sys.exit(1)
+
+_, _, retcode = execute([npm_executable, 'link'], cwd=os.path.join(os.getcwd(), 'YeomanGenerator'), append_to_path=npm_path)
+
+if not retcode == 0:
+    print(\"Failed to link the npm module. Check the verbose logs for details.\")
+    sys.exit(1)
+
+print('Running Yeoman Generator')
+
+# Treat the string of yo arguments as a raw input and parse it again. The resulting list of unknown arguments
+# is then passed to yo. We have to convert the incoming values from utf to ascii when parsing a second time.
+yo_args = split(anyascii(parser.generator_arguments))
+
+generator_name = parser.generator + ':' + parser.sub_generator if len(parser.sub_generator) != 0 else parser.generator
+
+yo_arguments = [yo_executable, generator_name, '--force', '--skip-install']
+
+# Yeoman has issues running as root, which it will often do in a container.
+# So we run Yeoman in its own directory, and then copy the changes to the git directory.
+_, _, retcode = execute(yo_arguments + yo_args, cwd=downstream_yeoman_dir, append_to_path=npm_path)
+
+if not retcode == 0:
+    print(\"Failed to run Yeoman. Check the verbose logs for details.\")
+    sys.exit(1)
+
+shutil.copytree(downstream_yeoman_dir, downstream_dir, dirs_exist_ok=True)
+
+print('Adding changes to git')
+
+_, _, retcode = execute([git_executable, 'add', '.'], cwd=downstream_dir)
+
+if not retcode == 0:
+    print(\"Failed to add the git changes. Check the verbose logs for details.\")
+    sys.exit(1)
+
+# Check for pending changes
+_, _, retcode = execute([git_executable, 'diff-index', '--quiet', 'HEAD'], cwd=downstream_dir)
+
+if not retcode == 0:
+    print('Committing changes to git')
+    _, _, retcode = execute([git_executable, 'commit', '-m',
+                             'Added files from Yeoman generator ' + parser.generator + ':' + parser.sub_generator],
+                            cwd=downstream_dir)
+
+    if not retcode == 0:
+        print(\"Failed to set commit the git changes. Check the verbose logs for details.\")
+        sys.exit(1)
+
+    print('Pushing changes to git')
+
+    _, _, retcode = execute([git_executable, 'push', 'origin', 'main'], cwd=downstream_dir)
+
+    if not retcode == 0:
+        print(\"Failed to push the git changes. Check the verbose logs for details.\")
+        sys.exit(1)
+"
+  },
+  "Parameters": [
+    {
+      "Id": "334f5b32-01a8-4687-af33-54906e53cdee",
+      "Name": "PopulateGithubRepo.Yeoman.Generator.Package",
+      "Label": "Yeoman Generator Package",
+      "HelpText": "The package containing the Yeoman package. Yeoman packages are usually distributed by npm, but they can also be packaged as zip files and pushed to the built-in feed or any other feed that supports zip files.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "d1c9bf99-5f1f-417b-a482-a72878065871",
+      "Name": "PopulateGithubRepo.Yeoman.Generator.Name",
+      "Label": "Yeoman Generator Name",
+      "HelpText": "The name of the Yeoman generator.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2c1dd445-c1d4-4e44-91a0-b7f02682711b",
+      "Name": "PopulateGithubRepo.Yeoman.Generator.SubGenerator",
+      "Label": "Yeoman Subgenerator Name",
+      "HelpText": "The optional name of the Yeoman subgenerator. Leave blank to use the default generator.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "bac9200a-2fce-4390-9b07-40e2a14c2e44",
+      "Name": "PopulateGithubRepo.Yeoman.Generator.Arguments",
+      "Label": "Yeoman Arguments",
+      "HelpText": "The optional arguments pass to Yeoman to define options and arguments.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f5c1092a-70d8-40ba-84e9-feedf5911946",
+      "Name": "PopulateGithubRepo.Git.Url.Repo",
+      "Label": "GitHub Repo Name",
+      "HelpText": "The GitHub repo name i.e. `myrepo` in the URL`https://github.com/owner/myrepo`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ece2ee80-9572-4ca1-ab0a-65ffaec2edb7",
+      "Name": "PopulateGithubRepo.Git.Url.Organization",
+      "Label": "Github Owner",
+      "HelpText": "The GitHub repo owner or organization i.e. `owner` in the URL `https://github.com/owner/myrepo`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4795ec27-f38b-4f2f-8417-97c3cd74d2db",
+      "Name": "PopulateGithubRepo.Git.Credentials.Password",
+      "Label": "GitHub Access Token",
+      "HelpText": "The GitHub access token",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "300596fd-59b1-420e-b58f-305b7c83b54d",
+      "Name": "PopulateGithubRepo.Git.Credentials.Username",
+      "Label": "GitHub Username",
+      "HelpText": "This will appear in the commit logs. Leave blank to use the default username.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-10-16T23:49:40.031Z",
+    "OctopusVersion": "2023.4.6093",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "github"
+}
+

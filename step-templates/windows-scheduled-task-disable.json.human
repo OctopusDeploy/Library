@@ -1,0 +1,120 @@
+{
+  "Id": "1be30b21-ba58-4667-bff4-2d0ef9a806af",
+  "Name": "Windows Scheduled Task - Disable",
+  "Description": "Disables a Windows Scheduled Task for both 2008 and 2012.",
+  "ActionType": "Octopus.Script",
+  "Version": 6,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$taskName = $OctopusParameters['TaskName']
+$maximumWaitTime = $OctopusParameters['MaximumWaitTime']
+$succeedOnTaskNotFound = $OctopusParameters['SucceedOnTaskNotFound']
+
+#Check if the PowerShell cmdlets are available
+$cmdletSupported = [bool](Get-Command -Name Get-ScheduledTask -ErrorAction SilentlyContinue)
+
+try {
+\tif($cmdletSupported) {
+\t\t$taskExists = Get-ScheduledTask | Where-Object { $_.TaskName -eq $taskName }
+\t}
+\telse {
+\t\t$taskService = New-Object -ComObject \"Schedule.Service\"
+\t\t$taskService.Connect()
+\t\t$taskFolder = $taskService.GetFolder('\\')
+\t\t$taskExists = $taskFolder.GetTasks(0) | Select-Object Name, State | Where-Object { $_.Name -eq $taskName }
+\t}
+
+\tif(-not $taskExists) {
+        if( $succeedOnTaskNotFound){
+            Write-Output \"Scheduled task '$taskName' does not exist\"
+            }
+        else {
+\t\t    throw \"Scheduled task '$taskName' does not exist\"
+        }
+\t\treturn
+\t}
+
+\tWrite-Output \"Disabling $taskName...\"
+\t$waited = 0
+\tif($cmdletSupported) {
+\t\t$task = Disable-ScheduledTask $taskName
+\t\tWrite-Output \"Waiting until $taskName is disabled...\"
+\t\twhile(($task.State -ne [Microsoft.PowerShell.Cmdletization.GeneratedTypes.ScheduledTask.StateEnum]::Disabled) -and (($maximumWaitTime -eq 0) -or ($waited -lt $maximumWaitTime))) 
+\t\t{
+\t\t\tStart-Sleep -Milliseconds 200
+\t\t\t$waited += 200
+\t\t\t$task = Get-ScheduledTask $taskName
+\t\t}
+\t\t
+\t\tif($task.State -ne [Microsoft.PowerShell.Cmdletization.GeneratedTypes.ScheduledTask.StateEnum]::Disabled) {
+\t\t\tthrow \"The scheduled task $taskName could not be disabled within the specified wait time\"
+\t\t}
+\t}
+\telse {
+\t\tschtasks /Change /Disable /TN \"$taskName\"
+\t\t#The State property can hold the following values:
+\t\t# 0: Unknown
+\t\t# 1: Disabled
+\t\t# 2: Queued
+\t\t# 3: Ready
+\t\t# 4: Running
+\t\twhile(($taskFolder.GetTask($taskName).State -ne 1) -and (($maximumWaitTime -eq 0) -or ($waited -lt $maximumWaitTime))) {
+\t\t\tStart-Sleep -Milliseconds 200
+\t\t\t$waited += 200
+\t\t}
+\t\t
+\t\tif($taskFolder.GetTask($taskName).State -ne 1) {
+\t\t    throw \"The scheduled task '$taskName' could not be disabled within the specified wait time\"
+\t\t}
+\t}
+}
+finally {
+    if($taskFolder -ne $NULL) {
+\t    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($taskFolder)   
+\t}
+\t
+\tif($taskService -ne $NULL) {
+\t    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($taskService)   
+\t}
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "TaskName",
+      "Label": "Task Name",
+      "HelpText": "Name of the Windows Scheduled Task.",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "DefaultValue": null
+    },
+    {
+      "Name": "MaximumWaitTime",
+      "Label": "Maximum Wait Time",
+      "HelpText": "Maximum time the script must wait before aborting. Use '0' to wait indefinitely.",
+      "DefaultValue": 0,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SucceedOnTaskNotFound",
+      "Label": "Succeed On Task Not Found",
+      "HelpText": "This setting prevents the script from throwing an error if the task is not found.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2017-03-13T19:50:10.728Z",
+    "OctopusVersion": "2.4.5.46",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}

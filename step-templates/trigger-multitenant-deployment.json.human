@@ -1,0 +1,206 @@
+{
+  "Id": "053c7adc-f31f-42e1-b7c7-671d3df55ab2",
+  "Name": "Trigger Multi-Tenant Deployment",
+  "Description": "A step template that triggers Multi-Tenant Deployment. It can be used in not-tenanted projects. The step will lookup most recent release for the specified project if a specific version is not provided. Then it will lookup all tenants that are tagged with the specified tag and create a new deployment for each of the tenants. This will result in multiple tasks scheduled in Octopus. The step is not tracking status of deployment tasks execution.
+
+Hypothetical use-case: 
+ * A multi-tenanted system deployed (as a monoliths) with a non-tenanted Octopus Deploy process.
+ * Use this step to start a smoke test for several customers from such a not-tenanted deployment. In this case tenants can be used to represent different customers. This way each customer-specific parameters (access URLs, credentials, etc.) can be configured on tenants level.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "Category": "tenants",
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "function TriggerMultitenantDeployment {
+\t\t### Steps: 
+\t\t###    1. find most recent release of the Multi-tenanted project by project name if Release Number (2) parameter is empty
+\t\t###    2. locate all the tenants for specified tag
+\t\t###    3. for each tenant create a new deployment for the found release with the parameters
+
+    param
+    (
+        [ValidateNotNullOrEmpty()]
+        [Parameter(Mandatory = $true)]
+        [string]$apiUrl,
+        [ValidateNotNullOrEmpty()]
+        [Parameter(Mandatory = $true)]
+        [string]$apiKey,
+        [ValidateNotNullOrEmpty()]
+        [Parameter(Mandatory = $true)]
+        [string]$projectName,
+        [Parameter(Mandatory = $false)]
+        [string]$releaseNumber = '',
+        [ValidateNotNullOrEmpty()]
+        [Parameter(Mandatory = $true)]
+        [string]$environmentName,
+        [ValidateNotNullOrEmpty()]
+        [Parameter(Mandatory = $true)]
+        [string]$tenantsTag
+    )
+\t\t\t
+
+\t\t$errors=0
+\t\t$headers = @{\"X-Octopus-ApiKey\"=$apiKey}
+\t\t
+\t\t$initiator = \"#{Octopus.Deployment.CreatedBy.Username}\"
+
+\t\tWrite-Host \"### TriggerMultiTenantedDeployment parameters:\"
+\t\tWrite-Host \"###`tAPI URL: [$($apiUrl)]\"
+\t\tif($debug) {
+\t\t\tWrite-Host \"###`tAPI Key: [$($apiKey)]\"
+\t\t}
+\t\tWrite-Host \"###`tProject Name: [$($projectName)]\"
+\t\tWrite-Host \"###`tRelease Number: [$($releaseNumber)]\"
+\t\tWrite-Host \"###`tEnvironment: [$($environmentName)]\"
+\t\tWrite-Host \"###`tTenants Tag Name: [$($tenantsTag)]\"
+\t\tWrite-Host \"###`tInitiator: [$($initiator)]\"
+
+\t\ttry {
+\t\t\tif (-Not ($tenantsTag -match '\\w+/\\w+'))
+\t\t\t{
+\t\t\t\tWrite-Error \"### Tenants Tag Name must be in format 'TenantTagSet/TenantTag'\"
+\t\t\t\t$errors=1
+\t\t\t}
+\t\t\t$projects = Invoke-RestMethod -Method GET -Uri $apiUrl/projects/all -Headers $headers 
+\t\t\t$project = $projects | where Name -eq $projectName
+\t\t\tif (-Not $project) {
+\t\t\t\tWrite-Error \"### Could not find project with name [$($projectName)].\"
+\t\t\t\t$errors=1
+\t\t\t}
+            $projectUrl=\"$($apiUrl)/projects/$($project.Id)/releases\"
+\t\t\t$releases = Invoke-RestMethod -Method GET -Uri $projectUrl -Headers $headers | select -expand Items
+\t\t\t$mostRecentRelease = $releases | Sort-Object -Descending -Property { [int]($_.Version -replace \"\\.\") } | Select -First 1
+\t\t\t$release = $releases | where Version -eq $releaseNumber | Select -First 1
+\t\t\tif (-Not ($release)) {
+\t\t\t\t$release=$mostRecentRelease
+\t\t\t\tWrite-Host \"### Selected most recent release [$($release.Version)].\"
+\t\t\t}
+\t\t\tif(-Not $release) {
+\t\t\t\tif($releaseNumber) {
+\t\t\t\t\tWrite-Error \"### Could not find release [$($releaseNumber)]for project with name [$($projectName)].\"
+\t\t\t\t} else {
+\t\t\t\t\tWrite-Error \"### Could not find any releases for project with name [$($projectName)].\"
+\t\t\t\t}
+\t\t\t\t$errors=1
+\t\t\t}
+\t\t\t$environments = Invoke-RestMethod -Method GET -Uri $apiUrl/environments/all -Headers $headers
+\t\t\t$environment =  $environments | where Name -eq $environmentName
+\t\t\tif(-Not $environment){
+\t\t\t\tWrite-Error \"### Could not find environment [$($environmentName)] for project with name [$($projectName)].\"
+\t\t\t\t$errors=1
+\t\t\t}
+\t\t\t$tenants = Invoke-RestMethod -Method GET -Uri $apiUrl/tenants/all -Headers $headers 
+\t\t\t$selectedTenants = $tenants | where TenantTags -Contains $tenantsTag
+\t\t\tif(-Not $selectedTenants){
+\t\t\t\tWrite-Error \"### Could not find any tenants with tag [$($tenantsTag)].\"
+\t\t\t\t$errors=1
+\t\t\t}
+\t\t\tif($errors)
+\t\t\t{
+\t\t\t\tFail-Step \"### Encoutered an error. See log for more details. Interrupting the task.\"
+\t\t\t}
+
+\t\t\tif ($debug){
+\t\t\t\tWrite-Host \"##Project##: \" $project
+\t\t\t\tWrite-Host \"##Project.Id##: \" $projectId
+\t\t\t\tWrite-Host \"##LifeCycleId##: \" $lifeCycleId
+\t\t\t\tWrite-Host \"##Release##: \" $release
+\t\t\t\tWrite-Host \"##ReleaseId##: \" $release.Id
+\t\t\t\tWrite-Host \"##ChannelId##: \" $release.channelId
+\t\t\t\tWrite-Host \"##TenantsTag##: \" $tag.Id $tag.CanonicalTagName
+\t\t\t\tWrite-Host \"##SelectedTenants##: \" $selectedTenants.Count
+\t\t\t}
+
+\t\t\tforeach($tenant in $selectedTenants) {
+\t\t\t\t$deploymentJson = \"{`\"ProjectId`\":`\"$($projectId)`\",`\"ReleaseId`\":`\"$($release.Id)`\",`\"EnvironmentId`\":`\"$($environment.Id)`\",`\"ChannelId`\":`\"$($release.channelId)`\",`\"TenantId`\":`\"$($tenant.Id)`\",`\"Comments`\":`\"Initiated by $($initiator)`\"}\"
+\t\t\t
+\t\t\t\tif($debug) { Write-Host \"##DeploymentJson##: $($deploymentJson)\" }
+\t\t\t\t
+\t\t\t\t$deployment = Invoke-RestMethod -Method POST -Uri $apiUrl/deployments -Headers $headers -Body $deploymentJson
+\t\t\t\tWrite-Host \"### Created new deployment for $($tenant.Name): [$($deployment)].\"
+\t\t\t\tWrite-Host \"### Deployment for release [$($project.Name) $($release.Version)], tenant [$($tenant.Name)] in [$($environmentName)] environment was created and scheduled successfuly.\"
+\t\t\t}
+\t\t\texit
+\t\t} Catch {
+\t\t\tWrite-Error \"### Failed to complete deployment for \" $projectName \"to\" $environmentName \"for\" $tenantsTag
+\t\t\tthrow $_
+\t\t}
+}
+
+
+\tTriggerMultitenantDeployment -apiUrl $OctopusAPIurl -apiKey $OctopusAPIkey -projectName $MultiTenantProjectName -environmentName $EnvironmentName -releaseNumber $ReleaseNumber -tenantsTag $TenantsTag
+",
+    "Octopus.Action.SubstituteInFiles.Enabled": "True",
+    "Octopus.Action.EnabledFeatures": "Octopus.Features.SubstituteInFiles"
+  },
+  "Parameters": [
+    {
+      "Id": "f488f5a8-eafc-4da8-97ea-66cc01dfb39e",
+      "Name": "OctopusAPIurl",
+      "Label": "Octopus API URL",
+      "HelpText": null,
+      "DefaultValue": "#{Octopus.Dashboard.BaseUrl}/api",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9a4af3e2-340e-4e2f-9529-c160a491cc41",
+      "Name": "OctopusAPIkey",
+      "Label": "Octopus API Key",
+      "HelpText": null,
+      "DefaultValue": "#{Octopus.API.key}",
+      "DisplaySettings": {"Octopus.ControlType": "Sensitive"}
+    },
+    {
+      "Id": "dd89222e-662d-4e63-a6a6-260ec6495547",
+      "Name": "MultiTenantProjectName",
+      "Label": "Multi-Tenant Project Name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8447f3fc-c8ed-44e3-ab2f-932981160ea8",
+      "Name": "ReleaseNumber",
+      "Label": "Release Number",
+      "HelpText": "Release number of the Multi-tenant project. Leave empty to use most recent release of the project.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "50ece5fe-7650-491f-9e0a-e9e521b14799",
+      "Name": "EnvironmentName",
+      "Label": "Environment Name",
+      "HelpText": null,
+      "DefaultValue": "#{Octopus.Environment.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e1657396-4221-4fcf-84a1-9fe130263cc4",
+      "Name": "TenantsTag",
+      "Label": "Tenants Selection Tag",
+      "HelpText": "Required. Expected format: <TenantTagSetName>/<TenantTagName>",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2019-04-10T20:41:22.620Z",
+    "OctopusVersion": "2018.10.5",
+    "Type": "ActionTemplate"
+  }
+}

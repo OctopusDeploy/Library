@@ -1,0 +1,56 @@
+{
+  "Id": "c9c5d076-6936-4781-be3b-3a41912f7b67",
+  "Name": "IIS Website - Update IIS Log Path",
+  "Description": "Updates the IIS Log Path if needed.",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "write-host \"#Updating IIS Log path\"
+
+Import-Module \"WebAdministration\" -ErrorAction Stop
+
+$logPath = $OctopusParameters['LogPath']
+$IISsitename = $OctopusParameters['webSiteName']
+
+if (!(Test-Path \"IIS:\\Sites\\$($IISsitename)\")) {
+    write-host \"$IISsitename does not exist in IIS\"
+} else {
+    $currentLogPath = (Get-ItemProperty IIS:\\Sites\\$($IISsitename)).logFile.directory
+    write-host \"IIS LogPath currently set to $currentLogPath\"
+    if ([string]::Compare($currentLogPath, $logPath, $True) -ne 0) {
+        Set-ItemProperty IIS:\\Sites\\$($IISsitename) -name logFile.directory -value $logPath
+        write-host \"IIS LogPath updated to $logPath\"
+    }
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "LogPath",
+      "Label": "Log path",
+      "HelpText": "The path where you want to store your logs",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "WebsiteName",
+      "Label": "Website name",
+      "HelpText": "The name of the site in IIS",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2015-05-05T09:23:23.465+00:00",
+    "OctopusVersion": "2.6.5.1010",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}
