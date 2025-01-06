@@ -1,0 +1,97 @@
+{
+  "Id": "38a1ab46-b8dd-48b4-ab21-73068c737a43",
+  "Name": "PagerDuty - Create Incident",
+  "Description": "Creates an Incident against a PagerDuty Service.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+        "Octopus.Action.Script.ScriptBody": "# Gather Octopus variables\n$pagerDutyToken = $OctopusParameters['PagerDuty.API.AuthorizationToken']\n$incidentTitle = $OctopusParameters['PagerDuty.Incident.Title']\n$serviceId = $OctopusParameters['PagerDuty.Service.Id']\n$incidentPriority = $OctopusParameters['PagerDuty.Priority.Code']\n$incidentUrgency = $OctopusParameters['PagerDuty.Urgency.Code']\n$escalationPolicyId = $OctopusParameters['PagerDuty.EscalationPolicy.Id']\n$incidentDetails = $OctopusParameters['PagerDuty.Body.Details']\n$pagerDutyFrom = \"Octopus Deploy Project: $($OctopusParameters['Octopus.Project.Name']) Environment $($OctopusParameters['Octopus.Environment.Name'])\"\n\n# Configure request headers\n$headers = @{\n    \"Authorization\" = \"Token token=$pagerDutyToken\"\n    \"Content-Type\" = \"application/json\"\n    \"Accept\" = \"application/json\"\n    \"From\" = \"$pagerDutyFrom\"\n}\n\n# Build Incident Object\n$incidentPayload = @{\n  incident = @{\n    type = \"incident\"\n    title = $incidentTitle\n    service = @{\n      id = $serviceId\n      type = \"service_reference\"\n    }\n  \n    urgency = $incidentUrgency\n    body = @{\n      type = \"incident_body\"\n      details = $incidentDetails\n    }\n  }\n}\n\n# Check to see if an escalation id was specified\nif (![string]::IsNullOrWhitespace($escalationPolicyId))\n{\n  $policyDetails = @{\n    type = \"escalation_policy_reference\"\n    id = $escalationPolicyId\n  }\n\n  $incidentPayload.incident.Add(\"escalation_policy\", $policyDetails)\n}\n\n\n# Get Priority\n$priorities = (Invoke-RestMethod -Method Get -Uri \"https://api.pagerduty.com/priorities\" -Headers $headers)\n$priority = ($priorities.priorities | Where-Object {$_.Name -eq $incidentPriority})\n\n# Add priority to body\n$priorityBody = @{\n  id = \"$($priority.id)\"\n  type = \"priority_reference\"\n}\n$incidentPayload.incident.Add(\"priority\", $priorityBody)\n\n# Submit incident\ntry\n{\n  $responseResult = Invoke-RestMethod -Method Post -Uri \"https://api.pagerduty.com/incidents\" -Body ($incidentPayload | ConvertTo-Json -Depth 10) -Headers $headers\n  Write-Host \"Successfully created incident.\"\n  $responseResult.incident\n}\ncatch [System.Exception] {\n        Write-Host $_.Exception.Message\n        \n        $ResponseStream = $_.Exception.Response.GetResponseStream()\n        $Reader = New-Object System.IO.StreamReader($ResponseStream)\n        $Reader.ReadToEnd() | Write-Error\n}"
+  },
+  "Parameters": [
+    {
+      "Id": "39ed5ced-1b7e-4d69-af4a-dbac5a4bf7df",
+      "Name": "PagerDuty.API.AuthorizationToken",
+      "Label": "Token",
+      "HelpText": "\n\nPlease supply the API token of your PagerDuty instance.\n\nFound here: https://mydomain.pagerduty.com/api_keys",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "c092e897-15df-4561-8505-f76650cdec01",
+      "Name": "PagerDuty.Incident.Title",
+      "Label": "Title",
+      "HelpText": "Please enter a title for this incident.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9d048098-25cb-4736-8523-97eed8e15f3a",
+      "Name": "PagerDuty.Body.Details",
+      "Label": "Details",
+      "HelpText": "Please enter the details of the Incident.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "cdc36097-7255-4f58-bf3b-afb4ae1b80c6",
+      "Name": "PagerDuty.Service.Id",
+      "Label": "Service Id",
+      "HelpText": "Please enter the Service Id for the Incident.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "888bd996-ef6a-4d06-b8a0-7afd7dc888b7",
+      "Name": "PagerDuty.Priority.Code",
+      "Label": "Priority",
+      "HelpText": "Please select a Priority level for the Incident.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "None|None\nP1|P1\nP2|P2\nP3|P3\nP4|P4\nP5|P5"
+      }
+    },
+    {
+      "Id": "dcf56174-8588-448d-8ab0-1d7285f6b5e2",
+      "Name": "PagerDuty.Urgency.Code",
+      "Label": "Urgency",
+      "HelpText": "Please enter an Urgency for the Incident.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "high|High\nlow|Low"
+      }
+    },
+    {
+      "Id": "45206809-1211-454b-a724-fe0e924ed11c",
+      "Name": "PagerDuty.EscalationPolicy.Id",
+      "Label": "Escalation Policy Id",
+      "HelpText": "Please enter an Escalation Policy Id, leave blank if you don't have one.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2024-12-20T22:23:43.782Z",
+    "OctopusVersion": "2024.4.7005",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "pagerduty"
+}
