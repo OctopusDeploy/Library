@@ -1,0 +1,80 @@
+{
+  "Id": "143400df-19a9-42f5-a6c0-68145489482a",
+  "Name": "AWS - Update Launch Template AMI",
+  "Description": "Update the AMI used by a launch template, create a new launch template version, and set the new version as the default.",
+  "ActionType": "Octopus.AwsRunScript",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "False",
+    "Octopus.Action.AwsAccount.Variable": "#{AWSBlueGreen.AWS.Account}",
+    "Octopus.Action.Aws.Region": "#{AWSBlueGreen.AWS.Region}",
+    "Octopus.Action.Script.ScriptBody": "#!/bin/bash\n\nASG=${1:-'#{AWSBlueGreen.AWS.ASG | Trim}'}\nAMI=${2:-'#{AWSBlueGreen.AWS.AMI | Trim}'}\nVERSIONDESCRIPTION=${3:-'#{AWSBlueGreen.AWS.LaunchTemplateDescription | Trim}'}\n\nechoerror() { echo \"$@\" 1>&2; }\n\nif ! command -v \"aws\" &> /dev/null; then\n  echoerror \"You must have the AWS CLI installed for this step. Consider using a Container Image - https://octopus.com/docs/projects/steps/execution-containers-for-workers#how-to-use-execution-containers-for-workers\"\n  exit 1\nfi\n\nif ! command -v \"jq\" &> /dev/null; then\n  echoerror \"You must have jq installed for this step. Consider using a Container Image - https://octopus.com/docs/projects/steps/execution-containers-for-workers#how-to-use-execution-containers-for-workers\"\n  exit 1\nfi\n\nif [[ -z \"${ASG}\" ]]; then\n  echoerror \"Please provide the name of the Auto Scaling group as the first argument\"\n  exit 1\nfi\n\nif [[ -z \"${AMI}\" ]]; then\n  echoerror \"Please provide the ID of the new AMI as the second argument\"\n  exit 1\nfi\n\nif [[ -z \"${VERSIONDESCRIPTION}\" ]]; then\n  echoerror \"Please provide a description for the new launch template version as the third argument\"\n  exit 1\nfi\n\nLAUNCHTEMPLATE=$(aws autoscaling describe-auto-scaling-groups \\\n  --auto-scaling-group-names \"${ASG}\" \\\n  --query 'AutoScalingGroups[0].LaunchTemplate.LaunchTemplateId' \\\n  --output text)\n\necho \"Modifying launch template ${LAUNCHTEMPLATE} for Auto Scaling group ${ASG}...\"\n\nNEWVERSION=$(aws ec2 create-launch-template-version \\\n    --launch-template-id \"${LAUNCHTEMPLATE}\" \\\n    --version-description \"${VERSIONDESCRIPTION}\" \\\n    --source-version 1 \\\n    --launch-template-data \"ImageId=${AMI}\")\n\nNEWVERSIONNUMBER=$(jq -r '.LaunchTemplateVersion.VersionNumber' <<< \"${NEWVERSION}\")\n\necho \"Set AMI for launch template ${LAUNCHTEMPLATE} to ${AMI}, generating new version ${NEWVERSIONNUMBER}...\"\n\nwrite_verbose \"${NEWVERSION}\"\n\nMODIFYTEMPLATE=$(aws ec2 modify-launch-template \\\n    --launch-template-id \"${LAUNCHTEMPLATE}\" \\\n    --default-version \"${NEWVERSIONNUMBER}\")\n\necho \"Set default version for launch template ${LAUNCHTEMPLATE} to ${NEWVERSIONNUMBER}...\"\n\nwrite_verbose \"${MODIFYTEMPLATE}\"\n\nUPDATELAUNCHTEMPLATEVERSION=$(aws autoscaling update-auto-scaling-group \\\n  --auto-scaling-group-name \"${ASG}\" \\\n  --launch-template \"LaunchTemplateId=${LAUNCHTEMPLATE},Version=${NEWVERSIONNUMBER}\")\n\necho \"Updated the ASG launch template version to ${NEWVERSIONNUMBER}...\"\n\nwrite_verbose \"${UPDATELAUNCHTEMPLATEVERSION}\"\n\n"
+  },
+  "Parameters": [
+    {
+      "Id": "11e34c09-311a-49b4-82b7-c33212a07c01",
+      "Name": "AWSBlueGreen.AWS.Account",
+      "Label": "Account",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AmazonWebServicesAccount"
+      }
+    },
+    {
+      "Id": "6a42aaa1-e5f5-4c03-bba7-068fa75eb53f",
+      "Name": "AWSBlueGreen.AWS.Region",
+      "Label": "Region",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9885f4d6-b8a4-4445-973b-0b6b809e8bd0",
+      "Name": "AWSBlueGreen.AWS.ASG",
+      "Label": "ASG Name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b89df47e-3d7c-4d88-b3f6-a5b465448978",
+      "Name": "AWSBlueGreen.AWS.AMI",
+      "Label": "AMI",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7f7a98b1-067d-47d0-94c8-1a8a3d285c1c",
+      "Name": "AWSBlueGreen.AWS.LaunchTemplateDescription",
+      "Label": "Launch Template Version Description",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AwsRunScript",
+  "$Meta": {
+    "ExportedAt": "2025-01-10T03:43:20.697Z",
+    "OctopusVersion": "2025.1.5319",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "aws"
+}

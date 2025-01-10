@@ -1,0 +1,90 @@
+{
+  "Id": "2f5f8b7b-5deb-45a9-966b-bf52c6e7976c",
+  "Name": "AWS - Find Blue-Green Target Group",
+  "Description": "Find the online and offline target groups for a blue-green deployment",
+  "ActionType": "Octopus.AwsRunScript",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "False",
+    "Octopus.Action.AwsAccount.Variable": "#{AWSBlueGreen.AWS.Account}",
+    "Octopus.Action.Aws.Region": "#{AWSBlueGreen.AWS.Region}",
+    "Octopus.Action.Script.ScriptBody": "#!/bin/bash\n\nLISTENER=${1:-'#{AWSBlueGreen.AWS.ListenerARN | Trim}'}\nRULE=${2:-'#{AWSBlueGreen.AWS.RuleArn | Trim}'}\nGREENTARGETGROUP=${3:-'#{AWSBlueGreen.AWS.GreenTargetGroup | Trim}'}\nBLUETARGETGROUP=${4:-'#{AWSBlueGreen.AWS.BlueTargetGroup | Trim}'}\n\nechoerror() { echo \"$@\" 1>&2; }\n\nif ! command -v \"aws\" &> /dev/null; then\n  echoerror \"You must have the AWS CLI installed for this step. Consider using a Container Image - https://octopus.com/docs/projects/steps/execution-containers-for-workers#how-to-use-execution-containers-for-workers\"\n  exit 1\nfi\n\nif ! command -v \"jq\" &> /dev/null; then\n  echoerror \"You must have jq installed for this step. Consider using a Container Image - https://octopus.com/docs/projects/steps/execution-containers-for-workers#how-to-use-execution-containers-for-workers\"\n  exit 1\nfi\n\n# Validate the arguments\n\nif [[ -z \"${LISTENER}\" ]]; then\n  echoerror \"Please provide the ARN of the listener as the first argument\"\n  exit 1\nfi\n\nif [[ -z \"${RULE}\" ]]; then\n  echoerror \"Please provide the ARN of the listener rule as the second argument\"\n  exit 1\nfi\n\nif [[ -z \"${GREENTARGETGROUP}\" ]]; then\n  echoerror \"Please provide the ARN of the green target group as the third argument\"\n  exit 1\nfi\n\nif [[ -z \"${BLUETARGETGROUP}\" ]]; then\n  echoerror \"Please provide the ARN of the blue target group as the fourth argument\"\n  exit 1\nfi\n\n# Get the JSON representation of the listener rules\n\nRULES=$(aws elbv2 describe-rules \\\n  --listener-arn \"${LISTENER}\" \\\n  --output json)\n\nwrite_verbose \"${RULES}\"\n\n# Find the weight assigned to each of the target groups.\n\nGREENWEIGHT=$(jq -r \".Rules[] | select(.RuleArn == \\\"${RULE}\\\") | .Actions[] | select(.Type == \\\"forward\\\") | .ForwardConfig | .TargetGroups[] | select(.TargetGroupArn == \\\"${GREENTARGETGROUP}\\\") | .Weight\" <<< \"${RULES}\")\nBLUEWEIGHT=$(jq -r \".Rules[] | select(.RuleArn == \\\"${RULE}\\\") | .Actions[] | select(.Type == \\\"forward\\\") | .ForwardConfig | .TargetGroups[] | select(.TargetGroupArn == \\\"${BLUETARGETGROUP}\\\") | .Weight\" <<< \"${RULES}\")\n\n# Validation that we found the green and blue target groups.\n\nif [[ -z \"${GREENWEIGHT}\" ]]; then\n  echoerror \"Failed to find the target group ${GREENTARGETGROUP} in the listener rule ${RULE}\"\n  echoerror \"Double check that the target group exists and has been associated with the load balancer\"\n  exit 1\nfi\n\nif [[ -z \"${BLUEWEIGHT}\" ]]; then\n  echoerror \"Failed to find the target group ${BLUETARGETGROUP} in the listener rule ${RULE}\"\n  echoerror \"Double check that the target group exists and has been associated with the load balancer\"\n  exit 1\nfi\n\necho \"Green weight: ${GREENWEIGHT}\"\necho \"Blue weight: ${BLUEWEIGHT}\"\n\n# Set the output variables identifying which target group is active and which is inactive.\n# Note that we assume the target groups are either active or inactive (i.e. all traffic and no traffic).\n# Load balancers support more complex routing rules, but we assume a simple blue-green deployment.\n# If the green target group has traffic, it is considered active, and the blue target group is considered inactive.\n# If the green target group has no traffic, it is considered inactive, and the blue target group is considered active.\n\nif [ \"${GREENWEIGHT}\" != \"0\" ]; then\n  echo \"Green target group is active, blue target group is inactive\"\n  set_octopusvariable \"ActiveGroupArn\" \"${GREENTARGETGROUP}\"\n  set_octopusvariable \"ActiveGroupColor\" \"Green\"\n  set_octopusvariable \"InactiveGroupArn\" \"${BLUETARGETGROUP}\"\n  set_octopusvariable \"InactiveGroupColor\" \"Blue\"\nelse\n  echo \"Blue target group is active, green target group is inactive\"\n  set_octopusvariable \"ActiveGroupArn\" \"${BLUETARGETGROUP}\"\n  set_octopusvariable \"ActiveGroupColor\" \"Blue\"\n  set_octopusvariable \"InactiveGroupArn\" \"${GREENTARGETGROUP}\"\n  set_octopusvariable \"InactiveGroupColor\" \"Green\"\nfi"
+  },
+  "Parameters": [
+    {
+      "Id": "29cdfb7d-47fa-4c8a-837b-c58bb0d90c26",
+      "Name": "AWSBlueGreen.AWS.Region",
+      "Label": "Region",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "58a1ebcd-fd13-48e2-b8b9-fdfe4df8c35e",
+      "Name": "AWSBlueGreen.AWS.Account",
+      "Label": "Account",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AmazonWebServicesAccount"
+      }
+    },
+    {
+      "Id": "80642a7b-ef3e-4db4-b969-d0148a1baa90",
+      "Name": "AWSBlueGreen.AWS.ListenerARN",
+      "Label": "Listener ARN",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2cf29ab4-61a1-4a80-942f-6f1dd035f634",
+      "Name": "AWSBlueGreen.AWS.BlueTargetGroup",
+      "Label": "Blue Target Group ARN",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b7d105c6-1640-48c4-9f01-ad9ece8d3588",
+      "Name": "AWSBlueGreen.AWS.GreenTargetGroup",
+      "Label": "Green Target Group ARN",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ff055e9f-f223-453a-9a1f-a0238e6cdfd6",
+      "Name": "AWSBlueGreen.AWS.RuleArn",
+      "Label": "Rule ARN",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AwsRunScript",
+  "$Meta": {
+    "ExportedAt": "2025-01-10T03:41:11.780Z",
+    "OctopusVersion": "2025.1.5319",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "aws"
+}
