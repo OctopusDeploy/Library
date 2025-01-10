@@ -1,0 +1,80 @@
+{
+  "Id": "6b72995e-500c-4b4b-9121-88f3a988ec71",
+  "Name": "AWS - Find Blue-Green ASG",
+  "Description": "Return the name of the online and offline blue and green Auto Scaling Groups",
+  "ActionType": "Octopus.AwsRunScript",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "False",
+    "Octopus.Action.AwsAccount.Variable": "#{AWSBlueGreen.AWS.Account}",
+    "Octopus.Action.Script.ScriptBody": "#!/bin/bash\n\nINACTIVECOLOR=${1:-'#{AWSBlueGreen.InactiveColor | Trim}'}\nGREENASG=${2:-'#{AWSBlueGreen.AWS.GreenASG | Trim}'}\nBLUEASG=${3:-'#{AWSBlueGreen.AWS.BlueASG | Trim}'}\n\nechoerror() { echo \"$@\" 1>&2; }\n\nif [[ -z \"${INACTIVECOLOR}\" ]]\nthen\n  echoerror \"Please provide the color of the inactive Auto Scaling group (Green or Blue) as the first argument\"\n  exit 1\nfi\n\nif [[ -z \"${GREENASG}\" ]]\nthen\n  echoerror \"Please provide the name of the Green Auto Scaling group as the second argument\"\n  exit 1\nfi\n\nif [[ -z \"${BLUEASG}\" ]]\nthen\n  echoerror \"Please provide the name of the Blue Auto Scaling group as the third argument\"\n  exit 1\nfi\n\nif [[ \"${INACTIVECOLOR^^}\" == \"GREEN\" ]]\nthen\n  set_octopusvariable \"ActiveGroup\" \"${BLUEASG}\"\n  set_octopusvariable \"InactiveGroup\" \"${GREENASG}\"\n  echo \"Active group is Blue (${BLUEASG}), inactive group is Green (${GREENASG})\"\nelse\n  set_octopusvariable \"ActiveGroup\" \"${GREENASG}\"\n    set_octopusvariable \"InactiveGroup\" \"${BLUEASG}\"\n    echo \"Active group is Green (${GREENASG}), inactive group is Blue (${BLUEASG})\"\nfi",
+    "Octopus.Action.Aws.Region": "#{AWSBlueGreen.AWS.Region}"
+  },
+  "Parameters": [
+    {
+      "Id": "f8522014-f1ba-4e4a-a06d-59ebdba6f276",
+      "Name": "AWSBlueGreen.InactiveColor",
+      "Label": "Inactive Color",
+      "HelpText": "The color of the inactive group (Green or Blue). This value is usually found from the \"AWS - Find Blue-Green Target Group\" step.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8753e6ed-0ae6-4a4c-ae5b-155139037633",
+      "Name": "AWSBlueGreen.AWS.GreenASG",
+      "Label": "Green ASG Name",
+      "HelpText": "The name of the green auto scaler group. See https://docs.aws.amazon.com/autoscaling/ec2/userguide/auto-scaling-groups.html for more details.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "bf9187f5-62e9-4ad9-b53f-459466b84994",
+      "Name": "AWSBlueGreen.AWS.BlueASG",
+      "Label": "Blue ASG Name",
+      "HelpText": "The name of the blue auto scaler group. See https://docs.aws.amazon.com/autoscaling/ec2/userguide/auto-scaling-groups.html for more details.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "eb02bbf2-e05a-4469-9359-c77d77d87dd2",
+      "Name": "AWSBlueGreen.AWS.Region",
+      "Label": "Region",
+      "HelpText": "The AWS region. See https://aws.amazon.com/about-aws/global-infrastructure/regions_az/ for more information.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "99a74afc-ee67-4295-8281-3bb1c6e83d06",
+      "Name": "AWSBlueGreen.AWS.Account",
+      "Label": "Account",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AmazonWebServicesAccount"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AwsRunScript",
+  "$Meta": {
+    "ExportedAt": "2025-01-10T03:42:14.665Z",
+    "OctopusVersion": "2025.1.5319",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "aws"
+}
