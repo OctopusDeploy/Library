@@ -1,0 +1,61 @@
+{
+  "Id": "150c46d1-f33f-493b-a8c6-f5bd22f540f3",
+  "Name": "AWS - Initiate Instance Refresh",
+  "Description": "Initiates an instance refresh for an Auto Scaling group and waits for it to complete.",
+  "ActionType": "Octopus.AwsRunScript",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "False",
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.AwsAccount.Variable": "#{AWSBlueGreen.AWS.Account}",
+    "Octopus.Action.Aws.Region": "#{AWSBlueGreen.AWS.Region}",
+    "Octopus.Action.Script.ScriptBody": "#!/bin/bash\n\nASG=${1:-'#{AWSBlueGreen.AWS.ASG | Trim}'}\n\nechoerror() { echo \"$@\" 1>&2; }\n\nif ! command -v \"aws\" &> /dev/null; then\n  echoerror \"You must have the AWS CLI installed for this step. Consider using a Container Image - https://octopus.com/docs/projects/steps/execution-containers-for-workers#how-to-use-execution-containers-for-workers\"\n  exit 1\nfi\n\nif ! command -v \"jq\" &> /dev/null; then\n  echoerror \"You must have jq installed for this step. Consider using a Container Image - https://octopus.com/docs/projects/steps/execution-containers-for-workers#how-to-use-execution-containers-for-workers\"\n  exit 1\nfi\n\nif [[ -z \"${ASG}\" ]]; then\n  echoerror \"Please provide the name of the Auto Scaling group as the first argument\"\n  exit 1\nfi\n\nfor i in {1..30}; do\n  EXISTINGREFRESHES=$(aws autoscaling describe-instance-refreshes --auto-scaling-group-name \"${ASG}\")\n  NOTSUCCESSFUL=$(jq '.InstanceRefreshes[] | select(.Status == \"Pending\" or .Status == \"InProgress\" or .Status == \"Cancelling\" or .Status == \"RollbackInProgress\" or .Status == \"Baking\")' <<< \"${EXISTINGREFRESHES}\")\n  if [[ -z \"${NOTSUCCESSFUL}\" ]];\n  then\n    break\n  fi\n    echo \"Waiting for existing Auto Scaling group ${ASG} refresh to complete...\"\n    sleep 12\ndone\n\nREFRESH=$(aws autoscaling start-instance-refresh --auto-scaling-group-name \"${ASG}\")\n\nif [[ $? -ne 0 ]];\nthen\n  echoerror \"Failed to start instance refresh for Auto Scaling group ${ASG}\"\n  exit 1\nfi\n\nREFRESHTOKEN=$(jq -r '.InstanceRefreshId' <<< \"${REFRESH}\")\n\necho \"Refreshing instances in Auto Scaling group ${ASG}...\"\n\nwrite_verbose \"${REFRESH}\"\n\n# Wait for all instances to be healthy\nfor i in {1..30}; do\n  REFRESHSTATUS=$(aws autoscaling describe-instance-refreshes --auto-scaling-group-name \"${ASG}\" --instance-refresh-ids \"${REFRESHTOKEN}\")\n  STATUS=$(jq -r '.InstanceRefreshes[0].Status' <<< \"${REFRESHSTATUS}\")\n  PERCENTCOMPLETE=$(jq -r '.InstanceRefreshes[0].PercentageComplete' <<< \"${REFRESHSTATUS}\")\n\n  write_verbose \"${REFRESHSTATUS}\"\n\n  if [[ \"${STATUS}\" == \"Successful\" ]]\n  then\n    echo \"Instance refresh succeeded\"\n    break\n  elif [[ \"${STATUS}\" == \"Failed\" ]];\n  then\n    echo \"Instance refresh failed!\"\n    exit 1\n  fi\n  echo \"Waiting for Auto Scaling group ${ASG} refresh to complete (${PERCENTCOMPLETE}%)...\"\n  sleep 12\ndone"
+  },
+  "Parameters": [
+    {
+      "Id": "2fe001f5-39ee-40d9-b104-24817759ac6f",
+      "Name": "AWSBlueGreen.AWS.Region",
+      "Label": "AWS Region",
+      "HelpText": "The AWS region. See https://aws.amazon.com/about-aws/global-infrastructure/regions_az/ for more information.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f3630bb5-ab07-46b4-b764-19f1c3b2ec5f",
+      "Name": "AWSBlueGreen.AWS.Account",
+      "Label": "Account",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AmazonWebServicesAccount"
+      }
+    },
+    {
+      "Id": "bdfdedee-fdeb-4292-96fd-e41c64b1e523",
+      "Name": "AWSBlueGreen.AWS.ASG",
+      "Label": "ASG Name",
+      "HelpText": "The name of the auto scaler group to refresh. See https://docs.aws.amazon.com/autoscaling/ec2/userguide/auto-scaling-groups.html for more details.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AwsRunScript",
+  "$Meta": {
+    "ExportedAt": "2025-01-10T04:12:22.681Z",
+    "OctopusVersion": "2025.1.5319",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "aws"
+}
