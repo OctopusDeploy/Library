@@ -1,0 +1,361 @@
+{
+    "Id": "6e676055-fb63-450f-9d98-ac99c4a68023",
+    "Name": "Postgres- Create User If Not Exists",
+    "Description": "Creates a new user account on a Postgres database server.
+
+Note:
+- AWS EC2 IAM Role authentication requires the AWS CLI be installed.",
+    "ActionType": "Octopus.Script",
+    "Version": 8,
+    "Author": "twerthi",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Define functions
+function Get-ModuleInstalled
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName
+    )
+
+    # Check to see if the module is installed
+    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))
+    {
+        # It is installed
+        return $true
+    }
+    else
+    {
+        # Module not installed
+        return $false
+    }
+}
+
+function Install-PowerShellModule
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName,
+        $LocalModulesPath
+    )
+
+\t# Check to see if the package provider has been installed
+    if ((Get-NugetPackageProviderNotInstalled) -ne $false)
+    {
+    \t# Display that we need the nuget package provider
+        Write-Host \"Nuget package provider not found, installing ...\"
+        
+        # Install Nuget package provider
+        Install-PackageProvider -Name Nuget -Force
+    }
+
+\t# Save the module in the temporary location
+    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force
+}
+
+function Get-NugetPackageProviderNotInstalled
+{
+\t# See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+function Get-UserExists
+{
+\t# Define parameters
+    param ($Hostname,
+    $Username)
+    
+\t# Execute query
+    return Invoke-SqlQuery \"SELECT * FROM pg_roles WHERE rolname = '$Username';\"
+}
+
+# Define PowerShell Modules path
+$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName
+$env:PSModulePath = \"$LocalModules$([System.IO.Path]::PathSeparator)$env:PSModulePath\"
+$PowerShellModuleName = \"SimplySql\"
+
+# Set secure protocols
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Check to see if SimplySql module is installed
+if ((Get-ModuleInstalled -PowerShellModuleName $PowerShellModuleName) -ne $true)
+{
+    # Tell user what we're doing
+    Write-Output \"PowerShell module $PowerShellModuleName is not installed, downloading temporary copy ...\"
+
+    # Install temporary copy
+    Install-PowerShellModule -PowerShellModuleName $PowerShellModuleName -LocalModulesPath $LocalModules
+}
+
+# Display
+Write-Output \"Importing module $PowerShellModuleName ...\"
+
+# Check to see if it was downloaded
+if ((Test-Path -Path \"$LocalModules\\$PowerShellModuleName\") -eq $true)
+{
+\t# Use specific location
+    $PowerShellModuleName = \"$LocalModules\\$PowerShellModuleName\"
+}
+
+# Import the module
+Import-Module -Name $PowerShellModuleName
+
+# Get whether trust certificate is necessary
+$createTrustSSL = [System.Convert]::ToBoolean(\"$createTrustSSL\")
+
+try
+{
+\t# Declare initial connection string
+    $connectionString = \"Server=$createPostgresSQLServerName;Port=$createPostgreSQLServerPort;Database=postgres;\"
+    
+\t# Check to see if we need to trust the ssl cert
+\tif ($createTrustSSL -eq $true)
+\t{
+        # Append SSL connection string components
+        $connectionString += \"SSL Mode=Require;Trust Server Certificate=true;\"
+\t}
+
+    # Update the connection string based on authentication method
+    switch ($postgreSqlAuthenticationMethod)
+    {
+        \"azuremanagedidentity\"
+        {
+        \t# Get login token
+            Write-Host \"Generating Azure Managed Identity token ...\"
+            $token = Invoke-RestMethod -Method GET -Uri \"http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://ossrdbms-aad.database.windows.net\" -Headers @{\"MetaData\" = \"true\"}
+            
+            # Append remaining portion of connection string
+            $connectionString += \";User Id=$createLoginWithAddUserRights;Password=`\"$($token.access_token)`\";\"
+            
+            break
+        }    
+        \"awsiam\"
+        {
+            # Region is part of the RDS endpoint, extract
+            $region = ($createPostgresSQLServerName.Split(\".\"))[2]
+
+            Write-Host \"Generating AWS IAM token ...\"
+            $createLoginPasswordWithAddUserRights = (aws rds generate-db-auth-token --hostname $createPostgresSQLServerName --region $region --port $createPostgreSQLServerPort --username $createLoginWithAddUserRights)
+
+            # Append remaining portion of connection string
+            $connectionString += \";User Id=$createLoginWithAddUserRights;Password=`\"$createLoginPasswordWithAddUserRights`\";\"
+
+            break
+        }
+        \"gcpserviceaccount\"
+        {
+            # Define header
+            $header = @{ \"Metadata-Flavor\" = \"Google\"}
+
+            # Retrieve service accounts
+            $serviceAccounts = Invoke-RestMethod -Method Get -Uri \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/\" -Headers $header
+
+            # Results returned in plain text format, get into array and remove empty entries
+            $serviceAccounts = $serviceAccounts.Split([Environment]::NewLine, [StringSplitOptions]::RemoveEmptyEntries)
+
+            # Retreive the specific service account assigned to the VM
+            $serviceAccount = $serviceAccounts | Where-Object {$_.Contains(\"iam.gserviceaccount.com\") }
+
+            Write-Host \"Generating GCP IAM token ...\"
+            # Retrieve token for account
+            $token = Invoke-RestMethod -Method Get -Uri \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/$serviceAccount/token\" -Headers $header
+            
+            # Check to see if there was a username provided
+            if ([string]::IsNullOrWhitespace($createLoginWithAddUserRights))
+            {
+            \t# Use the service account name, but strip off the .gserviceaccount.com part
+                $createLoginWithAddUserRights = $serviceAccount.SubString(0, $serviceAccount.IndexOf(\".gserviceaccount.com\"))
+            }
+  
+            # Append remaining portion of connection string
+            $connectionString += \";User Id=$createLoginWithAddUserRights;Password=`\"$($token.access_token)`\";\"
+  
+            break
+        }
+        \"usernamepassword\"
+        {
+            # Append remaining portion of connection string
+            $connectionString += \";User Id=$createLoginWithAddUserRights;Password=`\"$createLoginPasswordWithAddUserRights`\";\"
+
+            break    
+        }
+
+        \"windowsauthentication\"
+        {
+            # Append remaining portion of connection string
+            $connectionString += \";Integrated Security=True;\"
+        }
+    }
+
+\t# Open connection
+    Open-PostGreConnection -ConnectionString $connectionString
+
+    # See if database exists
+    $userExists = Get-UserExists -Username $createNewUsername
+
+    if ($userExists -eq $null)
+    {
+        # Create user
+        Write-Output \"Creating user $createNewUsername ...\"
+        $createSql = \"\"
+        
+        switch ($postgreSqlAccountType)
+        {
+            \"awsiam\"
+            {
+\t\t\t\t$createSql = \"CREATE ROLE `\"$createNewUsername`\" WITH LOGIN; GRANT rds_iam TO `\"$createNewUsername`\";\"
+                break
+            }
+
+            \"usernamepassword\"
+            {
+\t\t\t\t$createSql = \"CREATE ROLE `\"$createNewUsername`\" WITH LOGIN PASSWORD '$createNewUserPassword';\"
+                break    
+            }
+
+            \"windowsauthentication\"
+            {
+            \t$createSql = \"CREATE ROLE `\"$createNewUsername`\" WITH LOGIN;\"
+            \tbreak
+            }
+        }
+
+        
+        $executionResults = Invoke-SqlUpdate $createSql
+
+        # See if it was created
+        $userExists = Get-UserExists -Username $createNewUsername
+            
+        # Check array
+        if ($userExists -ne $null)
+        {
+            # Success
+            Write-Output \"$createNewUsername created successfully!\"
+        }
+        else
+        {
+            # Failed
+            Write-Error \"$createNewUsername was not created!\"
+        }
+    }
+    else
+    {
+    \t# Display message
+        Write-Output \"User $createNewUsername already exists.\"
+    }
+}
+finally
+{
+    Close-SqlConnection
+}"
+    },
+    "Parameters": [
+      {
+        "Id": "3ff05fe1-7873-443e-ae6b-f52c7d994664",
+        "Name": "createPostgresSQLServerName",
+        "Label": "Host name of the Postgres server",
+        "HelpText": "Name of the Postgres server",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "7db491c2-441a-455e-849d-dbb6b61b24e2",
+        "Name": "createPostgreSQLServerPort",
+        "Label": "Port",
+        "HelpText": "Port number the Postgres server listens on.",
+        "DefaultValue": "5432",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "cbb7e84e-1492-4e76-b588-b65c76f3bf2b",
+        "Name": "createTrustSSL",
+        "Label": "Trust SSL Certificate",
+        "HelpText": "Force trusting an SSL Certificate.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "c0e8a9e1-e68b-4af7-8dfa-5f1c9872e615",
+        "Name": "postgreSqlAuthenticationMethod",
+        "Label": "Authentication Method",
+        "HelpText": "Method used to authenticate to the PostgreSQL server.",
+        "DefaultValue": "usernamepassword",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "awsiam|AWS EC2 IAM Role
+azuremanagedidentity|Azure Managed Identity
+gcpserviceaccount|GCP Service Account
+usernamepassword|Username\\Password
+windowsauthentication|Windows Authentication"
+        }
+      },      
+      {
+        "Id": "0e3cb957-541d-436c-b3b5-047ddda28ec8",
+        "Name": "createLoginWithAddUserRights",
+        "Label": "Login name",
+        "HelpText": "Login name of a user with rights to create user accounts.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "b9029a8c-e4bd-4993-a163-1f95dfbaf01d",
+        "Name": "createLoginPasswordWithAddUserRights",
+        "Label": "Login Password",
+        "HelpText": "Password for Login name.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "b9986f38-a587-46bd-82d7-97d16baf529f",
+        "Name": "postgreSqlAccountType",
+        "Label": "Account type",
+        "HelpText": null,
+        "DefaultValue": "usernamepassword",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "awsiam|AWS EC2 IAM Role
+usernamepassword|Username\\Password
+windowsauthentication|Windows Authentication"
+        }
+      },      
+      {
+        "Id": "43b9e471-e792-49e1-a761-a8fa95679a24",
+        "Name": "createNewUsername",
+        "Label": "New user name",
+        "HelpText": "Name of the new user account to create.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "aeda6f0b-d9e9-4f66-8c61-84cf42c26f27",
+        "Name": "createNewUserPassword",
+        "Label": "New user password",
+        "HelpText": "Password for the new user account.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      }
+    ],
+    "LastModifiedBy": "twerthi",
+    "$Meta": {
+      "ExportedAt": "2022-06-14T15:09:44.806Z",
+      "OctopusVersion": "2022.2.5111",
+      "Type": "ActionTemplate"
+    },
+    "Category": "postgresql"
+  }

@@ -1,0 +1,88 @@
+{
+  "Id": "9eb40453-ac5d-4cb0-8666-046ff6305a3a",
+  "Name": "IIS Website - Stop",
+  "Description": "Stops a website in IIS.",
+  "ActionType": "Octopus.Script",
+  "Version": 8,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Load IIS module:\r
+Import-Module WebAdministration\r
+\r
+# Get WebSite Name\r
+$webSiteName = $OctopusParameters['webSiteName']\r
+# Get the number of retries\r
+$retries = $OctopusParameters['webSiteCheckRetries']\r
+# Get the number of attempts\r
+$delay = $OctopusParameters['webSiteCheckDelay']\r
+\r
+# Check if exists\r
+if(Test-Path IIS:\\Sites\\$webSiteName) {\r
+\r
+    # Stop Website if not already stopped\r
+    if ((Get-WebSiteState $webSiteName).Value -ne \"Stopped\") {\r
+        Write-Output \"Stopping IIS Website $webSiteName\"\r
+        Stop-WebSite $webSiteName\r
+    \r
+        $state = (Get-WebSiteState $webSiteName).Value\r
+        $counter = 1\r
+        \r
+        # Wait for the Website to the \"Stopped\" before proceeding\r
+        do{ \r
+            $state = (Get-WebSiteState $webSiteName).Value\r
+            Write-Output \"$counter/$retries Waiting for IIS Website $webSiteName to shut down completely. Current status: $state\"\r
+            $counter++\r
+            Start-Sleep -Milliseconds $delay\r
+        }\r
+        while($state -ne \"Stopped\" -and $counter -le $retries)  \r
+        \r
+        # Throw an error if the Website is not stopped\r
+        if($counter -gt $retries) { \r
+            throw \"Could not shut down IIS Website $webSiteName. `nTry to increase the number of retries ($retries) or delay between attempts ($delay milliseconds).\" }\r
+    }\r
+}\r
+else {\r
+    Write-Output \"IIS Website $webSiteName doesn't exist\"\r
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [{
+      "Name": "WebsiteName",
+      "Label": "Website name",
+      "HelpText": "The name of the site in IIS",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "WebSiteCheckDelay",
+      "Label": "Status check interval",
+      "HelpText": "The delay, in milliseconds, between each attempt to query the website to see if its status is \"Stopped\"",
+      "DefaultValue": "500",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "WebSiteCheckRetries",
+      "Label": "Status check retries",
+      "HelpText": "The number of retries before an error is thrown.",
+      "DefaultValue": "20",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2017-02-09T23:04:46.440Z",
+    "OctopusVersion": "3.3.17",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}

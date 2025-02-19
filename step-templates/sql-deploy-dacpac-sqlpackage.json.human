@@ -1,0 +1,780 @@
+{
+  "Id": "c323cbcd-aab8-4229-b07c-e6c26f7e9a8a",
+  "Name": "SQL - Deploy DACPAC using SqlPackage",
+  "Description": "Calls SqlPackage commands such as:
+ * [Deploy](https://learn.microsoft.com/en-us/sql/tools/sqlpackage/sqlpackage-publish?view=sql-server-ver16)
+ * [Script](https://learn.microsoft.com/en-us/sql/tools/sqlpackage/sqlpackage-script?view=sql-server-ver16)
+ * [DeployReport](https://learn.microsoft.com/en-us/sql/tools/sqlpackage/sqlpackage-deploy-drift-report?view=sql-server-ver16)
+
+As SqlPackage is cross-platform, this template is both Windows and Linux* compatible.
+
+Results of `Deploy script` and `deploy report` options will upload to Octopus Deploy as an artifact. This allows you to put in place a manual intervention step if required. It is also useful for auditing purposes.
+
+SqlCmd variables are now supported.  To specify SqlCmd variables, create your Octopus variable with the following naming convention: SqlCmdVariable.<Variable name> (case insensitive) and then assign it a value.  Examples:
+* SqlCmdVariable.Variable1
+* my.sqlcmdvariable.variable2
+
+NOTE: 
+ - Requires version 2019.10 or above. 
+ - `TrustServerCertificate=true` is set by default
+ - Requires PowerShell or *PowerShell Core",
+  "ActionType": "Octopus.Script",
+  "Version": 6,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "edff7d94-0feb-48a9-8185-48feb084a94f",
+      "Name": "DACPACPackage",
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "DACPACPackage"
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Set TLS
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+
+Write-Host \"Determining Operating System...\"
+# Check to see if $IsWindows is available
+if ($null -eq $IsWindows)
+{
+    switch ([System.Environment]::OSVersion.Platform)
+    {
+    \t\"Win32NT\"
+        {
+        \t# Set variable
+            $IsWindows = $true
+            $IsLinux = $false
+        }
+        \"Unix\"
+        {
+        \t$IsWindows = $false
+            $IsLinux = $true
+        }
+    }
+}
+
+if ($IsWindows)
+{
+\tWrite-Host \"Detected OS is Windows\"
+    $ProgressPreference = 'SilentlyContinue'
+}
+else
+{
+\tWrite-Host \"Detected OS is Linux\"
+}
+
+<#
+ .SYNOPSIS
+ Finds the DAC File that you specify
+
+ .DESCRIPTION
+ Looks through the supplied PathList array and searches for the file you specify.  It will return the first one that it finds.
+
+ .PARAMETER FileName
+ Name of the file you are looking for
+
+ .PARAMETER PathList
+ Array of Paths to search through.
+
+ .EXAMPLE
+ Find-DacFile -FileName \"Microsoft.SqlServer.TransactSql.ScriptDom.dll\" -PathList @(\"${env:ProgramFiles}\\Microsoft SQL Server\", \"${env:ProgramFiles(x86)}\\Microsoft SQL Server\")
+#>
+Function Find-DacFile {
+    Param(
+        [Parameter(Mandatory=$true)]
+        [string]$FileName,
+        [Parameter(Mandatory=$true)]
+        [string[]]$PathList
+    )
+
+    $File = $null
+
+    ForEach($Path in $PathList)
+    {
+        Write-Debug (\"Searching: {0}\" -f $Path)
+
+        If (!($File))
+        {
+            $File = (
+                Get-ChildItem $Path -ErrorAction SilentlyContinue -Filter $FileName -Recurse |
+                    Sort-Object FullName -Descending |
+                    Select-Object -First 1
+                )
+
+            If ($File)
+            {
+                Write-Debug (\"Found: {0}\" -f $File.FullName)
+            }
+        }
+    }
+
+    Return $File
+}
+
+
+<#
+ .SYNOPSIS
+ Generates a connection string
+
+ .DESCRIPTION
+ Derive a connection string from the supplied variables
+
+ .PARAMETER ServerName
+ Name of the server to connect to
+
+ .PARAMETER Database
+ Name of the database to connect to
+
+ .PARAMETER UseIntegratedSecurity
+ Boolean value to indicate if Integrated Security should be used or not
+
+ .PARAMETER UserName
+ User name to use if we are not using integrated security
+
+ .PASSWORD Password
+ Password to use if we are not using integrated security
+
+ .PARAMETER EnableMultiSubnetFailover
+ Flag as to whether we should enable multi subnet failover
+
+ .EXAMPLE
+ Get-ConnectionString -ServerName localhost -UseIntegratedSecurity -Database OctopusDeploy
+
+ .EXAMPLE
+ Get-ConnectionString -ServerName localhost -UserName sa -Password ProbablyNotSecure -Database OctopusDeploy
+#>
+Function Get-ConnectionString {
+    Param(
+        [Parameter(Mandatory=$True)]
+        [string]$ServerName,
+        [string]$UserName,
+        [string]$Password,
+        [string]$Database,
+        [string]$AuthenticationType
+    )
+
+    $ApplicationName = \"OctopusDeploy\"
+    $connectionString = (\"Application Name={0};Server={1}\" -f $ApplicationName, $ServerName)
+
+    switch ($AuthenticationType)
+    {
+    \t\"AzureADPassword\"
+        {
+            Write-Verbose \"Using Azure Active Directory username and password\"
+            $connectionString += (\";Authentication='Active Directory Password';Uid={0};Pwd={1}\" -f $UserName, $Password)                
+            break
+        }
+        \"AzureADIntegrated\"
+        {
+            Write-Verbose \"Using Azure Active Directory integrated\"
+            $connectionString += (\";Authentication='Active Directory Integrated'\")                
+            break
+        }
+        \"AzureADManaged\"
+        {
+        \tWrite-Verbose \"Using Azure Active Directory managed identity\"
+            break
+        }
+        \"AzureADServicePrincipal\"
+        {
+             Write-Verbose \"Using Azure Active Directory username and password\"
+            $connectionString += (\";Authentication='ActiveDirectoryServicePrincipal';Uid={0};Pwd={1}\" -f $UserName, $Password)                
+            break       \t
+        }
+        \"SqlAuthentication\"
+        {
+            Write-Verbose \"Using SQL Authentication username and password\"
+            $connectionString += (\";Uid={0};Pwd={1}\" -f $UserName, $Password)                
+            break        
+        }
+        \"WindowsIntegrated\"
+        {
+            Write-Verbose \"Using integrated security\"
+            $connectionString += \";Trusted_Connection=True\"
+            break
+        }
+    }
+    
+    if ($EnableMultiSubnetFailover)
+    {
+        Write-Verbose \"Enabling multi subnet failover\"
+        $connectionString += \";MultisubnetFailover=True\"
+    }
+
+    If ($Database)
+    {
+        $connectionString += (\";Initial Catalog={0}\" -f $Database)
+    }
+
+\t$connectionString += \";TrustServerCertificate=true;\"
+
+    Return $connectionString
+}
+
+<#
+ .SYNOPSIS
+ Will find the full path of a given filename (For dacpac or publish profile)
+ .DESCRIPTION
+ Will search through an extracted package folder provided as the BasePath and hunt for any matches for the given filename.
+ .PARAMETER BasePath
+ String value of the root folder to begine the recursive search.
+ .PARAMETER FileName
+ String value of the name of the file to search for.
+ .PARAMETER FileType
+ String value of \"DacPac\" or \"PublishProfile\" to identify the type of file to search for.
+ .EXAMPLE
+ Get-DacFilePath -BasePath $ExtractPath -FileName $DACPACPackageName -FileType \"DacPac\"
+#>
+function Get-DacFilePath {
+    [cmdletbinding()]
+    param(
+        [parameter(Mandatory=$true)]
+        [string]$BasePath,
+
+        [parameter(Mandatory=$true)]
+        [string]$FileName,
+
+        [parameter(Mandatory=$true)]
+        [ValidateSet(\"DacPac\",\"PublishProfile\")]
+        [string]$FileType
+    )
+
+    # Add file extension for a dacpac if it's missing
+    if($FileName.Split(\".\")[-1] -ne \"dacpac\" -and $FileType -eq \"DacPac\"){
+        $FileName = \"$FileName.dacpac\"
+    }
+
+    Write-Verbose \"Looking for $FileType $FileName in $BasePath.\"
+
+    $filePath = (Get-ChildItem -Path $BasePath -Recurse -Filter $FileName).FullName
+
+    if(@($filePath).Length -gt 1){
+        Write-Warning \"Found $(@($filePath).Length) instances of $FileName. Using $($filePath[0]).\"
+        Write-Warning \"Multiple paths for $FileName`: $(@($filePath) -join \"; \")\"
+        $filePath = $filePath[0]
+    }
+    elseif(@($filePath).Length -lt 1 -or $null -eq $filePath){
+        Throw \"Could not find $FileName.\"
+    }
+
+    return $filePath
+}
+
+function Add-SqlCmdVariables
+{
+\t# Get all SqlCmdVariables
+    $sqlCmdVariables = $OctopusParameters.Keys -imatch \"SqlCmdVariable.*\"
+    $argumentList = @()
+        
+\t# Check to see if something is there
+\tif ($null -ne $sqlCmdVariables)
+    {
+    \tWrite-Host \"Adding SqlCmdVariables ...\"
+        
+\t\t# Loop through the variable collection
+        foreach ($sqlCmdVariable in $sqlCmdVariables)
+        {
+        \t# Add variable to the deploy options
+            $sqlCmdVariableKey = $sqlCmdVariable.Substring(($sqlCmdVariable.ToLower().IndexOf(\"sqlcmdvariable.\") + \"sqlcmdvariable.\".Length))
+            
+            Write-Host \"Adding variable: $sqlCmdVariableKey with value: $($OctopusParameters[$sqlCmdVariable])\"
+            
+            $argumentList += (\"/variables:{0}={1}\" -f $sqlCmdVariableKey, $OctopusParameters[$sqlCmdVariable])
+        }
+    }
+    
+    # return the list of variables
+    return $argumentList
+}
+
+function Add-AdditionalArguments
+{
+\t# Define parameters
+    param (
+    \t$AdditionalArguments
+    )
+    
+    # Define local variables
+    $argumentsToAdd = @()
+    
+    # Check for emmpty or null
+    if (![string]::IsNullOrWhitespace($AdditionalArguments))
+    {
+    \t# Split the arguments
+    \t$argumentsToAdd += $AdditionalArguments.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries).Trim()
+    }
+    
+    # Return list
+    return $argumentsToAdd
+}
+
+function Get-SqlPackage
+{
+\t# Define local variables
+    $workFolder = $OctopusParameters['Octopus.Action.Package[DACPACPackage].ExtractedPath']
+    $downloadUrl = \"\"
+
+\t# Check to see if a folder needs to be created
+    if((Test-Path -Path \"$workFolder/sqlpackage\") -eq $false)
+    {
+        # Create new folder
+        New-Item -ItemType Directory -Path \"$workFolder/sqlpackage\"
+    }
+    
+    Write-Host \"Downloading SqlPackage ...\"
+    
+    if ($IsWindows)
+    {
+    \t# Set url
+        $downloadUrl = \"https://aka.ms/sqlpackage-windows\"
+    }
+    
+    if ($IsLinux)
+    {
+    \t# Set url
+        $downloadUrl = \"https://aka.ms/sqlpackage-linux\"
+    }
+    
+    # Download sql package
+    if ($PSVersionTable.PSVersion.Major -ge 6)
+    {
+    \t# Download
+        Invoke-WebRequest -Uri $downloadUrl -OutFile \"$workFolder/sqlpackage/sqlpackage.zip\"
+    }
+    else
+    {
+    \tInvoke-WebRequest -Uri $downloadUrl -OutFile \"$workFolder/sqlpackage/sqlpackage.zip\" -UseBasicParsing
+    }
+    
+    # Expand the archive
+    Write-Host \"Extracting .zip ...\"
+    Expand-Archive -Path \"$workFolder/sqlpackage/sqlpackage.zip\" -DestinationPath \"$workFolder/sqlpackage\"
+    
+    # Add to PATH
+    $env:PATH = \"$workFolder/sqlpackage$([IO.Path]::PathSeparator)\" + $env:PATH
+    
+    # Make it executable
+    if ($IsLinux)
+    {
+    \t& chmod a+x \"$workFolder/sqlpackage/sqlpackage\"
+    }
+}
+
+Function Format-OctopusArgument {
+
+    Param(
+        [string]$Value
+    )
+
+    $Value = $Value.Trim()
+
+    # There must be a better way to do this
+    Switch -Wildcard ($Value){
+
+        \"True\" { Return $True }
+        \"False\" { Return $False }
+        \"#{*}\" { Return $null }
+        Default { Return $Value }
+    }
+}
+
+Function Get-ManagedIdentityToken
+{
+\t# Get the identity token
+    Write-Host \"Getting Azure Managed Identity token ...\"
+    $token = $null
+    $tokenUrl = \"http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fdatabase.windows.net%2F\"
+    
+    if ($PSVersionTable.PSVersion.Major -ge 6)
+    {
+    \t$token = Invoke-RestMethod -Method GET -Uri $tokenUrl -Headers @{\"MetaData\" = \"true\"}
+    }
+    else
+    {
+    \t$token = Invoke-RestMethod -Method GET -Uri $tokenUrl -Headers @{\"MetaData\" = \"true\"} -UseBasicParsing
+    }
+    
+    # Return the token
+    return $token.access_token
+}
+
+function Invoke-SqlPackage
+{
+\t# Define parameters
+    param (
+    \t$Action,
+        $Arguments
+    )
+    
+    # Add the action
+    $Arguments += \"/Action:$Action\"
+
+    # Display what's going to be run
+    if (![string]::IsNullOrWhitespace($Password))
+    {
+        $displayArguments = $Arguments.PSObject.Copy()
+        for ($i = 0; $i -lt $displayArguments.Count; $i++)
+        {
+            if ($null -ne $displayArguments[$i])
+            {
+                if ($displayArguments[$i].Contains($Password))
+                {
+                    $DisplayArguments[$i] = $displayArguments[$i].Replace($Password, \"****\")
+                }
+            }
+        }
+
+        Write-Host \"Executing the following command: sqlpackage $displayArguments\"
+    }
+    else 
+    {
+        Write-Host \"Executing the following command: sqlpackage $Arguments\"
+    }    
+    
+    & sqlpackage $Arguments
+
+\t# Check exit code
+\tif ($lastExitCode -ne 0)
+\t{
+\t\t# Fail the step
+    \tWrite-Error \"Execution failed!\"
+\t}
+}
+
+function Validate-Folder
+{
+\t# Define parameters
+    param (
+    \t$TestPath
+    )
+    
+    # Check for folder
+    if ((Test-Path -Path $TestPath) -eq $false)
+    {
+    \t# Create the folder
+        New-Item -Path \"$TestPath\" -ItemType \"directory\"
+    }
+}
+
+Function Remove-InvalidFileNameChars {
+
+\tParam(
+\t\t[string]$FileName
+\t)
+
+\t[IO.Path]::GetinvalidFileNameChars() | ForEach-Object { $FileName = $FileName.Replace($_, \"_\") }
+\tReturn $FileName
+}
+
+# Get the supplied parameters
+$PublishProfile = $OctopusParameters[\"DACPACPublishProfile\"]
+$DACPACReport = Format-OctopusArgument -Value $OctopusParameters[\"DACPACReport\"]
+$DACPACScript = Format-OctopusArgument -Value $OctopusParameters[\"DACPACScript\"]
+$DACPACDeploy = Format-OctopusArgument -Value $OctopusParameters[\"DACPACDeploy\"]
+$DACPACTargetServer = $OctopusParameters[\"DACPACTargetServer\"]
+$DACPACTargetDatabase = $OctopusParameters[\"DACPACTargetDatabase\"]
+$DACPACAdditionalArguments = $OctopusParameters[\"DACPACAdditionalArguments\"]
+$DACPACExeLocation = $OctopusParameters[\"DACPACExeLocation\"]
+$DACPACDateTime = ((Get-Date).ToUniversalTime().ToString(\"yyyyMMddHHmmss\"))
+
+$Username = $OctopusParameters[\"DACPACSQLUsername\"]
+$Password = $OctopusParameters[\"DACPACSQLPassword\"]
+$PackageReferenceName = \"DACPACPackage\"
+
+$authenticationType = $OctopusParameters[\"DACPACAuthenticationType\"]
+
+$ExtractPathKey = (\"Octopus.Action.Package[{0}].ExtractedPath\" -f $PackageReferenceName)
+$ExtractPath = $OctopusParameters[$ExtractPathKey]
+
+if(!(Test-Path $ExtractPath)) {
+    Throw (\"The package extraction folder '{0}' does not exist or the Octopus Tentacle does not have permission to access it.\" -f $ExtractPath)
+}
+
+# Get the DACPAC location
+$dacpacFolderName = [System.IO.Path]::GetDirectoryName($DACPACPackageName)
+$dacpacFileName = [System.IO.Path]::GetFileName($DACPACPackageName)
+$DACPACPackagePath = Get-DacFilePath -BasePath ($ExtractPath + ([IO.Path]::DirectorySeparatorChar) + $dacpacFolderName) -FileName $dacpacFileName -FileType \"DacPac\"
+
+# Invoke the DacPac utility
+try
+{
+\t# Declare working variables
+    $sqlPackageArguments = @()
+    
+    # Build arugment list
+    $sqlPackageArguments += \"/SourceFile:`\"$DACPACPackagePath`\"\"
+    $sqlPackageArguments += \"/TargetConnectionString:`\"$(Get-ConnectionString -ServerName $DACPACTargetServer -Database $DACPACTargetDatabase -UserName $UserName -Password $Password -AuthenticationType $AuthenticationType)`\"\"
+    
+\t# Check to see if a publish profile was designated
+\tIf ($PublishProfile){
+    \t$profileFolderName = [System.IO.Path]::GetDirectoryName($PublishProfile)
+        $profileFileName = [System.IO.Path]::GetFileName($PublishProfile)
+    \t$PublishProfilePath = Get-DacFilePath -BasePath ($ExtractPath + ([IO.Path]::DirectorySeparatorChar) + $profileFolderName) -FileName $profileFileName -FileType \"PublishProfile\"
+    
+    \t# Add to arguments
+    \t$sqlPackageArguments += \"/Profile:`\"$PublishProfilePath`\"\"
+\t}    
+    
+    # Check to see if it's using managed identity
+    if ($authenticationType -eq \"AzureADManaged\")
+    {
+    \t# Add access token
+        $Password = Get-ManagedIdentityToken
+        $sqlPackageArguments += \"/AccessToken:$Password\"
+    }
+    
+    # Add sqlcmd variables
+    $sqlPackageArguments += Add-SqlCmdVariables
+    
+\t# Add addtional arguments
+    $sqlPackageArguments += Add-AdditionalArguments -AdditionalArguments $DACPACAdditionalArguments
+    
+    # Check to see if command timeout was specified
+    if (![string]::IsNullOrWhitespace($DACPACCommandTimeout))
+    {
+    \t# Add timeout parameter
+        $sqlPackageArguments += \"/Properties:CommandTimeout=$DACPACCommandTimeout\"
+    }
+    
+    # Check to see if sqlpackage needs to be downloaded
+    if ([string]::IsNullOrWhitespace($DACPACExeLocation))
+    {
+    \t# Download and extract sqlpackage
+        Get-SqlPackage
+    }
+    else
+    {
+    \t# Add folder location to path
+        $env:PATH = \"$([IO.Path]::GetDirectoryName($DACPACExeLocation))$([IO.Path]::PathSeparator)\" + $env:PATH
+        Write-Host \"It is $($env:PATH)\"
+    }
+    
+    # Execute the actions
+    if ($DACPACReport)
+    {
+    \t$workFolder = \"$($OctopusParameters['Octopus.Action.Package[DACPACPackage].ExtractedPath'])/reports\"
+        $sqlReportArguments = @()
+        $reportArtifact = Remove-InvalidFileNameChars -FileName (\"{0}.{1}.{2}.{3}\" -f $DACPACTargetServer, $DACPACTargetDatabase, $DACPACDateTime, \"DeployReport.xml\")
+        $sqlReportArguments += \"/OutputPath:$workFolder/$reportArtifact\"
+        
+        # Validate the folder
+        Validate-Folder -TestPath $workFolder
+        
+        # Execute the action
+        Invoke-SqlPackage -Action \"DeployReport\" -Arguments ($sqlPackageArguments + $sqlReportArguments)
+        
+        # Attach artifacts
+        foreach ($item in (Get-ChildItem -Path $workFolder))
+        {
+        \t# Upload artifact
+            New-OctopusArtifact $item.FullName
+        }
+    }
+    
+    if ($DACPACScript)
+    {
+    \t$workFolder = \"$($OctopusParameters['Octopus.Action.Package[DACPACPackage].ExtractedPath'])/scripts\"
+        $sqlScriptArguments = @()
+        $scriptArtifact = Remove-InvalidFileNameChars -FileName (\"{0}.{1}.{2}.{3}\" -f $DACPACTargetServer, $DACPACTargetDatabase, $DACPACDateTime, \"DeployScript.sql\")
+        $sqlScriptArguments += \"/OutputPath:$workFolder/$scriptArtifact\"
+        
+        # Validate folder
+        Validate-Folder -TestPath $workFolder
+        
+        # Execute the action
+        Invoke-SqlPackage -Action \"Script\" -Arguments ($sqlPackageArguments + $sqlScriptArguments)
+        
+        # Attach artifacts
+        foreach ($item in (Get-ChildItem -Path $workFolder))
+        {
+        \t# Upload artifact
+            New-OctopusArtifact $item.FullName
+        }        
+    }
+    
+    if ($DACPACDeploy)
+    {
+    \t# Execute action
+        Invoke-SqlPackage -Action \"Publish\" -Arguments $sqlPackageArguments
+    }
+}
+catch
+{
+    Write-Host $_.Exception.ToString()
+    throw;
+}
+",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false"
+  },
+  "Parameters": [
+    {
+      "Id": "f2fcbf76-89ad-4fa2-9be3-cd80de2e39a1",
+      "Name": "DACPACPackageName",
+      "Label": "DACPACPackageName",
+      "HelpText": "The name of the .dacpac file that contains the SSDT model.  Include the .dacpac extensions.  To use a specific folder, use the relative location ex: dacpac/mydacpac.dacpac",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0d21c2a7-3e6e-4411-81d7-0e5866faa8fd",
+      "Name": "DACPACPublishProfile",
+      "Label": "Publish profile file name",
+      "HelpText": "Searches the package for the specified file name.  To use a specific folder, use the relative location ex: publish/publish-profile.xml",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7b302914-8d6c-4df2-b392-e45a44e0147c",
+      "Name": "DACPACReport",
+      "Label": "Report",
+      "HelpText": "Whether a deployment report should be generated and loaded into OctopusDeploy as an artifact",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "aa612324-c2ea-4e86-921a-8ad7494df752",
+      "Name": "DACPACScript",
+      "Label": "Script",
+      "HelpText": "Whether a deploy script should be generated and loaded into OctopusDeploy as an artifact",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "94c4da0b-5c55-4d3d-ab0b-e175a767694f",
+      "Name": "DACPACDeploy",
+      "Label": "Deploy",
+      "HelpText": "Whether a deployment of the dacpac should occur",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "d2265a95-ee58-4430-8db0-c7bb03826de0",
+      "Name": "DACPACTargetServer",
+      "Label": "Target Servername",
+      "HelpText": "Name of the server to target this deployment against",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "74397a3b-b007-43cf-bc26-7a1fc2690e24",
+      "Name": "DACPACTargetDatabase",
+      "Label": "Target Database",
+      "HelpText": "Name of the database to target this deployment against",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e1710f37-5f38-4d77-8a05-5fbb6d79132e",
+      "Name": "DACPACAuthenticationType",
+      "Label": "Authentication type",
+      "HelpText": "Select the method to authenticate to the SQL Server.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "SqlAuthentication|SQL Authentication
+WindowsIntegrated|Windows Integrated
+AzureADManaged|Azure Active Directory Managed Identity
+AzureADPassword|Azure Active Directory Username/Password
+AzureADIntegrated|Azure Active Directory Integrated
+AzureADServicePrincipal|Azure Active Directory Service Principal"
+      }
+    },
+    {
+      "Id": "a51747d3-514d-4110-bf6b-e5f3932d4f22",
+      "Name": "DACPACSQLUsername",
+      "Label": "Username",
+      "HelpText": "User name to use to connect to the server if we are not using Integrated Security.
+
+If using the Azure Active Directory Service Principal Authentication Type, use the Azure Account variable here. For example, if your Azure Account variable is called MyAccount, the value for this input would be `#{MyAccount.Client}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1afb7ff1-4447-425e-8625-33d76f32c321",
+      "Name": "DACPACSQLPassword",
+      "Label": "Password",
+      "HelpText": "Password to use to connect to the server if we are not using Integrated Security.
+
+If using the Azure Active Directory Service Principal Authentication Type, use the Azure Account variable here. For example, if your Azure Account variable is called MyAccount, the value for this input would be `#{MyAccount.Password}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "fa1d3a63-f2c0-4969-a4ac-d797df53bed1",
+      "Name": "DACPACPackage",
+      "Label": "DACPAC Package",
+      "HelpText": "The package containing the `.dacpac` file from the specified repository.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "2afcffb6-6c2c-4012-8ea8-80ce9f3f4a19",
+      "Name": "DACPACCommandTimeout",
+      "Label": "Command Timeout",
+      "HelpText": "Override the default command timeout for longer-running scripts.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "17444647-1f19-42e9-bde2-839601de5347",
+      "Name": "DACPACExeLocation",
+      "Label": "SqlPackage executable location",
+      "HelpText": "Location of the SqlPackage executable.  Leave blank to dynamically download.<br />
+Examples:<br />
+Embedded within the package:`#{Octopus.Action.Package[DACPACPackage].ExtractedPath}/MySubFolder`<br />
+On disk:`c:\\sqlpackage\\sqlpackage.exe` or `/etc/sqlpackage/sqlpackage`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "99d63959-edbb-4f06-a4be-15dd7cf24c35",
+      "Name": "DACPACAdditionalArguments",
+      "Label": "Additional arguments",
+      "HelpText": "A comma-delimited list of additional arguments to add to the SqlPackage command.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-06-01T22:27:25.564Z",
+    "OctopusVersion": "2023.1.10766",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "sql"
+}
