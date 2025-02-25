@@ -1,0 +1,134 @@
+{
+    "Id": "4ec2225e-9ffa-4072-9852-b986e8a98222",
+    "Name": "Slack - Send Simple Notification - Bash",
+    "Description": "Send a basic message notification to Slack.",
+    "ActionType": "Octopus.Script",
+    "Version": 2,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.Syntax": "Bash",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.ScriptBody": "# Define variables
+channel=$(get_octopusvariable \"ssn_Channel\")
+username=$(get_octopusvariable \"ssn_Username\")
+icon_url=$(get_octopusvariable \"ssn_IconUrl\")
+parse=\"full\"
+pretext=$(get_octopusvariable \"ssn_Title\")
+text=$(get_octopusvariable \"ssn_Message\")
+color=$(get_octopusvariable \"ssn_Color\")
+webook_url=$(get_octopusvariable \"ssn_HookUrl\")
+
+# Create JSON payload
+json_payload='{\"username\": '
+json_payload+=\"\\\"$username\\\"\"
+json_payload+=', \"parse\": '
+json_payload+=\"\\\"$parse\\\"\"
+json_payload+=', \"channel\": '
+json_payload+=\"\\\"$channel\\\"\"
+json_payload+=', \"icon_url\": '
+json_payload+=\"\\\"$icon_url\\\"\"
+json_payload+=', \"attachments\" : [{\"text\": '
+json_payload+=\"\\\"$text\\\"\"
+json_payload+=', \"color\": '
+json_payload+=\"\\\"$color\\\"\"
+json_payload+=', \"pretext\": '
+json_payload+=\"\\\"$pretext\\\"\"
+json_payload+=', \"mrkdwn_in\": [\"pretext\",\"text\"]}]}'
+
+# Send webhook - redirect stderr to stdout
+wget --post-data=\"$json_payload\" --secure-protocol=\"auto\" \"$webook_url\" 2>&1
+
+# Check for error
+if [[ $? -ne 0 ]]
+then
+    fail_step \"Failed!\"
+fi"
+    },
+    "Parameters": [
+      {
+        "Id": "0de9bf5f-302c-4b94-91eb-9e5fb0e37eb4",
+        "Name": "ssn_HookUrl",
+        "Label": "Hook URL",
+        "HelpText": "The Webhook URL provided by Slack, including token.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "d55d5c10-9b82-43b1-8278-aedb72ba165f",
+        "Name": "ssn_Channel",
+        "Label": "Channel handle",
+        "HelpText": "Which Slack channel to post notification to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "e753bbfe-efc1-4d3b-a15d-036b5e8ae510",
+        "Name": "ssn_IconUrl",
+        "Label": "Icon URL",
+        "HelpText": "The icon shown in Slack against the notification.",
+        "DefaultValue": "https://octopus.com/content/resources/favicon.png",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "f25b4299-cfd0-4cb0-9c8c-48a706a01f02",
+        "Name": "ssn_Username",
+        "Label": "Username",
+        "HelpText": "The username shown in Slack against the notification.",
+        "DefaultValue": "Octopus Deploy",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "811722e7-c3d2-495f-822c-eb5a974407e3",
+        "Name": "ssn_Title",
+        "Label": "Title",
+        "HelpText": "The title of the notification in Slack.
+
+Supported formatting includes: ` ```pre``` `, `_italic_`, `*bold*`, and even `~strike~`.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "b65a034b-d0b8-486b-a20a-2d105779a6db",
+        "Name": "ssn_Message",
+        "Label": "Message",
+        "HelpText": "The body of the notification in Slack.
+
+Supported formatting includes: ` ```pre``` `, `_italic_`, `*bold*`, and even `~strike~`.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "MultiLineText"
+        }
+      },
+      {
+        "Id": "a9be62b0-a3a8-4940-baa4-47c6cd2f2312",
+        "Name": "ssn_Color",
+        "Label": "Color",
+        "HelpText": "Like traffic signals, color-coding messages can quickly communicate intent and help separate them from the flow of other messages in the timeline.",
+        "DefaultValue": "good",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "good|Green
+warning|Orange
+danger|Red"
+        }
+      }
+    ],
+    "LastModifiedBy": "liam-mackie",
+    "$Meta": {
+      "ExportedAt": "2020-03-02T19:22:48.922Z",
+      "OctopusVersion": "2019.13.7",
+      "Type": "ActionTemplate"
+    },
+    "Category": "Slack"
+}

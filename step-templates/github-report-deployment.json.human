@@ -1,0 +1,243 @@
+{
+  "Id": "fb3137e5-f062-4dcd-9a56-b15321072a21",
+  "Name": "GitHub - Report Deployment",
+  "Description": "Creates or updates a deployment using [GitHub Deployments API](https://developer.github.com/v3/repos/deployments/)",
+  "ActionType": "Octopus.Script",
+  "Version": 45,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+function InputParameters-Check() {
+    If ([string]::IsNullOrEmpty($OctopusParameters[\"GitHubHash\"])) {
+        Write-Host \"No github hash was specified, there's nothing to report then.\"
+        exit
+    }
+
+    If ([string]::IsNullOrEmpty($OctopusParameters[\"GitHubUserName\"])) {
+        Write-Host \"GitHubUserName is not set up, can't report without authentication.\"
+        exit
+    }
+
+    If ([string]::IsNullOrEmpty($OctopusParameters[\"GitHubPassword\"])) {
+        Write-Host \"GitHubPassword is not set up, can't report without authentication.\"
+        exit
+    }
+
+    If ([string]::IsNullOrEmpty($OctopusParameters[\"GitHubOwner\"])) {
+        Write-Host \"GitHubOwner is not set up, can't report without knowing the owner.\"
+        exit
+    }
+
+
+    If ([string]::IsNullOrEmpty($OctopusParameters[\"GitHubRepoName\"])) {
+        Write-Host \"GitHubRepoName is not set up, can't report without knowing the repo.\"
+        exit
+    }
+}
+
+function Headers-Create ([String] $username, [String] $password) {
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(\"${username}:${password}\"))
+
+    $headers = @{
+      Authorization=(\"Basic {0}\" -f $base64AuthInfo);
+      Accept=\"application/vnd.github.ant-man-preview+json, application/vnd.github.flash-preview+json\";
+    }
+    return $headers
+}
+
+function GithubDeployment-Create ([String] $owner, [String] $repository, [String] $gitHubHash, [String] $environment, [String] $username, [String] $password) {
+    $fullRepoName = $owner + \"/\" + $repository
+    $projectDeploymentsUrl = \"https://api.github.com/repos/$fullRepoName/deployments\"
+    Write-Host \"Creating a deployment on GitHub on behalf of $username for repo $fullRepoName\"
+    $headers = Headers-Create -username $username -password $password
+
+    $deploymentCreatePayload = @{
+        \"ref\"=$gitHubHash;
+        \"auto_merge\"=$False;
+        \"environment\"=$environment;
+        \"description\"=\"Octopus Deploy\";
+    }
+
+    Write-Host \"Calling $projectDeploymentsUrl\"
+    Write-Host \"Payload:\"
+    Write-Host ($deploymentCreatePayload | Format-Table | Out-String)
+
+    $newDeployment = Invoke-RestMethod $projectDeploymentsUrl -Method Post -Body ($deploymentCreatePayload|ConvertTo-Json) -Headers $headers
+    $deploymentId=$newDeployment.id
+    return $deploymentId
+}
+
+function GithubDeployment-UpdateStatus ([String] $owner, [String] $repository, [String] $deploymentId, [String] $environment, [String] $newStatus, [String] $logLink) {
+    $fullRepoName = $owner + \"/\" + $repository
+    $projectDeploymentsUrl = \"https://api.github.com/repos/$fullRepoName/deployments\"
+    Write-Host \"Setting statuses to $newStatus on $projectDeploymentsUrl\"
+    $headers = Headers-Create -username $username -password $password
+
+    $statusUpdatePayload = @{
+        \"environment\"=$environment;
+        \"state\"=$newStatus;
+        \"description\"=\"Octopus Deploy\";
+        \"log_url\"=$logLink;
+        \"environment_url\"=$logLink;
+        \"auto_inactive\"=$True;
+    }
+
+    $statusesUrl = \"$projectDeploymentsUrl/$deploymentId/statuses\"
+
+    Write-Host \"Calling $statusesUrl\"
+    Write-Host \"Payload:\"
+    Write-Host ($statusUpdatePayload | Format-Table | Out-String)
+
+    $statusResult = Invoke-RestMethod $statusesUrl -Method Post -Body ($statusUpdatePayload|ConvertTo-Json) -Headers $headers
+
+    Write-Host \"Call result:\"
+    Write-Host ($statusResult | Format-Table | Out-String)
+
+}
+
+function Status-Create() {
+    If ([string]::IsNullOrEmpty($OctopusParameters[\"GitHubStatus\"])) {
+        $octopusError=$OctopusParameters[\"Octopus.Deployment.Error\"]
+        $octopusErrorDetail=$OctopusParameters[\"Octopus.Deployment.ErrorDetail\"]
+
+        Write-Host \"Desired status is not specified. Reporting either success or error.\"
+        Write-Host \"Current Octopus.Deployment.Error is $octopusError\"
+        Write-Host \"Current Octopus.Deployment.ErrorDetail is $octopusErrorDetail\"
+        $newStatus = If ([string]::IsNullOrEmpty($octopusError)) { \"success\" } Else { \"failure\" }
+        Write-Host \"Based on that, the status is going to be $newStatus\"
+        return $newStatus
+    }
+    else {
+        Write-Host \"Desired status of $newStatus is specified, using it.\"
+        return $OctopusParameters[\"GitHubStatus\"]
+    }
+}
+
+$repoOwner=$OctopusParameters[\"GitHubOwner\"]
+$repoName=$OctopusParameters[\"GitHubRepoName\"]
+$gitHubHash=$OctopusParameters[\"GitHubHash\"]
+$username=$OctopusParameters[\"GitHubUserName\"]
+$password=$OctopusParameters[\"GitHubPassword\"]
+$environment=$OctopusParameters[\"Octopus.Environment.Name\"]
+$deploymentLink=$OctopusParameters[\"Octopus.Web.DeploymentLink\"]
+$serverUrl=$OctopusParameters[\"#{if Octopus.Web.ServerUri}#{Octopus.Web.ServerUri}#{else}#{Octopus.Web.BaseUrl}#{/if}\"] -replace \"http://\", \"https://\"
+$fullDeploymentLink=\"$serverUrl$deploymentLink\"
+$newStatus=$OctopusParameters[\"GitHubStatus\"]
+$deploymentId=$OctopusParameters[\"GitHubDeploymentId\"]
+
+InputParameters-Check
+
+If ([string]::IsNullOrEmpty($deploymentId)) {
+    Write-Host \"No deployment id is provided.\"
+    $deploymentId = GithubDeployment-Create -owner $repoOwner -repository $repoName -gitHubHash $gitHubHash -environment $environment -username $username -password $password
+
+    Write-Host \"Created a deployment on GitHub: #($deploymentId). Exported it as GitHubDeploymentId\"
+    Set-OctopusVariable -name \"GitHubDeploymentId\" -value $deploymentId
+}
+
+Write-Host \"Using deployment id $deploymentId.\"
+
+$status = Status-Create
+Write-Host \"\"
+Write-Host \"\"
+
+GithubDeployment-UpdateStatus -owner $repoOwner -repository $repoName -deploymentId $deploymentId -environment $environment -newStatus $status -logLink $fullDeploymentLink
+"
+  },
+  "Parameters": [
+    {
+      "Id": "51ba3ed4-5a81-46b8-af97-eec3de9fcec8",
+      "Name": "GitHubUserName",
+      "Label": "GitHub user",
+      "HelpText": "A username to be used to access GitHub.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7e0ae992-f878-473f-b51a-f53ead92ff4f",
+      "Name": "GitHubPassword",
+      "Label": "GitHub password",
+      "HelpText": "Password (access token) used to access GitHub. Use https://github.com/settings/tokens to generate a token. **repo_deployment** is the required scope for the token.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "230e8590-63d7-4125-aee8-71d25e66d7d1",
+      "Name": "GitHubRepoName",
+      "Label": "GitHub repository",
+      "HelpText": "Name of your GitHub repository.",
+      "DefaultValue": "#{Octopus.Project.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9a47c6db-11bd-489d-a904-cf31dc7fe0b2",
+      "Name": "GitHubOwner",
+      "Label": "GitHub owner",
+      "HelpText": "Owner of the repository (organization or user).",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "56fca421-bb10-4bef-b10f-4a83c9ea1675",
+      "Name": "GitHubHash",
+      "Label": "GitHub hash",
+      "HelpText": "Commit hash used to create the deployment for.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c9cbf161-e537-46a1-8edf-5d4c34fb3744",
+      "Name": "GitHubDeploymentId",
+      "Label": "GitHub deployment id (optional)",
+      "HelpText": "Optional github deployment id. If not set, a new deployment will be created and exported",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a94f5a5b-4747-4738-8ab2-714b991a178d",
+      "Name": "GitHubStatus",
+      "Label": "GitHub deployment status (optional)",
+      "HelpText": "If not specified, will be either `error` or `success` depending on the current build status.
+
+The state of the status. Can be one of `error,` `failure`, `inactive`, `in_progress`, `queued`, `pending`, or `success`.
+
+See docu for details: https://developer.github.com/v3/repos/deployments/#parameters-2",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "
+inactive
+pending
+queued
+in_progress
+error
+failure
+success
+"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-08-23T12:40:10.975Z",
+    "OctopusVersion": "2021.1.7687",
+    "Type": "ActionTemplate"
+  },
+  "Category": "github",
+  "LastModifiedBy": "benjimac93"
+}

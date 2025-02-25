@@ -1,0 +1,81 @@
+{
+  "Id": "ed837372-165f-4e0e-b755-1df9633d9eb1",
+  "Name": "Windows - Ensure Features Installed",
+  "Description": "Ensures that a set of Windows Features are installed on the system.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$requiredFeatures = $OctopusParameters['WindowsFeatures'].split(\",\") | foreach { $_.trim() }
+if(! $requiredFeatures) {
+    Write-Output \"No required Windows Features specified...\"
+    exit
+}
+$requiredFeatures | foreach { $feature = DISM.exe /ONLINE /Get-FeatureInfo /FeatureName:$_; if($feature -like \"*Feature name $_ is unknown*\") { throw $feature } }
+
+Write-Output \"Retrieving all Windows Features...\"
+$allFeatures = DISM.exe /ONLINE /Get-Features /FORMAT:List | Where-Object { $_.StartsWith(\"Feature Name\") -OR $_.StartsWith(\"State\") } 
+$features = new-object System.Collections.ArrayList
+for($i = 0; $i -lt $allFeatures.length; $i=$i+2) {
+    $feature = $allFeatures[$i]
+    $state = $allFeatures[$i+1]
+    $features.add(@{feature=$feature.split(\":\")[1].trim();state=$state.split(\":\")[1].trim()}) | OUT-NULL
+}
+
+Write-Output \"Checking for missing Windows Features...\"
+$missingFeatures = new-object System.Collections.ArrayList
+$features | foreach { if( $requiredFeatures -contains $_.feature -and $_.state.StartsWith(\"Disabled\")) { $missingFeatures.add($_.feature) | OUT-NULL } }
+if(! $missingFeatures) {
+    Write-Output \"All required Windows Features are installed\"
+    exit
+}
+Write-Output \"Installing missing Windows Features...\"
+$featureNameArgs = \"\"
+$missingFeatures | foreach { $featureNameArgs = $featureNameArgs + \" /FeatureName:\" + $_ }
+$dism = \"DISM.exe\"
+IF ($SuppressReboot)
+{
+    $arguments = \"/NoRestart \"
+}
+ELSE
+{
+    $arguments = \"\"
+}
+$arguments = $arguments + \"/ONLINE /Enable-Feature /All $featureNameArgs\"
+Write-Output \"Calling DISM with arguments: $arguments\"
+start-process -NoNewWindow $dism $arguments",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "WindowsFeatures",
+      "Label": "Windows features",
+      "HelpText": "The set of Windows Features that should be installed on the system. This can be either a single Windows Feature or a comma separated list of Windows Features to check.
+
+Example 1: IIS-WebServer
+
+Example 2: IIS-WebServer, IIS-WindowsAuthentication",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "SuppressReboot",
+      "Label": "Suppress Reboot",
+      "HelpText": "Suppresses reboot. If a reboot is not necessary, then this option does nothing. This option will keep DISM.exe from prompting for a restart, or from restarting automatically).",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2017-10-03T21:58:18.839Z",
+  "LastModifiedBy": "WesleySSmith",
+  "$Meta": {
+    "ExportedAt": "2017-10-03T21:58:18.839Z",
+    "OctopusVersion": "3.17.1",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}

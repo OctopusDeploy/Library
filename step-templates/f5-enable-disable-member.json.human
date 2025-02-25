@@ -1,0 +1,220 @@
+{
+  "Id": "6775501d-cafb-493e-ba67-ec95c9500562",
+  "Name": "F5 - Enable, Disable, or Force Offline Member with optional wait for connections to drop",
+  "Description": "F5 - Enable, Disable, or Force Offline Member with optional wait for connections to drop",
+  "ActionType": "Octopus.Script",
+  "Version": 36,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "#Load the F5 powershell iControl snapin
+#https://help.octopus.com/t/the-windows-powershell-snap-in-webadministration-is-not-installed-on-this-computer/4290
+Add-PSSnapin iControlSnapin;
+
+function WaitFor-ConnectionCount() 
+{ 
+    param(
+        $pool_name, 
+        $member,
+        [int]$MaxWaitTime = 300, #defaults to 5 minutes
+        $ConnectionCount = 0
+    )
+    $vals = $member.Split( (, ':'));
+    $member_addr = $vals[0];
+    $member_port = $vals[1];
+
+    Write-Host \"Waiting for current connections to drop to \"$OctopusParameters['ConnectionCount']
+
+    $MemberDef = New-Object -TypeName iControl.CommonIPPortDefinition;
+    $MemberDef.address = $member_addr;
+    $MemberDef.port = $member_port;
+    $MemberDefAofA = New-Object -TypeName \"iControl.CommonIPPortDefinition[][]\" 1,1
+    $MemberDefAofA[0][0] = $MemberDef;
+    $cur_connections = 100;
+    $elapsed = [System.Diagnostics.Stopwatch]::StartNew();
+
+    while ( $cur_connections -gt $ConnectionCount -and $elapsed.ElapsedMilliseconds -lt ($MaxWaitTime * 1000))
+    {
+        $MemberStatisticsA = (Get-F5.iControl).LocalLBPoolMember.get_statistics( (, $pool_name), $MemberDefAofA);
+        $MemberStatisticEntry = $MemberStatisticsA[0].statistics[0];
+        $Statistics = $MemberStatisticEntry.statistics;
+        foreach ($Statistic in $Statistics)
+        {
+            $type = $Statistic.type;
+            $value = $Statistic.value;
+            if ( $type -eq \"STATISTIC_SERVER_SIDE_CURRENT_CONNECTIONS\" )
+            {
+                # just use the low value.  Odds are there aren't over 2^32 current connections.
+                # If your site is this big, you'll have to convert this to a 64 bit number.
+                $cur_connections = $value.low; 
+                Write-Host \"Current Connections: $cur_connections\"
+            }
+        }
+        Start-Sleep -s 5
+    }
+}
+
+$Pool = $OctopusParameters['PoolName'].trim();
+
+If ([string]::IsNullOrWhiteSpace($OctopusParameters['MemberIP'])) {
+    Write-Host \"No IP Adress was provided on the 'LTM Member IP`, using [System.Net.Dns]::GetHostAddresses to resolve it\"
+    $ip = $([System.Net.Dns]::GetHostAddresses(\"$($OctopusParameters['Octopus.Machine.Hostname'])\") | Where {$_.AddressFamily -ne 'InterNetworkV6'}).IpAddressToString
+    if ($ip -is [array]) {
+      Write-Host \"Found multiple ipv4 addresses, using first address $($ip[0])\"
+      $ip = $ip[0]
+    }
+} Else {
+    $ip = $OctopusParameters['MemberIP']
+}
+
+$Member = $ip+\":\"+$OctopusParameters['MemberPort']
+Write-Host \"Member is $Member\"
+
+# Gets the hostname of the current machine being deployed.
+$curhost = hostname
+
+Write-host \"Currently deploying to $curhost\"
+
+If (($OctopusParameters['EnableOrDisable'] -ne \"Enabled\") -and ($OctopusParameters['WaitForConnections'] -eq \"True\"))
+{
+    Initialize-F5.iControl -HostName $OctopusParameters['HostName'] -Username $OctopusParameters['Username'] -Password $OctopusParameters['Password']
+    Write-Host \"Setting $curhost to $($OctopusParameters['EnableOrDisable']) in $Pool pool\";
+    Set-F5.LTMPoolMemberState -Pool $Pool -Member $Member -state $OctopusParameters['EnableOrDisable'];
+    Write-Host \"Waiting for connections to drain before deploying.  This could take a while....\"
+    WaitFor-ConnectionCount -pool_name $Pool -member $Member -MaxWaitTime $OctopusParameters['MaxWaitTime'] -ConnectionCount $OctopusParameters['ConnectionCount']
+    if ($OctopusParameters['EnableOrDisable'] -eq \"Disabled\") 
+    {
+        Write-Host \"Setting $curhost to Offline in $Pool pool\";
+        # We've now waited the desired amount, go ahead and force offline and move on with deployment
+        Set-F5.LTMPoolMemberState -Pool $Pool -Member $Member -state Offline;
+    }
+}
+Else
+{
+    Initialize-F5.iControl -HostName $OctopusParameters['HostName'] -Username $OctopusParameters['Username'] -Password $OctopusParameters['Password']
+    Write-host \"Setting $curhost to $($OctopusParameters['EnableOrDisable']) in $Pool pool.\"
+    Set-F5.LTMPoolMemberState -Pool $Pool -Member $Member -state $OctopusParameters['EnableOrDisable'];
+}
+",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "c27ab1f7-5303-48fe-a8e5-80aa638a054f",
+      "Name": "WaitForConnections",
+      "Label": "Wait on Connections?",
+      "HelpText": "If checked, the deployment won't continue until current connections on the node = 0",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "becfb740-d954-4250-9818-4c561f210ec5",
+      "Name": "MaxWaitTime",
+      "Label": "Max. Wait Time (seconds)",
+      "HelpText": "Defaults to 5 minutes",
+      "DefaultValue": "300",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9a0e97c0-d972-4707-b477-c1903090f508",
+      "Name": "EnableOrDisable",
+      "Label": "LTM Status",
+      "HelpText": "State member will be put into (Enabled, Disabled, Offline)  
+
+- **Disabled** continues to process persistent and active connections. It can accept new connections only if the connections belong to an existing persistence session.  
+
+- **Offline** allows existing connections to time out, but no new connections are allowed.",
+      "DefaultValue": "Disabled",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Enabled|Enable
+Disabled|Disable
+Offline|Forced Offline"
+      }
+    },
+    {
+      "Id": "7e1b8bc0-b950-4394-9e92-3a00ce3fce3a",
+      "Name": "PoolName",
+      "Label": "LTM Pool name",
+      "HelpText": "Name of F5 pool",
+      "DefaultValue": "pl_DummyDeployWeb",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "adf16144-16be-437a-ac81-199ca1de1e0e",
+      "Name": "MemberIP",
+      "Label": "LTM Member IP",
+      "HelpText": "IP Address of F5 pool member. Default will auto discover the ip address of Tentacle.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a37006fa-b34e-4f17-b16a-e7e82981b002",
+      "Name": "MemberPort",
+      "Label": "LTM Member port",
+      "HelpText": "",
+      "DefaultValue": "80",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "df633633-bf98-45d3-86cf-335b97902dca",
+      "Name": "HostName",
+      "Label": "LTM Host name",
+      "HelpText": null,
+      "DefaultValue": "192.168.45.204",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3d43e5a4-4527-4b7c-bf88-319818f0d498",
+      "Name": "Username",
+      "Label": "LTM username",
+      "HelpText": "Credential used to access F5 Soap API",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a3349f60-5cdf-4ab4-9213-a74843149643",
+      "Name": "Password",
+      "Label": "LTM password",
+      "HelpText": "Credential used to access F5 Soap API",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "0ea7a048-0aa3-4387-a4cc-11e6cd8df6cb",
+      "Name": "ConnectionCount",
+      "Label": "Kill connections when <=",
+      "HelpText": "The default is to wait until there are no connections left on the node.  If you don't want to wait for zero connections before deploying, you can put a value here and when that number of connections is reached the deployment will happen killing the rest of the connected sessions.",
+      "DefaultValue": "0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "spuder",
+  "$Meta": {
+    "ExportedAt": "2016-09-21T17:50:00.631+00:00",
+    "OctopusVersion": "3.4.9",
+    "Type": "ActionTemplate"
+  },
+  "Category": "f5"
+}

@@ -1,0 +1,111 @@
+{
+  "Id": "5658d525-2a04-47da-85a0-00244976d811",
+  "Name": "Remove Server from Azure Load Balancer",
+  "Description": "Uses Service Principal to Remove Server From Azure Load Balancer.",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 3,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "#region Verify variables
+
+#Verify rsflbAzureSubscription is not null.
+If ([string]::IsNullOrEmpty($OctopusParameters['rsflbAzureSubscription']))
+{
+  Throw 'Azure Subscription cannot be null.'
+}
+$azureSubscription = $OctopusParameters['rsflbAzureSubscription']
+Write-Host ('Azure Subscription: ' + $azureSubscription)
+
+#Verify rsflbAzureResourceGroup is not null.
+If ([string]::IsNullOrEmpty($OctopusParameters['rsflbAzureResourceGroup']))
+{
+  Throw 'Azure Resource Group cannot be null.'
+}
+$azureResourceGroup = $OctopusParameters['rsflbAzureResourceGroup']
+Write-Host ('Azure Resource Group: ' + $azureResourceGroup)
+
+#Verify rsflbAzureMachineName is not null.
+If ([string]::IsNullOrEmpty($OctopusParameters['rsflbAzureMachineName']))
+{
+  Throw 'Azure Machine Name cannot be null.'
+}
+$azureMachineName = $OctopusParameters['rsflbAzureMachineName']
+Write-Host ('Azure Machine Name: ' + $azureMachineName)
+
+#endregion
+
+#region Process
+
+Set-AzureRmContext -SubscriptionName $azureSubscription
+
+$azureVM = Get-AzureRmVM -ResourceGroupName $azureResourceGroup -Name $azureMachineName
+If (!$azureVM)
+{
+  Throw 'Could not retrieve server from Azure needed to remove from Load Balancer.'
+}
+
+$nic = (Get-AzureRmNetworkInterface -ResourceGroupName $azureResourceGroup | Where-Object {$_.VirtualMachine.Id -eq $azureVM.Id})
+If (!$nic)
+{
+  Throw 'Could not retrieve NIC from Azure needed to remove from Load Balancer.'
+}
+
+$nic.IpConfigurations[0].LoadBalancerBackendAddressPools = $null
+$nic | Set-AzureRmNetworkInterface
+
+#endregion",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Azure.AccountId": "#{rsflbAzureAccount}"
+  },
+  "Parameters": [
+    {
+      "Id": "6efd155e-8ab7-4236-bc16-7748a582e3af",
+      "Name": "rsflbAzureAccount",
+      "Label": "Azure Account",
+      "HelpText": "Service Principal used to connect to Azure",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "2cff4dbe-685c-47e0-b7c7-6d6ee25bdc48",
+      "Name": "rsflbAzureSubscription",
+      "Label": "Azure Subscription",
+      "HelpText": "Subscription Load Balancer belongs to. Eg. 00000000-0000-0000-0000-000000000000",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "150ef843-5b2c-43e9-ac12-a8d0cc45565e",
+      "Name": "rsflbAzureResourceGroup",
+      "Label": "Azure Resource Group",
+      "HelpText": "Resource Group Load Balancer belongs to. Eg. ProductionAus",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7397be30-76e3-4c16-9b8b-05c451a23e70",
+      "Name": "rsflbAzureMachineName",
+      "Label": "Azure Machine Name",
+      "HelpText": "Name of Virtual Machine to remove from Load Balancer. Eg Web01",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-06-22T10:40:51.529Z",
+    "OctopusVersion": "2020.2.8",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "benjimac93",
+  "Category": "Azure"
+}
