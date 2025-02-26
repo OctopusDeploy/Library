@@ -145,6 +145,8 @@ function humanize(categoryId) {
       return "EdgeCast";
     case "elmah":
       return "ELMAH";
+    case "email":
+      return "Email";  
     case "entityframework":
       return "Entity Framework";
     case "event-tracing":
