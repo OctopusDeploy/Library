@@ -3,18 +3,18 @@
   "Name": "Microsoft Power Automate - Post AdaptiveCard",
   "Description": "Posts a message to Microsoft Teams using Microsoft Power Automate webhook.",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "CommunityActionTemplateId": null,
   "Packages": [],
   "GitDependencies": [],
   "Properties": {
-    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\n# Helper functions\nfunction Retry-Command {\n    [CmdletBinding()]\n    Param(\n        [Parameter(Position=0, Mandatory=$true)]\n        [scriptblock]$ScriptBlock,\n \n        [Parameter(Position=1, Mandatory=$false)]\n        [int]$Maximum = 5,\n\n        [Parameter(Position=2, Mandatory=$false)]\n        [int]$Delay = 100\n    )\n\n    Begin {\n        $count = 0\n    }\n\n    Process {\n    \t$ex=$null\n        do {\n            $count++\n            \n            try {\n                Write-Verbose \"Attempt $count of $Maximum\"\n                $ScriptBlock.Invoke()\n                return\n            } catch {\n                $ex = $_\n                Write-Warning \"Error occurred executing command (on attempt $count of $Maximum): $($ex.Exception.Message)\"\n                Start-Sleep -Milliseconds $Delay\n            }\n        } while ($count -lt $Maximum)\n\n        throw \"Execution failed (after $count attempts): $($ex.Exception.Message)\"\n    }\n}\n# End Helper functions\n\n[int]$timeoutSec = $null\n[int]$maximum = 1\n[int]$delay = 100\n\nif(-not [int]::TryParse($OctopusParameters['Timeout'], [ref]$timeoutSec)) { $timeoutSec = 60 }\n\nif ($OctopusParameters[\"AutomatePostMessage.RetryPosting\"] -eq $True) {\n\tif(-not [int]::TryParse($OctopusParameters['RetryCount'], [ref]$maximum)) { $maximum = 1 }\n\tif(-not [int]::TryParse($OctopusParameters['RetryDelay'], [ref]$delay)) { $delay = 100 }\n\t\n    Write-Verbose \"Setting maximum retries to $maximum using a $delay ms delay\"\n}\n\n# Create the payload for Power Automate\n$payload = @{\n    type        = \"message\"  # Fixed value for message type\n    attachments = @(\n        @{\n            contentType = \"application/vnd.microsoft.card.adaptive\"\n            content = @{\n                type = \"AdaptiveCard\"\n                body = @(\n                    @{\n                        type = \"TextBlock\"\n                        text = $OctopusParameters['Title']\n                        weight = \"bolder\"\n                        size = \"medium\"\n                        color= $OctopusParameters['TitleColor']\n                    },\n                    @{\n                        type = \"TextBlock\"\n                        text = $OctopusParameters['Body']\n                        wrap = $true\n                        color= $OctopusParameters['BodyColor']\n                    }\n                )\n                actions = @(\n                    @{\n                        type  = \"Action.OpenUrl\"\n                        title = $OctopusParameters['ButtonTitle']\n                        url   = $OctopusParameters['ButtonUrl']\n                    }\n                )\n                \"`$schema\" = \"http://adaptivecards.io/schemas/adaptive-card.json\"\n                version = \"1.0\"\n            }\n        }\n    )\n}\n\nRetry-Command -Maximum $maximum -Delay $delay -ScriptBlock {\n    #Write-Output ($payload | ConvertTo-Json -Depth 6)\n  \n    # Prepare parameters for the POST request\n    $invokeParameters = @{\n        Method      = \"POST\"\n        Uri         = $OctopusParameters['HookUrl']\n        Body        = ($payload | ConvertTo-Json -Depth 6 -Compress)\n        ContentType = \"application/json; charset=utf-8\"\n        TimeoutSec  = $timeoutSec\n    }\n\n    # Check for UseBasicParsing (needed for some environments)\n    if ((Get-Command Invoke-RestMethod).Parameters.ContainsKey(\"UseBasicParsing\")) {\n        $invokeParameters.Add(\"UseBasicParsing\", $true)\n    }\n\n    # Send the request to the Power Automate webhook\n    $Response = Invoke-RestMethod @invokeParameters\n    Write-Verbose \"Response: $Response\"\n}\n",
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n\n# Helper functions\nfunction Retry-Command {\n    [CmdletBinding()]\n    Param(\n        [Parameter(Position=0, Mandatory=$true)]\n        [scriptblock]$ScriptBlock,\n \n        [Parameter(Position=1, Mandatory=$false)]\n        [int]$Maximum = 5,\n\n        [Parameter(Position=2, Mandatory=$false)]\n        [int]$Delay = 100\n    )\n\n    Begin {\n        $count = 0\n    }\n\n    Process {\n    \t$ex=$null\n        do {\n            $count++\n            \n            try {\n                Write-Verbose \"Attempt $count of $Maximum\"\n                $ScriptBlock.Invoke()\n                return\n            } catch {\n                $ex = $_\n                Write-Warning \"Error occurred executing command (on attempt $count of $Maximum): $($ex.Exception.Message)\"\n                Start-Sleep -Milliseconds $Delay\n            }\n        } while ($count -lt $Maximum)\n\n        throw \"Execution failed (after $count attempts): $($ex.Exception.Message)\"\n    }\n}\n# End Helper functions\n\n[int]$timeoutSec = $null\n[int]$maximum = 1\n[int]$delay = 100\n\nif(-not [int]::TryParse($OctopusParameters['PowerAutomatePostAdaptiveCard.Timeout'], [ref]$timeoutSec)) { $timeoutSec = 60 }\n\nif ($OctopusParameters[\"AutomatePostMessage.RetryPosting\"] -eq $True) {\n\tif(-not [int]::TryParse($OctopusParameters['PowerAutomatePostAdaptiveCard.RetryCount'], [ref]$maximum)) { $maximum = 1 }\n\tif(-not [int]::TryParse($OctopusParameters['PowerAutomatePostAdaptiveCard.RetryDelay'], [ref]$delay)) { $delay = 100 }\n\t\n    Write-Verbose \"Setting maximum retries to $maximum using a $delay ms delay\"\n}\n\n# Create the payload for Power Automate\n$payload = @{\n    type        = \"message\"  # Fixed value for message type\n    attachments = @(\n        @{\n            contentType = \"application/vnd.microsoft.card.adaptive\"\n            content = @{\n                type = \"AdaptiveCard\"\n                body = @(\n                    @{\n                        type = \"TextBlock\"\n                        text = $OctopusParameters['PowerAutomatePostAdaptiveCard.Title']\n                        weight = \"bolder\"\n                        size = \"medium\"\n                        color= $OctopusParameters['PowerAutomatePostAdaptiveCard.TitleColor']\n                    },\n                    @{\n                        type = \"TextBlock\"\n                        text = $OctopusParameters['PowerAutomatePostAdaptiveCard.Body']\n                        wrap = $true\n                        color= $OctopusParameters['PowerAutomatePostAdaptiveCard.BodyColor']\n                    }\n                )\n                actions = @(\n                    @{\n                        type  = \"Action.OpenUrl\"\n                        title = $OctopusParameters['PowerAutomatePostAdaptiveCard.ButtonTitle']\n                        url   = $OctopusParameters['PowerAutomatePostAdaptiveCard.ButtonUrl']\n                    }\n                )\n                \"`$schema\" = \"http://adaptivecards.io/schemas/adaptive-card.json\"\n                version = \"1.0\"\n            }\n        }\n    )\n}\n\nRetry-Command -Maximum $maximum -Delay $delay -ScriptBlock {\n    #Write-Output ($payload | ConvertTo-Json -Depth 6)\n  \n    # Prepare parameters for the POST request\n    $invokeParameters = @{\n        Method      = \"POST\"\n        Uri         = $OctopusParameters['PowerAutomatePostAdaptiveCard.HookUrl']\n        Body        = ($payload | ConvertTo-Json -Depth 6 -Compress)\n        ContentType = \"application/json; charset=utf-8\"\n        TimeoutSec  = $timeoutSec\n    }\n\n    # Check for UseBasicParsing (needed for some environments)\n    if ((Get-Command Invoke-RestMethod).Parameters.ContainsKey(\"PowerAutomatePostAdaptiveCard.UseBasicParsing\")) {\n        $invokeParameters.Add(\"UseBasicParsing\", $true)\n    }\n\n    # Send the request to the Power Automate webhook\n    $Response = Invoke-RestMethod @invokeParameters\n    Write-Verbose \"Response: $Response\"\n}\n",
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptSource": "Inline"
   },
   "Parameters": [
     {
-      "Id": "5d460a15-4052-44f7-85a2-f75cdf77da03",
+      "Id": "d1a12a8f-3578-45e2-b166-8c88dc192596",
       "Name": "PowerAutomatePostAdaptiveCard.HookUrl",
       "Label": "Webhook Url",
       "HelpText": "The specific URL created by Microsoft Power Automate using 'When a Teams webhook request is received' flow template. Copy and paste the full HTTP URL from Microsoft Power Automate.",
@@ -24,7 +24,7 @@
       }
     },
     {
-      "Id": "53b1de0d-261e-464f-91e1-b7307fd5d1a2",
+      "Id": "d06642a3-ffd9-4e84-928a-e2bd598361bc",
       "Name": "PowerAutomatePostAdaptiveCard.Title",
       "Label": "Message title",
       "HelpText": "The title of the message that will be posted to your Microsoft Teams channel.",
@@ -34,7 +34,7 @@
       }
     },
     {
-      "Id": "14c34ec8-5e44-40c6-bf93-7d4920a78b80",
+      "Id": "9df92906-2730-45cf-858f-2043dbc403b2",
       "Name": "PowerAutomatePostAdaptiveCard.Body",
       "Label": "Message body",
       "HelpText": "The message body of post being added to your Microsoft Teams channel.",
@@ -44,7 +44,7 @@
       }
     },
     {
-      "Id": "60d65627-fa61-4203-becf-ae316488a774",
+      "Id": "9236017f-ea38-43b5-8bfa-2a5a8203c84e",
       "Name": "PowerAutomatePostAdaptiveCard.TitleColor",
       "Label": "Title Color",
       "HelpText": "The color to use for the title of the adaptive card.",
@@ -55,7 +55,7 @@
       }
     },
     {
-      "Id": "1491e7d2-2677-4119-a159-09715173af25",
+      "Id": "caa65c86-e8b5-47be-90d0-b22b504d2458",
       "Name": "PowerAutomatePostAdaptiveCard.Timeout",
       "Label": "Timeout in seconds",
       "HelpText": "The maximum timeout in seconds for each request.",
@@ -65,7 +65,7 @@
       }
     },
     {
-      "Id": "0c5e5a4a-35c2-48f7-b0e3-6e2e2b14b383",
+      "Id": "f5f973ed-2343-4e6b-8b06-822cada9c0e1",
       "Name": "PowerAutomatePostAdaptiveCard.RetryPosting",
       "Label": "Retry posting message",
       "HelpText": "Should retries be made? If this option is enabled, the step will attempt to retry the posting of message to teams up to the set retry count. Default: `False`.",
@@ -75,7 +75,7 @@
       }
     },
     {
-      "Id": "b1d2acda-5e82-42a9-bd05-6cc4827f5974",
+      "Id": "48a48066-a921-4b3f-84b4-8ba603336884",
       "Name": "PowerAutomatePostAdaptiveCard.RetryCount",
       "Label": "Retry Count",
       "HelpText": "The maximum number of times to retry the post before allowing failure. Default 1",
@@ -85,7 +85,7 @@
       }
     },
     {
-      "Id": "bc9438f7-3c74-4f2e-a5a5-4cb4c38767d9",
+      "Id": "6b5902d7-1bb2-4f4d-acfd-5f1822bbe207",
       "Name": "PowerAutomatePostAdaptiveCard.RetryDelay",
       "Label": "Retry delay in milliseconds",
       "HelpText": "The amount of time in milliseconds to wait between retries. Default 100",
@@ -95,7 +95,7 @@
       }
     },
     {
-      "Id": "e1606576-d9af-489f-a343-916cc809c1c3",
+      "Id": "428fda44-720a-40c1-8ab8-eeccedf488e3",
       "Name": "PowerAutomatePostAdaptiveCard.BodyColor",
       "Label": "Body Color",
       "HelpText": "The color to use for the body of the adaptive card.",
@@ -106,7 +106,7 @@
       }
     },
     {
-      "Id": "6222bf83-af8b-40dd-a504-eb7ab0208981",
+      "Id": "32ebe506-7f08-4a0c-94b4-1316f150fc6b",
       "Name": "PowerAutomatePostAdaptiveCard.ButtonTitle",
       "Label": "Button Title",
       "HelpText": "The button title of post being added to your Microsoft Teams channel.",
@@ -116,7 +116,7 @@
       }
     },
     {
-      "Id": "a550bde0-e622-457c-b2b6-6a6089cf2fa8",
+      "Id": "9cd74383-f7b3-4e45-9529-c082c4106baf",
       "Name": "PowerAutomatePostAdaptiveCard.ButtonUrl",
       "Label": "Button url",
       "HelpText": "The button url of post being added to your Microsoft Teams channel.",
@@ -126,11 +126,12 @@
       }
     }
   ],
+  "StepPackageId": "Octopus.Script",
   "$Meta": {
-    "ExportedAt": "2024-11-13T22:40:25.875Z",
-    "OctopusVersion": "2024.3.12828",
+    "ExportedAt": "2025-03-10T22:22:38.638Z",
+    "OctopusVersion": "2025.2.1265",
     "Type": "ActionTemplate"
   },
-  "LastModifiedBy": "Zunair",
+  "LastModifiedBy": "benjimac93",
   "Category": "microsoft-power-automate"
 }
