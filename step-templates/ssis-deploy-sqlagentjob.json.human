@@ -1,0 +1,494 @@
+{
+"Id" : "f69ea863-ab61-4c58-bcbe-a133450113c9",
+  "Name": "SSIS - Deploy SQL Agent Job",
+  "Description": "Deploy a SQL Agent Job for SSIS Ispac Deployment. Requires SMO to be installed on the machine where this step will be run. ",
+  "ActionType": "Octopus.Script",
+  "Version": 10,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "Function Format-OctopusArgument\r
+{\r
+\r
+    <#\r
+    .SYNOPSIS\r
+    Converts boolean values to boolean types\r
+\r
+    .DESCRIPTION\r
+    Converts boolean values to boolean types\r
+\r
+    .PARAMETER Value\r
+    The value to convert\r
+\r
+    .EXAMPLE\r
+    Format-OctopusArgument \"true\"\r
+    #>\r
+    Param(\r
+        [string]$Value\r
+    )\r
+\r
+    $Value = $Value.Trim()\r
+\r
+    # There must be a better way to do this\r
+    Switch -Wildcard ($Value)\r
+    {\r
+\r
+        \"True\"\r
+        { Return $True\r
+        }\r
+        \"False\"\r
+        { Return $False\r
+        }\r
+        \"#{*}\"\r
+        { Return $null\r
+        }\r
+        Default\r
+        { Return $Value\r
+        }\r
+    }\r
+}\r
+\r
+\r
+Function Get-SSISCommand\r
+{\r
+\r
+    <#\r
+    .SYNOPSIS\r
+    Format the SSIS Command that execute the package.\r
+    Only valid for now for Project Deployment ($typecommand = '/ISSERVER \"\\')\r
+\r
+    .DESCRIPTION\r
+    Return a string with the correct format to execute a Project Package Deploy (Step).\r
+    The SSIS Command can be built by paramaters (ServerName, CatalogName, ProjectName, FolderName, Package and Environment)\r
+    @TO-DO:\r
+    But most of the cases need an ending string that could be the same for most of the deployments.\r
+    I will keep this as a Octopus Parameter by now.\r
+\r
+\r
+    #>\r
+\r
+    Param($ServerName, $CatalogName, $FolderName, $ProjectName, $PackageName, $EnvironmentName)\r
+    process {\r
+        $environmentid = Get-EnvironmentId -ServerName $ServerName -EnvironmentName $EnvironmentName -PackageName $PackageName -ProjectName $ProjectName\r
+        write-host \"The Environmemnt Id found for $EnvironmentName is $environmentid\"\r
+        $slash = '\\'\r
+        $quotes = '\"'\r
+        $typecommand = '/ISSERVER \"\\'\r
+        $environmentCommand = '\\\"\" /ENVREFERENCE ' + $environmentid.ToString()\r
+        $packagep = $slash + $CatalogName + $slash + $FolderName + $slash + $ProjectName + $slash + $PackageName + '.dtsx' + $slash\r
+        $servertype = '\" /SERVER \"\\\"'\r
+        $commandoptions = ' /Par \"\\\"$ServerOption::LOGGING_LEVEL(Int16)\\\"\";1 /Par \"\\\"$ServerOption::SYNCHRONIZED(Boolean)\\\"\";True /CALLERINFO SQLAGENT /REPORTING E'\r
+    }\r
+    end {\r
+        return $typecommand + $quotes + $packagep + $quotes + $servertype + $ServerName + $environmentCommand + $commandoptions\r
+    }\r
+\r
+}\r
+\r
+Function Get-EnvironmentId\r
+{\r
+    <#\r
+    .SYNOPSIS\r
+    Get the ID of the Environment by Name of Environment\r
+\r
+    .DESCRIPTION\r
+    ProjectDeploy Packages use Enviroments for variables previously deployed for the package.\r
+    To be able to format the SSIS Command, we will need the Environment ID\r
+\r
+    .PARAMETER ServerName\r
+    .PARAMETER CatalogName\r
+    .PARAMETER FolderName\r
+    .PARAMETER ProjectName\r
+    .PARAMETER PackageName\r
+    .PARAMETER EnvironmentName\r
+    #>\r
+\r
+    Param($ServerName, $EnvironmentName,$PackageName, $ProjectName)\r
+\r
+\r
+    $query = \"SELECT er.reference_id\r
+    FROM [SSISDB].[internal].[folders] AS f\r
+         JOIN [SSISDB].[internal].[projects] AS p\r
+              ON f.folder_id = p.folder_id\r
+              JOIN [SSISDB].[internal].[environment_references] AS er\r
+                   ON p.project_id = er.project_id\r
+                   where f.name = '$FolderName'\r
+\t\t\t\t\t\tand er.environment_name = '$EnvironmentName'\r
+\t\t\t\t\t\t and p.name = '$ProjectName'\"\r
+\r
+    $EnvironmentId = Invoke-Sqlcmd  -Query $query -ServerInstance $ServerName -Verbose\r
+\r
+    return $EnvironmentId.reference_id\r
+}\r
+\r
+Function Add-Job\r
+{\r
+    <#\r
+    .SYNOPSIS\r
+    Add a new type of Job in SQL Agent Job\r
+\r
+    .DESCRIPTION\r
+    The function will remove an existing Job with same name (SQL SMO Job doesnt contains update function)\r
+    and it will return as GlobalVariable the JOb Object.\r
+\r
+    .PARAMETER JobName\r
+    .PARAMETER ServerName\r
+    .PARAMETER EnvironmentName\r
+    .PARAMETER JobStepName\r
+    .PARAMETER JobStepCommand\r
+    #>\r
+\r
+    param($JobName, $ServerName, $EnvironmentName, $JobsStepName, $JobStepCommand, $JobCategory )\r
+    try\r
+    {\r
+        $server = New-Object Microsoft.SqlServer.Management.Smo.Server($ServerName)\r
+        $server.exe\r
+        $server.JobServer.HostLoginName\r
+        $existingjob = $server.Jobserver.Jobs|where-object {$_.Name -like $JobName}\r
+        if ($existingjob)\r
+        {\r
+            Write-Host \"|- Dropping Job [$JobName]...\" -NoNewline\r
+            $existingjob.drop()\r
+            Write-Host \"|- Done\" -ForegroundColor Green\r
+        }\r
+\r
+        $job = New-Object Microsoft.SqlServer.Management.SMO.Agent.Job($server.JobServer, $jobName)\r
+        #$job.DropIfExists() only for sqlserver 2016\r
+        $job.Create()\r
+        $job.OwnerLoginName = \"sa\"\r
+        $job.Category = $JobCategory\r
+        $job.ApplyToTargetServer($server.Name)\r
+\r
+\r
+    }\r
+    catch\r
+    {\r
+        write-host \"####### Error Adding a job\" -ForegroundColor Red\r
+        write-host $_.Exception.Message\r
+    }\r
+    #Instead of creating a class and return a Job, lets settup a global variable. Return statament doenst return all script output\r
+    $Global:newjob = $job\r
+\r
+}\r
+\r
+Function Add-JobStep\r
+{\r
+    <#\r
+    .SYNOPSIS\r
+    Add a job step to a Job\r
+\r
+    .DESCRIPTION\r
+    The function will remove an existing Job with same name (SQL SMO Job doesnt contains update function)\r
+    and it will return as GlobalVariable t\r
+     he JOb Object.\r
+    .PARAMETER Job\r
+    .PARAMETER JobStepName\r
+    .PARAMETER JobStepCommand\r
+    #>\r
+    param($job, $JobStepName, $CommandJob )\r
+    try\r
+    {\r
+        $jobStep = New-Object Microsoft.SqlServer.Management.Smo.Agent.JobStep($job, $JobStepName)\r
+        $jobStep.Subsystem = [Microsoft.SqlServer.Management.Smo.Agent.AgentSubSystem]::SSIS\r
+\r
+        $jobStep.Command = $CommandJob\r
+        $jobStep.Create()\r
+    }\r
+    catch\r
+    {\r
+        write-host \"#########   Error adding a job step\" -ForegroundColor Red\r
+        write-host $_.Exception.Message\r
+    }\r
+\r
+\r
+}\r
+\r
+Function Add-JobSchedule\r
+{\r
+    # ToDO: Add more types of frequenct: Weekly, Monthly\r
+    param($job, $JobScheduleName,$JobExecutionFrequency, $FrecuencyInterval, $startHour, $startMinutes)\r
+    try\r
+    {\r
+        $name = $job.Name\r
+        $SQLJobSchedule = New-Object -TypeName Microsoft.SqlServer.Management.SMO.Agent.JobSchedule($job, $JobScheduleName)\r
+\r
+        switch ($JobExecutionFrequency) {\r
+            \"Daily\" {\r
+                     $result = [Microsoft.SqlServer.Management.SMO.Agent.FrequencyTypes]::Daily\r
+                     $subdayTypes =  [Microsoft.SqlServer.Management.SMO.Agent.FrequencySubDayTypes]::Hour\r
+                    }\r
+            \"OneTime\" {\r
+                 $result = [Microsoft.SqlServer.Management.SMO.Agent.FrequencyTypes]::OneTime\r
+                 $subdayTypes = [Microsoft.SqlServer.Management.SMO.Agent.FrequencySubDayTypes]::Once\r
+                 }\r
+            \"AutoStart\" {\r
+                    $result = [Microsoft.SqlServer.Management.SMO.Agent.FrequencyTypes]::AutoStart\r
+                   }\r
+            default  {\r
+                $result = [Microsoft.SqlServer.Management.SMO.Agent.FrequencyTypes]::Daily\r
+              }\r
+        }\r
+\r
+\r
+        $SQLJobSchedule.FrequencyTypes =  $result\r
+        # Setup Frequency Interval\r
+        $SQLJobSchedule.FrequencyInterval = $FrecuencyInterval\r
+\r
+\r
+\r
+        # Job Start\r
+        $timeofday = New-TimeSpan -hours $startHour -minutes $startMinutes\r
+        $SQLJobSchedule.ActiveStartTimeOfDay = $timeofday\r
+        #Activate the Job\r
+        $SQLJobSchedule.ActiveStartDate = Get-Date\r
+        $SQLJobSchedule.Create()\r
+    }\r
+    catch\r
+    {\r
+        Write-Host \"Error\" -ForegroundColor Red\r
+        write-host \"Exception Type: $($_.Exception.GetType().FullName)\" -ForegroundColor Red\r
+        write-host \"Exception Message: $($_.Exception.Message)\" -ForegroundColor Red\r
+        $error[0]|format-list -force\r
+\r
+    }\r
+\r
+}\r
+\r
+Function Set-SQLJob\r
+{\r
+    #Get-Octopus Variables\r
+    Write-Host \"Collecting Octopus Variables\"\r
+\r
+    $ServerName = Format-OctopusArgument -Value $OctopusParameters[\"SSIS_ServerName\"]\r
+    $FolderName = Format-OctopusArgument -Value $OctopusParameters[\"SSIS_FolderName\"]\r
+    $ProjectName = Format-OctopusArgument -Value $OctopusParameters[\"SSIS_ProjectName\"]\r
+    $CatalogName = Format-OctopusArgument -Value $OctopusParameters[\"SSIS_CatalogName\"]\r
+    $EnvironmentName = Format-OctopusArgument -Value $OctopusParameters[\"SSIS_EnvironmentName\"]\r
+    $PackageName = Format-OctopusArgument -Value $OctopusParameters[\"SSIS_PackageName\"]\r
+    $JobName = Format-OctopusArgument -Value $OctopusParameters[\"SSIS_JobName\"]\r
+    $JobCategory =  Format-OctopusArgument -Value $OctopusParameters[\"SSIS_JobCategory\"]\r
+    $JobStepName = Format-OctopusArgument -Value $OctopusParameters[\"SSIS_JobStepName\"]\r
+    $JobScheduleName = Format-OctopusArgument -Value $OctopusParameters[\"SSIS_JobScheduleName\"]\r
+    $JobExecutionFrequency = Format-OctopusArgument -Value $OctopusParameters[\"SSIS_JobExecutionFrequency\"]\r
+    $JobFrequencyInterval = Format-OctopusArgument -Value $OctopusParameters[\"SSIS_JobFrequencyInterval\"]\r
+    $JobExecutionTimeHour = Format-OctopusArgument -Value $OctopusParameters[\"SSIS_JobExecutionTimeHour\"]\r
+    $JobExecutionTimeMinute = Format-OctopusArgument -Value $OctopusParameters[\"SSIS_JobExecutionTimeMinute\"]\r
+\r
+\r
+   # FrecuencyType is hardcoded\r
+\r
+    #Getting Module sqlserver if possible.\r
+    $Module = get-module -ListAvailable -name sqlserver\r
+    if ($Module.Name -eq 'sqlserver') {\r
+        write-host \"Importing Module SqlServer\"\r
+        Import-Module sqlserver -DisableNameChecking\r
+    } else {\r
+        write-host \"Importing Module sqlps\"\r
+        import-module sqlps -Verbose -DisableNameChecking\r
+    }\r
+\r
+    #First step is to generate the command execution for Job Step.\r
+    $JobStepCommand = Get-SSISCommand -ServerName $ServerName -CatalogName $CatalogName -FolderName $FolderName -ProjectName $ProjectName -PackageName $PackageName -EnvironmentName $EnvironmentName -Verbose\r
+\r
+    write-Host \"Command found to deploy Step is \"\r
+    write-Host $JobStepCommand\r
+    write-Host \"STARTING DEPLOYMENT \"\r
+    write-Host \"|- Start Adding the Job $JobName\"\r
+    Add-Job -JobName $JobName -ServerName $ServerName -EnvironmentName $EnvironmentName -JobsStepName $JobStepName -JobStepCommand $JobStepCommandmand\r
+    write-Host \"|- $JobName Added to $ServerName\"\r
+\r
+    write-Host \"|--- Start Adding the JobStep $JobStepName to Job $JobName\"\r
+    Add-JobStep -JobStepName $JobStepName -CommandJob $JobStepCommand -Job $Global:newjob\r
+    write-Host \"|--- $JobStepName added to Job $JobName\"\r
+\r
+    write-Host \"|----  Start Adding JobShedule  $JobScheduleName JobStep $JobName\"\r
+    Add-JobSchedule -job $Global:newjob  -JobScheduleName $JobScheduleName  -JobExecutionFrequency $JobExecutionFrequency -FrecuencyInterval $JobFrequencyInterval -startHour $JobExecutionTimeHour -startMinutes $JobExecutionTimeMinute\r
+    write-Host \"|---- $JobStepName added to Job $JobName\"\r
+}\r
+\r
+Write-Host \"Starting deployment of SQL Job\"\r
+\r
+\r
+Set-SQLJob\r
+\r
+\r
+Write-Host \"Finishing Install\"\r
+"
+  },
+  "Parameters": [
+    {
+      "Id": "44a2fa3c-3117-450b-8004-ebdbfd2362e9",
+      "Name": "SSIS_ServerName",
+      "Label": "Server Name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ae040e98-f686-4f44-ad80-8939fbd902e4",
+      "Name": "SSIS_FolderName",
+      "Label": "Folder Name",
+      "HelpText": "Folder Name of the deployed package",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "3e755e91-afb5-46c3-ad61-47bf80ac88b8",
+      "Name": "SSIS_ProjectName",
+      "Label": "Project Name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "21dc0b13-7db0-4c99-b512-53dbfad55893",
+      "Name": "SSIS_CatalogName",
+      "Label": "Catalog Name",
+      "HelpText": "By default SSISDB",
+      "DefaultValue": "SSISDB",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "eb197ae7-99e1-41a2-aee4-5b379fdb349c",
+      "Name": "SSIS_EnvironmentName",
+      "Label": "Environment Name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "94f97e01-d04c-4696-ad0a-e170a21ecd87",
+      "Name": "SSIS_PackageName",
+      "Label": "Package Name",
+      "HelpText": "Complete name of the package to execute, without dtsx extension",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "cb138aa6-2f51-4ebd-b744-9b0d17535ea1",
+      "Name": "SSIS_JobName",
+      "Label": "Job Name",
+      "HelpText": "Name of the SQL Job",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "458225af-7d11-4f98-b984-2fe02e66996e",
+      "Name": "SSIS_JobStepName",
+      "Label": "Job Step Name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "07d85895-e548-4f54-a403-25cc53fa1a88",
+      "Name": "SSIS_JobSheduleName",
+      "Label": "Job Schedule Name",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "023f21b1-7757-42f2-8b69-e9a95deb7bae",
+      "Name": "SSIS_JobExecutionFrequency",
+      "Label": "Job Execution Frequency",
+      "HelpText": "Frequency of execution
+Only supported:
+OneTime
+Daily
+AutoStart",
+      "DefaultValue": "Daily",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "AutoStart
+Daily
+OneTime"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "25efa439-5490-4ed4-a70f-7b514bd18446",
+      "Name": "SSIS_JobFrequencyInterval",
+      "Label": "Job Frequency Interval",
+      "HelpText": "Depends of Job Execution Frequency.
+For now only works with Days
+Example:
+1 -> Recurs every 1 Day
+2 -> Recurs every 2 Weeks",
+      "DefaultValue": "1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "50b3ab13-8635-4631-a247-092792364902",
+      "Name": "SSIS_JobExecutionTimeHour",
+      "Label": "Job Execution Time Hour",
+      "HelpText": "Hour of the day to execute the job",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "4d57dc4e-8717-4f05-bdad-0f16cc9b566d",
+      "Name": "SSIS_JobExecutionTimeMinute",
+      "Label": "Job Execution Time Minute",
+      "HelpText": "Minutes of the day to execute the job",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "7a4c18db-51c3-48e7-ab04-b4f084dde3de",
+      "Name": "SSIS_JobCategory",
+      "Label": "Job Category",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedOn": "2018-17-04T10:59:08.819Z",
+  "LastModifiedBy": "andrescolodrero",
+  "$Meta": {
+    "ExportedAt": "2018-17-04T10:59:08.819Z",
+    "OctopusVersion": "3.14.15",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}
