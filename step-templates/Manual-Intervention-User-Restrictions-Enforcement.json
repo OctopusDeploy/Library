@@ -1,0 +1,55 @@
+{
+  "Id": "06080873-f7f1-47e9-aaac-7ec1927f8146",
+  "Name": "Manual Intervention User Restrictions Enforcement",
+  "Description": "Use directly after a Manual Intervention step to enforce additional restrictions.\n\nUse cases include: \n- Preventing users from approving their own deployments\n- Restricting certain users (up to 2) from approving deployments",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$manIntStepName = $OctopusParameters[\"URE.ManualInterventionStepName\"]\n\nWrite-Host \"Created by: \"$OctopusParameters[\"Octopus.Deployment.CreatedBy.Username\"]\nWrite-Host \"Approved by: \"$OctopusParameters[\"Octopus.Action[$manIntStepName].Output.Manual.ResponsibleUser.Username\"]\n\nIf ($OctopusParameters[\"URE.PreventDeployerFromApproving\"] -eq $true) {\n  $deploymentCreatedByUsername = $OctopusParameters[\"Octopus.Deployment.CreatedBy.Username\"]\n}\n$approvedByUsername = $OctopusParameters[\"Octopus.Action[$manIntStepName].Output.Manual.ResponsibleUser.Username\"]\n\nIf ($approvedByUsername -eq $deploymentCreatedByUsername) {\n  Write-Warning \"The same user may not be used to both start the deployment and approve the deployment.\"\n  Write-Warning \"Please retry the deployment with a different approver for the $manIntStepName step.\"\n  throw \"Terminating deployment...\"\n}\nElse {\n  $excludedUserList = $OctopusParameters[\"URE.ExcludedUsers\"].Split([System.Environment]::NewLine)\n  If ($excludedUserList -contains $approvedByUsername) {\n  Write-Warning \"The user $approvedByUsername may not approve this deployment.\"\n  Write-Warning \"Please retry the deployment with a different approver for the $manIntStepName step.\"\n  throw \"Terminating deployment...\"\n  }\n}\n\nIf (($OctopusParameters[\"URE.PreventDeployerFromApproving\"] -ne $true) -and (!$excludedUserList)) {\n  Write-Host \">>>PreventDeployerFromApproving set to FALSE\" \n  Write-Host \">>>ExcludedUsers contain no value(s)\"\n}\nWrite-Host \"Check complete\"\nWrite-Host \"Continuing...\"\n  "
+  },
+  "Parameters": [
+    {
+      "Id": "d3e12917-2af0-4cff-988a-083e30a36314",
+      "Name": "URE.PreventDeployerFromApproving",
+      "Label": "Prevent Deployer from approving?",
+      "HelpText": "When enabled, this terminates a deployment when the user who initiated the deployment also approves the manual intervention step",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "4ec5ca6e-b033-44f9-8746-e926d853b4ec",
+      "Name": "URE.ManualInterventionStepName",
+      "Label": "Manual Intervention step name",
+      "HelpText": "Select the step name from drop down",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Id": "fed4cffe-d286-4793-ac6b-0d0b3ac35b27",
+      "Name": "URE.ExcludedUsers",
+      "Label": "Excluded Users",
+      "HelpText": "Usernames of users to be excluded from manual intervention approvals (one per line)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2025-04-16T21:40:42.587Z",
+    "OctopusVersion": "2025.2.6682",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "donnybell",
+  "Category": "Octopus"
+}
