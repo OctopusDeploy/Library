@@ -1,0 +1,239 @@
+{
+    "Id": "e06e7e2a-5510-4b6d-bd46-22d3bc01291d",
+    "Name": "Import Certificate from Azure Key Vault",
+    "Description": "Imports a certificate from Azure Key Vault to the tentacle",
+    "ActionType": "Octopus.Script",
+    "Version": 5,
+    "CommunityActionTemplateId": null,
+    "Properties": {
+        "Octopus.Action.Script.ScriptSource": "Inline",
+        "Octopus.Action.Script.Syntax": "PowerShell",
+        "Octopus.Action.Script.ScriptBody": "Import-Module AzureRM.Profile
+Import-Module AzureRM.KeyVault
+
+Function Validate-Parameter($parameterValue, [string[]]$validInput, $parameterName) {
+    Write-Host \"${parameterName}: ${parameterValue}\"
+    if (! $parameterValue) {
+        throw \"$parameterName cannot be empty, please specify a value\"
+    }
+}
+
+Function Install-AzureKeyVaultCertificate {
+    Param(
+        [string]$keyVaultName,
+        [string]$certificateName,
+        [string]$certificateVersion,
+        [string]$certificateStoreName,
+        [string]$certificateStoreLocation,
+        [string]$certificateFriendlyName
+    )
+    
+    Write-Output \"Retrieving '$certificateName' from '$keyVaultName' ...\"
+    $getSecretParams = @{
+    \tVaultName = $keyVaultName
+        Name = $certificateName
+    }
+
+\tif($certificateVersion -notmatch \"latest\") {
+        $getSecretParams[\"Version\"] = $certificateVersion
+    }
+    
+\t$cert = Get-AzureKeyVaultSecret @getSecretParams
+    $b64 = [System.Convert]::FromBase64String($cert.SecretValueText)
+    $pfx = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($b64, \"\", \"MachineKeySet,PersistKeySet\")
+    Write-Output \"Certificate information:\"
+    Write-Output ($pfx | fl | Out-String)
+    
+    $certPath = \"Cert:\\$certificateStoreLocation\\$certificateStoreName\\$($pfx.Thumbprint)\"
+    if (Test-Path $certPath) {
+        \"A certificate with thumbprint '$($pfx.Thumbprint)' appears to already exist in the certificate store. Skipping...\"
+    }
+    else {
+        Write-Output \"Opening certificate store '$certificateStoreName' in '$certificateStoreLocation' ...\"
+        $store = New-Object System.Security.Cryptography.X509Certificates.X509Store($certificateStoreName, $certificateStoreLocation)
+        $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+
+\t\tif($certificateFriendlyName) {
+          Write-Output \"Setting certificate friendly name to '$certificateFriendlyName'...\"
+          $pfx.FriendlyName = $certificateFriendlyName
+\t\t}
+        
+        Write-Output \"Adding certificate...\"
+        $store.Add($pfx)
+        $store.Close()
+        Write-Output \"Certificate added.\"
+
+        Write-Output \"Verifying - searching certificate store for thumbprint '$($pfx.Thumbprint)'...\"
+        if (Test-Path $certPath) {
+            Write-Output \"Certificate is successfully imported!\"
+        }
+        else {
+            Write-Error \"ERROR: Certificate with thumbprint '$($pfx.Thumbprint)' was not found in certificate store '$certificateStoreName' in '$certificateStoreLocation'\"
+        }
+    }
+}
+
+$azureSubscriptionId = $OctopusParameters['Azure.GetKeyVaultCertificate.SubscriptionId']
+$azureTenantId = $OctopusParameters['Azure.GetKeyVaultCertificate.TenantId']
+$azureClientId = $OctopusParameters['Azure.GetKeyVaultCertificate.ClientId']
+$azurePassword = $OctopusParameters['Azure.GetKeyVaultCertificate.Password']
+$keyVaultName = $OctopusParameters['Azure.GetKeyVaultCertificate.KeyVaultName']
+$certificateName = $OctopusParameters['Azure.GetKeyVaultCertificate.CertificateName']
+$certificateVersion = $OctopusParameters['Azure.GetKeyVaultCertificate.CertificateVersion']
+$certificateStoreName = $OctopusParameters['Azure.GetKeyVaultCertificate.CertificateStoreName']
+$certificateStoreLocation = $OctopusParameters['Azure.GetKeyVaultCertificate.CertificateStoreLocation']
+$certificateFriendlyName = $OctopusParameters['Azure.GetKeyVaultCertificate.CertificateFriendlyName']
+
+# Validate that all parameters have values
+Write-Output \"Validating parameters...\"
+Validate-Parameter $azureSubscriptionId -parameterName \"azureSubscriptionId\"
+Validate-Parameter $azureTenantId -parameterName \"azureTenantId\"
+Validate-Parameter $azureClientId -parameterName \"azureClientId\"
+Validate-Parameter $azurePassword -parameterName \"azurePassword\"
+Validate-Parameter $keyVaultName -parameterName \"keyVaultName\"
+Validate-Parameter $certificateName -parameterName \"certificateName\"
+Validate-Parameter $certificateVersion -parameterName \"certificateVersion\"
+Validate-Parameter $certificateStoreName -parameterName \"certificateStoreName\"
+Validate-Parameter $certificateStoreLocation -parameterName \"certificateStoreLocation\"
+
+$azureCreds = New-Object System.Management.Automation.PSCredential($azureClientId, (ConvertTo-SecureString -String $azurePassword -AsPlainText -Force))
+Login-AzureRmAccount -ServicePrincipal -SubscriptionId $azureSubscriptionId -TenantId $azureTenantId -Credential $azureCreds
+
+$params = @{
+    keyVaultName             = $keyVaultName
+    certificateName          = $certificateName
+    certificateVersion       = $certificateVersion
+    certificateStoreName     = $certificateStoreName
+    certificateStoreLocation = $certificateStoreLocation
+    certificateFriendlyName     = $certificateFriendlyName
+}
+
+Install-AzureKeyVaultCertificate @params"
+    },
+    "Parameters": [
+        {
+            "Id": "70c9f9dd-22b6-4285-8d8a-f64278de0dc1",
+            "Name": "Azure.GetKeyVaultCertificate.SubscriptionId",
+            "Label": "Azure Service Principal SubscriptionId",
+            "HelpText": "Azure SubscriptionId for the Service Principal account",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "9a421884-0f63-417e-b2a9-b1039a1e8bf8",
+            "Name": "Azure.GetKeyVaultCertificate.TenantId",
+            "Label": "Azure Active Directory Tenant Id",
+            "HelpText": "The Azure Active Directory Tenant Id associated with the Service Principal account",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "bfb4a0a1-dab2-4c8f-bcb8-51033c35f633",
+            "Name": "Azure.GetKeyVaultCertificate.ClientId",
+            "Label": "Azure Service Principal Client Id",
+            "HelpText": "The Client Id associated with the Service Principal account",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "49857bcc-f3a1-4984-a2b1-ddeeca52114a",
+            "Name": "Azure.GetKeyVaultCertificate.Password",
+            "Label": "Azure Service Principal Password",
+            "HelpText": "The password or \"key\" for the Service Principal account",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Sensitive"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "220d17f6-070c-4a3d-b742-205d56b27f47",
+            "Name": "Azure.GetKeyVaultCertificate.KeyVaultName",
+            "Label": "Key Vault Name",
+            "HelpText": "The name of the Azure Key Vault",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "930e6703-3df4-40bb-b3ae-6d367bf5cc5d",
+            "Name": "Azure.GetKeyVaultCertificate.CertificateName",
+            "Label": "Certificate Name",
+            "HelpText": "The name of the certificate to retrieve from the Key Vault",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "b3616901-a27a-4960-984c-59b2388b243e",
+            "Name": "Azure.GetKeyVaultCertificate.CertificateVersion",
+            "Label": "Certificate Version",
+            "HelpText": "_[Optional]_ Enter the specific version of the certificate. Defaults to `latest`.",
+            "DefaultValue": "latest",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "840f8939-4d87-42c7-9d6e-232d4617b90f",
+            "Name": "Azure.GetKeyVaultCertificate.CertificateStoreName",
+            "Label": "Certificate Store Name",
+            "HelpText": "Certificate store name. E.g. `My`",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Select",
+                "Octopus.SelectOptions": "My|My
+CertificateAuthority|CertificateAuthority
+Root|Root
+TrustedPeople|TrustedPeople
+TrustedPublisher|TrustedPublisher"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "15916c8a-709b-4f14-af36-63ee5d3265e9",
+            "Name": "Azure.GetKeyVaultCertificate.CertificateStoreLocation",
+            "Label": "Certificate Store Location",
+            "HelpText": "Certificate store location. E.g. \"LocalMachine\"",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Select",
+                "Octopus.SelectOptions": "LocalMachine|LocalMachine
+CurrentUser|CurrentUser"
+            },
+            "Links": {}
+        },
+        {
+            "Id": "3915f38e-947f-4313-b207-4e88b5f63969",
+            "Name": "Azure.GetKeyVaultCertificate.CertificateFriendlyName",
+            "Label": "Certificate Friendly Name",
+            "HelpText": "_[Optional]_ A friendly name to give the certificate when importing. E.g. `Client Auth Cert for FooService`",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            },
+            "Links": {}
+        }
+    ],
+    "LastModifiedBy": "nshenoy",
+    "$Meta": {
+        "ExportedAt": "2018-04-17T20:24:57.757Z",
+        "OctopusVersion": "2018.3.13",
+        "Type": "ActionTemplate"
+    },
+    "Category": "azure"
+}

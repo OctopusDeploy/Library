@@ -1,0 +1,92 @@
+{
+  "Id": "382b9610-64c4-4c64-a31c-34d07f262ed4",
+  "Name": "Sitecore - Settings & Variable Replacement",
+  "Description": "The default [Configuration Variables](https://octopus.com/docs/deployment-process/configuration-features#Configurationfiles-ConfigurationVariables) functionality replaces **appSettings** and **connectionStrings** entries. This step template extends this functionality to the Sitecore configuration **settings** and **sc.variable** nodes within the configuration file(s) that you specify. Variables that are defined for the Octopus project will automatically replace those defined in the target Sitecore configuration file(s).",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\" \r
+$configFiles = $OctopusParameters[\"Sitecore.ReplaceConfigFiles\"]\r
+\r
+if ([string]::IsNullOrEmpty($configFiles)) {\r
+    throw [System.ArgumentNullException] \"Sitecore.ReplaceConfigFiles\"\r
+}\r
+\r
+($configFiles -split '[\\r\
+]') | ForEach-Object {\r
+    \r
+    $configPath = $_\r
+\r
+    if ([string]::IsNullOrEmpty($configPath)) { \r
+        return\r
+    }\r
+    \r
+    $configPath = $configPath.Trim()\r
+\r
+    if (-not (Test-Path -LiteralPath $configPath)) {\r
+        Write-Host \"$configPath was not found.\"\r
+        return\r
+    }\r
+\r
+    Write-Host \"Searching Sitecore config file for replacement variables:\" $configPath\r
+        \r
+    $configXml = [xml](Get-Content $configPath)\r
+    $sitecoreNode = $configXml.sitecore\r
+    \r
+    # Look for sitecore node for versions prior to 8.1\r
+    if ($sitecoreNode -eq $null) {\r
+        $sitecoreNode = $configXml.configuration.sitecore\r
+    }\r
+    \r
+    # Ensure that we have a sitecore node to work from\r
+    if ($sitecoreNode -eq $null -or $sitecoreNode.settings -eq $null) {\r
+        Write-Host \"The sitecore settings node was not found in\" $configPath \". Skipping this file...\"\r
+        return\r
+    }\r
+    \r
+    foreach ($key in $OctopusParameters.Keys) {\r
+    \r
+        # Replace Sitecore settings\r
+        $setting = $sitecoreNode.settings.setting | where { $_.name -ceq $key }\r
+        if ($setting -ne $null) {\r
+            Write-Host $setting.name \"setting will be updated from\" $setting.value \"to\" $OctopusParameters[$key] \"in\" $configPath\r
+            $setting.value = $OctopusParameters[$key]\r
+        }\r
+    \r
+        # Replace Sitecore variables\r
+        $variable = $sitecoreNode.'sc.variable' | where { $_.name -ceq $key }\r
+        if ($variable -ne $null) {\r
+            Write-Host $variable.name \"Sitecore variable will be updated from\" $settingsNode.value \"to\" $OctopusParameters[$key] \"in\" $configPath\r
+            $variable.value = $OctopusParameters[$key]\r
+        }\r
+    \r
+    }\r
+    \r
+    $configXml.Save($configPath)\r
+}",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "Sitecore.ReplaceConfigFiles",
+      "Label": "Sitecore.ReplaceConfigFiles",
+      "HelpText": "Enter the full path to your Sitecore configuration file(s) that contains the **sitecore** node, one per line. For versions of Sitecore prior to 8.1, this should point to your primary Web.config at the root of your website, and for versions 8.1+, to the Sitecore.config file within your App_Config folder. Alternatively, this value can be left empty and defined within your Octopus project's variable collection using the variable name **Sitecore.ReplaceConfigFiles**.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2016-06-13T17:19:09.003+00:00",
+  "LastModifiedBy": "dthunziker",
+  "$Meta": {
+    "ExportedAt": "2016-06-13T17:19:09.003+00:00",
+    "OctopusVersion": "3.3.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sitecore"
+}

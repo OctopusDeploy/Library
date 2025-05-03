@@ -1,0 +1,92 @@
+{
+  "Id": "0acca3d2-7afa-4c51-963e-6f204b009f85",
+  "Name": "File System - Backup Directory",
+  "Description": "Uses Robocopy to backup directories and files from a source to a destination.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function Get-Stamped-Destination($BackupDestination) {\r
+\t$stampedFolderName = get-date -format \"yyyy-MM-dd\"\r
+\t$count = 1\r
+\t$stampedDestination = Join-Path $BackupDestination $stampedFolderName\r
+\twhile(Test-Path $stampedDestination) {\r
+\t\t$count++\r
+\t\t$stamped = $stampedFolderName + \"(\" + $count + \")\"\r
+\t\t$stampedDestination = Join-Path $BackupDestination $stamped\r
+\t}\r
+\treturn $stampedDestination\r
+}\r
+\r
+$BackupSource = $OctopusParameters['BackupSource']\r
+$BackupDestination = $OctopusParameters['BackupDestination']\r
+$CreateStampedBackupFolder = $OctopusParameters['CreateStampedBackupFolder']\r
+if($CreateStampedBackupFolder -like \"True\" ) {\r
+\t$BackupDestination = get-stamped-destination $BackupDestination\r
+}\r
+\r
+$options = $OctopusParameters['Options'] -split \"\\s+\"\r
+\r
+if(Test-Path -Path $BackupSource) {\r
+    robocopy $BackupSource $BackupDestination $options\r
+}\r
+\r
+if($LastExitCode -gt 8) {\r
+    exit 1\r
+}\r
+else {\r
+    exit 0\r
+}\r
+",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Name": "BackupSource",
+      "Label": "Source",
+      "HelpText": "The source directory where files and folders will be copied from",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "BackupDestination",
+      "Label": "Destination folder",
+      "HelpText": "The Destination where the files will be copied to.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Options",
+      "Label": "Robocopy options",
+      "HelpText": "Robocopy accepts a few command line options (e.g. /S /E /Z). List of these can be [found here](http://ss64.com/nt/robocopy.html)",
+      "DefaultValue": "/E /V",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "CreateStampedBackupFolder",
+      "Label": "Create stamped backup folder",
+      "HelpText": "If set to _True_ then it will create a dated backup folder under the destination folder (e.g. c:\\backup\\2014-05-11)",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2016-08-25T15:50:24.584+00:00",
+    "OctopusVersion": "3.3.27",
+    "Type": "ActionTemplate"
+  },
+  "Category": "filesystem"
+}

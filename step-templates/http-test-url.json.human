@@ -1,0 +1,247 @@
+{
+  "Id": "f5cebc0a-cc16-4876-9f72-bfbd513e6fdd",
+  "Name": "HTTP - Test URL",
+  "Description": "Makes a GET request to a HTTP(S) end point and verifies that a particular status code and (optional) response is returned within a specified period of time.",
+  "ActionType": "Octopus.Script",
+  "Version": 18,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$uri = $OctopusParameters['Uri']
+$customHostHeader = $OctopusParameters['CustomHostHeader']
+$expectedCode = [int] $OctopusParameters['ExpectedCode']
+$timeoutSeconds = [int] $OctopusParameters['TimeoutSeconds']
+$Username = $OctopusParameters['AuthUsername']
+$Password = $OctopusParameters['AuthPassword']
+$UseWindowsAuth = [System.Convert]::ToBoolean($OctopusParameters['UseWindowsAuth'])
+$ExpectedResponse = $OctopusParameters['ExpectedResponse']
+$securityProtocol = $OctopusParameters['SecurityProtocol']
+
+Write-Host \"Starting verification request to $uri\"
+if ($customHostHeader)
+{
+    Write-Host \"Using custom host header $customHostHeader\"
+}
+
+Write-Host \"Expecting response code $expectedCode.\"
+Write-Host \"Expecting response: $ExpectedResponse.\"
+
+if ($securityProtocol)
+{
+    Write-Host \"Using security protocol $securityProtocol\"
+    [Net.ServicePointManager]::SecurityProtocol = [Enum]::parse([Net.SecurityProtocolType], $securityProtocol) 
+}
+
+$timer = [System.Diagnostics.Stopwatch]::StartNew()
+$success = $false
+do
+{
+    try
+    {
+        if ($Username -and $Password -and $UseWindowsAuth)
+        {
+            Write-Host \"Making request to $uri using windows authentication for user $Username\"
+            $request = [system.Net.WebRequest]::Create($uri)
+            $Credential = New-Object System.Management.Automation.PSCredential -ArgumentList $Username, $(ConvertTo-SecureString -String $Password -AsPlainText -Force)
+            $request.Credentials = $Credential 
+            
+            if ($customHostHeader)
+            {
+                $request.Host = $customHostHeader
+            }
+
+            try
+            {
+                $response = $request.GetResponse()
+            }
+            catch [System.Net.WebException]
+            {
+                Write-Host \"Request failed :-( System.Net.WebException\"
+                Write-Host $_.Exception
+                $response = $_.Exception.Response
+            }
+            
+        }
+\t\telseif ($Username -and $Password)
+        {
+            Write-Host \"Making request to $uri using basic authentication for user $Username\"
+            $Credential = New-Object System.Management.Automation.PSCredential -ArgumentList $Username, $(ConvertTo-SecureString -String $Password -AsPlainText -Force)
+            if ($customHostHeader)
+            {
+                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -Credential $Credential -Headers @{\"Host\" = $customHostHeader} -TimeoutSec $timeoutSeconds
+            }
+            else 
+            {
+                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -Credential $Credential -TimeoutSec $timeoutSeconds
+            }
+        }
+\t\telse
+        {
+            Write-Host \"Making request to $uri using anonymous authentication\"
+            if ($customHostHeader)
+            {
+                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -Headers @{\"Host\" = $customHostHeader} -TimeoutSec $timeoutSeconds
+            }
+            else 
+            {
+                $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -TimeoutSec $timeoutSeconds
+            }
+        }
+        
+        $code = $response.StatusCode
+        $body = $response.Content;
+        Write-Host \"Recieved response code: $code\"
+        Write-Host \"Recieved response: $body\"
+
+        if($response.StatusCode -eq $expectedCode)
+        {
+            $success = $true
+        }
+        if ($success -and $ExpectedResponse)
+        {
+            $success = ($ExpectedResponse -eq $body)
+        }
+    }
+    catch
+    {
+        # Anything other than a 200 will throw an exception so
+        # we check the exception message which may contain the 
+        # actual status code to verify
+        
+        Write-Host \"Request failed :-(\"
+        Write-Host $_.Exception
+
+        if($_.Exception -like \"*($expectedCode)*\")
+        {
+            $success = $true
+        }
+    }
+
+    if(!$success)
+    {
+        Write-Host \"Trying again in 5 seconds...\"
+        Start-Sleep -s 5
+    }
+}
+while(!$success -and $timer.Elapsed -le (New-TimeSpan -Seconds $timeoutSeconds))
+
+$timer.Stop()
+
+# Verify result
+
+if(!$success)
+{
+    throw \"Verification failed - giving up.\"
+}
+
+Write-Host \"Sucesss! Found status code $expectedCode\"",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Id": "ca7c3e92-c243-4115-a326-7693eb830214",
+      "Name": "Uri",
+      "Label": "URI",
+      "HelpText": "The full Uri of the endpoint",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0d760ed5-81ed-46d9-b833-74f75df08bfc",
+      "Name": "CustomHostHeader",
+      "Label": "Custom HOST header",
+      "HelpText": "An optional custom HOST header which will be passed with the request",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b4e57984-01df-4438-96e5-75e74c2c6188",
+      "Name": "SecurityProtocol",
+      "Label": "Security Protocol",
+      "HelpText": "The optional security protocol version to use for HTTPS requests.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "SystemDefault
+Ssl3
+Tls
+Tls11
+Tls12"
+      }
+    },
+    {
+      "Id": "8f47469e-3b6d-4915-a710-3a601debeb8a",
+      "Name": "ExpectedCode",
+      "Label": "Expected code",
+      "HelpText": "The expected HTTP status code",
+      "DefaultValue": "200",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7c96b2b3-53dd-4281-ae1a-ef67cbc0eb72",
+      "Name": "TimeoutSeconds",
+      "Label": "Timeout (Seconds)",
+      "HelpText": "The number of seconds before the step fails and times out",
+      "DefaultValue": "60",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ac0b303c-0c59-4776-be21-d93ebe9e28e7",
+      "Name": "AuthUsername",
+      "Label": "Username",
+      "HelpText": "Username for authentication. Leave blank to use Anonymous.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "38eae17a-3098-48df-b8dc-96c3185f9f40",
+      "Name": "AuthPassword",
+      "Label": "Password",
+      "HelpText": "Password for authentication. Leave blank for Anonymous.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "60fe87fe-e96d-448e-94fa-f2ce4bfbaf3a",
+      "Name": "UseWindowsAuth",
+      "Label": "Use Windows Authentication",
+      "HelpText": "Should the request be made passing windows authentication (kerberos) credentials otherwise uses basic authentication",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "47c779b5-c515-49f9-a122-f692b0f12ff7",
+      "Name": "ExpectedResponse",
+      "Label": "Expected Response",
+      "HelpText": "The response should be this text",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2020-06-16T08:03:12.574Z",
+    "OctopusVersion": "2020.2.13",
+    "Type": "ActionTemplate"
+  },
+  "Category": "http"
+}
