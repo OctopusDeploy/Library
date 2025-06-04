@@ -1,0 +1,86 @@
+{
+  "Id": "ac73fb02-8107-4747-bedf-7e39effa31d4",
+  "Name": ".NET Core - Check .NET Core Framework Version (Bash)",
+  "Description": "Check if given .NET Core framework version (or greater) is installed.",
+  "ActionType": "Octopus.Script",
+  "Version": 43,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "targetVersion=$(get_octopusvariable \"TargetVersion\")
+exact=$(get_octopusvariable \"Exact\")
+
+# required arguments checking
+if [[ ! $targetVersion ]] || [[ ! $exact ]] 
+then
+    echo \"[ERROR]: Missing required argument. Exit!\"
+    exit 1;
+fi
+
+dotNetCorePath=/usr/share/dotnet/shared/Microsoft.NETCore.App
+dotNetCoreVersions=()
+if [ -d \"$dotNetCorePath\" ]; then
+\tcd $dotNetCorePath
+    dotNetCoreVersions=(*/)
+fi
+
+matchedVersions=()
+for i in ${dotNetCoreVersions[@]}; do
+\tif [ $exact = true ] || [ $exact = True ]
+    then
+    \tif [[ $i = $targetVersion/ ]]
+        then
+        \tmatchedVersions+=(${i%/})
+        fi
+    else
+    \tif [[ ! $i < $targetVersion/ ]]
+        then
+        \tmatchedVersions+=(${i%/})
+        fi
+    fi
+done
+
+if [ ${#matchedVersions[@]} -eq 0 ]; then
+    echo \"Can't find .NET Core Runtime $targetVersion installed in the machine.\"
+    exit 1
+else
+    for i in ${matchedVersions[@]}; do
+    \techo \"Found .NET Core Runtime $i installed in the machine.\"
+\tdone
+fi"
+  },
+  "Parameters": [
+    {
+      "Id": "694207ec-0e0b-42a1-841b-81aa4ee5cb7d",
+      "Name": "TargetVersion",
+      "Label": "Target .NET Core framework version",
+      "HelpText": "The target .NET Core framework version you expect to be installed in the machine. For example, 2.0.5.",
+      "DefaultValue": "2.0.5",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b570ac4a-44a8-42ef-90c4-822530ff6d52",
+      "Name": "Exact",
+      "Label": "Exact",
+      "HelpText": "If you check \"Exact\", it means the installed .NET Core framework version MUST match target version.
+
+Otherwise, as long as the installed .NET Coreframework version is greater than or equal to target version, the check will pass.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2018-03-30T10:07:36.152Z",
+    "OctopusVersion": "2018.3.4",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "cjuroz",
+  "Category": "bash"
+}

@@ -1,0 +1,71 @@
+{
+  "Id": "75746f93-6c2b-4a52-b3b6-97e8dee09a81",
+  "Name": "Run MSTests",
+  "Description": "This Step template should be used for running MSTests by passing list of assemblies.",
+  "ActionType": "Octopus.Script",
+  "Version": 14,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "Write-Output \"Running MsTests tests...\"\r
+\r
+$exePath = '\"' + $MsTestExePath + '\"'\r
+if (-not $exePath) {\r
+    $exePath = \"mstest.exe\"\r
+}\r
+\r
+$runMsTest = \"& $exePath \"\r
+\r
+$MsTestAssemblies.Split(\";\") | ForEach {\r
+    $asm = \" /testcontainer:\"+$_.Trim()\r
+    Write-Output \"Including test container assembly $asm\"\r
+    $runMsTest += \"$asm\"\r
+}\r
+Write-Host $runMsTest\r
+cd $MsTestWorkingDirectoryPath\r
+Write-Host $MsTestWorkingDirectoryPath  \r
+\r
+iex $runMsTest\r
+$mstestExit = $lastExitCode\r
+\r
+\r
+exit $mstestExit",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "MsTestExePath",
+      "Label": "Ms Test Path",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "MsTestWorkingDirectoryPath",
+      "Label": "Working directory",
+      "HelpText": "The folder that contains the test assemblies. Generally this will be bound to an output variable from a previous step. Example: _#{Octopus.Action[Deploy integration tests].Output.Package.InstallationDirectoryPath}_",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "MsTestAssemblies",
+      "Label": "Test assemblies",
+      "HelpText": "A semicolon-separated list of assembly names containing tests. Example: _MyCompany.IntegrationTests.dll; MyCompany.SmokeTests.dll_",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2015-04-30T12:44:24.644+00:00",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  },
+  "Category": "tests"
+}

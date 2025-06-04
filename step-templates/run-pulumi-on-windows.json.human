@@ -1,0 +1,198 @@
+{
+  "Id": "b63d2573-9ff4-4ffe-83c7-153fad24ea57",
+  "Name": "Run Pulumi (Windows)",
+  "Description": "Allows you to run Pulumi commands using the Pulumi CLI. For Pulumi stacks that deploy AWS resources, make sure your Octopus Project contains a variable called `AWS` of type `AWS Account`. For Pulumi stacks that deploy Azure resources, set the variable `Azure` of type `Azure Subscriptions` (Service Principal).
+
+Learn more about adding an [AWS Account](https://octopus.com/docs/infrastructure/deployment-targets/aws#create-an-aws-account) or [Azure Subscriptions](https://octopus.com/docs/infrastructure/deployment-targets/azure#azure-service-principal) to your Octopus Deploy instance.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "Function Test-CommandExists
+{
+\tParam ($command)
+\t$oldPreference = $ErrorActionPreference
+\t$ErrorActionPreference = 'stop'
+\tTry {
+    \tif(Get-Command $command){
+        \treturn $true
+        }
+    } Catch {
+    \tWrite-Host \"$command does not exist\"
+        return $false
+    } Finally {
+    \t$ErrorActionPreference=$oldPreference
+   \t}
+}
+
+If ([string]::IsNullOrWhiteSpace($OctopusParameters[\"Pulumi.AccessToken\"])) {
+\tFail-Step \"Parameter Pulumi.AccessToken cannot be empty.\"
+}
+
+$env:PULUMI_ACCESS_TOKEN=$OctopusParameters[\"Pulumi.AccessToken\"]
+
+If ((Test-CommandExists pulumi) -eq $false) {
+\t(new-object net.webclient).DownloadFile(\"https://get.pulumi.com/install.ps1\",\"local.ps1\")
+    ./local.ps1
+\t$pulumiInstallRoot=(Join-Path $env:UserProfile \".pulumi\")
+\t$binRoot=(Join-Path $pulumiInstallRoot \"bin\")
+\t$env:Path+=\";$binRoot\"
+}
+
+# Check for AWS access key credentials and set those in the env.
+If (![string]::IsNullOrWhiteSpace($OctopusParameters[\"AWS.AccessKey\"])) {
+\t$env:AWS_ACCESS_KEY_ID=$OctopusParameters[\"AWS.AccessKey\"]
+}
+
+If (![string]::IsNullOrWhiteSpace($OctopusParameters[\"AWS.SecretKey\"])) {
+\t$env:AWS_SECRET_ACCESS_KEY=$OctopusParameters[\"AWS.SecretKey\"]
+}
+
+# Check for Azure SP/personal account credentials and set those in the env.
+If (![string]::IsNullOrWhiteSpace($OctopusParameters[\"Azure.Client\"])) {
+\t$env:ARM_CLIENT_ID=$OctopusParameters[\"Azure.Client\"]
+}
+
+If (![string]::IsNullOrWhiteSpace($OctopusParameters[\"Azure.Password\"])) {
+\t$env:ARM_CLIENT_SECRET=$OctopusParameters[\"Azure.Password\"]
+}
+
+If (![string]::IsNullOrWhiteSpace($OctopusParameters[\"Azure.TenantId\"])) {
+\t$env:ARM_TENANT_ID=$OctopusParameters[\"Azure.TenantId\"]
+}
+
+If (![string]::IsNullOrWhiteSpace($OctopusParameters[\"Azure.SubscriptionNumber\"])) {
+\t$env:ARM_SUBSCRIPTION_ID=$OctopusParameters[\"Azure.SubscriptionNumber\"]
+}
+
+Write-Host \"Logging in to Pulumi using access token\"
+pulumi login
+
+$cwd=$OctopusParameters[\"Pulumi.WorkingDirectory\"]
+If (![string]::IsNullOrWhiteSpace($cwd)) {
+\tcd $cwd
+}
+
+$stackName=$OctopusParameters[\"Pulumi.StackName\"]
+Write-Host \"Selecting stack $stackName\"
+Try {
+\tpulumi stack select $stackName
+}
+Catch {
+\t$createStackIfNotExists = $OctopusParameters[\"Pulumi.CreateStack\"]
+\tIf ($createStackIfNotExists -eq \"True\") {
+    \tpulumi stack init $stackName
+    } Else {
+    \tFail-Step \"Stack $stackName does not exist.\"
+    }
+}
+
+$restoreDeps=$OctopusParameters[\"Pulumi.RestoreDeps\"]
+If ($restoreDeps -eq \"True\") {
+\tWrite-Host \"Restoring dependencies...\"
+    $restoreDepsCmd = $OctopusParameters[\"Pulumi.RestoreCmd\"]
+    Invoke-Expression $restoreDepsCmd
+}
+
+$pulCmd=$OctopusParameters[\"Pulumi.Command\"]
+$pulArgs=$OctopusParameters[\"Pulumi.Args\"]
+If (![string]::IsNullOrWhiteSpace($pulArgs)) {
+\tpulumi $pulCmd $pulArgs
+}
+Else {
+\tpulumi $pulCmd
+}
+"
+  },
+  "Parameters": [{
+      "Id": "94a93122-235e-4edd-8217-adbe63db85f1",
+      "Name": "Pulumi.StackName",
+      "Label": "Stack Name",
+      "HelpText": "The fully-qualified stack name against which the Pulumi commands will be run. Hint: `{orgName}/{projectName}/{stackName}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "29e68d5d-5c46-4290-993c-51672a431812",
+      "Name": "Pulumi.Command",
+      "Label": "Command",
+      "HelpText": "Eg. `preview`, `up`, `destroy` etc. Learn more [here](https://www.pulumi.com/docs/reference/cli/).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "362423a8-aab4-451f-b79b-3896725b8c84",
+      "Name": "Pulumi.Args",
+      "Label": "Command Args",
+      "HelpText": "Arguments to pass to the Pulumi command. Eg. `-v` to set the verbosity or `--logtostderr` to log to the standard error. [Learn more](https://www.pulumi.com/docs/reference/cli/) about the available commands and the arguments you can pass to each of them.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9f6bda9f-39dd-47cf-9233-5499a837c4fb",
+      "Name": "Pulumi.AccessToken",
+      "Label": "Pulumi Access Token",
+      "HelpText": "The [Pulumi access token](https://www.pulumi.com/docs/intro/console/accounts-and-organizations/accounts/#access-tokens) to use. The access token must have access to the stack, which you are deploying. [Click here](https://app.pulumi.com/account/tokens) to go to the Access Tokens page on the Pulumi Console now.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "aa4310d6-52eb-4b37-9575-db6cfe7c3e3a",
+      "Name": "Pulumi.WorkingDirectory",
+      "Label": "Pulumi Working Directory",
+      "HelpText": "The working directory where the Pulumi app is extracted to. If this parameter is specified, then the step will `cd` into that directory. To avoid this, you can pass the `--cwd C:\\path\\to\\your\\dir` in the `Command Args` parameter as one of the args.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "04d21e39-3f74-435f-803d-b80c104e5c07",
+      "Name": "Pulumi.CreateStack",
+      "Label": "Create Stack",
+      "HelpText": "Whether to create a new stack if it does not exist already.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "4775234d-4d5c-454e-888c-1171f1b1c258",
+      "Name": "Pulumi.RestoreDeps",
+      "Label": "Restore Dependencies",
+      "HelpText": "Whether to restore dependencies.",
+      "DefaultValue": "true",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "6a1ddea9-76dd-4c32-bbf5-a5c451d6e251",
+      "Name": "Pulumi.RestoreCmd",
+      "Label": "The command used to restore dependencies.",
+      "HelpText": "(Optional) Required only if `Restore Dependencies` is true. The command used to restore dependencies for your Pulumi app. This is dependent on the runtime your Pulumi app uses. For example, if your Pulumi app uses the `nodejs` runtime, then use the command `npm install` here to restore dependencies.",
+      "DefaultValue": "npm install",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "praneetloke",
+  "$Meta": {
+    "ExportedAt": "2019-12-03T05:49:17.461Z",
+    "OctopusVersion": "2019.10.4",
+    "Type": "ActionTemplate"
+  },
+  "Category": "pulumi"
+}

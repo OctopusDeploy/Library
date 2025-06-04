@@ -1,0 +1,194 @@
+{
+    "Id": "ba43c3a7-fb77-4377-a1e2-e7918fb6df0b",
+    "Name": "SQL - Create Database If Not Exists Enhanced",
+    "Description": "Creates a database if the database does not exist without using SMO. ",
+    "ActionType": "Octopus.Script",
+    "Version": 3,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Initialize variables
+$connectionString = \"\"
+$sqlConnection = New-Object System.Data.SqlClient.SqlConnection
+
+# Determine authentication method
+switch ($createAuthenticationMethod)
+{
+\t\"AzureADManaged\"
+    {
+    \tWrite-Host \"Using Azure Managed Identity authentication ...\"
+        $connectionString = \"Server=$createSqlServer;Database=master;\"
+        
+        $response = Invoke-WebRequest -Uri 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fdatabase.windows.net%2F' -Method GET -Headers @{Metadata=\"true\"} -UseBasicParsing
+        $content = $response.Content | ConvertFrom-Json
+        $AccessToken = $content.access_token
+        
+        $sqlConnection.AccessToken = $AccessToken
+        break
+    }
+    \"SqlAuthentication\"
+    {
+    \tWrite-Host \"Using Sql account authentication ...\"
+        $connectionString = \"Server=$createSqlServer;Database=master;User ID=$createSqlLoginUserWhoHasCreateUserRights;Password=$createSqlLoginPasswordWhoHasRights;\"
+        break
+    }
+    \"WindowsIntegrated\"
+    {
+    \tWrite-Host \"Using Windows Integrated authentication ...\"
+        $connectionString = \"Server=$createSqlServer;Database=master;integrated security=true;\"
+        break
+    }
+}
+
+
+$sqlConnection.ConnectionString = $connectionString
+
+$command = $sqlConnection.CreateCommand()
+$command.CommandType = [System.Data.CommandType]'Text'
+$command.CommandTimeout = $createCommandTimeout
+
+Write-Host \"Opening the connection to $createSqlServer\"
+$sqlConnection.Open()
+
+$escapedDatabaseName = $createDatabaseName.Replace(\"'\", \"''\")
+
+Write-Host \"Running the if not exists then create for $createDatabaseName\"
+$command.CommandText = \"IF NOT EXISTS (select Name from sys.databases where Name = '$escapedDatabaseName')
+        create database [$createDatabaseName]\"
+        
+if (![string]::IsNullOrWhiteSpace($createAzureEdition))
+{
+\tWrite-Verbose \"Specifying Azure SqlDb Edition: $($createAzureEdition)\"
+\t$command.CommandText += (\"`r`n (EDITION = '{0}')\" -f $createAzureEdition)
+}
+
+if (![string]::IsNullOrWhiteSpace($createAzureBackupStorageRedundancy))
+{
+\tWrite-Verbose \"Specifying Azure Backup storage redundancy: $($createAzureBackupStorageRedundancy)\"
+\t$command.CommandText += (\"`r`n WITH BACKUP_STORAGE_REDUNDANCY='{0}'\" -f $createAzureBackupStorageRedundancy)
+}
+
+$command.CommandText += \";\"
+
+$command.ExecuteNonQuery()
+
+Write-Host \"Successfully created the account $createDatabaseName\"
+Write-Host \"Closing the connection to $createSqlServer\"
+$sqlConnection.Close()"
+    },
+    "Parameters": [
+      {
+        "Id": "4a30febf-479b-4427-a382-04a84183e1ae",
+        "Name": "createSqlServer",
+        "Label": "SQL Server",
+        "HelpText": "The SQL Server to perform the work on",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "9cfe1756-9e7d-4670-af75-1bb4a1899ce1",
+        "Name": "createAuthenticationMethod",
+        "Label": "Authentication Method",
+        "HelpText": "Select the method for authentication to the SQL Server.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "AzureADManaged|Azure Active Directory Managed Identity
+SqlAuthentication|SQL Authentication
+WindowsIntegrated|Windows Integrated"
+        }
+      },
+      {
+        "Id": "ba759a10-c230-4530-855a-2d7e210fe822",
+        "Name": "createSqlLoginUserWhoHasCreateUserRights",
+        "Label": "SQL Login",
+        "HelpText": "The login of the user who has permissions to create a database.
+
+Leave blank for integrated security",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0519fc45-e342-4982-beea-ab5123cad39b",
+        "Name": "createSqlLoginPasswordWhoHasRights",
+        "Label": "SQL Password",
+        "HelpText": "The password of the user who has permissions to create SQL Logins
+
+Leave blank for integrated security",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "0662b998-acf3-425d-8fff-abd93a4a038d",
+        "Name": "createDatabaseName",
+        "Label": "Database to create",
+        "HelpText": "The name of the database to create",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "4617d70a-fb52-4b1b-95f1-07929e47e7c0",
+        "Name": "createCommandTimeout",
+        "Label": "Command timeout",
+        "HelpText": "Number of seconds before throwing a timeout error.",
+        "DefaultValue": "30",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "7be71f0c-4df5-4f41-9b2f-3a29800a2e00",
+        "Name": "createAzureEdition",
+        "Label": "Azure database edition",
+        "HelpText": "Defines the database edition for Azure SQL Databases, leave blank if not using Azure.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "basic|Basic Edition
+standard|Standard Edition
+premium|Premium Edition
+generalpurpose|General Purpose Edition
+businesscritical|Business Critical Edition
+hyperscale|Hyperscale Edition"
+        }
+      },
+      {
+        "Id": "85c8ad9c-2515-45d5-b521-49d3518f2a15",
+        "Name": "createAzureBackupStorageRedundancy",
+        "Label": "Azure Backup Storage Redundacy",
+        "HelpText": "Defines the Azure [database backup storage redundancy](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-database-transact-sql?view=azuresqldb-current&tabs=sqlpool#backup_storage_redundancy). The default option is `GRS` when not specified. Leave blank if not using Azure.
+
+Note: `GZRS` is only available in a subset of Azure regions that have the current requirements: 
+
+- Database cannot be a `Basic` edition.
+- Have a geo-paired region 
+- Have multiple availability zones within both data centers (primary and secondary). ",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "LOCAL|Locally redundant storage (LRS)
+ZONE|Zone-redundant storage (ZRS)
+GEO|Geo-redundant storage (GRS)
+GEOZONE|Geo-Zone Redundant Storage (GZRS)"
+        }
+      }
+    ],
+    "StepPackageId": "Octopus.Script",
+    "$Meta": {
+      "ExportedAt": "2022-12-15T11:00:58.312Z",
+      "OctopusVersion": "2023.1.4314",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "harrisonmeister",
+    "Category": "sql"
+  }
