@@ -1,0 +1,244 @@
+{
+  "Id": "53fe7e02-d003-4860-bf15-1122a128d7c0",
+  "Name": "Kubernetes - Inspect Resources",
+  "Category": "k8s",
+  "LastModifiedBy": "mcasperson",
+  "Description": "Inspect K8S resources with common actions like get, describe and logs. Optionally create artifacts containing the output.",
+  "ActionType": "Octopus.KubernetesRunScript",
+  "Version": 6,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "<#
+    This script provides a general purpose method for querying Kubernetes resources. It supports common operations
+    like get, describe, logs and output formats like yaml and json. Output can be captured as artifacts.
+#>
+
+<#
+.Description
+Execute an application, capturing the output. Based on https://stackoverflow.com/a/33652732/157605
+#>
+Function Execute-Command ($commandPath, $commandArguments)
+{
+  Write-Host \"Executing: $commandPath $($commandArguments -join \" \")\"
+  
+  Try {
+    $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+    $pinfo.FileName = $commandPath
+    $pinfo.RedirectStandardError = $true
+    $pinfo.RedirectStandardOutput = $true
+    $pinfo.UseShellExecute = $false
+    $pinfo.Arguments = $commandArguments
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $pinfo
+    $p.Start() | Out-Null
+    [pscustomobject]@{
+        stdout = $p.StandardOutput.ReadToEnd()
+        stderr = $p.StandardError.ReadToEnd()
+        ExitCode = $p.ExitCode
+    }
+    $p.WaitForExit()
+  }
+  Catch {
+     exit
+  }
+}
+
+<#
+.Description
+Find any resource names that match a wildcard input if one was specified
+#>
+function Get-Resources() 
+{
+    $names = $OctopusParameters[\"K8SInspectNames\"] -Split \"`n\" | % {$_.Trim()}
+    
+    if ($OctopusParameters[\"K8SInspectNames\"] -match '\\*' )
+    {
+        return Execute-Command kubectl (@(\"-o\", \"json\", \"get\", $OctopusParameters[\"K8SInspectResource\"])) |
+            # Select the stdout property from the execution
+            Select-Object -ExpandProperty stdout |
+            # Convert the output from JSON
+            ConvertFrom-JSON | 
+            # Get the items object from the kubectl response
+            % {if ((Get-Member -InputObject $_ -Name items).Count -ne 0) {Select-Object -InputObject $_ -ExpandProperty items} else {$_}} |
+            # Extract the name
+            % {$_.metadata.name} |
+            # Find any matching resources
+            ? {$k8sName = $_; ($names | ? {$k8sName -like $_}).Count -ne 0}
+    }
+    else
+    {
+        return $names
+    }
+}
+
+<#
+.Description
+Get the kubectl arguments for a given action
+#>
+function Get-KubectlVerb() 
+{
+    switch($OctopusParameters[\"K8SInspectKubectlVerb\"])
+    {
+        \"get json\" {return ,@(\"-o\", \"json\", \"get\")}
+        \"get yaml\" {return ,@(\"-o\", \"yaml\", \"get\")}
+        \"describe\" {return ,@(\"describe\")}
+        \"logs\" {return ,@(\"logs\")}
+        \"logs tail\" {return ,@(\"logs\", \"--tail\", \"100\")}
+        \"previous logs\" {return ,@(\"logs\", \"--previous\")}
+        \"previous logs tail\" {return ,@(\"logs\", \"--previous\", \"--tail\", \"100\")}
+        default {return ,@(\"get\")}
+    }
+}
+
+<#
+.Description
+Get an appropiate file extension based on the selected action
+#>
+function Get-ArtifactExtension() 
+{
+   switch($OctopusParameters[\"K8SInspectKubectlVerb\"])
+    {
+        \"get json\" {\"json\"}
+        \"get yaml\" {\"yaml\"}
+        default {\"txt\"}
+    }
+}
+
+if ($OctopusParameters[\"K8SInspectKubectlVerb\"] -like \"*logs*\") 
+{
+    if ( -not @($OctopusParameters[\"K8SInspectResource\"]) -like \"pod*\")
+    {
+        Write-Error \"Logs can only be returned for pods, not $($OctopusParameters[\"K8SInspectResource\"])\"
+    }
+    else
+    {
+        Execute-Command kubectl (@(\"-o\", \"json\", \"get\", \"pods\") + (Get-Resources)) |
+            # Select the stdout property from the execution
+            Select-Object -ExpandProperty stdout |
+            # Convert the output from JSON
+            ConvertFrom-JSON | 
+            # Get the items object from the kubectl response
+            % {if ((Get-Member -InputObject $_ -Name items).Count -ne 0) {Select-Object -InputObject $_ -ExpandProperty items} else {$_}} |
+            # Get the pod logs for each container
+            % {
+                $podDetails = $_
+                @{
+                    logs=$podDetails.spec.containers | % {$logs=\"\"} {$logs += (Select-Object -InputObject (Execute-Command kubectl ((Get-KubectlVerb) + @($podDetails.metadata.name, \"-c\", $_.name))) -ExpandProperty stdout)} {$logs}; 
+                    name=$podDetails.metadata.name
+                }                
+            } |
+            # Write the output
+            % {Write-Host $_.logs; $_} |
+            # Optionally capture the artifact
+            % {
+                if ($OctopusParameters[\"K8SInspectCreateArtifact\"] -ieq \"true\") 
+                {
+                    Set-Content -Path \"$($_.name).$(Get-ArtifactExtension)\" -Value $_.logs
+                    New-OctopusArtifact \"$($_.name).$(Get-ArtifactExtension)\"
+                }
+            }
+    }      
+}
+else
+{
+    Execute-Command kubectl ((Get-KubectlVerb) + @($OctopusParameters[\"K8SInspectResource\"]) + (Get-Resources)) |
+        % {Select-Object -InputObject $_ -ExpandProperty stdout} |
+        % {Write-Host $_; $_} |
+        % {
+            if ($OctopusParameters[\"K8SInspectCreateArtifact\"] -ieq \"true\") 
+            {
+                Set-Content -Path \"output.$(Get-ArtifactExtension)\" -Value $_
+                New-OctopusArtifact \"output.$(Get-ArtifactExtension)\"
+            }
+        }
+}
+",
+    "Octopus.Action.KubernetesContainers.Namespace": "#{if K8SInspectNamespace}#{K8SInspectNamespace}#{/if}#{unless K8SInspectNamespace}#{Octopus.Action.Kubernetes.Namespace}#{/unless}"
+  },
+  "Parameters": [
+    {
+      "Id": "8a1ebc8c-ddf3-42bb-be49-9b36ee417f5d",
+      "Name": "K8SInspectResource",
+      "Label": "Resource",
+      "HelpText": "The type of Kubernetes resource to inspect. The list provided is not comprehensive, and any resource can be used if the field is bound.",
+      "DefaultValue": "pod",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "pod|Pod
+service|Service
+ingress|Ingress
+deployment|Deployment
+statefulset|StatefulSet
+daemonset|DaemonSet
+replicaset|ReplicaSet
+configmap|ConfigMap
+secret|Secret
+node|Node
+virtualservice|VirtualService
+gateway|Gateway
+persistentvolume|PersistentVolume
+serviceaccount|Service Account
+rolebinding|Role Binding
+clusterrolebinding|Cluster Role Binding
+role|Role
+clusterrole|Cluster Role"
+      }
+    },
+    {
+      "Id": "735e2fa4-4f9a-4183-aafe-653f3f6fb103",
+      "Name": "K8SInspectKubectlVerb",
+      "Label": "Kubectl Verb",
+      "HelpText": "The action used to inspect the Kubernetes resource.",
+      "DefaultValue": "get",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "get|Get
+get json|Get JSON
+get yaml|Get YAML
+logs|Pod Logs
+logs tail|Pod Logs Tail
+previous logs|Previous Pod Logs
+previous logs tail|Previous Pod Logs Tail
+describe|Describe"
+      }
+    },
+    {
+      "Id": "9c9dcd65-07eb-4e7d-a61a-370d35d1cf76",
+      "Name": "K8SInspectNames",
+      "Label": "Resource Names",
+      "HelpText": "An optional line break separated list of resources to inspect. If left blank, all resources are inspected. An asterisk can be used as a wildcard.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "4805afba-9ff9-45a6-b2c2-764c2d0e5240",
+      "Name": "K8SInspectCreateArtifact",
+      "Label": "Create Artifact",
+      "HelpText": "Check this to create an artifact capturing the output of the kubectl command.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "da70800b-0ec2-4bef-918c-08ef88c9f411",
+      "Name": "K8SInspectNamespace",
+      "Label": "Namespace",
+      "HelpText": "The Kubernetes namespace to inspect. Leave blank to use the default namespace of the Kubernetes target.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-04-22T01:41:35.012Z",
+    "OctopusVersion": "2020.2.4-ci0070",
+    "Type": "ActionTemplate"
+  }
+}

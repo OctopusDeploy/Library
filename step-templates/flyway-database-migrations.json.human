@@ -1,0 +1,1087 @@
+{
+  "Id": "ccebac39-79a8-4ab4-b55f-19ea570d9ebc",
+  "Name": "Flyway Database Migrations",
+  "Description": "Step template to leverage Flyway to deploy migration scripts.  This is the latest and greatest Flyway step template that leverages all the newest features of both Flyway and Octopus Deploy.
+
+- You can include the flyway executables in your package, if you include the `flyway` (Linux) or `flyway.cmd` (Windows) in the root of the package this step template will automatically find them.
+- You can use this with an execution container, negating the need to include Flyway in the package. If Flyway isn't found in the package it will attempt to find `/flyway/flyway` (when using Linux containers) or `flyway` in the environment path and use that.
+- Support for all Flyway commands, including the `undo` command.
+- Support for flyway community, teams, enterprise, and pro editions.  
+
+Please note this requires Octopus Deploy **2019.10.0** or newer along with PowerShell Core installed on the machines running this step.
+AWS EC2 IAM Authentication requires the AWS CLI to be installed.",
+  "ActionType": "Octopus.Script",
+  "Version": 14,
+  "Packages": [
+    {
+      "Name": "Flyway.Package.Value",
+      "Id": "0c0d333c-d794-4a16-a3a2-4bbba4550763",
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "Flyway.Package.Value"
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$VerboseActionPreference=\"Continue\"
+
+function Get-FlywayExecutablePath
+{
+\tparam (
+    \t$providedPath
+    )
+    
+    if ([string]::IsNullOrWhiteSpace($providedPath) -eq $false)
+    {
+    \tWrite-Host \"The executable path was provided, testing to see if it is absolute or relative\"
+\t\tif ([IO.Path]::IsPathRooted($providedPath))
+        {
+        \tWrite-Host \"The provided path is absolute, using that\"
+            
+        \treturn $providedPath
+        }
+        
+        Write-Host \"The provided path was relative, combining $(Get-Location) with $providedPath\"
+        return Join-Path $(Get-Location) $providedPath
+    }
+    
+    Write-Host \"Checking to see if we are currently running on Linux\"
+    if ($IsLinux)    
+    {
+    \tWrite-Host \"Currently running on Linux\"
+    \tWrite-Host \"Checking to see if flyway was included with the package\"
+    \tif (Test-Path \"./flyway\")
+        {
+        \tWrite-Host \"It was, using that version of flyway\"
+        \treturn \"flyway\"
+        }
+        
+        Write-Host \"Testing to see if we are on an execution container with /flyway/flyway as the path\"
+    \tif (Test-Path \"/flyway/flyway\")
+        {
+        \tWrite-Host \"We are, using /flyway/flyway\"
+        \treturn \"/flyway/flyway\"
+        }               
+    }
+    
+    Write-Host \"Currently running on Windows\"
+    
+    Write-Host \"Testing to see if flyway.cmd was included with the package\"
+    if (Test-Path \".\\flyway.cmd\")
+    {
+    \tWrite-Host \"It was, using that version.\"
+    \treturn \".\\flyway.cmd\"
+    }
+    
+    Write-Host \"Testing to see if flyway can be found in the env path\"
+    $flywayExecutable = (Get-Command \"flyway\" -ErrorAction SilentlyContinue)
+    if ($null -ne $flywayExecutable)
+    {
+    \tWrite-Host \"The flyway folder is part of the environment path\"
+        return $flywayExecutable.Source
+    }
+    
+    Fail-Step \"Unable to find flyway executable.  Please include it as part of the package, or provide the path to it.\"
+}
+
+function Test-AddParameterToCommandline
+{
+\tparam (
+    \t$acceptedCommands,
+        $selectedCommand,
+        $parameterValue,
+        $defaultValue,
+        $parameterName
+    )
+    
+    if ([string]::IsNullOrWhiteSpace($parameterValue) -eq $true)
+    {    \t
+    \tWrite-Verbose \"$parameterName is empty, returning false\"
+    \treturn $false
+    }
+    
+    if ([string]::IsNullOrWhiteSpace($defaultValue) -eq $false -and $parameterValue.ToLower().Trim() -eq $defaultValue.ToLower().Trim())
+    {
+    \tWrite-Verbose \"$parameterName is matches the default value, returning false\"
+    \treturn $false
+    }
+    
+    if ([string]::IsNullOrWhiteSpace($acceptedCommands) -eq $true -or $acceptedCommands -eq \"any\")
+    {
+    \tWrite-Verbose \"$parameterName has a value and this is for any command, returning true\"
+    \treturn $true
+    }
+    
+    $acceptedCommandArray = $acceptedCommands -split \",\"
+    foreach ($command in $acceptedCommandArray)
+    {
+    \tif ($command.ToLower().Trim() -eq $selectedCommand.ToLower().Trim())
+        {
+        \tWrite-Verbose \"$parameterName has a value and the current command $selectedCommand matches the accepted command $command, returning true\"
+        \treturn $true
+        }
+    }
+    
+    Write-Verbose \"$parameterName has a value but is not accepted in the current command, returning false\"
+    return $false
+}
+
+function Get-ParsedUrl
+{
+\t# Define parameters
+    param (
+    \t$ConnectionUrl
+    )
+    
+    # Remove the 'jdbc:' portion from the $ConnectionUrl parameter
+    $ConnectionUrl = $ConnectionUrl.ToLower().Replace(\"jdbc:\", \"\")
+    
+    # Parse and return the url
+    return [System.Uri]$ConnectionUrl
+}
+
+# Declaring the path to the NuGet package
+$flywayPackagePath = $OctopusParameters[\"Octopus.Action.Package[Flyway.Package.Value].ExtractedPath\"]
+$flywayUrl = $OctopusParameters[\"Flyway.Target.Url\"]
+$flywayUser = $OctopusParameters[\"Flyway.Database.User\"]
+$flywayUserPassword = $OctopusParameters[\"Flyway.Database.User.Password\"]
+$flywayCommand = $OctopusParameters[\"Flyway.Command.Value\"]
+$flywayLicenseKey = $OctopusParameters[\"Flyway.License.Key\"]
+$flywayExecutablePath = $OctopusParameters[\"Flyway.Executable.Path\"]
+$flywaySchemas = $OctopusParameters[\"Flyway.Command.Schemas\"]
+$flywayTarget = $OctopusParameters[\"Flyway.Command.Target\"]
+$flywayInfoSinceDate = $OctopusParameters[\"Flyway.Command.InfoSinceDate\"]
+$flywayInfoSinceVersion = $OctopusParameters[\"Flyway.Command.InfoSinceVersion\"]
+$flywayLicensedEdition = $OctopusParameters[\"Flyway.License.Version\"]
+$flywayCherryPick = $OctopusParameters[\"Flyway.Command.CherryPick\"]
+$flywayOutOfOrder = $OctopusParameters[\"Flyway.Command.OutOfOrder\"]
+$flywaySkipExecutingMigrations = $OctopusParameters[\"Flyway.Command.SkipExecutingMigrations\"]
+$flywayPlaceHolders = $OctopusParameters[\"Flyway.Command.PlaceHolders\"]
+$flywayBaseLineVersion = $OctopusParameters[\"Flyway.Command.BaselineVersion\"]
+$flywayBaselineDescription = $OctopusParameters[\"Flyway.Command.BaselineDescription\"]
+$flywayAuthenticationMethod = $OctopusParameters[\"Flyway.Authentication.Method\"]
+$flywayLocations = $OctopusParameters[\"Flyway.Command.Locations\"]
+$flywayAdditionalArguments = $OctopusParameters[\"Flyway.Additional.Arguments\"]
+$flywayStepName = $OctopusParameters[\"Octopus.Action.StepName\"]
+$flywayEnvironment = $OctopusParameters[\"Octopus.Environment.Name\"]
+$flywayCheckBuildUrl = $OctopusParameters[\"Flyway.Command.CheckBuildUrl\"]
+$flywayCheckBuildUsername = $OctopusParameters[\"Flyway.Database.Check.User\"]
+$flywayCheckBuildPassword = $OctopusParameters[\"Flyway.Database.Check.User.Password\"]
+$flywayBaselineOnMigrate = $OctopusParameters[\"Flyway.Command.BaseLineOnMigrate\"]
+$flywaySnapshotFileName = $OctopusParameters[\"Flyway.Command.Snapshot.FileName\"]
+$flywayCheckFailOnDrift = $OctopusParameters[\"Flyway.Command.FailOnDrift\"]
+
+if ([string]::IsNullOrWhitespace($flywayLocations))
+{
+\t$flywayLocations = \"filesystem:$flywayPackagePath\"
+}
+
+
+# Logging for troubleshooting
+Write-Host \"*******************************************\"
+Write-Host \"Logging variables:\"
+Write-Host \" - - - - - - - - - - - - - - - - - - - - -\"
+Write-Host \"PackagePath: $flywayPackagePath\"
+Write-Host \"Flyway Executable Path: $flywayExecutablePath\"
+Write-Host \"Flyway Command: $flywayCommand\"
+Write-Host \"-url: $flywayUrl\"
+Write-Host \"-user: $flywayUser\"
+Write-Host \"-schemas: $flywaySchemas\"
+Write-Host \"-target: $flywayTarget\"
+Write-Host \"-cherryPick: $flywayCherryPick\"
+Write-Host \"-outOfOrder: $flywayOutOfOrder\"
+Write-Host \"-skipExecutingMigrations: $flywaySkipExecutingMigrations\"
+Write-Host \"-infoSinceDate: $flywayInfoSinceDate\"
+Write-Host \"-infoSinceVersion: $flywayInfoSinceVersion\"
+Write-Host \"-baselineOnMigrate: $flywayBaselineOnMigrate\"
+Write-Host \"-baselineVersion: $flywayBaselineVersion\"
+Write-Host \"-baselineDescription: $flywayBaselineDescription\"
+Write-Host \"-locations: $flywayLocations\"
+Write-Host \"-check.BuildUrl: $flywayCheckBuildUrl\"
+Write-Host \"-check.failOnDrift: $flywayCheckFailOnDrift\"
+Write-Host \"-snapshot.FileName OR check.DeployedSnapshot: $flywaySnapshotFileName\"
+Write-Host \"Additional Arguments: $flywayAdditionalArguments\"
+Write-Host \"placeHolders: $flywayPlaceHolders\"
+Write-Host \"*******************************************\"
+
+if ($null -eq $IsWindows) {
+    Write-Host \"Determining Operating System...\"
+    $IsWindows = ([System.Environment]::OSVersion.Platform -eq \"Win32NT\")
+    $IsLinux = ([System.Environment]::OSVersion.Platform -eq \"Unix\")
+}
+
+Write-Host \"Setting execution location to: $flywayPackagePath\"
+Set-Location $flywayPackagePath
+
+$flywayCmd = Get-FlywayExecutablePath -providedPath $flywayExecutablePath
+
+$commandToUse = $flywayCommand
+if ($flywayCommand -eq \"migrate dry run\")
+{
+\t$commandToUse = \"migrate\"
+}
+
+if ($flywayCommand -eq \"check dry run\" -or $flywayCommand -eq \"check changes\" -or $flywayCommand -eq \"check drift\")
+{
+\t$commandToUse = \"check\"
+}
+
+$arguments = @(
+\t$commandToUse    
+)
+
+if ($flywayCommand -eq \"check dry run\")
+{
+\t$arguments += \"-dryrun\"
+}
+
+if ($flywayCommand -eq \"check changes\")
+{
+\t$arguments += \"-changes\"
+    $arguments += \"-dryrun\"
+}
+
+if ($flywayCommand -eq \"check drift\")
+{
+\t$arguments += \"-drift\"
+}
+
+# Deteremine authentication method
+switch ($flywayAuthenticationMethod)
+{
+\t\"awsiam\"
+    {
+\t\t# Check to see if OS is Windows and running in a container
+        if ($IsWindows -and $env:DOTNET_RUNNING_IN_CONTAINER)
+        {
+        \tthrow \"IAM Role authentication is not supported in a Windows container.\"
+        }
+
+\t\t# Get parsed connection string url
+        $parsedUrl = Get-ParsedUrl -ConnectionUrl $flywayUrl
+        
+        # Region is part of the RDS endpoint, extract
+        $region = ($parsedUrl.Host.Split(\".\"))[2]
+
+\t\tWrite-Host \"Generating AWS IAM token ...\"
+\t\t$flywayUserPassword = (aws rds generate-db-auth-token --hostname $parsedUrl.Host --region $region --port $parsedUrl.Port --username $flywayUser)
+
+\t\t$arguments += \"-user=`\"$flywayUser`\"\"
+    \t$arguments += \"-password=`\"$flywayUserPassword`\"\"
+
+\t\tbreak
+    }
+\t\"azuremanagedidentity\"
+    {
+\t\t# Check to see if OS is Windows and running in a container
+        if ($IsWindows -and $env:DOTNET_RUNNING_IN_CONTAINER)
+        {
+        \tthrow \"Azure Managed Identity is not supported in a Windows container.\"
+        }
+        
+        # SQL Server driver doesn't assign password
+        if (!$flywayUrl.ToLower().Contains(\"jdbc:sqlserver:\"))
+        {        
+          # Get login token
+          Write-Host \"Generating Azure Managed Identity token ...\"
+          $token = Invoke-RestMethod -Method GET -Uri \"http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://ossrdbms-aad.database.windows.net\" -Headers @{\"MetaData\" = \"true\"} -UseBasicParsing
+
+          $flywayUserPassword = $token.access_token
+          $arguments += \"-password=`\"$flywayUserPassword`\"\"
+          $arguments += \"-user=`\"$flywayUser`\"\"
+        }
+        else
+        {
+            
+\t\t\t# Check to see if the querstring parameter for Azure Managed Identity is present
+            if (!$flywayUrl.ToLower().Contains(\"authentication=activedirectorymsi\"))
+            {
+                # Add the authentication piece to the jdbc url
+                if (!$flywayUrl.EndsWith(\";\"))
+                {
+                \t# Add the separator
+                    $flywayUrl += \";\"
+                }
+                
+                # Add authentication piece
+                $flywayUrl += \"Authentication=ActiveDirectoryMSI\"
+            }
+        }
+        
+        break
+    }
+    \"gcpserviceaccount\"
+    {
+\t\t# Check to see if OS is Windows and running in a container
+        if ($IsWindows -and $env:DOTNET_RUNNING_IN_CONTAINER)
+        {
+        \tthrow \"GCP Service Account authentication is not supported in a Windows container.\"
+        }
+    
+        # Define header
+        $header = @{ \"Metadata-Flavor\" = \"Google\"}
+
+        # Retrieve service accounts
+        $serviceAccounts = Invoke-RestMethod -Method Get -Uri \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/\" -Headers $header -UseBasicParsing
+
+        # Results returned in plain text format, get into array and remove empty entries
+        $serviceAccounts = $serviceAccounts.Split([Environment]::NewLine, [StringSplitOptions]::RemoveEmptyEntries)
+
+        # Retreive the specific service account assigned to the VM
+        $serviceAccount = $serviceAccounts | Where-Object {$_.ToLower().Contains(\"iam.gserviceaccount.com\") }
+
+\t\tWrite-Host \"Generating GCP IAM token ...\"
+        # Retrieve token for account
+        $token = Invoke-RestMethod -Method Get -Uri \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/$serviceAccount/token\" -Headers $header -UseBasicParsing
+        
+        $flywayUserPassword = $token.access_token
+        
+        $arguments += \"-user=`\"$flywayUser`\"\"
+        $arguments += \"-password=`\"$flywayUserPassword`\"\"
+        #$env:FLYWAY_PASSWORD = $flywayUserPassword
+        
+        break
+    }   
+    \"usernamepassword\"
+    {
+    \t# Add password
+        Write-Host \"Testing for parameters that can be applied to any command\"
+        if (Test-AddParameterToCommandline -parameterValue $flywayUser -acceptedCommands \"any\" -selectedCommand $flywayCommand -parameterName \"-user\")
+        {
+            Write-Host \"User provided, adding user and password command line argument\"
+            $arguments += \"-user=`\"$flywayUser`\"\"
+            $arguments += \"-password=`\"$flywayUserPassword`\"\"
+        }
+        
+        break
+    }
+    \"windowsauthentication\"
+    {
+    \t# Display to the user they've selected windows authentication.  Though this is dictated by the jdbc url, this is added to make sure the user knows that's what is
+        # being used
+        Write-Host \"Using Windows Authentication\"
+        
+        # Check for integratedauthentication=true in url
+        if (!$flywayUrl.ToLower().Contains(\"integratedsecurity=true\"))
+        {
+        \t# Check to see if the connection url ends with a ;
+            if (!$flywayUrl.EndsWith(\";\"))
+            {
+            \t# Add the ;
+                $flywayUrl += \";\"
+            }
+            
+            $flywayUrl += \"integratedSecurity=true;\"
+        }
+        break
+    }
+}
+
+$arguments += \"-url=`\"$flywayUrl`\"\"
+$arguments += \"-locations=`\"$flywayLocations`\"\"
+
+if (Test-AddParameterToCommandline -parameterValue $flywaySchemas -acceptedCommands \"any\" -selectedCommand $flywayCommand -parameterName \"-schemas\")
+{
+\tWrite-Host \"Schemas provided, adding schemas command line argument\"
+\t$arguments += \"-schemas=`\"$flywaySchemas`\"\"    
+}
+
+if (Test-AddParameterToCommandline -parameterValue $flywayLicenseKey -acceptedCommands \"any\" -selectedCommand $flywayCommand -parameterName \"-licenseKey\")
+{
+\tWrite-Host \"License key provided, adding -licenseKey command line argument\"
+\t$arguments += \"-licenseKey=`\"$flywayLicenseKey`\"\"                  
+}
+Write-Host \"Finished testing for parameters that can be applied to any command, moving onto command specific parameters\"
+
+if (Test-AddParameterToCommandline -parameterValue $flywayCherryPick -acceptedCommands \"migrate,info,validate,check\" -selectedCommand $flywayCommand -parameterName \"-cherryPick\")
+{
+\tWrite-Host \"Cherry pick provided, adding cherry pick command line argument\"
+\t$arguments += \"-cherryPick=`\"$flywayCherryPick`\"\"    
+}
+
+if (Test-AddParameterToCommandline -parameterValue $flywayOutOfOrder -defaultValue \"false\" -acceptedCommands \"migrate,info,validate,check\" -selectedCommand $commandToUse -parameterName \"-outOfOrder\")
+{
+\tWrite-Host \"Out of order is not false, adding out of order command line argument\"
+\t$arguments += \"-outOfOrder=`\"$flywayOutOfOrder`\"\"    
+}
+
+if (Test-AddParameterToCommandline -parameterValue $flywayPlaceHolders -acceptedCommands \"migrate,info,validate,undo,repair,check\" -selectedCommand $commandToUse -parameterName \"-placeHolders\")
+{
+\tWrite-Host \"Placeholder parameter provided, adding them to the command line arguments\"
+    
+    $placeHolderValueList = @(($flywayPlaceHolders -Split \"`n\").Trim())
+    foreach ($placeHolder in $placeHolderValueList)
+    {
+    \t$placeHolderSplit = $placeHolder -Split \"::\"
+        $placeHolderKey = $placeHolderSplit[0]
+        $placeHolderValue = $placeHolderSplit[1]
+        Write-Host \"Adding -placeHolders.$placeHolderKey = $placeHolderValue to the argument list\"
+        
+        $arguments += \"-placeholders.$placeHolderKey=`\"$placeHolderValue`\"\"    
+    }   \t
+}
+
+if (Test-AddParameterToCommandline -parameterValue $flywayTarget -acceptedCommands \"migrate,info,validate,undo,check\" -selectedCommand $commandToUse -parameterName \"-target\")
+{
+\tWrite-Host \"Target provided, adding target command line argument\"
+
+\tif ($flywayTarget.ToLower().Trim() -eq \"latest\" -and $flywayCommand -eq \"undo\")
+\t{
+\t\tWrite-Host \"The current target is latest, but the command is undo, changing the target to be current\"
+\t\t$flywayTarget = \"current\"
+\t}
+
+\t$arguments += \"-target=`\"$flywayTarget`\"\"    
+}
+
+if (Test-AddParameterToCommandline -parameterValue $flywaySkipExecutingMigrations -defaultValue \"false\" -acceptedCommands \"migrate\" -selectedCommand $flywayCommand -parameterName \"-skipExecutingMigrations\")
+{
+\tWrite-Host \"Skip executing migrations is not false, adding skip executing migrations command line argument\"
+\t$arguments += \"-skipExecutingMigrations=`\"$flywaySkipExecutingMigrations`\"\"    
+}
+
+if (Test-AddParameterToCommandline -parameterValue $flywayBaselineOnMigrate -defaultValue \"false\" -acceptedCommands \"migrate\" -selectedCommand $flywayCommand -parameterName \"-baselineOnMigrate\")
+{
+\tWrite-Host \"Baseline on migrate is not false, adding the baseline on migrate argument\"
+\t$arguments += \"-baselineOnMigrate=`\"$flywayBaselineOnMigrate`\"\"    
+    
+    if (Test-AddParameterToCommandline -parameterValue $flywayBaselineVersion -acceptedCommands \"migrate\" -selectedCommand $flywayCommand -parameterName \"-baselineVersion\")
+    {
+    \tWrite-Host \"Baseline version has been specified, adding baseline version argument\"
+\t\t$arguments += \"-baselineVersion=`\"$flywayBaselineVersion`\"\"  
+    }
+}
+
+if (Test-AddParameterToCommandline -parameterValue $flywayBaselineVersion -acceptedCommands \"baseline\" -selectedCommand $flywayCommand -parameterName \"-baselineVersion\")
+{
+\tWrite-Host \"Doing a baseline, adding baseline version and description\"
+\t$arguments += \"-baselineVersion=`\"$flywayBaselineVersion`\"\"    
+    $arguments += \"-baselineDescription=`\"$flywayBaselineDescription`\"\"    
+}
+
+if (Test-AddParameterToCommandline -parameterValue $flywayInfoSinceDate -acceptedCommands \"info\" -selectedCommand $flywayCommand -parameterName \"-infoSinceDate\")
+{
+\tWrite-Host \"Info since date has been provided, adding that to the command line arguments\"
+\t$arguments += \"-infoSinceDate=`\"$flywayInfoSinceDate`\"\"
+}
+
+if (Test-AddParameterToCommandline -parameterValue $flywayInfoSinceVersion -acceptedCommands \"info\" -selectedCommand $flywayCommand -parameterName \"-infoSinceVersion\")
+{
+\tWrite-Host \"Info since version has been provided, adding that to the command line arguments\"
+\t$arguments += \"-infoSinceVersion=`\"$flywayInfoSinceVersion`\"\"
+} 
+
+if (Test-AddParameterToCommandline -parameterValue $flywaySnapshotFileName -acceptedCommands \"snapshot\" -selectedCommand $commandToUse -parameterName \"-snapshot.filename\")
+{
+\tWrite-Host \"Snapshot filename has been provided, adding that to the command line arguments\"
+    $folderName = Split-Path -Parent $flywaySnapshotFileName
+    if ((test-path $folderName) -eq $false)
+    {
+    \tNew-Item $folderName -ItemType Directory
+    }
+    $arguments += \"-snapshot.filename=`\"$flywaySnapshotFileName`\"\"
+}
+
+$snapshotFileNameforCheckProvided = $false
+if (Test-AddParameterToCommandline -parameterValue $flywaySnapshotFileName -acceptedCommands \"check\" -selectedCommand $commandToUse -parameterName \"-check.deployedSnapshot\")
+{
+\tWrite-Host \"Snapshot filename has been provided for the check command, adding that to the command line arguments\"
+    $folderName = Split-Path -Parent $flywaySnapshotFileName
+    if ((test-path $folderName) -eq $false)
+    {
+    \tNew-Item $folderName -ItemType Directory
+    }
+    $arguments += \"-check.deployedSnapshot=`\"$flywaySnapshotFileName`\"\"
+    $snapshotFileNameforCheckProvided = $true
+}
+
+if ((Test-AddParameterToCommandline -parameterValue $flywayCheckBuildUrl -acceptedCommands \"check\" -selectedCommand $commandToUse -parameterName \"-check.buildUrl\") -eq $true -and $snapshotFileNameforCheckProvided -eq $false)
+{
+\tWrite-Host \"Check build URL has been provided, adding that to the command line arguments\"
+\t$arguments += \"-check.buildUrl=`\"$flywayCheckBuildUrl`\"\"
+}
+
+Write-Host \"Checking to see if the check username and password were supplied\"
+if ((Test-AddParameterToCommandline -parameterValue $flywayCheckBuildUsername -acceptedCommands \"check\" -selectedCommand $commandToUse -parameterName \"-user\")  -eq $true -and $snapshotFileNameforCheckProvided -eq $false)
+{
+\tWrite-Host \"Check User provided, adding check user and check password command line argument\"
+\t$arguments += \"-check.buildUser=`\"$flywayCheckBuildUsername`\"\"
+\t$arguments += \"-check.buildPassword=`\"$flywayCheckBuildPassword`\"\"
+}
+
+if (Test-AddParameterToCommandline -parameterValue $flywayCheckFailOnDrift -acceptedCommands \"check drift\" -selectedCommand $flywayCommand -parameterName \"-check.failOnDrift\")
+{
+\tWrite-Host \"Doing a check drift command, adding the fail on drift\"
+\t$arguments += \"-check.failOnDrift=`\"$flywayCheckFailOnDrift`\"\"
+}
+
+
+Write-Host \"Finished checking for command specific parameters, moving onto execution\"
+$dryRunOutputFile = \"\"
+
+if ($flywayCommand -eq \"migrate dry run\")
+{
+\t$dryRunOutputFile = Join-Path $(Get-Location) \"dryRunOutput\"
+    Write-Host \"Adding the argument dryRunOutput so Flyway will perform a dry run and not an actual migration.\"
+    $arguments += \"-dryRunOutput=`\"$dryRunOutputFile`\"\"
+}
+
+# Check to see if there's any additional arguments to add
+if (![string]::IsNullOrWhitespace($flywayAdditionalArguments))
+{
+\t# Split on space
+    $flywayAdditionalArgumentsArray = ($flywayAdditionalArguments.Split(\" \", [System.StringSplitOptions]::RemoveEmptyEntries))
+
+    # Loop through array
+    foreach ($newArgument in $flywayAdditionalArgumentsArray)
+    {
+    \t# Add the arguments
+    \t$arguments += $newArgument
+    }
+}
+
+# Display what's going to be run
+if (![string]::IsNullOrWhitespace($flywayUserPassword))
+{
+    $flywayDisplayArguments = $arguments.PSObject.Copy()
+    $arrayIndex = 0
+    for ($i = 0; $i -lt $flywayDisplayArguments.Count; $i++)
+    {
+        if ($null -ne $flywayDisplayArguments[$i])
+        {
+            if ($flywayDisplayArguments[$i].Contains($flywayUserPassword))
+            {
+                $flywayDisplayArguments[$i] = $flywayDisplayArguments[$i].Replace($flywayUserPassword, \"****\")
+            }
+        }
+    }
+
+    Write-Host \"Executing the following command: $flywayCmd $flywayDisplayArguments\"
+}
+else
+{
+    Write-Host \"Executing the following command: $flywayCmd $arguments\"
+}
+
+# Attempt to find driver path for java
+$driverPath = (Get-ChildItem -Path (Get-ChildItem -Path $flywayCmd).Directory -Recurse | Where-Object {$_.PSIsContainer -eq $true -and $_.Name -eq \"drivers\"})
+
+# If found, add driver path to the PATH environment varaible
+if ($null -ne $driverPath)
+{
+\t$env:PATH += \"$([IO.Path]::PathSeparator)$($driverPath.FullName)\"
+}
+
+# Adjust call to flyway command based on OS
+if ($IsLinux)
+{
+    & bash $flywayCmd $arguments
+}
+else
+{
+    & $flywayCmd $arguments
+}
+
+# Check exit code
+if ($lastExitCode -ne 0)
+{
+\t# Fail the step
+    Write-Error \"Execution of Flyway failed!\"
+}
+
+$currentDate = Get-Date
+$currentDateFormatted = $currentDate.ToString(\"yyyyMMdd_HHmmss\")
+
+# Check to see if the dry run variable has a value
+if (![string]::IsNullOrWhitespace($dryRunOutputFile))
+{     
+    $sqlDryRunFile = \"$($dryRunOutputFile).sql\"
+    $htmlDryRunFile = \"$($dryRunOutputFile).html\"
+    
+    if (Test-Path $sqlDryRunFile)
+    {
+    \tNew-OctopusArtifact -Path $sqlDryRunFile -Name \"$($flywayStepName)_$($flywayEnvironment)_$($currentDateFormatted)_dryRunOutput.sql\"
+    }
+    
+    if (Test-Path $htmlDryRunFile)
+    {
+    \tNew-OctopusArtifact -Path $htmlDryRunFile -Name \"$($flywayStepName)_$($flywayEnvironment)_$($currentDateFormatted)_dryRunOutput.html\"
+    }
+}
+
+$reportFile = Join-Path $(Get-Location) \"report.html\"
+    
+if (Test-Path $reportFile)
+{
+  \tNew-OctopusArtifact -Path $reportFile -Name \"$($flywayStepName)_$($flywayEnvironment)_$($currentDateFormatted)_report.html\"
+}",
+    "Octopus.Action.PowerShell.Edition": "Core",
+    "Octopus.Action.EnabledFeatures": "Octopus.Features.SelectPowerShellEditionForWindows"
+  },
+  "Parameters": [
+    {
+      "Id": "a4ba9557-61d3-4d93-99d9-9937abaded9c",
+      "Name": "Flyway.Package.Value",
+      "Label": "Flyway Package",
+      "HelpText": "**Required**
+
+The package containing the migration scripts you want Flyway to run.  Please refer to [documentation](https://flywaydb.org/documentation/concepts/migrations) for core concepts and naming conventions.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "02d50d4c-02f9-44c2-8ee0-3fc69a21a165",
+      "Name": "Flyway.Executable.Path",
+      "Label": "Flyway Executable Path",
+      "HelpText": "**Optional**
+
+The path of the flyway executable.  It can either be a relative path or an absolute path.
+
+When not provided, this step template will test for the following.  The step template places precedence on the version of the flyway included in the package. If Flyway is NOT found in the package, it will attempt to see if it is installed on the server by checking common paths.
+
+Running on `Linux`:
+- `.flyway`: the package being deployed includes flyway and is running on Linux
+- `/flyway/flyway`: The default path for the Linux execution container.
+
+Running on Windows:
+- `\\.flyway.cmd`: the package being deployed includes flyway and is running on Windows
+- `flyway`: the package is in the path on the Windows VM or Windows Execution container.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6e6e98ae-7e57-4bf7-a280-7c4a6bc57760",
+      "Name": "Flyway.Command.Value",
+      "Label": "Flyway Command",
+      "HelpText": "**Required**
+
+The [flyway command](https://flywaydb.org/documentation/usage/commandline/) you wish to run.
+
+- `Migrate`: Migrates the schema to the latest version
+- `Migrate Dry Run`: Does a migration dry run and saves the results to a file that is uploaded as an artifact.  This works for the `Teams` version of Flyway only.
+- `Check Changes`: Produces a report indicating differences between applied migration scripts on your target database and pending migrations scripts (ie. the set of instructions you want to use to change your target database).  This will report on the differences and perform a dry-run migration.  Check Redgate's documentation to ensure your server technology is supported.  Available to `Enterprise` licenses only.
+- `Check Drift`: Produces a report indicating differences between the structure of your target database and the structure created by the migrations applied by Flyway. Available to `Enterprise` licenses only.
+- `Check Dry Run`: Produces a report listing out the migration scripts to run.  Use this to perform a dry run check or if you have a `Teams` license.
+- `Info`: Prints the details and status information about all migrations.  
+- `Validate`: Validates applied migrations against resolved ones (on the filesystem or classpath) to detect accidental changes that may prevent the schema(s) from being recreated precisely.
+- `Undo`: Undoes the most recently applied versioned migration.  You must provide a Flyway `Teams` or `Enterprise` license key for this to work.
+- `Repair`: Repairs the Flyway schema history table by removing any failed migrations and realigning the checksums, descriptions and types of the applied migrations with the ones of the available migrations
+- `Clean`: It will effectively give you a fresh start, by wiping your configured schemas completely clean. All objects (tables, views, procedures, …) will be dropped.  **DO NOT USE AGAINST A PRODUCTION DB!!!**
+- `Baseline`:  Introducing Flyway to existing databases by baselining them at a specific version. This will cause Migrate to ignore all migrations up to and including the baseline version. Newer migrations will then be applied as usual.
+- `Snapshot`: Creates a file containing the schema of the specified database for subsequent use with the `Check Drift` option.  Available to `Enterprise` licenses only.
+",
+      "DefaultValue": "migrate",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "migrate|Migrate
+migrate dry run|Migrate Dry Run
+check changes|Check Changes
+check drift|Check Drift
+check dry run|Check Dry Run
+info|Info
+validate|Validate
+undo|Undo
+repair|Repair
+clean|Clean
+baseline|Baseline
+snapshot|Snapshot"
+      }
+    },
+    {
+      "Id": "e648821f-221c-4b8b-85fb-654f0d7379c5",
+      "Name": "Flyway.License.Key",
+      "Label": "License Key",
+      "HelpText": "**Optional**
+
+The [Flyway Teams](https://flywaydb.org/download) or `Enterprise` license key will enable undo functionality and the ability to dry run a migration.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "bb9d99ac-96b4-4d46-ae8f-87e5a7214278",
+      "Name": "Flyway.Target.Url",
+      "Label": "-Url",
+      "HelpText": "**Required**
+
+The [URL](https://flywaydb.org/documentation/configuration/parameters/url) parameter used in Flyway.  This is the URL of the database to run the migration scripts on in the format specified in the default flyway.conf file.
+
+Examples:
+- SQL Server: `jdbc:sqlserver://host:port;databaseName=database`
+- Oracle: `jdbc:oracle:thin:@//host:port/service` or `jdbc:oracle:thin:@tns_entry`
+- MySQL: `jdbc:mysql://host:port/database`
+- PostgreSQL: `jdbc:postgresql://host:port/database`
+- SQLite: `jdbc:sqlite:database`
+
+Please refer to [documentation](https://flywaydb.org/documentation/database/sqlserver) for further examples.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e9dccda1-4045-4e8e-b93e-4fac8d66630a",
+      "Name": "Flyway.Authentication.Method",
+      "Label": "Authentication Method",
+      "HelpText": "Method used to authenticate to the database server.",
+      "DefaultValue": "usernamepassword",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "awsiam|AWS EC2 IAM Role
+azuremanagedidentity|Azure Managed Identity
+gcpserviceaccount|GCP Service Account
+usernamepassword|Username\\Password
+windowsauthentication|Windows Authentication"
+      }
+    },
+    {
+      "Id": "e1cb49a8-b965-4827-9f8e-01724d263541",
+      "Name": "Flyway.Database.User",
+      "Label": "-User",
+      "HelpText": "**Optional**
+
+The [user](https://flywaydb.org/documentation/configuration/parameters/user) used to connect to the database.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "51fab335-82b2-4e58-8d4a-e2640ba66296",
+      "Name": "Flyway.Database.User.Password",
+      "Label": "-Password",
+      "HelpText": "**Optional**
+
+The [password](https://flywaydb.org/documentation/configuration/parameters/password) used to connect to the database.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "f8787222-c404-47ca-9f0f-32fad6c656e7",
+      "Name": "Flyway.Command.Schemas",
+      "Label": "-Schemas",
+      "HelpText": "**Optional**
+
+Comma-separated case-sensitive list of [schemas](https://flywaydb.org/documentation/configuration/parameters/schemas) managed by Flyway. 
+
+Example: `schema1,schema2`
+
+Flyway will attempt to create these schemas if they do not already exist and will clean them in the order of this list. If Flyway created them, then the schemas themselves will be dropped when cleaning.
+
+The first schema in the list will act as the default schema.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "27a4fafe-8e8b-4d6d-b25a-0953535ef2c9",
+      "Name": "Flyway.Command.Target",
+      "Label": "-Target",
+      "HelpText": "**Optional** for `migrate`, `info`, `validate`, `check`, and `undo`.  **Ignored** for all other commands
+
+The [target version](https://flywaydb.org/documentation/configuration/parameters/target) up to which Flyway should consider migrations. If set to a value other than current or latest, this must be a valid migration version (e.g. `2.1`).
+
+When migrating forwards, Flyway will apply all migrations up to and including the target version. Migrations with a higher version number will be ignored. If the target is `current`, then no versioned migrations will be applied but repeatable migrations will be, together with any callbacks.
+
+When undoing migrations, Flyway will apply all undo scripts up to and including the target version. Undo scripts with a lower version number will be ignored. Specifying a target version should be done with care, as undo scripts typically destroy database objects.
+
+Special Values:
+- `current`: designates the current version of the schema
+- `latest`: the latest version of the schema, as defined by the migration with the highest version
+
+Default is: `latest`.  When running the `undo` command, this will switch to `current` if `latest` is supplied.",
+      "DefaultValue": "latest",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1b0b700e-6686-4474-a630-8a89aea9b1d5",
+      "Name": "Flyway.Command.CherryPick",
+      "Label": "-CherryPick",
+      "HelpText": "**Optional** for `migrate`, `info`, `check`, and `validate`.  **Ignored** for all other commands.
+
+A Comma separated list of migrations that Flyway should consider when migrating, undoing, or repairing. Migrations are considered in the order that they are supplied, overriding the default ordering. Leave blank to consider all discovered migrations.
+
+Each item in the list must either be a valid migration version (e.g `2.1`) or a valid migration description (e.g. `create_table`).
+
+See [documentation](https://flywaydb.org/documentation/configuration/parameters/cherryPick) for more details.
+
+The default is an empty string, meaning this command-line argument will be skipped.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "79a5ed66-eae8-4b0b-89fa-5da10850bb8d",
+      "Name": "Flyway.Command.OutOfOrder",
+      "Label": "-OutOfOrder",
+      "HelpText": "**Optional** for `migrate`, `info`, `check`, and `validate`.  **Ignored** for all other commands.
+
+Allows migrations to be run “out of order”.
+
+If you already have versions `1.0` and `3.0` applied, and now a version `2.0` is found, it will be applied too instead of being ignored.
+
+See [documentation](https://flywaydb.org/documentation/configuration/parameters/outOfOrder) for more details.
+
+The default is `False`.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "true|True
+false|False"
+      }
+    },
+    {
+      "Id": "1d234d38-35d7-4b5e-a3fb-7ed81fa41d46",
+      "Name": "Flyway.Command.SkipExecutingMigrations",
+      "Label": "-SkipExecutingMigrations",
+      "HelpText": "**Optional** for `migrate`.  **Ignored** for all other commands.
+
+Whether Flyway should skip migration execution. The remainder of the operation will run as normal - including updating the schema history table, callbacks, and so on.
+
+`skipExecutingMigrations` essentially allows you to mimic a migration being executed, because the schema history table is still updated as normal.
+
+`skipExecutingMigrations` can be used to bring an out-of-process change into Flyway’s change control process. For instance, a script run against the database outside of Flyway (like a hotfix) can be turned into a migration. The hotfix migration can be deployed with Flyway with `skipExecutingMigrations=true`. The schema history table will be updated with the new migration, but the script itself won’t be executed again.
+
+`skipExecutingMigrations` can be used with cherryPick to skip specific migrations.
+
+See [documentation](https://flywaydb.org/documentation/configuration/parameters/skipExecutingMigrations) for more details.
+
+The default value is `False`.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "true|True
+false|False"
+      }
+    },
+    {
+      "Id": "7e00397a-e18e-44b8-bb4d-e89b7c70d760",
+      "Name": "Flyway.Command.PlaceHolders",
+      "Label": "-PlaceHolders",
+      "HelpText": "**Optional** for `migrate`, `info`, `validate`, `undo`, `check`, and `repair`.  **Ignored** for all other commands.
+
+[Placeholders](https://flywaydb.org/documentation/configuration/placeholder) to replace in SQL migrations.
+
+Each new line represents a new placeholder.  This will only work with string variable types, text and sensitive values.    
+
+Imagine this SQL Script
+
+```
+INSERT INTO ${Key1} (name) VALUES ('Mr. T')
+GRANT SELECT ON SCHEMA ${flyway:defaultSchema} TO ${Key2}
+```
+
+Use the format **Name::Value**  for example:
+
+```
+Key1::My Super Awesome Value
+
+Key2::Other Super Awesome Value
+```
+
+This will replace `${Key1}` with `My Super Awesome Value` and `${Key2}` with `Other Super Awesome Value`.
+",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "3703d1da-1750-4c4f-89ba-04f5297ba0b9",
+      "Name": "Flyway.Command.InfoSinceDate",
+      "Label": "-InfoSinceDate",
+      "HelpText": "**Optional** with the `info` command and [Flyway Teams](https://flywaydb.org/documentation/usage/commandline/info#filtering-output) and Flyway Enterprise editions.  **Ignored** for all other commands.
+
+Limits info to show only migrations applied after this date, and any unapplied migrations. Must be in the format `dd/MM/yyyy HH:mm` (e.g. `01/12/2020 13:00`)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0bfecdcd-ad27-4908-949c-a54745aa85f0",
+      "Name": "Flyway.Command.InfoSinceVersion",
+      "Label": "-InfoSinceVersion",
+      "HelpText": "**Optional** with the `info` command and [Flyway Teams](https://flywaydb.org/documentation/usage/commandline/info#filtering-output) and Flyway Enterprise editions.  **Ignored** for all other commands.
+
+Limits info to show only migrations greater than or equal to this version, and any repeatable migrations. (e.g `1.1`)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4d4c2fc6-f4a4-4c68-bb79-9ef4d28e2f53",
+      "Name": "Flyway.Command.BaseLineOnMigrate",
+      "Label": "-baselineOnMigrate",
+      "HelpText": "**Optional** when using `migrate`.  **Ignored** for all other commands.
+
+Whether to automatically call baseline when migrate is executed against a non-empty schema with no metadata table. This schema will then be baselined with the baselineVersion before executing the migrations. Only migrations above baselineVersion will then be applied.
+
+This is useful for initial Flyway production deployments on projects with an existing DB.
+
+Be careful when enabling this as it removes the safety net that ensures Flyway does not migrate the wrong database in case of a configuration mistake!",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "true|True
+false|False"
+      }
+    },
+    {
+      "Id": "f7e23a32-73a8-4118-8996-354d48f176cb",
+      "Name": "Flyway.Command.BaselineVersion",
+      "Label": "-baselineVersion",
+      "HelpText": "**Required** when using `Baseline` or when `BaselineOnMigrate` is set to `True`.  **Ignored** for all other commands.
+
+The version to tag an existing schema with when executing [baseline](https://flywaydb.org/documentation/command/baseline).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c8a118ef-bdc4-4e2f-966b-596662321d1c",
+      "Name": "Flyway.Command.BaselineDescription",
+      "Label": "-baseLineDescription",
+      "HelpText": "**Required** when using `Baseline`.  **Ignored** for all other commands.
+
+The Description to tag an existing schema with when executing [baseline](https://flywaydb.org/documentation/command/baseline).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d3bbe139-2bd4-4242-be70-a6f05510042b",
+      "Name": "Flyway.Command.Locations",
+      "Label": "-Locations",
+      "HelpText": "**Optional** with the `info`,  `migrate`, `repair`, `undo`, `check`, and `validate` commands. 
+
+Specifies the location of the script files to execute.  If left blank, the `Extracted Path` of the package will be used.
+
+Example: filesystem:`#{Octopus.Action.Package[Flyway.Package.Value].ExtractedPath}/MySubFolder`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "57611c50-3f3f-4a9d-a6c4-02517d2f238e",
+      "Name": "Flyway.Command.CheckBuildUrl",
+      "Label": "-check.BuildUrl",
+      "HelpText": "**Required** when using `Check Changes` or `Check Drift` commands and `-snapshot.FileName` is empty.  
+
+**Please Note:** When `-snapshot.FileName` is not empty, this parameter is ignored.
+
+Flyway uses the URL to an existing database as a temporary database to perform the check logic against.  Flyway will clean this database, so if you specify a full database, you must ensure it is okay for Flyway to erase its schema.
+
+Examples:
+- SQL Server: `jdbc:sqlserver://host:port;databaseName=database`
+- Oracle: `jdbc:oracle:thin:@//host:port/service` or `jdbc:oracle:thin:@tns_entry`
+- MySQL: `jdbc:mysql://host:port/database`
+- PostgreSQL: `jdbc:postgresql://host:port/database`
+- SQLite: `jdbc:sqlite:database`
+
+Please refer to [documentation](https://flywaydb.org/documentation/database/sqlserver) for further examples.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b52238f0-a7e6-4cfa-851f-f1f9fdb70c65",
+      "Name": "Flyway.Database.Check.User",
+      "Label": "-check.BuildUser",
+      "HelpText": "**Optional**
+
+The username of the user for the build database.  Use this if the build database needs a separate username and password from the authentication information supplied above.
+
+**Please Note:** When `-snapshot.FileName` is not empty, this parameter is ignored.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "14f7c856-6ca2-4319-84b3-e96a40d65c10",
+      "Name": "Flyway.Database.Check.User.Password",
+      "Label": "-check.BuildPassword",
+      "HelpText": "**Optional**
+
+The password of the user for the build database.  Use this if the build database needs a separate username and password from the authentication information supplied above.
+
+**Please Note:** When `-snapshot.FileName` is not empty, this parameter is ignored.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "4bcdced9-2397-4423-bdc2-776ff80f78f3",
+      "Name": "Flyway.Command.FailOnDrift",
+      "Label": "-check.failOnDrift",
+      "HelpText": "**Required** when using `Check Drift`.  Ignored for all other commands.
+
+Indicates if Flyway will terminate with a non-zero return code if drift is detected.  When using `Check Drift` with a snapshot and you want to see the changes, set this to `false`",
+      "DefaultValue": "true",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "true|True
+false|False"
+      }
+    },
+    {
+      "Id": "22bb9c1b-1ce4-4f63-b618-d642c804d3ac",
+      "Name": "Flyway.Command.Snapshot.FileName",
+      "Label": "-snapshot.FileName",
+      "HelpText": "**Required** when using `Snapshot`.  **Optional** when using the `Check Drift` command.  **Ignored** for all other commands.
+
+The name, including the path, of the snapshot file to create or use.  
+
+If this parameter is populated the `-check.BuildUser`, `check.BuildPassword`, and `-check.BuildUrl` parameters are all ignored.
+
+**Hint:** If executing this step in an execution container, consider `../../../` as the path prefix as the script will execute in `/etc/octopus/default/Work/[Random Folder Name]/Flyway.Package.Value`.  `/etc/octopus/default` is mounted as a volume.  Or leverage a NAS or other file share.
+
+**Important:** You will need this file for future steps. It must be stored in a non-temporary location.  By default, Octopus runs this script in a temporary location on a worker.  That location is deleted automatically once this step is complete.  If you do not supply a path, the file will be deleted.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ff9a4e49-d3f0-45ff-891a-3e5f6b72806d",
+      "Name": "Flyway.Additional.Arguments",
+      "Label": "Additional arguments",
+      "HelpText": "Any additional arguments that need to be passed (ie `-table=\"MyTable\")",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2024-03-05T19:05:40.264Z",
+    "OctopusVersion": "2024.1.11865",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "flyway"
+}

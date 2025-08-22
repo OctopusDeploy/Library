@@ -1,0 +1,44 @@
+{
+  "Id": "d66d091d-39d8-43ba-a7d4-db868cd9f7d5",
+  "Name": "Windows - Add Back Connection Host Name",
+  "Description": "Disables loopback checking for a given host header name, allowing an IIS site running with integrated authentication to be accessed from the same machine, e.g. an MVC application referencing a WebAPI application. See below for more information:
+
+<https://support.microsoft.com/en-us/kb/896861>",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$hostName = $OctopusParameters['HostName']\r
+\r
+$key = 'HKLM:\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\'\r
+\r
+$hostNames = get-itemproperty $key -Name BackConnectionHostNames -ErrorAction SilentlyContinue\r
+\r
+If ($hostNames -eq $null) { new-itemproperty $key -Name BackConnectionHostNames -Value $hostName -PropertyType MultiString }\r
+\r
+ElseIf ($hostNames.BackConnectionHostNames -notcontains  $hostName) { set-itemproperty $key -Name BackConnectionHostNames -Value ($hostNames.BackConnectionHostNames + $hostName) }\r
+",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "HostName",
+      "Label": "Host header name",
+      "HelpText": "The host header of the target application referenced by the client application. For example, an MVC website which requires access to a WebAPI application on the same machine would add a back connection host name for the API's host header, e.g.:
+
+api.mycompany.com",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2015-06-30T11:18:08.029+00:00",
+    "OctopusVersion": "2.6.0.778",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}
