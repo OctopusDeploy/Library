@@ -1,0 +1,287 @@
+{
+  "Id": "001609c0-35d0-4faa-95c3-a995faaeaa5e",
+  "Name": "AWS - Create Lambda (deprecated)",
+  "Description": "Creates a [AWS Lambda Function](#https://aws.amazon.com/lambda/) from the specified zip.
+
+If the function exists, it will update the function code and update function configuration.
+- Requires the [AWS PowerShell cmdlets](http://aws.amazon.com/powershell/)
+
+To create environment variables, add variables in project starting with 'env.'.
+For example, to create environment variable S3BucketName = MyTestFolder, create variable 'env.S3BucketName' = 'MyTestFolder'.  This function has been deprecated in favor of the new AWS Deploy Lambda step template.  That new step requires 2019.10.x to run properly.  This step is left in place for older versions of Octopus Deploy to still use.",
+  "ActionType": "Octopus.Script",
+  "Version": 7,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Check for the PowerShell cmdlets (from AWS - Create Cloud Formation Stack Octopus Step).\r
+try{ \r
+    Import-Module AWSPowerShell -ErrorAction Stop\r
+}catch{\r
+    \r
+    $modulePath = \"C:\\Program Files (x86)\\AWS Tools\\PowerShell\\AWSPowerShell\\AWSPowerShell.psd1\"\r
+    Write-Output \"Unable to find the AWS module checking $modulePath\" \r
+    \r
+    try{\r
+        Import-Module $modulePath        \r
+    }\r
+    catch{\r
+        throw \"AWS PowerShell not found! Please make sure to install them from https://aws.amazon.com/powershell/\" \r
+    }\r
+}\r
+\r
+function Get-EnvironmentVariables () {\r
+    $resultEV = @{}\r
+    $environmentVariableConst = 'env.'\r
+\r
+    $envVariables = $OctopusParameters.Keys | ? {$_ -like $environmentVariableConst + '*' }\r
+    \r
+    foreach($item in $envVariables)\r
+    {\r
+        $key = $item.Replace($environmentVariableConst, '')\r
+        $value = $OctopusParameters[$item]\r
+\r
+        $resultEV.Add($key, $value)\r
+    }\r
+    \r
+    return $resultEV\r
+}\r
+\r
+# Get the parameters.\r
+$functionName = $OctopusParameters['FunctionName']\r
+$functionZip = $OctopusParameters['FunctionZip']\r
+$handler = $OctopusParameters['Handler']\r
+$runtime = $OctopusParameters['Runtime']\r
+$role = $OctopusParameters['Role']\r
+$description = $OctopusParameters['Description']\r
+$memorySize = $OctopusParameters['MemorySize']\r
+$timeout = $OctopusParameters['Timeout']\r
+$awsRegion = $OctopusParameters['AWSRegion']\r
+$awsSecretAccessKey = $OctopusParameters['AWSSecretAccessKey']\r
+$awsAccessKey = $OctopusParameters['AWSAccessKey']\r
+$AWSCL_VpcConfig_SubnetId = $OctopusParameters['AWSCL_VpcConfig_SubnetId']\r
+$vpcSubnetIds = if($AWSCL_VpcConfig_SubnetId) { $AWSCL_VpcConfig_SubnetId.Split(',') }\r
+$AWSCL_VpcConfig_SecurityGroupId = $OctopusParameters['AWSCL_VpcConfig_SecurityGroupId']\r
+if($AWSCL_VpcConfig_SecurityGroupId) { $vpcSecurityGroupIds = $AWSCL_VpcConfig_SecurityGroupId.Split(',') }\r
+\r
+# Check the parameters.\r
+if (-NOT $awsSecretAccessKey) { throw \"You must enter a value for 'AWS Access Key'.\" }\r
+if (-NOT $awsAccessKey) { throw \"You must enter a value for 'AWS Secret Access Key'.\" }\r
+if (-NOT $awsRegion) { throw \"You must enter a value for 'AWS Region'.\" }\r
+if (-NOT $functionName) { throw \"You must enter a value for 'Function Name'.\" }\r
+if (-NOT $functionZip) { throw \"You must enter a value for 'Function Zip'.\" }\r
+if (-NOT $handler) { throw \"You must enter a value for 'Handler'.\" }\r
+if (-NOT $runtime) { throw \"You must enter a value for 'Runtime'.\" }\r
+if (-NOT $role) { throw \"You must enter a value for 'Role'.\" }\r
+if (-NOT $memorySize) { throw \"You must enter a value for 'Memory Size'.\" }\r
+if (-NOT $timeout) { throw \"You must enter a value for 'Timeout'.\" }\r
+\r
+Write-Output \"--------------------------------------------------\"\r
+Write-Output \"AWS Region: $awsRegion\"\r
+Write-Output \"AWS Lambda Function Name: $functionName\"\r
+Write-Output \"AWS Lambda Handler: $handler\"\r
+Write-Output \"AWS Lambda Runtime: $runtime\"\r
+Write-Output \"AWS Lambda Memory Size: $memorySize\"\r
+Write-Output \"AWS Lambda Timeout: $timeout\"\r
+Write-Output \"AWS Lambda Role: $role\"\r
+Write-Output \"--------------------------------------------------\"\r
+\r
+# Set up the credentials and the dependencies.\r
+Set-DefaultAWSRegion -Region $awsRegion\r
+$credential = New-AWSCredentials -AccessKey $awsAccessKey -SecretKey $awsSecretAccessKey\r
+\r
+$awsEnvironmentVariables = Get-EnvironmentVariables\r
+\r
+# Check if the function exists, with a try catch\r
+try {\r
+    Get-LMFunction -Credential $credential -FunctionName $functionName -Region $awsRegion\r
+    \r
+    Write-Host 'Updating Lambda function code.'\r
+\r
+    # Update the function.\r
+    Update-LMFunctionCode -Credential $credential -Region $awsRegion -FunctionName $functionName -ZipFilename  $functionZip\r
+    \r
+    Write-Host 'Updating Lambda function configuration.'\r
+\r
+    Update-LMFunctionConfiguration -Credential $credential -Region $awsRegion -FunctionName $functionName -Description $description -Handler $handler -MemorySize $memorySize -Role $role -Runtime $runtime -Timeout $timeout -Environment_Variable $awsEnvironmentVariables -VpcConfig_SecurityGroupId $vpcSecurityGroupIds -VpcConfig_SubnetId $vpcSubnetIds\r
+    \r
+    # Feedback\r
+    Write-Output \"--------------------------------------------------\"\r
+    Write-Output \"AWS Lambda Function updated.\"\r
+    Write-Output \"--------------------------------------------------\"\r
+}\r
+catch {\r
+    # Create the function.\r
+    Publish-LMFunction -Credential $credential -Region $awsRegion -FunctionName $functionName -FunctionZip $functionZip -Handler $handler -Runtime $runtime -Role $role -Description $description -MemorySize $memorySize -Timeout $timeout -Environment_Variable $awsEnvironmentVariables -VpcConfig_SecurityGroupId $vpcSecurityGroupIds -VpcConfig_SubnetId $vpcSubnetIds\r
+\r
+    # Feedback\r
+    Write-Output \"--------------------------------------------------\"\r
+    Write-Output \"AWS Lambda Function created.\"\r
+    Write-Output \"--------------------------------------------------\"\r
+}\r
+",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Id": "d0fe2641-f1ea-4760-aac0-da3b0a68d27a",
+      "Name": "AWSSecretAccessKey",
+      "Label": "AWS Secret Access Key",
+      "HelpText": "The [secret access key](http://docs.aws.amazon.com/general/latest/gr/aws-sec-cred-types.html#access-keys-and-secret-access-keys) to use when executing the script",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2102fea4-4491-40da-b91c-d0044a131e4c",
+      "Name": "AWSAccessKey",
+      "Label": "AWS Access Key",
+      "HelpText": "The [access key](http://docs.aws.amazon.com/general/latest/gr/aws-sec-cred-types.html#access-keys-and-secret-access-keys) to use when executing the script",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "cc68295e-5bd7-42a0-a093-21cf99cbedb8",
+      "Name": "AWSRegion",
+      "Label": "AWS Region",
+      "HelpText": "The Amazon Region see [https://aws.amazon.com/about-aws/global-infrastructure/regional-product-services/](https://aws.amazon.com/about-aws/global-infrastructure/regional-product-services/) for further info",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2bc4b496-8267-41ef-a319-d2d028e3d8ae",
+      "Name": "FunctionName",
+      "Label": "AWS Lambda Function Name",
+      "HelpText": "The name of the AWS Lambda Function",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b1e02e55-b7fb-434e-aa3b-10e2f136e16a",
+      "Name": "FunctionZip",
+      "Label": "AWS Lambda Function Zip Location",
+      "HelpText": "The zip location of the AWS Lambda Function",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "c51f5b24-3b86-4285-b406-5cc90c6b95a4",
+      "Name": "Handler",
+      "Label": "AWS Lambda Function Handler",
+      "HelpText": "The handler signature (ASSEMBLY::TYPE::METHOD) of the AWS Lambda Function",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "0373bf3a-e961-4722-8cf9-e607b42ca344",
+      "Name": "Runtime",
+      "Label": "AWS Lambda Function Runtime",
+      "HelpText": "The runtime of the AWS Lambda Function",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "nodejs|nodejs
+nodejs4.3|nodejs4.3
+nodejs6.10|nodejs6.10
+java8|java8
+python2.7|python2.7
+python3.6|python3.6
+dotnetcore1.0|dotnetcore1.0
+dotnetcore2.0|dotnetcore2.0
+nodejs4.3-edge|nodejs4.3-edge
+go1.x|go1.x"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "17791000-4b1c-425e-992a-3909b085a3ad",
+      "Name": "Role",
+      "Label": "AWS Lambda Function Role",
+      "HelpText": "The role of the AWS Lambda Function, in [ARN](http://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) format",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "eef1166c-1d9c-483f-95e4-5603d6f04e70",
+      "Name": "Description",
+      "Label": "AWS Lambda Function Description",
+      "HelpText": "The description of the AWS Lambda Function",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "ac367ef3-7aef-45c3-89f2-1e7ef2821cf3",
+      "Name": "MemorySize",
+      "Label": "AWS Lambda Function Memory Size",
+      "HelpText": "The memory size of the AWS Lambda Function. The default value is 128 MB. The value must be a multiple of 64 MB",
+      "DefaultValue": "128",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "48d6f0dc-b8de-4903-8411-5bde136c2ccd",
+      "Name": "Timeout",
+      "Label": "AWS Lambda Function Timeout",
+      "HelpText": "The timeout of the AWS Lambda Function",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "5fd40dab-518e-4329-9bff-c61a6e4177fa",
+      "Name": "AWSCL_VpcConfig_SubnetId",
+      "Label": "AWS Lambda Function VPC Subnet Id",
+      "HelpText": "A list of one or more subnet IDs in your VPC.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "4918ab99-d21c-4002-9a04-c5073979ed4b",
+      "Name": "AWSCL_VpcConfig_SecurityGroupId",
+      "Label": "AWS Lambda Function VPC Security Group Id",
+      "HelpText": "A list of one or more security groups IDs in your VPC.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedOn": "2021-02-26T12:09:57.788Z",
+  "LastModifiedBy": "harrisonmeister",
+  "$Meta": {
+    "ExportedAt": "2018-04-16T10:25:57.788Z",
+    "OctopusVersion": "2018.3.6",
+    "Type": "ActionTemplate"
+  },
+  "Category": "aws"
+}
