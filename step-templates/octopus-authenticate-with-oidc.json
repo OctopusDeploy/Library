@@ -1,0 +1,45 @@
+{
+  "Id": "97a36fb9-7b00-4608-866f-53fd459bcdea",
+  "Name": "Octopus - Authenticate with OIDC",
+  "Description": "**This step requires Octopus 2025.3.12525 or later.**\n<br /><br />\nThis step uses Octopus an [OpenID Connect](https://octopus.com/docs/infrastructure/accounts/openid-connect) Account to obtain an access token that can be used in place of an API key in requests against the Octopus API.\n<br /><br />\nThe access token is stored in an [Output Variable](https://octopus.com/docs/projects/variables/output-variables) named **AccessToken**.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "function Invoke-OctopusApi {\n  param(\n    $Uri,\n    $Method,\n    $Body\n  )\n\n  try {\n    Write-Verbose \"Making request to $Uri\"\n\n    if ($null -eq $Body)\n    {\n      Write-Verbose \"No body to send in the request\"\n      return Invoke-RestMethod -Method $method -Uri $Uri -ContentType \"application/json; charset=utf-8\"\n    } \n\n  $Body = $Body | ConvertTo-Json -Depth 10\n  Write-Verbose $Body\n  \n    return Invoke-RestMethod -Uri $Uri -Method $Method -Body $Body -ContentType \"application/json; charset=utf-8\" -ErrorAction Stop\n  }\n  catch {\n    Write-Host \"Request failed with message `\"$($_.Exception.Message)`\"\"\n\n    if ($_.Exception.Response) {\n        $code = $_.Exception.Response.StatusCode.value__\n        $message = $_.Exception.Message\n        Write-Host \"HTTP response code: $code\"\n\n        Write-Host \"Server returned: $error\"\n      }\n\n    Fail-Step \"Failed to make $method request to $uri\"\n  }\n}\n\nif ([string]::IsNullOrWhiteSpace($OctopusParameters[\"AuthenticateWithOIDC.ServerUri\"])) {\n  Fail-Step \"Octopus Server Uri is required.\"\n}\n\nif ([string]::IsNullOrWhiteSpace($OctopusParameters[\"AuthenticateWithOIDC.OidcAccount\"])) {\n  Fail-Step \"OIDC Account is required.\"\n}\n\n$server = $OctopusParameters[\"AuthenticateWithOIDC.ServerUri\"]\n$serviceAccountId = $OctopusParameters[\"AuthenticateWithOIDC.OidcAccount.Audience\"]\n$jwt = $OctopusParameters[\"AuthenticateWithOIDC.OidcAccount.OpenIdConnect.Jwt\"]\n\n$body = @{\n  grant_type = \"urn:ietf:params:oauth:grant-type:token-exchange\";\n  audience = \"$serviceAccountId\";\n  subject_token_type = \"urn:ietf:params:oauth:token-type:jwt\";\n  subject_token = \"$jwt\"\n}\n\n$uri = \"$server/.well-known/openid-configuration\"\n$response = Invoke-OctopusApi -Uri $uri -Method \"GET\"\n$response = Invoke-OctopusApi -Uri $response.token_endpoint -Method \"POST\" -Body $body\n\nSet-OctopusVariable -name \"AccessToken\" -value $response.access_token -sensitive\n\n$stepName = $OctopusParameters[\"Octopus.Step.Name\"]\nWrite-Host \"Created output variable: ##{Octopus.Action[$stepName].Output.AccessToken}\""
+  },
+  "Parameters": [
+    {
+      "Id": "057c4820-9052-4d87-860e-4f4ef501fd4a",
+      "Name": "AuthenticateWithOIDC.ServerUri",
+      "Label": "Octopus Server Uri",
+      "HelpText": "The URI of the Octopus Server with which to authenticate.",
+      "DefaultValue": "#{Octopus.Web.ServerUri}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "dbcea301-baeb-4ae5-974e-3161695df254",
+      "Name": "AuthenticateWithOIDC.OidcAccount",
+      "Label": "OIDC Account",
+      "HelpText": "The Generic OIDC Account variable used to authenticate with the Octopus Server.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "GenericOidcAccount"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2025-09-02T21:56:43.519Z",
+    "OctopusVersion": "2025.3.13248",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "ryanrousseau",
+  "Category": "octopus"
+}
