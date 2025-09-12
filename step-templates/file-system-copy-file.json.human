@@ -1,0 +1,114 @@
+{
+  "Id": "072c2939-2c77-4ed1-abd2-e41cb8a57661",
+  "Name": "File System - Copy File",
+  "Description": "Copies a file in the file system.",
+  "ActionType": "Octopus.Script",
+  "Version": 6,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "function Test-FileLocked([string]$filePath)
+{
+  $fileExists = Test-Path -Path $filePath
+  if (!$fileExists)
+  {
+    return (1 -eq 0) #false
+  }
+  Rename-Item $filePath $filePath -ErrorVariable errs -ErrorAction SilentlyContinue
+  return ($errs.Count -ne 0)
+}
+
+function Wait-ForFileUnlock([string]$filePath)
+{ 
+  Write-Host \"Destinationfile at $filePath is locked\"
+    
+  for ($attemptNo = 1; $attemptNo -lt 6; $attemptNo++) {
+    Write-Host \"Waiting for the file to become unlocked $attemptNo/5\"
+
+    Start-Sleep -Seconds 10
+
+    $fileIsLocked = Test-FileLocked($filePath)
+
+    if (!$fileIsLocked)
+    {
+      return
+    }
+
+    if ($attemptNo -eq 5) {
+      Write-Error \"destinationfile at location $filePath is locked and cannot be overwritten.\"
+
+      return
+    }
+  }
+}
+
+#
+#script starts here
+#
+
+$filePath = $OctopusParameters['sourcePath']
+$newFilePath = $OctopusParameters['destinationPath']
+
+$fileExists = Test-Path -Path $filePath
+
+if (!$fileExists)
+{
+  Write-Error \"Sourcefile not found at $filePath\"
+
+  return
+}
+
+$fileIsLocked = Test-FileLocked($newFilePath)
+
+
+if ($fileIsLocked)
+{
+  Wait-ForFileUnlock($newFilePath)
+}
+
+
+$fileIsLocked = Test-FileLocked($newFilePath)
+if ($fileIsLocked)
+{
+    return
+}
+
+Copy-Item -Path $filePath -Destination $newFilePath -Force
+
+Write-Host \"Successfully copied file at location: $filePath to $newFilePath\""
+  },
+  "Parameters": [
+    {
+      "Id": "80271c96-5190-4cc6-93c0-6e28c4aba6f1",
+      "Name": "sourcePath",
+      "Label": "File source path",
+      "HelpText": "The full path of the file you wish to copy.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "702e4cfd-6633-4206-94df-8fa4fa47e564",
+      "Name": "destinationPath",
+      "Label": "File destionation path",
+      "HelpText": "The full path for the destination of the file. You can rename the file by giving it a new name in the path. If the file already exists at the destination it is overwritten.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedOn": "2018-03-16T12:58:03.401Z",
+  "LastModifiedBy": "Jens-H-Eriksen",
+  "$Meta": {
+    "ExportedAt": "2018-03-16T12:58:03.401Z",
+    "OctopusVersion": "2018.2.8",
+    "Type": "ActionTemplate"
+  },
+  "Category": "filesystem"
+}

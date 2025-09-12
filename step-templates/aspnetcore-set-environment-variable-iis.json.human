@@ -1,0 +1,101 @@
+{
+  "Id": "3586C580-7FC8-4FAB-A783-3641D91F7746",
+  "Author": "waxtell",
+  "Name": "ASP.NET Core Set Environment Variables Via IIS Config",
+  "Description": "Set environment variables in IIS config (no web.config)",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function AddOrReplaceEnvironmentVariable {
+    param
+    (
+        [string] $variableName, 
+        [string] $variableValue,
+        [string] $siteName,
+        [string] $appCmd
+    )
+
+    Try {
+        [xml] $xmlConfig = (&$appCmd list config $sev_siteName -section:system.webServer/aspNetCore)
+    }
+    Catch {
+        Write-Host $sev_siteName 'either does not exist or is not an AspNetCore site!'
+        exit -1
+    }
+
+    if($xmlConfig.selectNodes(\"//environmentVariable[@name='$variableName']\")) {
+        &$appCmd set config $sev_siteName -section:system.webServer/aspNetCore /-\"environmentVariables.[name='$variableName',value='$variableValue']\" /commit:apphost
+    }
+    
+    &$appCmd set config $sev_siteName -section:system.webServer/aspNetCore /+\"environmentVariables.[name='$variableName',value='$variableValue']\" /commit:apphost
+}
+
+[string] $sev_siteName=$OctopusParameters['sev_siteName']
+[string] $sev_envVariables=$OctopusParameters['sev_envVariables']
+[string] $sev_appCmdPath=$OctopusParameters['sev_appCmdPath']
+
+Write-Host \"---------------------------\"
+Write-Host $sev_envVariables
+Write-Host $sev_appCmdPath
+Write-Host \"---------------------------\"
+
+$appCmd = Join-Path $sev_appCmdPath 'appcmd.exe'
+
+foreach($line in $sev_envVariables -split '\\r?\
+') {
+    $indexOfEquals = $line.IndexOf('=')
+    if ($indexOfEquals -eq -1) {
+        Write-Host \"Invalid environment variable format: $line\"
+        continue
+    }
+    $key = $line.Substring(0, $indexOfEquals)
+    $value = $line.Substring($indexOfEquals + 1)
+
+    AddOrReplaceEnvironmentVariable $key $value $sev_siteName $appCmd
+}
+",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false"
+  },
+  "Parameters": [
+    {
+      "Id": "3FE22421-50AB-4CBB-B86A-666EC1609115",
+      "Name": "sev_siteName",
+      "Label": "Site Name",
+      "HelpText": "Name of your ASP.NET Core site",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "78BF70F2-72F5-42E6-A992-C9504A964815",
+      "Name": "sev_envVariables",
+      "Label": "Environment Variables",
+      "HelpText": "Newline separated list of environment variables (varname=varvalue)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "3F851D0C-C93E-403F-861E-5BDA361C1E92",
+      "Name": "sev_appCmdPath",
+      "Label": "Path to appcmd.exe",
+      "HelpText": "Path to the appcmd.exe executable",
+      "DefaultValue": "c:\\windows\\system32\\inetsrv",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "geeknz",
+  "$Meta": {
+    "ExportedAt": "2024-07-15T22:40:29.070Z",
+    "OctopusVersion": "2024.2.9220",
+    "Type": "ActionTemplate"
+  },
+  "Category": "dotnetcore"
+}
