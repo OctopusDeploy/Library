@@ -1,0 +1,181 @@
+{
+  "Id": "42412324-a768-4943-baf8-bfe26ed2dff3",
+  "Name": "ApexSQL DevOps toolkit - Deploy",
+  "Description": "This step will execute schema and data synchronization scripts created as deployment resource after comparison is done. 
+
+ApexSQL DevOps toolkit - Sync and/or ApexSQL DevOps toolkit - Sync data  steps are reqiured",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$schemaSyncScript = ''
+$dataSyncScript = ''
+$schemaSyncQuery = ''
+$dataSyncQuery= ''
+$query = ''
+
+function AddArtifact() {
+    Param(
+        [Parameter(Mandatory = $true)]
+        [string]$artifact
+    )
+    if (Test-Path $artifact) {
+        New-OctopusArtifact $artifact
+    }
+}
+
+function Get-ParamValue
+{
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [String] $ParamName
+    )
+    if($OctopusParameters -and ($OctopusParameters[\"$($ParamName)\"] -ne $null))
+    {
+        # set the variable value
+        return $OctopusParameters[\"$($ParamName)\"]
+    }
+    else
+    {
+        # warning
+        return $null
+    }
+}
+
+$exportPath = '#{ExportPath}'
+$PackageDownloadStepName = '#{PackageDownloadStepName}'
+
+$projectId = $OctopusParameters[\"Octopus.Project.Id\"]
+$releaseNumber = $OctopusParameters[\"Octopus.Release.Number\"]
+$nugetPackageId = $OctopusParameters[\"Octopus.Action[$PackageDownloadStepName].Package.NuGetPackageId\"]
+$exportPath = Join-Path (Join-Path $exportPath $projectId) $releaseNumber
+
+$defaultSchemaSyncScript = $OctopusParameters[\"Octopus.Action[$PackageDownloadStepName].Output.Package.InstallationDirectoryPath\"] + '\\SchemaSyncScript.sql'
+$defaultDataSyncScript = $OctopusParameters[\"Octopus.Action[$PackageDownloadStepName].Output.Package.InstallationDirectoryPath\"] + '\\DataSyncScript.sql'
+
+New-Item -Path $exportPath -Name \"DeploySummary.txt\" -ItemType \"file\" -Force | Out-Null
+$deploySummary = $exportPath + \"\\DeploySummary.txt\"
+
+$schemaSyncScript = $exportPath + '\\SchemaSyncScript.sql'
+$dataSyncScript = $exportPath + '\\DataSyncScript.sql'
+$serverName = Get-ParamValue -ParamName 'ServerName'
+  $database = Get-ParamValue -ParamName 'Database'
+  $username = Get-ParamValue -ParamName 'Username'
+  $password = Get-ParamValue -ParamName 'Password'
+  $auth = ''
+  
+  if (-not ($null -eq $username -and $null -eq $password))
+  {\t
+      $auth = \" -U \"\"$($username)\"\" -P \"\"$($password)\"\"\"
+  }
+  else
+  {\t
+      $auth = \" -E\"
+  }
+
+$sqlcmdProps = \"sqlcmd.exe -S \"\"$($serverName)\"\" -d \"\"$($database)\"\"$auth -b -i\"
+\tif(Test-Path $schemaSyncScript) 
+    {
+\t\t$result = Invoke-Expression -Command \"$sqlcmdProps \"\"$schemaSyncScript\"\"\"
+        $content = \"Sync summary: \" + $result
+        if (Test-Path $deploySummary)
+        {
+        \tAdd-Content $deploySummary $content
+        }
+\t}
+  \tif(Test-Path $dataSyncScript) 
+    {
+\t\t$result = Invoke-Expression -Command \"$sqlcmdProps \"\"$dataSyncScript\"\"\"
+        $content = \"Sync data summary: \" + $result
+        if (Test-Path $deploySummary)
+        {
+        \tAdd-Content $deploySummary $content
+        }
+\t}
+
+\tif(Test-Path $defaultSchemaSyncScript) 
+    {
+\t\t$result = Invoke-Expression -Command \"$sqlcmdProps \"\"$defaultSchemaSyncScript\"\"\"
+\t}
+    if(Test-Path $defaultDataSyncScript) 
+    {
+\t\t$result = Invoke-Expression -Command \"$sqlcmdProps \"\"$defaultDataSyncScript\"\"\"
+\t}
+
+AddArtifact(\"$deploySummary\")",
+    "Octopus.Action.EnabledFeatures": ""
+  },
+  "Parameters": [
+    {
+      "Id": "ad2fad54-09c4-4210-adbc-ab238632cd67",
+      "Name": "DownloadPackageStepName",
+      "Label": "Retrieve package from",
+      "HelpText": "Select the step from which the synchronization sripts package can be sourced",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Id": "b899f7a2-49dd-4193-8640-54e815996e02",
+      "Name": "ExportPath",
+      "Label": "Export location",
+      "HelpText": "The location for exported deployment resources. Provide the path used for synchronization steps. All tentacles used in database deployment steps should have access to the chosen location",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f0886e0e-f592-4fd7-ba04-8191224f3436",
+      "Name": "ServerName",
+      "Label": "SQL Server",
+      "HelpText": "Provide the SQL Server name for the deployment target database",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d1358f62-a3ff-4e24-b46c-036e33ff40f4",
+      "Name": "Database",
+      "Label": "Database",
+      "HelpText": "The target database for the deployment of schema and data synchronization scripts.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6572b012-7386-4bae-ae31-e72ac19e5171",
+      "Name": "Username",
+      "Label": "Username",
+      "HelpText": "The account name used for SQL authentication method. Windows authentication method with the account that runs the Tentacle service will be used for SQL Server connection if left empty",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d97dbe49-ccec-4be3-81a8-e356365aa250",
+      "Name": "Password",
+      "Label": "Password",
+      "HelpText": "Enter password for chosen account used for SQL authentication method. Leave empty if Windows authentication method is used",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-08-20T11:36:52.048Z",
+    "OctopusVersion": "2020.3.2",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "ApexSQLtechops",
+  "Category": "apexsql"
+}

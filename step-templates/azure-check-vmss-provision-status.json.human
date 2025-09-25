@@ -1,0 +1,697 @@
+{
+    "Id": "e04c5cd8-0982-44b8-9cae-0a4b43676adc",
+    "Name": "Check VMSS Provision Status (Deployment Targets)",
+    "Description": "Use this step when leveraging Azure Virtual Machines Scale Sets (VMSS) with Octopus Deploy Deployment Targets.
+
+**Please run this on a worker or the Octopus Server.**
+
+This step specifically targets Deployment Targets.  It will:
+- Pause a runbook run or deployment until the VMSS has been provisioned
+- Pause a runbook run or deployment until all the VMs in a VMss have been provisioned
+- Reconcile the list of VMs in the VMSS with the list of VMs in Octopus Deploy.  Any VMs in Octopus Deploy (based on role) not in the VMSS will be removed.
+- Set output variables of all the deployment targets found in the VMSS.
+
+This step will set the following output variables:
+- `VMSSHasServersToDeployTo`: Indicates the VMSS has servers to deploy to.  
+- `VMSSDeploymentTargetIds`: A comma-separated list of deployment target Ids you can use in later steps.
+- `VMSSDeploymentTargetNames`: A comma-separated list of deployment target names you can use in later steps.
+
+**Please Note**: Setting the parameter `Exclude Pre-Existing Servers from Output` to `Yes` will remove any servers prior to a scale event from being returned in the output variables. 
+
+This step makes the following assumptions:
+- The name of the machine registration in Octopus matches the computer name.  Like matching is supported, for example, a match will be made in the case of Octopus has `p-app-server-01` and the computer name is `p-app-server-01.mydomain.com.`  
+- You have the Azure Az PowerShell modules pre-installed on a worker or your Octopus Server.
+- This step is running in the same space/environment/tenant (optional) as the deployment targets.",
+    "ActionType": "Octopus.AzurePowerShell",
+    "Version": 3,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "OctopusUseBundledTooling": "False",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Azure.AccountId": "#{VMSS.Azure.Account}",
+      "Octopus.Action.Script.ScriptBody": "$vmssScaleSetName = $OctopusParameters[\"VMSS.ScaleSet.Name\"]
+$vmssScaleSetResourceGroup = $OctopusParameters[\"VMSS.ResourceGroup.Name\"]
+$roleToSearchFor = $OctopusParameters[\"VMSS.DeploymentTarget.Roles\"]
+$apiKey = $OctopusParameters[\"VMSS.Octopus.ApiKey\"]
+$octopusUrl = $OctopusParameters[\"VMSS.Octopus.Url\"]
+$timeoutInMinutes = $OctopusParameters[\"VMSS.Timeout.Value\"]
+$timeoutErrorHandle = $OctopusParameters[\"VMSS.Timeout.ErrorHandle\"]
+$duplicateRunDetectionInMinutes = $OctopusParameters[\"VMSS.Duplicate.TimeInMinutes\"]
+$duplicateRunHandle = $OctopusParameters[\"VMSS.Duplicate.Handle\"]
+$excludeOldServers = $OctopusParameters[\"VMSS.OldServers.ExcludeFromOutput\"]
+
+$octopusSpaceId = $OctopusParameters[\"Octopus.Space.Id\"]
+$octopusEnvironmentId = $OctopusParameters[\"Octopus.Environment.Id\"]
+$octopusTenantId = $OctopusParameters[\"Octopus.Deployment.Tenant.Id\"]
+$octopusDeploymentId = $OctopusParameters[\"Octopus.Deployment.Id\"]
+$octopusTriggerId = $OctopusParameters[\"Octopus.Deployment.Trigger.Id\"]
+$octopusTaskId = $OctopusParameters[\"Octopus.Task.Id\"]
+$octopusRunbookRunId = $OctopusParameters[\"Octopus.RunbookRun.Id\"]
+
+function Invoke-OctopusApi
+{
+    param
+    (
+        $octopusUrl,
+        $endPoint,
+        $spaceId,
+        $apiKey,
+        $method,
+        $item  
+    )
+
+    if ([string]::IsNullOrWhiteSpace($SpaceId))
+    {
+        $url = \"$OctopusUrl/api/$EndPoint\"
+    }
+    else
+    {
+        $url = \"$OctopusUrl/api/$spaceId/$EndPoint\"    
+    }  
+
+    try
+    {        
+        if ($null -ne $item)
+        {
+            $body = $item | ConvertTo-Json -Depth 10
+            Write-Verbose $body
+
+            Write-Host \"Invoking $method $url\"
+            return Invoke-RestMethod -Method $method -Uri $url -Headers @{\"X-Octopus-ApiKey\" = \"$ApiKey\" } -Body $body -ContentType 'application/json; charset=utf-8' 
+        }
+
+\t\tWrite-Verbose \"No data to post or put, calling bog standard invoke-restmethod for $url\"
+        $result = Invoke-RestMethod -Method $method -Uri $url -Headers @{\"X-Octopus-ApiKey\" = \"$ApiKey\" } -ContentType 'application/json; charset=utf-8'
+
+        return $result
+
+               
+    }
+    catch
+    {
+        if ($null -ne $_.Exception.Response)
+        {
+            if ($_.Exception.Response.StatusCode -eq 401)
+            {
+                Write-Error \"Unauthorized error returned from $url, please verify API key and try again\"
+            }
+            elseif ($_.Exception.Response.statusCode -eq 403)
+            {
+                Write-Error \"Forbidden error returned from $url, please verify API key and try again\"
+            }
+            else
+            {                
+                Write-Verbose -Message \"Error calling $url $($_.Exception.Message) StatusCode: $($_.Exception.Response.StatusCode )\"
+            }            
+        }
+        else
+        {
+            Write-Verbose $_.Exception
+        }
+    }
+
+    Throw \"There was an error calling the Octopus API.\"
+}
+
+function Get-QueuedEventInfo
+{
+    param (
+        $octopusRunbookRunId,
+        $octopusDeploymentId,
+        $octopusSpaceId,
+        $octopusUrl,
+        $apiKey
+    )
+
+    if ([string]::IsNullOrWhiteSpace($octopusRunbookRunId))
+    {
+        $queuedListRaw = Invoke-OctopusApi -octopusUrl $octopusUrl -endPoint \"events?regardingAny=$($OctopusDeploymentId)&spaces=$($octopusSpaceId)&documentTypes=Deployments&eventCategories=DeploymentQueued\" -spaceId $null -apiKey $apiKey -method \"GET\"
+    }
+    else
+    {
+        $queuedListRaw = Invoke-OctopusApi -octopusUrl $octopusUrl -endPoint \"events?regardingAny=$($octopusRunbookRunId)&spaces=$($octopusSpaceId)&documentTypes=RunbookRuns&eventCategories=RunbookRunQueued\" -spaceId $null -apiKey $apiKey -method \"GET\"
+    }
+
+    $queuedArray = @($queuedListRaw.Items)
+
+    return @{
+        CurrentDeploymentQueued = [DateTime]$queuedArray[0].Occurred
+        NumberOfQueuedEvents = $queuedArray.Length
+    }
+}
+
+function Get-CompletedEventInfo
+{
+    param (
+        $octopusRunbookRunId,
+        $octopusDeploymentId,
+        $octopusSpaceId,
+        $octopusUrl,
+        $apiKey
+    )
+
+    if ([string]::IsNullOrWhiteSpace($octopusRunbookRunId))
+    {      
+        $finishedEventListRaw = Invoke-OctopusApi -octopusUrl $octopusUrl -endPoint \"events?regardingAny=$($OctopusDeploymentId)&spaces=$($octopusSpaceId)&documentTypes=Deployments&eventCategories=DeploymentSucceeded,DeploymentFailed&skip=0&take=1\" -spaceId $null -apiKey $apiKey -method \"GET\"
+    }
+    else
+    {
+        $finishedEventListRaw = Invoke-OctopusApi -octopusUrl $octopusUrl -endPoint \"events?regardingAny=$($OctopusDeploymentId)&spaces=$($octopusSpaceId)&documentTypes=RunbookRuns&eventCategories=RunbookRunSucceeded,RunbookRunFailed&skip=0&take=1\" -spaceId $null -apiKey $apiKey -method \"GET\"    
+    }
+
+    $finishedEventArray = @($finishedEventListRaw.Items)
+        
+    return [DateTime]$finishedEventArray[0].Occurred
+}
+
+function Test-ForDuplicateRun 
+{
+    param (
+        $octopusRunbookRunId,
+        $octopusDeploymentId,
+        $octopusSpaceId,
+        $queuedEventInfo,
+        $duplicateRunDetectionInMinutes,
+        $duplicateRunHandle,
+        $octopusTaskId,
+        $octopusUrl,
+        $apiKey        
+    )
+
+    Write-Host \"Checking to see if this current run is a duplicate because of deployment target triggers\"
+    $duplicateRun = $false
+
+    if ([string]::IsNullOrWhiteSpace($octopusTriggerId) -eq $false)
+    {
+        Write-Highlight \"This run was triggered by a trigger.\"
+        
+        Write-Host \"The number of items in the queued array is: $($queuedEventInfo.NumberOfQueuedEvents)\"
+        if ($queuedEventInfo.NumberOfQueuedEvents -gt 1)
+        {
+            Write-Host \"This task has been run before\"  
+
+            $previousDeploymentFinished = Get-CompletedEventInfo -octopusRunbookRunId $octopusRunbookRunId -octopusDeploymentId $octopusDeploymentId -octopusSpaceId $octopusSpaceId -octopusUrl $octopusUrl -apiKey $apiKey            
+            Write-Host \"The current deployment was queued $($queuedEventInfo.CurrentDeploymentQueued) while the previous deployment was finished $previousDeploymentFinished\"
+            
+            $queuedCompletedDifference = $queuedEventInfo.CurrentDeploymentQueued - $previousDeploymentFinished            
+            Write-Host \"The difference in minutes is $($queuedCompletedDifference.TotalMinutes)\"
+
+            if ($queuedCompletedDifference.TotalMinutes -le $duplicateRunDetectionInMinutes)
+            {
+                Write-Highlight \"The previous deployment finished in the last $($queuedCompletedDifference.TotalMinutes) minutes before this was trigger, that is extremely fast.  This is a duplicate run.\"
+                $duplicateRun = $true
+                
+                if ($duplicateRunHandle.ToLower().Trim() -eq \"cancel\")
+                {
+                    Write-Highlight \"The duplicate run handle is set to cancel, cancelling current deployment.\"
+                    Invoke-OctopusApi -octopusUrl $octopusUrl -apiKey $apiKey -spaceId $OctopusSpaceId -method \"POST\" -endPoint \"tasks/$($octopusTaskId)/cancel\"
+                    exit 0    
+                }
+                else
+                {
+                    Write-Highlight \"The duplicate run handle is set to proceed.\"
+                }
+            }
+            else
+            {
+                Write-Highlight \"The last deployment finished and this one was queued after $($queuedCompletedDifference.TotalMinutes) minutes has passed which is outside the window of $duplicateRunDetectionInMinutes minutes.  Not a duplicate.\"
+            }
+        }\t    
+        else
+        {
+            Write-Highlight \"This is the first time this release has been deployed to this environment.  This is not a duplicate run.\"
+        }
+    }
+
+    return $duplicateRun
+}
+
+function Start-WaitForVMSSToFinishProvisioning
+{
+    param 
+    (
+        $vmssScaleSetResourceGroup,
+        $vmssScaleSetName,
+        $timeoutInMinutes
+    )
+
+    $vmssState = \"Provisioning\"
+    $startTime = Get-Date
+
+    Write-Host \"Will now wait until the VMSS has finished provisioning.\"
+
+    do
+    {
+        try
+        {
+            $vmssInfo = Get-AzVmss -ResourceGroupName $vmssScaleSetResourceGroup -VMScaleSetName $vmssScaleSetName
+        }
+        catch
+        {
+            Write-Highlight \"Unable to access the scale set $vmssScaleSetName.  Exiting step.\"
+            Write-Host $_.Exception
+            exit 0
+        }
+
+        Write-Verbose \"VMSSInfo: \"
+        Write-Verbose ($vmssInfo | ConvertTo-JSON -Depth 10)
+
+        $vmssInstanceCount = $vmssInfo.Sku.Capacity
+        $vmssState = $vmssInfo.ProvisioningState
+
+        if($vmssState.ToLower().Trim() -ne \"provisioning\")
+        {    
+            Write-Highlight \"The VMSS $vmssScaleSetName capacity is current set to $vmssInstanceCount with a provisioning state of $vmssState\"
+        }
+        else
+        {
+            Write-Host \"The VMSS is still provisioning, sleeping for 10 seconds then checking again.\"
+            Start-Sleep -Seconds 10
+        }
+        
+        $currentTime = Get-Date
+        $dateDifference = $currentTime - $startTime
+        
+        if ($dateDifference.TotalMinutes -ge $timeoutInMinutes)
+        {
+            Write-Highlight \"We have been waiting $($dateDifference.TotalMinutes) for the VMSS to finish provisioning.  Timeout reached, exiting.\"
+            exit 1
+        }   
+        
+    } While ($vmssState.ToLower().Trim() -eq \"provisioning\")
+}
+
+function Start-WaitForVMsInVMSSToFinishProvisioning
+{
+    param 
+    (
+        $vmssScaleSetResourceGroup,
+        $vmssScaleSetName,
+        $timeoutInMinutes,
+        $timeoutErrorHandle
+    )
+
+    $vmssVmsAreProvisioning = $false
+    $startTime = Get-Date
+    $numberOfWaits = 0
+    $printVmssVmList = $true
+
+    Write-Highlight \"Checking the state of all VMs in the scale set.\"
+
+    do
+    {
+        $numberOfWaits += 1
+        $vmssVmList = Get-AzVmssVM -ResourceGroupName $vmssScaleSetResourceGroup -VMScaleSetName $vmssScaleSetName
+        
+        if ($printVmssVmList -eq $true)
+        {
+            Write-Host ($vmssVmList | ConvertTo-Json -Depth 10)
+            $printVmssVmList = $false
+        }
+        
+        $vmssVmsAreProvisioning = $false
+        foreach ($vmInfo in $vmssVmList)
+        {
+            if ($vmInfo.ProvisioningState.ToLower().Trim() -eq \"creating\")
+            {
+                $vmssVmsAreProvisioning = $true
+                break
+            }
+        }
+        
+        if ($vmssVmsAreProvisioning -eq $true)
+        {        
+            $currentTime = Get-Date
+            $dateDifference = $currentTime - $startTime
+
+            if ($dateDifference.TotalMinutes -ge $timeoutInMinutes)
+            {
+                $vmssVmsAreProvisioning = $false
+                if ($timeoutErrorHandle.ToLower().Trim() -eq \"error\")
+                {
+                    Write-Highlight \"The VMs in the scale have been provisioning for over $timeoutInMinutes.  Error handle is set to error out, exiting with an exit code of 1.\"
+                    exit 1
+                }
+                
+                Write-Highlight \"The VMs in the scale have been provisioning for over $timeoutInMinutes.  Going to move on and continue with the deployment for any VMs that have finished provisioning.\"
+            } 
+            else
+            {
+                if ($numberofWaits -ge 10)
+                {
+                    Write-Highlight \"The VMs are still currently provisioning, waiting...\"
+                    $numberOfWaits = 0
+                }
+                else
+                {            
+                    Write-Host \"The VMs are still currently provisioning, sleeping for 10 seconds then checking again.\"
+                }
+                Start-Sleep -Seconds 10
+            }
+        }
+        else
+        {
+            Write-Highlight \"All the VMs in the VM Scale Set have been provisioned, reconciling them with the list in Octopus.\"
+        }         
+    } while ($vmssVmsAreProvisioning -eq $true)
+}
+
+
+Write-Host \"ScaleSet Name: $vmssScaleSetName\"
+Write-Host \"Resource Group Name: $vmssScaleSetResourceGroup\"
+Write-Host \"Deployment Target Role to Search For: $roleToSearchFor\"
+Write-Host \"Octopus Url: $octopusUrl\"
+Write-Host \"Timeout In Minutes: $timeoutInMinutes\"
+Write-Host \"Timeout Error Handle: $timeoutErrorHandle\"
+Write-Host \"Duplicate Run Detection in Minutes: $duplicateRunDetectionInMinutes\"
+Write-Host \"Duplicate Run Handle: $duplicateRunHandle\"
+Write-host \"Exclude Old Servers: $excludeOldServers\"
+
+Write-Host \"Space Id: $octopusSpaceId\"
+Write-Host \"Environment Id: $octopusEnvironmentId\"
+Write-Host \"Tenant Id: $octopusTenantId\"
+Write-Host \"Deployment Id: $octopusDeploymentId\"
+Write-Host \"Trigger Id: $octopusTriggerId\"
+Write-Host \"Task Id: $octopusTaskId\"
+Write-Host \"Runbook Run Id: $octopusRunbookRunId\"
+
+if ([string]::IsNullOrWhiteSpace($vmssScaleSetName)) { Write-Error \"Scale Set Name is required.\" }
+if ([string]::IsNullOrWhiteSpace($vmssScaleSetResourceGroup)) { Write-Error \"Resource Group Name is required.\" }
+if ([string]::IsNullOrWhiteSpace($roleToSearchFor)) { Write-Error \"Scale Set Name is required.\" }
+if ([string]::IsNullOrWhiteSpace($octopusUrl)) { Write-Error \"Octopus Url is required.\" }
+if ([string]::IsNullOrWhiteSpace($apiKey)) { Write-Error \"Octopus Api Key is required.\" }
+if ([string]::IsNullOrWhiteSpace($timeoutInMinutes)) { Write-Error \"Timeout in minutes is required.\" }
+if ([string]::IsNullOrWhiteSpace($timeoutErrorHandle)) { Write-Error \"Timeout error handle is required.\" }
+if ([string]::IsNullOrWhiteSpace($duplicateRunDetectionInMinutes)) { Write-Error \"Duplicate run detection in minutes is required.\" }
+if ([string]::IsNullOrWhiteSpace($duplicateRunHandle)) { Write-Error \"Duplicate run handle is required.\" }
+if ([string]::IsNullOrWhiteSpace($excludeOldServers)) { Write-Error \"Exclude old servers is required.\" }
+
+$queuedEventInfo = Get-QueuedEventInfo -octopusRunbookRunId $octopusRunbookRunId -octopusDeploymentId $octopusDeploymentId -octopusSpaceId $octopusSpaceId -octopusUrl $octopusUrl -apiKey $apiKey
+
+Write-Host \"The current deployment was queued at: $($queuedEventInfo.CurrentDeploymentQueued)\"
+
+$duplicateRun = Test-ForDuplicateRun -octopusRunbookRunId $octopusRunbookRunId -octopusDeploymentId $octopusDeploymentId -octopusSpaceId $octopusSpaceId  -duplicateRunDetectionInMinutes $duplicateRunDetectionInMinutes -duplicateRunHandle $duplicateRunHandle -queuedEventInfo $queuedEventInfo -octopusTaskId $octopusTaskId -octopusUrl $octopusUrl -apiKey $apiKey
+
+Start-WaitForVMSSToFinishProvisioning -vmssScaleSetResourceGroup $vmssScaleSetResourceGroup -vmssScaleSetName $vmssScaleSetName -timeoutInMinutes $timeoutInMinutes
+Start-WaitForVMsInVMSSToFinishProvisioning -vmssScaleSetResourceGroup $vmssScaleSetResourceGroup -vmssScaleSetName $vmssScaleSetName -timeoutInMinutes $timeoutInMinutes -timeoutErrorHandle $timeoutErrorHandle
+
+$vmssVmList = Get-AzVmssVM -ResourceGroupName $vmssScaleSetResourceGroup -VMScaleSetName $vmssScaleSetName
+$vmListToReconcile = @()
+
+foreach ($vmInfo in $vmssVmList)
+{
+\tif ($vmInfo.ProvisioningState.ToLower().Trim() -ne \"failed\")
+    {
+    \t$vmListToReconcile += $vmInfo.OsProfile.ComputerName
+    }
+}
+
+$octopusDeployTargets = Invoke-OctopusApi -octopusUrl $octopusUrl -endPoint \"machines?environmentIds=$($octopusEnvironmentId)&roles=$($roleToSearchFor)&skip=0&take=1000\" -spaceId $octopusSpaceId -apiKey $apiKey -method \"GET\"
+$octopusDeployTargetIds = @()
+$octopusDeployTargetNames = @()
+$roleList = $roleToSearchFor.Split(\",\")
+foreach ($deploymentTarget in $octopusDeployTargets.Items)
+{
+\t$matchingRole = $true
+    foreach ($role in $roleList)
+    {
+    \tif ($deploymentTarget.Roles -notContains ($role.Trim()))
+        {
+        \tWrite-Host \"The target $($deploymentTarget.Name) does not contain the role $role.  To be considered part of the scale set it has to be assigned to all the roles $roleToSearchFor.  Excluding from reconcilation logic.\"
+            $matchingRole = $false
+            break
+        }
+    }
+    
+    if ($matchingRole -eq $false)
+    {
+    \tcontinue
+    }
+    
+    if ([string]::IsNullOrWhiteSpace($octopusTenantId) -eq $false -and $deploymentTarget.TenantIds -notcontains $octopusTenantId)
+    {
+    \tWrite-Host \"The target $($deploymentTarget.Name) is not assigned to $octopusTenantId.  But the current run is running under the context of that tenant.  Excluding from reconcilation logic.\"
+        continue
+    }
+    
+    $hasMatchingName = $false
+    $deploymentTargetNameLowerTrim = $deploymentTarget.Name.ToLower().Trim()
+
+    Write-Host \"Attempting to do a match on name\"
+\tforeach ($vmssVM in $vmListToReconcile)
+    {
+    \t$vmssVMLowerTrim = $vmssVM.ToLower().Trim()
+
+        Write-Host \"Checking to see if $($deploymentTarget.Name) is like $vmssVM\"
+        if ($deploymentTargetNameLowerTrim -eq $vmssVMLowerTrim)
+        {
+            Write-Host \"The vmss vm name $vmssVM is equal to to the deployment target name $($deploymentTarget.Name), set matching to true\"         
+            $hasMatchingName = $true
+            break
+        }
+        if ($deploymentTargetNameLowerTrim -like \"*$vmssVMLowerTrim*\")
+        {   
+            Write-Host \"The deployment target name $($deploymentTarget.Name) contains the vmss vm name $vmssVM, set matching to true\"         
+            $hasMatchingName = $true
+            break
+        }
+        elseif ($vmssVMLowerTrim -like \"*$deploymentTargetNameLowerTrim*\")
+        {
+            Write-Host \"The vmss vm name $vmssVM contains the deployment target name $($deploymentTarget.Name), set matching to true\"
+            $hasMatchingName = $true
+            break
+        }
+    }
+    
+    if ($hasMatchingName -eq $false)
+    {
+    \tWrite-Highlight \"The deployment target $($deploymentTarget.Name) is not in the list of VMs assigned to the scale set, deleting it.\"
+        Invoke-OctopusApi -octopusUrl $octopusUrl -endPoint \"machines/$($deploymentTarget.Id)\" -spaceId $octopusSpaceId -apiKey $apiKey -method \"DELETE\"
+    }
+    else
+    {
+    \tWrite-Highlight \"The deployment target $($deploymentTarget.Name) is in the list of VMS assigned to the scale set, leaving it alone.\"
+        
+        $addToOutputArray = $true
+        if ($excludeOldServers.ToLower().Trim() -eq \"yes\")
+        {
+        \tWrite-Host \"Pulling back the creation event for $($deploymentTarget.Name)\"
+        \t$creationTasks = Invoke-OctopusApi -octopusUrl $octopusUrl -endPoint \"events?regarding=$($deploymentTarget.Id)&spaces=$($octopusSpaceId)&includeSystem=true&eventCategories=Created\" -spaceId $null -apiKey $apiKey -method \"GET\"
+            
+            $creationDate = @($creationTasks.Items)[0].Occurred
+            Write-Host \"The deployment target $($deploymentTarget.Name) was created on $creationDate\"
+            $differenceInCreationTime = [DateTime]$queuedEventInfo.CurrentDeploymentQueued - [DateTime]$creationDate
+            
+            Write-Host \"The difference in minutes between creation date and current task queued time is $($differenceInCreationTime.TotalMinutes) minutes\" 
+            if ($differenceInCreationTime.TotalMinutes -gt 3)
+            {
+            \tWrite-Host \"The deployment target $($deploymentTarget.Name) existed for more than 3 minutes before this was ran and the excludeOldServers was set to yes, removing this from the output\"
+            \t$addToOutputArray = $false
+            }
+        }
+        
+        if ($addToOutputArray -eq $true)
+        {
+\t        $octopusDeployTargetIds += $deploymentTarget.Id
+    \t    $octopusDeployTargetNames += $deploymentTarget.Name
+        }
+    }
+}
+
+Write-Highlight \"The Azure VM Scale Set $vmssScaleSetName and Octopus Deploy target list have been successfully reconciled.\"
+
+$vmssHasServersToDeployTo = $octopusDeployTargetIds.Count -gt 0
+if ($duplicateRun -eq $true)
+{
+\tWrite-Highlight \"Duplicate run detected, therefore there are no new servers to deploy to.\"
+    $vmssHasServersToDeployTo = $false
+}
+elseif ($vmssHasServersToDeployTo -eq $false)
+{
+\tWrite-Highlight \"There are no servers to deploy to.  Exclude old servers was set to '$excludeOldServers'.  This likely means this was a scale in event or all the servers existed prior to this run.\"
+}
+
+Write-Highlight \"Setting the output variable 'VMSSHasServersToDeployTo' to $vmssHasServersToDeployTo.\"
+Set-OctopusVariable -Name \"VMSSHasServersToDeployTo\" -Value $vmssHasServersToDeployTo
+
+Write-Highlight \"Setting the output variable 'VMSSDeploymentTargetIds' to $($octopusDeployTargetIds -join \",\").\"
+Set-OctopusVariable -Name \"VMSSDeploymentTargetIds\" -Value ($octopusDeployTargetIds -join \",\")
+
+Write-Highlight \"Setting the output variable 'VMSSDeploymentTargetNames' to $($octopusDeployTargetNames -join \",\").\"
+Set-OctopusVariable -Name \"VMSSDeploymentTargetNames\" -Value ($octopusDeployTargetNames -join \",\")"
+    },
+    "Parameters": [
+      {
+        "Id": "9f9bc9fb-fa96-41ab-aa06-ad0dd68ff038",
+        "Name": "VMSS.ScaleSet.Name",
+        "Label": "VMSS Name",
+        "HelpText": "**Required**
+
+The name of the Azure Virtual Machine Scale Set",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "32939873-a965-46ae-915f-f94d93f94c0b",
+        "Name": "VMSS.ResourceGroup.Name",
+        "Label": "VMSS Resource Group Name",
+        "HelpText": "**Required**
+
+The name of the resource group where the VMSS is located.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "571df393-6353-4f12-96cd-c92f3a5e1452",
+        "Name": "VMSS.Azure.Account",
+        "Label": "Azure Account",
+        "HelpText": "**Required**
+
+The Azure Account to use when querying the VMSS.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "AzureAccount"
+        }
+      },
+      {
+        "Id": "b03d1bf3-76f8-4a3c-917a-60d5e19a15f4",
+        "Name": "VMSS.DeploymentTarget.Roles",
+        "Label": "Deployment Target Roles",
+        "HelpText": "**Required**
+
+A comma-separated list of deployment target roles to filter your deployment targets by.  These roles are how this step will determine which machines to reconcile.
+
+If you supply multiple roles, for example `todo-web-server,todo-virtual-machine-scale-set` the deployment targets have to be assigned `todo-web-server` AND `todo-virtual-machine-scaleset` roles for the target to be considered.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "757ca61b-d15b-4dbb-911a-b3f4dc0258b5",
+        "Name": "VMSS.Octopus.Url",
+        "Label": "Octopus URL",
+        "HelpText": "**Required**
+
+The URL of the Octopus Server to query against.  Example: `https://samples.octopus.app`.",
+        "DefaultValue": "#{Octopus.Web.ServerUri}",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "7b070182-e79b-48a0-966a-39d332802b60",
+        "Name": "VMSS.Octopus.ApiKey",
+        "Label": "Octopus API Key",
+        "HelpText": "**Required**
+
+API Key of a service account that has permissions to:
+- Query deployment targets, environments, and tenants. 
+- Query events (audit history) 
+- Delete deployment targets
+
+Assigning the service account to a team with `Project Viewer` and `Environment Manager` roles will work.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "6e0f8635-70ba-4b8a-b5b4-909dba3f9fd8",
+        "Name": "VMSS.Timeout.Value",
+        "Label": "Timeout (In Minutes)",
+        "HelpText": "**Required**
+
+How long this step will wait (in minutes) for the VMSS and VMs in the VMSS to finish being created.",
+        "DefaultValue": "30",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0392f153-73b0-44d4-9181-4f366c9012f7",
+        "Name": "VMSS.Timeout.ErrorHandle",
+        "Label": "Timeout Error",
+        "HelpText": "**Required**
+
+What will happen when a timeout occurs.
+
+- `Proceed`: The script will reconcile the VMs it can and then finish.  No error thrown.  
+- `Error`: Will throw an error and it will stop the deployment from proceeding.
+
+The default is `Proceed`",
+        "DefaultValue": "Proceed",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "Proceed|Proceed
+Error|Error"
+        }
+      },
+      {
+        "Id": "80ef4fb9-c773-4d0a-82af-efdfb302e58f",
+        "Name": "VMSS.Duplicate.TimeInMinutes",
+        "Label": "Duplicate Run Time Allowance (in Minutes)",
+        "HelpText": "**Required**
+
+This step is designed to wait for VMSS to finish scaling out.  However, Octopus isn't aware of VMSS and may attempt to run the same deployment multiple times as new targets are \"discovered.\"
+
+Typically, when this happens, a deployment is queued within a few minutes of the previous one finishing.  When that happens this step will treat that as a duplicate run.  
+
+This setting indicates the number of minutes that must pass before a duplicate run is found.  The default is `3` minutes.",
+        "DefaultValue": "3",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0eb3bed8-9259-440e-bff0-cb86af7da52e",
+        "Name": "VMSS.Duplicate.Handle",
+        "Label": "Duplicate Run Adjustment",
+        "HelpText": "**Required**
+
+What the step will do when a duplicate run is found.  The two options are:
+
+- `Cancel`: cancel the current runbook run or deployment.
+- `Proceed`: continue on with the current runbook run or deployment.
+
+The default is `Proceed`.",
+        "DefaultValue": "Proceed",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "Cancel|Cancel
+Proceed|Proceed"
+        }
+      },
+      {
+        "Id": "adaf6a8c-453f-4b69-9ba6-f6a54b4f5bb9",
+        "Name": "VMSS.OldServers.ExcludeFromOutput",
+        "Label": "Exclude Pre-Existing Servers from Output",
+        "HelpText": "**Required**
+
+Old servers are any servers that existed prior to scaling out the VMSS.  
+
+If this step is run in a deployment target trigger it will pull back all the machines in a scale set and return them in an output variable.  Depending on how you use that list, this could result in redeployment.
+
+You can exclude pre-existing servers by setting this value to `Yes`.  The default is `No`.",
+        "DefaultValue": "No",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "No|No
+Yes|Yes"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2021-07-26T19:15:02.718Z",
+      "OctopusVersion": "2021.2.6259",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "BobJWalker",
+    "Category": "azure"
+  }

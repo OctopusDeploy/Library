@@ -1,0 +1,166 @@
+{
+  "Id": "0b753c94-c12b-46f3-bb82-459e27bbe812",
+  "Name": "Variables - Find Unreplaced",
+  "Description": "Searches `Web.config` or `App.config` files looking for Octopus Deploy variables that have not been replaced. Alternatively, any arbitrary file can be checked.",
+  "ActionType": "Octopus.Script",
+  "Version": 26,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function Find-Unreplaced {
+    <#
+    .SYNOPSIS
+        Looks for Octopus Deploy variables
+    .DESCRIPTION
+        Analyses `Web/App.Release.configs`, etc... looking for Octopus Deploy 
+        variables that have not been replaced.
+    .EXAMPLE
+        Find-Unreplaced C:\\Folder *.config, *.ps1 
+    .PARAMETER Path
+        Root folder to search in
+    .PARAMETER Files
+        An array of all the files or globs to search in. Defaults to *.config
+    .PARAMETER Exclude
+        Files to ignore
+    .PARAMETER Recurse
+        Should the cmdlet look for the file types recursively
+    .PARAMETER TreatAsError
+        Will cause the script to write an Error instead of a warning if variables are found
+    #>
+    [CmdletBinding()]
+    param 
+    (
+        [Parameter(
+            Position=0,
+            Mandatory=$true,
+            ValueFromPipeline=$True)]
+        [string] $Path,
+        
+        [Parameter(
+            Position=1,
+            Mandatory=$false)]
+        [string[]] $Files = @('*.config'),
+        
+        [Parameter(Mandatory=$false)]
+        [string[]] $Exclude,
+        
+        [Parameter(Mandatory=$false)]
+        [switch] $Recurse,
+        
+        [Parameter(Mandatory=$false)]
+        [switch] $TreatAsError
+    )
+
+    process {
+        Write-Host \"Searching for files in '$Path'\"
+        if (-not (Test-Path $Path -PathType container)) {
+            Write-Error \"The path '$Path' does not exist or is not a folder.\"
+            return
+        }
+        
+        if (-not $Recurse) {
+            # For some reason, a splat is required when not recursing
+            if ($Path.EndsWith(\"\\\")) { $Path += \"*\" } else { $Path += \"\\*\" }
+        }
+
+        $clean = $true
+
+        $found = Get-ChildItem -Path $Path -Recurse:$Recurse -Include $Files -Exclude $Exclude -File
+        foreach ($file in $found) {
+            Write-Host \"Found '$file'.`nSearching for Octopus variables...\" -NoNewline
+            $matches = Select-String -Path $file -Pattern \"#\\{([^}]*)\\}\" -AllMatches
+            $clean = $clean -and ($matches.Count -eq 0)
+            if ($clean) {
+                Write-Host \"clean\"
+            } else {
+                Write-Host \"done`n$matches\"
+            }
+        }
+
+        if (-not $clean) {
+            $msg = \"Unreplaced Octopus Variables were found.\"
+            if ($TreatAsError) {
+                Write-Error $msg
+            } else {
+                Write-Warning $msg
+            }
+        }
+    }
+}
+
+if (-not $Path) { throw \"A Path must be specified\" }
+if (-not $Files) { throw \"At least one File must be specified\" }
+
+$spPaths = $Path -split \"`n\" | Foreach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrEmpty($_) }
+$spFiles = $Files -split \";\" | Foreach-Object { $_.Trim() } 
+$spExcludes = $Exclude -split \";\" | Foreach-Object { $_.Trim() } 
+$bRecurse = $Recurse -eq 'True'
+$bTreatAsError = $TreatAsError -eq 'True'
+
+$spPaths | Find-Unreplaced -Files $spFiles -Exclude $spExcludes -Recurse:$bRecurse -TreatAsError:$bTreatAsError
+
+",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Id": "7809f4f9-7388-4067-ae0f-e5d858ad9395",
+      "Name": "Path",
+      "Label": "Path",
+      "HelpText": "The folders to search for files in. Enter multiple paths on separate lines.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "f9389ec3-1602-48b1-9f03-c95af304a3c2",  
+      "Name": "Files",
+      "Label": "Files",
+      "HelpText": "An array of all the files or globs to search in. Defaults to `*.config`. Multiple items can be separated with a semicolon `;`.",
+      "DefaultValue": "*.config",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0b54fdbd-12ac-4fc8-aa26-410cd1a3bd77",  
+      "Name": "Exclude",
+      "Label": "Exclude",
+      "HelpText": "Files or globs to ignore. Multiple items can be separated with a semicolon `;`.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "29f81ee9-529b-45f6-8452-8e8f464c3225",  
+      "Name": "Recurse",
+      "Label": "Recurse",
+      "HelpText": "Determines whether or not the step should look through the items in `Path` recursively.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "fd64a155-abe9-483e-b954-e182fbb777b0",  
+      "Name": "TreatAsError",
+      "Label": "Treat as an error?",
+      "HelpText": "Determines if the step will cause the build to fail or issue a warning. By default it will only warn of a problem.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-09-14T10:40:15.430Z",
+  "LastModifiedBy": "harrisonmeister",
+  "$Meta": {
+    "ExportedAt": "2021-09-14T10:40:15.430Z",
+    "OctopusVersion": "2021.2.7428",
+    "Type": "ActionTemplate"
+  },
+  "Category": "octopus"
+}
