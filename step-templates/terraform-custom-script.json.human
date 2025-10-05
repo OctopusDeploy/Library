@@ -1,0 +1,230 @@
+{
+  "Id": "1d2a62d0-1f12-4417-8566-4ca1b8e6a69c",
+  "Name": "Execute Custom Terraform Script with Package",
+  "Description": "Run a custom terraform script using a package and an Azure Account.
+
+E.g. run \"terraform taint some-resource\" in the context of your terraform package files and authenticated against Azure using credentials in an Octopus Azure Account variable. This step operates very similarly to the built-in Terraform Apply step but allowing you the control to call terraform commands rather than using the octopus runner. Very useful for runbooks doing terraform import.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Name": "InfrastructurePackage",
+      "Id": "582b5176-aa5d-4166-a5fa-9b760a3b2d7d",
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "TerraformPackageId"
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.EnabledFeatures": "Octopus.Features.SubstituteInFiles",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$DynamicPackageName = \"InfrastructurePackage\" 
+$AccountVariableName = \"TerraformScript.AzureAccount\"
+# Version of the terrform package - used to substitute Octopus.Release.Number in tfvars file
+$packageVersion = $OctopusParameters[\"Octopus.Action.Package[$DynamicPackageName].PackageVersion\"]
+# Override the package version with a custom version string - used to substitute Octopus.Release.Number in tfvars file
+$userOverridenVersionNumber = $OctopusParameters[\"TerraformScript.Octopus.Release.Number\"]
+# Should we call terraform init before the script?
+$runInit = [System.Convert]::ToBoolean($OctopusParameters[\"TerraformScript.RunInitBeforeScript\"]) 
+
+$versionNumberToSubstitute = If ($userOverridenVersionNumber) { $userOverridenVersionNumber } else { $packageVersion }
+$versionNumberSubstitutionFilesPattern = if ( $OctopusParameters[\"TerraformScript.versionNumberSubstitutionFilesPattern\"]) {
+    $OctopusParameters[\"TerraformScript.VersionNumberSubstitutionFilesPattern\"]
+}
+else {
+    \"*.tf*\"
+}
+
+# Should Octopus collect all terraform files from the package after execution as artefacts?
+$collectArtefacts = if ($OctopusParameters[\"TerraformScript.CollectArtefacts\"]) { 
+    [System.Convert]::ToBoolean($OctopusParameters[\"TerraformScript.CollectArtefacts\"]) 
+} 
+else { $false }
+# override pattern to match (terraform) files like *.t* when collecting artefacts
+$artefactNameLikePattern = if ($OctopusParameters[\"TerraformScript.ArtefactNameLikePattern\"]) { 
+    $OctopusParameters[\"TerraformScript.ArtefactNameLikePattern\"] 
+}
+else { 
+    \"*.tf*\"
+}
+# Detect if we have Azure Account credentials from a variable and log in to azure
+$HasAzureAccount = if ($OctopusParameters[\"$AccountVariableName.Client\"]) { $true } else { $false }
+# The path where the package containing terraform files is extracted to disk - usually just ./InfrastructurePackage
+$terraformPackageFolder = $OctopusParameters[\"Octopus.Action.Package[$DynamicPackageName].ExtractedPath\"];
+# Override the location of the terraform exe - otherwise assume terraform is available on PATH
+$CustomTerraformExe = $OctopusParameters[\"Octopus.Action.Terraform.CustomTerraformExecutable\"]
+# The terraform script to be executed
+$terraformCliScriptToExecute = [Scriptblock]::Create($OctopusParameters[\"TerraformScript.CliScript\"])
+
+# If we have service principal creds to Azure then set ENV variables so that azurerm can authenticate
+if ($HasAzureAccount) {
+    Write-host \"Selecting azure subscription $($OctopusParameters[\"$AccountVariableName.SubscriptionNumber\"]) using $AccountVariableName variable\"
+  
+    $ENV:ARM_CLIENT_ID = $OctopusParameters[\"$AccountVariableName.Client\"]
+    $ENV:ARM_CLIENT_SECRET = $OctopusParameters[\"$AccountVariableName.Password\"]
+    $ENV:ARM_SUBSCRIPTION_ID = $OctopusParameters[\"$AccountVariableName.SubscriptionNumber\"]
+    $ENV:ARM_TENANT_ID = $OctopusParameters[\"$AccountVariableName.TenantId\"]
+}
+
+Function Invoke-Exec {
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0, Mandatory = 1)][scriptblock]$cmd
+    )
+    $scriptExpanded = $ExecutionContext.InvokeCommand.ExpandString($cmd).Trim().Trim(\"&\")
+    Write-Verbose \"Executing command: $scriptExpanded\"
+
+    & $cmd | Out-Default
+
+    if ($lastexitcode -ne 0) {
+        throw (\"Non-zero exit code '$lastexitcode' detected from command: '$scriptExpanded'\")
+    }
+}
+
+#================= Prep to run terraform ========================
+
+# List the contents of the package - useful debugging
+Write-Verbose \"Using package contents:\"
+Get-ChildItem $terraformPackageFolder -Verbose
+
+# Use a custom version of terraform? If so add it to the path for this sesssion. Otherwise assume terraform already on PATH
+if ($CustomTerraformExe) {
+    $terraformfolder = Split-Path $CustomTerraformExe;
+    # add custom terraform to path if required
+    if ($ENV:PATH -notcontains $terraformfolder) { 
+        $ENV:PATH += \";$terraformfolder\"; 
+    }
+    Write-Verbose \"PATH: $ENV:PATH\"
+    Write-Host \"`nUsing terraform.exe from $terraformExePath\"
+}
+
+Write-Host \"Running in $terraformPackageFolder\"
+Set-Location $terraformPackageFolder
+
+# Substitute #{Octopus.Release.Number} in *.tf files because that variable is not availe during runbook execution
+Get-ChildItem . -file | Where-Object { $_.Name -like $versionNumberSubstitutionFilesPattern } | ForEach-Object {
+    Write-Host \"Replacing #{Octopus.Release.Number} in $($_.FullName) with $versionNumberToSubstitute\"
+    (Get-Content $_.FullName) -replace \"#{Octopus.Release.Number}\", $versionNumberToSubstitute | Set-Content $_.FullName
+}   
+
+#================= terraform init ========================
+
+# optionally initialise terraform
+if($runInit) {
+  Write-Host \"`n terraform init`n\"
+  terraform init -no-color
+}
+#================= Run terraform script ========================
+
+try {
+    # Execute the provided script
+    Invoke-Exec $terraformCliScriptToExecute
+}
+finally {
+    # optionally collect all terraform files as artefacts
+    if ($collectArtefacts) {
+        Get-ChildItem . -File | Where-Object { $_.name -like $artefactNameLikePattern } | New-OctopusArtifact
+    }
+}
+",
+    "Octopus.Action.SubstituteInFiles.TargetFiles": "InfrastructurePackage\\*.tf
+InfrastructurePackage\\*.tfvars"
+  },
+  "Parameters": [
+    {
+      "Id": "0170e094-b282-4924-b1ed-5103015e366f",
+      "Name": "TerraformPackageId",
+      "Label": "Package Id (Required)",
+      "HelpText": "The ID of the nupkg/zip that contains the terraform files",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "3b7abc1b-49d9-4302-86e8-a85cc6eb2a75",
+      "Name": "TerraformScript.AzureAccount",
+      "Label": "Azure Account",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "53195dc5-dcc4-4a35-b3af-b63a0958ae46",
+      "Name": "TerraformScript.CliScript",
+      "Label": "Terraform Script",
+      "HelpText": "A terraform CLI script to be executed in the context of the package, such as `terraform show -no-color` or ` terraform import some-resource`",
+      "DefaultValue": "terraform plan -var-file=\"octopus.tfvars\" -no-color",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "2d907ba2-41f4-47d4-9592-1111a9ab8f93",
+      "Name": "TerraformScript.RunInitBeforeScript",
+      "Label": "Run Terraform Init?",
+      "HelpText": "If true, then script will call terraform init before executing the script",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "d0d1018d-d8aa-4c34-8da9-5c893076f8fe",
+      "Name": "TerraformScript.CollectArtefacts",
+      "Label": "Collect terraform files as artefacts?",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "d379e1f0-fac5-48cb-a011-249e0bcb401e",
+      "Name": "TerraformScript.ArtefactNameLikePattern",
+      "Label": "Collect terraform files artefact pattern",
+      "HelpText": "A like pattern for files to be collected as artefacts when 'Collect Terraform Files as Artefacts' is enabled. Example: `*.tf*`",
+      "DefaultValue": "*.tf*",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7b24c582-de47-4dad-9e37-c300802d1df9",
+      "Name": "TerraformScript.Octopus.Release.Number",
+      "Label": "Release Number Override",
+      "HelpText": "When step is run in a runbook there is no release number, so you may need to provide one here. By default we will use the release number from the package and substitute it into variable Octopus.Release.Number in terraform files, but you may override the value here if required.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "23e0e330-6b6b-4f7a-bd95-e44e69d1bcf6",
+      "Name": "TerraformScript.VersionNumberSubstitutionFilesPattern",
+      "Label": "Files to substitute Release Number",
+      "HelpText": "A like pattern for files that should have #{Octopus.Release.Number} substituted. Example: `*.tf*`",
+      "DefaultValue": "*.tf*",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-03-15T18:13:18.243Z",
+    "OctopusVersion": "2020.5.2",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "alastairtree",
+  "Category": "terraform"
+}
