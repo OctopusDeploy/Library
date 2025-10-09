@@ -127,6 +127,8 @@ function humanize(categoryId) {
       return "Azure Site Extensions";
     case "azureFunctions":
       return "Azure Functions";
+    case "bitwarden":
+      return "Bitwarden";
     case "cassandra":
       return "Cassandra";
     case "chef":
