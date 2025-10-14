@@ -1,0 +1,56 @@
+{
+  "Id": "72db001f-ae7f-4a0f-b952-5f80e2fc4cd2",
+  "Name": "Octopus - Check Blue Green Deployment",
+  "Description": "This step checks to ensure that deployments to blue/green environments alternate. The output variable `SequentialDeploy` is set to `True` if two deployments are done to the same environment, and `False` if they are alternating.\n\nA common scenario is to check for `SequentialDeploy` set to `True` and display a warning or the manual intervention step to confirm a deployment.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# We assume that deployments to the production environments alternate between green and blue.\n# For example, if the last production deployment was to blue the next one should be to the green environment.\n# This check is used to provide a warning if a production environment is deployed to twice in a row.\n\n$octopusUrl = \"\"\n\n # Check to make sure targets have been created\nif ([string]::IsNullOrWhitespace(\"#{Octopus.Web.ServerUri}\"))\n{\n    $octopusUrl = \"#{Octopus.Web.BaseUrl}\"\n}\nelse\n{\n    $octopusUrl = \"#{Octopus.Web.ServerUri}\"\n}\n\nif (-not \"#{BlueGreen.Octopus.Api.Key}\".StartsWith(\"API-\")) {\n    Write-Host \"The BlueGreen.Octopus.Api.Key variable has not been defined. We can not validate the deployment environment.\"\n    exit 0\n}\n\nif ([string]::IsNullOrWhiteSpace(\"#{BlueGreen.Environment.Blue.Name}\")) {\n    Write-Host \"The BlueGreen.Environment.Blue.Name variable has not been defined. We can not validate the deployment environment.\"\n    exit 0\n}\n\nif ([string]::IsNullOrWhiteSpace(\"#{BlueGreen.Environment.Green.Name}\")) {\n    Write-Host \"The BlueGreen.Environment.Green.Name variable has not been defined. We can not validate the deployment environment.\"\n    exit 0\n}\n\n$header = @{ \"X-Octopus-ApiKey\" = \"#{Project.Octopus.Api.Key}\" }\n\n# Get environment ID\n$blueEnvironmentName = \"#{BlueGreen.Environment.Blue.Name}\"\n$blueEnvironments = Invoke-RestMethod -Uri \"$octopusURL/api/#{Octopus.Space.Id}/environments?partialName=$([uri]::EscapeDataString($blueEnvironmentName))&skip=0&take=100\" -Headers $header\n$blueEnvironment = $blueEnvironments.Items | Where-Object { $_.Name -eq $blueEnvironmentName } | Select-Object -First 1\n\n$greenEnvironmentName = \"#{BlueGreen.Environment.Green.Name}\"\n$greenEnvironments = Invoke-RestMethod -Uri \"$octopusURL/api/#{Octopus.Space.Id}/environments?partialName=$([uri]::EscapeDataString($greenEnvironmentName))&skip=0&take=100\" -Headers $header\n$greenEnvironment = $greenEnvironments.Items | Where-Object { $_.Name -eq $greenEnvironmentName } | Select-Object -First 1\n\n# Get deployments for the environment and project, excluding the current deployment\n$blueDeploymentsUri = \"$octopusUrl/api/#{Octopus.Space.Id}/deployments?environments=$($blueEnvironment.Id)&projects=#{Octopus.Project.Id}&take=2\"\n$blueLatestDeployment = Invoke-RestMethod -Uri $blueDeploymentsUri -Headers $header | Select-Object -ExpandProperty Items | Where-Object { $_.Id -ne \"#{Octopus.Deployment.Id}\" }\n\n$greenDeploymentsUri = \"$octopusUrl/api/#{Octopus.Space.Id}/deployments?environments=$($greenEnvironment.Id)&projects=#{Octopus.Project.Id}&take=2\"\n$greenLatestDeployment = Invoke-RestMethod -Uri $greenDeploymentsUri -Headers $header | Select-Object -ExpandProperty Items | Where-Object { $_.Id -ne \"#{Octopus.Deployment.Id}\" }\n\n# This is the first deployment to any environment. It doesn't matter which one we go to first.\nif ($greenLatestDeployment.Length -eq 0 -and $blueLatestDeployment.Length -eq 0) {\n    Write-Host \"Neither environment has had a deployment, so we are OK to continue\"\n    Set-OctopusVariable -name \"SequentialDeploy\" -value \"False\"\n    exit 0\n}\n\nif (\"#{Octopus.Environment.Name}\" -eq $blueEnvironmentName) {\n    if ($blueLatestDeployment.Length -eq 0)\n    {\n        Write-Host \"We're deploying to blue and there are no blue deployments, so we're OK to continue\"\n        Set-OctopusVariable -name \"SequentialDeploy\" -value \"False\"\n        exit 0\n    }\n\n    # We know we have deployed to blue at least once, but if we have never deployed to green\n    # then we should not continue.\n    if ($greenLatestDeployment.Length -eq 0)\n    {\n        Write-Host \"We're deploying to blue but there are no green deployments, so we should not continue\"\n        Set-OctopusVariable -name \"SequentialDeploy\" -value \"True\"\n        exit 0\n    }\n}\n\nif (\"#{Octopus.Environment.Name}\" -eq $greenEnvironmentName) {\n    if ($greenLatestDeployment.Length -eq 0)\n    {\n        Write-Host \"We're deploying to green and there are no green deployments, so we're OK to continue\"\n        Set-OctopusVariable -name \"SequentialDeploy\" -value \"False\"\n        exit 0\n    }\n\n    # We know we have deployed to green at least once, but if we have never deployed to blue\n    # then we should not continue.\n    if ($blueLatestDeployment.Length -eq 0)\n    {\n        Write-Host \"We're deploying to green but there are no blue deployments, so we should not continue\"\n        Set-OctopusVariable -name \"SequentialDeploy\" -value \"True\"\n        exit 0\n    }\n}\n\n# At this point both blue and green have done at least one deployment. We need to check\n# which environment had the last deployment.\n$blueLastDeploy = [DateTimeOffset]::Parse($blueLatestDeployment[0].Created)\n$greenLastDeploy = [DateTimeOffset]::Parse($greenLatestDeployment[0].Created)\n\nWrite-Host \"Blue Last Deploy: $blueLastDeploy\"\nWrite-Host \"Green Last Deploy: $greenLastDeploy\"\n\n# We now check to see if the current environment has had the last deployment. If so,\n# we have deployed to this environment twice in a row and we should block the deployment.\nif (\"#{Octopus.Environment.Name}\" -eq $blueEnvironmentName -and $blueLastDeploy -gt $greenLastDeploy) {\n    Write-Host \"The last deployment was to the blue environment, so we should not deploy to it again.\"\n    Set-OctopusVariable -name \"SequentialDeploy\" -value \"True\"\n    exit 0\n}\n\nif (\"#{Octopus.Environment.Name}\" -eq $greenEnvironmentName -and $greenLastDeploy -gt $blueLastDeploy) {\n    Write-Host \"The last deployment was to the green environment, so we should not deploy to it again.\"\n    Set-OctopusVariable -name \"SequentialDeploy\" -value \"True\"\n    exit 0\n}\n\nWrite-Host \"We're OK to continue with the deployment.\"\nSet-OctopusVariable -name \"SequentialDeploy\" -value \"False\"",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "OctopusUseBundledTooling": "False"
+  },
+  "Parameters": [
+    {
+      "Id": "825689d8-f465-4887-a8fc-b03821c82910",
+      "Name": "BlueGreen.Octopus.Api.Key",
+      "Label": "The Octopus API key",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "b2535aeb-ea47-413b-a387-f2bae47137bd",
+      "Name": "BlueGreen.Environment.Blue.Name",
+      "Label": "The name of the blue environment",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7049503a-b6a1-4ba4-b190-55b2f4508d85",
+      "Name": "BlueGreen.Environment.Green.Name",
+      "Label": "The name of the green environment",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2025-10-14T06:35:25.515Z",
+    "OctopusVersion": "2025.3.14357",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "Octopus"
+}
