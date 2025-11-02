@@ -148,7 +148,7 @@ function humanize(categoryId) {
     case "elmah":
       return "ELMAH";
     case "email":
-      return "Email";  
+      return "Email";
     case "entityframework":
       return "Entity Framework";
     case "event-tracing":
@@ -239,6 +239,8 @@ function humanize(categoryId) {
       return "Redgate";
     case "roundhouse":
       return "RoundhousE";
+    case "sbom":
+      return "SBOM";
     case "sharepoint":
       return "SharePoint";
     case "snowflake":
