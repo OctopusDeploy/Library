@@ -3,9 +3,22 @@
   "Name": "Scan for Vulnerabilities",
   "Description": "This step extracts the Docker image, finds any bom.json files, and scans them for vulnerabilities using Trivy.",
   "ActionType": "Octopus.Script",
-  "Version": 1,
+  "Version": 2,
   "CommunityActionTemplateId": null,
-  "Packages": [],
+  "Packages": [
+    {
+      "Id": "9b495093-0020-4df8-bc44-2fd65ab13943",
+      "Name": "application",
+      "PackageId": "",
+      "FeedId": "feeds-builtin",
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "Sbom.Package"
+      }
+    }
+  ],
   "GitDependencies": [],
   "Properties": {
     "OctopusUseBundledTooling": "False",
@@ -13,7 +26,18 @@
     "Octopus.Action.Script.Syntax": "PowerShell",
     "Octopus.Action.Script.ScriptBody": "Write-Host \"Pulling Trivy Docker Image\"\nWrite-Host \"##octopus[stdout-verbose]\"\ndocker pull ghcr.io/aquasecurity/trivy\nWrite-Host \"##octopus[stdout-default]\"\n\n$SUCCESS = 0\n\nWrite-Host \"##octopus[stdout-verbose]\"\nGet-ChildItem -Path \".\" | Out-String\nWrite-Host \"##octopus[stdout-default]\"\n\n# Find all bom.json files\n$currentDirectoryName = Split-Path -Path $PWD -Leaf\n$path = \".\"\n\n$bomFiles = Get-ChildItem -Path $path -Filter \"bom.json\" -Recurse -File\n\nif ($bomFiles.Count -eq 0) {\n    Write-Host \"No bom.json files found in the current directory.\"\n    exit 0\n}\n\nforeach ($file in $bomFiles) {\n    Write-Host \"Scanning $($file.FullName)\"\n\n    # Delete any existing report file\n    if (Test-Path \"$PWD/depscan-bom.json\") {\n        Remove-Item \"$PWD/depscan-bom.json\" -Force\n    }\n\n    # Generate the report, capturing the output\n    try {\n        $OUTPUT = docker run --rm -v \"$($file.FullName):/input/$($file.Name)\" ghcr.io/aquasecurity/trivy sbom -q \"/input/$($file.Name)\"\n        $exitCode = $LASTEXITCODE\n    }\n    catch {\n        $OUTPUT = $_.Exception.Message\n        $exitCode = 1\n    }\n\n    # Run again to generate the JSON output\n    docker run --rm -v \"${PWD}:/output\" -v \"$($file.FullName):/input/$($file.Name)\" ghcr.io/aquasecurity/trivy sbom -q -f json -o /output/depscan-bom.json \"/input/$($file.Name)\"\n\n    # Octopus Deploy artifact\n    New-OctopusArtifact \"$PWD/depscan-bom.json\"\n\n    # Parse JSON output to count vulnerabilities\n    $jsonContent = Get-Content -Path \"depscan-bom.json\" | ConvertFrom-Json\n    $CRITICAL = ($jsonContent.Results | ForEach-Object { $_.Vulnerabilities } | Where-Object { $_.Severity -eq \"CRITICAL\" }).Count\n    $HIGH = ($jsonContent.Results | ForEach-Object { $_.Vulnerabilities } | Where-Object { $_.Severity -eq \"HIGH\" }).Count\n\n    if (\"#{Octopus.Environment.Name}\" -eq \"Security\") {\n        Write-Highlight \"🟥 $CRITICAL critical vulnerabilities\"\n        Write-Highlight \"🟧 $HIGH high vulnerabilities\"\n    }\n\n    # Set success to 1 if exit code is not zero\n    if ($exitCode -ne 0) {\n        $SUCCESS = 1\n    }\n\n    # Print the output\n    $OUTPUT | ForEach-Object {\n        if ($_.Length -gt 0) {\n            Write-Host $_\n        }\n    }\n}\n\n# Cleanup\nfor ($i = 1; $i -le 10; $i++) {\n    try {\n        if (Test-Path \"bundle\") {\n            Set-ItemProperty -Path \"bundle\" -Name IsReadOnly -Value $false -Recurse -ErrorAction SilentlyContinue\n            Remove-Item -Path \"bundle\" -Recurse -Force -ErrorAction Stop\n            break\n        }\n    }\n    catch {\n        Write-Host \"Attempting to clean up files\"\n        Start-Sleep -Seconds 1\n    }\n}\n\n# Set Octopus variable\nSet-OctopusVariable -Name \"VerificationResult\" -Value $SUCCESS\n\nexit 0"
   },
-  "Parameters": [],
+  "Parameters": [
+    {
+      "Id": "9cea163a-a048-4ff5-9405-56fdcb9015c7",
+      "Name": "Sbom.Package",
+      "Label": "Application Package",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    }
+  ],
   "StepPackageId": "Octopus.Script",
   "$Meta": {
     "ExportedAt": "2025-11-02T21:42:33.662Z",
