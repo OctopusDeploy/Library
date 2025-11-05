@@ -1,0 +1,275 @@
+{
+  "Id": "ee4a6957-7d98-4dcf-8f94-78f19ab1c6e0",
+  "Name": "Akamai - CPCode Fast Purge",
+  "Description": "Allows to purge CP codes using the Content Control Utility (CCU) v3 REST API.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "$clientToken = $OctopusParameters['AkamaiClientToken']
+$clientAccessToken = $OctopusParameters['AkamaiClientAccessToken']
+$clientSecret = $OctopusParameters['AkamaiSecret']
+$cpcode = $OctopusParameters['AkamaiCPCode']
+$akhost = $OctopusParameters['AkamaiHost']
+$action = $OctopusParameters['AkamaiAction']
+$domain = $OctopusParameters['AkamaiDomain']
+
+# NOTICE : PowerShell EdgeGrid Client has been deprecated and will reach End of Life soon. For more information, please see https://developer.akamai.com/blog/2018/11/13/akamai-powershell-edgegrid-client-end-life-notice
+# Copied from https://github.com/akamai-open/AkamaiOPEN-powershell/blob/master/Invoke-AkamaiOPEN.ps1
+function Invoke-AkamaiOpenRequest {
+\tparam(
+\t\t[Parameter(Mandatory=$true)]
+\t\t[ValidateSet(\"GET\", \"PUT\", \"POST\", \"DELETE\")]
+\t\t[string]$Method,
+\t\t[Parameter(Mandatory=$true)][string]$ClientToken,
+\t\t[Parameter(Mandatory=$true)][string]$ClientAccessToken,
+\t\t[Parameter(Mandatory=$true)][string]$ClientSecret,
+\t\t[Parameter(Mandatory=$true)][string]$ReqURL,
+\t\t[Parameter(Mandatory=$false)][string]$Body,
+\t\t[Parameter(Mandatory=$false)][string]$MaxBody = 131072
+\t\t)
+
+\t#Function to generate HMAC SHA256 Base64
+\tFunction Crypto ($secret, $message)
+\t{
+\t\t[byte[]] $keyByte = [System.Text.Encoding]::ASCII.GetBytes($secret)
+\t\t[byte[]] $messageBytes = [System.Text.Encoding]::ASCII.GetBytes($message)
+\t\t$hmac = new-object System.Security.Cryptography.HMACSHA256((,$keyByte))
+\t\t[byte[]] $hashmessage = $hmac.ComputeHash($messageBytes)
+\t\t$Crypt = [System.Convert]::ToBase64String($hashmessage)
+
+\t\treturn $Crypt
+\t}
+
+\t#ReqURL Verification
+\tIf (($ReqURL -as [System.URI]).AbsoluteURI -eq $null -or $ReqURL -notmatch \"akamaiapis.net\")
+\t{
+\t\tthrow \"Error: Ivalid Request URI\"
+\t}
+
+\t#Sanitize Method param
+\t$Method = $Method.ToUpper()
+
+\t#Split $ReqURL for inclusion in SignatureData
+\t$ReqArray = $ReqURL -split \"(.*\\/{2})(.*?)(\\/)(.*)\"
+
+\t#Timestamp for request signing
+\t$TimeStamp = [DateTime]::UtcNow.ToString(\"yyyyMMddTHH:mm:sszz00\")
+
+\t#GUID for request signing
+\t$Nonce = [GUID]::NewGuid()
+
+\t#Build data string for signature generation
+\t$SignatureData = $Method + \"`thttps`t\"
+\t$SignatureData += $ReqArray[2] + \"`t\" + $ReqArray[3] + $ReqArray[4]
+
+\t#Add body to signature. Truncate if body is greater than max-body (Akamai default is 131072). PUT Medthod does not require adding to signature.
+\t
+\tif ($Body -and $Method -eq \"POST\")
+\t{
+\t  $Body_SHA256 = [System.Security.Cryptography.SHA256]::Create()
+\t  if($Body.Length -gt $MaxBody){
+\t\t$Post_Hash = [System.Convert]::ToBase64String($Body_SHA256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($Body.Substring(0,$MaxBody))))
+\t  }
+\t  else{
+\t\t$Post_Hash = [System.Convert]::ToBase64String($Body_SHA256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($Body)))
+\t  }
+
+\t  $SignatureData += \"`t`t\" + $Post_Hash + \"`t\"
+\t}
+\telse
+\t{
+\t  $SignatureData += \"`t`t`t\"
+\t}
+
+\t$SignatureData += \"EG1-HMAC-SHA256 \"
+\t$SignatureData += \"client_token=\" + $ClientToken + \";\"
+\t$SignatureData += \"access_token=\" + $ClientAccessToken + \";\"
+\t$SignatureData += \"timestamp=\" + $TimeStamp  + \";\"
+\t$SignatureData += \"nonce=\" + $Nonce + \";\"
+
+\t#Generate SigningKey
+\t$SigningKey = Crypto -secret $ClientSecret -message $TimeStamp
+
+\t#Generate Auth Signature
+\t$Signature = Crypto -secret $SigningKey -message $SignatureData
+
+\t#Create AuthHeader
+\t$AuthorizationHeader = \"EG1-HMAC-SHA256 \"
+\t$AuthorizationHeader += \"client_token=\" + $ClientToken + \";\"
+\t$AuthorizationHeader += \"access_token=\" + $ClientAccessToken + \";\"
+\t$AuthorizationHeader += \"timestamp=\" + $TimeStamp + \";\"
+\t$AuthorizationHeader += \"nonce=\" + $Nonce + \";\"
+\t$AuthorizationHeader += \"signature=\" + $Signature
+
+\t#Create IDictionary to hold request headers
+\t$Headers = @{}
+
+\t#Add Auth header
+\t$Headers.Add('Authorization',$AuthorizationHeader)
+
+\t#Add additional headers if POSTing or PUTing
+\tIf ($Body)
+\t{
+\t  # turn off the \"Expect: 100 Continue\" header
+\t  # as it's not supported on the Akamai side.
+\t  [System.Net.ServicePointManager]::Expect100Continue = $false
+\t}
+\t
+\t#Check for valid Methods and required switches
+\t[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+\tif ($Method -eq \"PUT\" -or $Method -eq \"POST\") {
+\t\tif ($Body) {
+\t\t\ttry{
+\t\t\t\tInvoke-RestMethod -Method $Method -Uri $ReqURL -Headers $Headers -Body $Body -ContentType 'application/json'
+\t\t\t}
+\t\t\tcatch{
+\t\t\t\tWrite-Host $_ -fore green
+\t\t\t}
+\t\t}
+\t\telse {
+\t\t  Invoke-RestMethod -Method $Method -Uri $ReqURL -Headers $Headers -ContentType 'application/json'
+\t\t}
+\t}
+\telse {
+\t\t#Invoke API call with GET or DELETE and return
+\t\tInvoke-RestMethod -Method $Method -Uri $ReqURL -Headers $Headers
+\t}
+}
+
+function Perform-AkamaiRequest {
+    param (
+        [string]$request, 
+        [string]$method=\"Get\", 
+        [int]$expectedStatusCode=200, 
+        $body)
+
+    $baseUrl = \"https://\" + $akhost
+    $uri = \"{0}{1}\" -f $baseUrl,$request
+
+    $json = ConvertTo-Json $body -Compress
+    $response = Invoke-AkamaiOpenRequest -Method $method -ClientToken $clientToken -ClientAccessToken $clientAccessToken -ClientSecret $clientSecret -ReqURL $uri -Body $json
+\t
+    if ($response.httpStatus -ne $expectedStatusCode){
+        Write-Error \"Request not processed correctly: $($response.detail)\"
+    } elseif ($response.detail) {
+        Write-Verbose $response.detail
+    }
+
+    $response
+}
+
+function Request-Purge {
+    param ([Int]$cpcode,[string]$action=\"remove\",[string]$domain=\"production\")
+
+    $body = @{
+        objects = @($cpcode)
+    }
+
+    Perform-AkamaiRequest \"/ccu/v3/$action/cpcode/$domain\" \"Post\" 201 $body
+}
+
+$purge = Request-Purge $cpcode $action $domain
+
+Write-Output \"Purge request created\"
+Write-Output \"PurgeId: $($purge.purgeId)\"
+Write-Output \"SupportId: $($purge.supportId)\" ",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "293e2cc1-e471-4801-8a9c-42633a3c9122",
+      "Name": "AkamaiClientToken",
+      "Label": "Client Token",
+      "HelpText": "Authentication token used in client authentication. Available in Luna Portal.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "e0edcbea-bfdd-4781-9a8a-55b08eba6ed5",
+      "Name": "AkamaiClientAccessToken",
+      "Label": "Client Access Token",
+      "HelpText": "Authentication token used in client authentication. Available in Luna Portal.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "c1ea0502-f68e-4890-99a2-3c721d16b7f0",
+      "Name": "AkamaiSecret",
+      "Label": "Secret",
+      "HelpText": "Authentication password used in client authentication. Available in Luna Portal.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "f54e1b4a-3960-483b-88c9-5ea7a94698a0",
+      "Name": "AkamaiCPCode",
+      "Label": "CPCode",
+      "HelpText": "The CPCode for which to execute the purge operation",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "a334eabb-8a36-4c24-b728-52f834f8a893",
+      "Name": "AkamaiHost",
+      "Label": "Host",
+      "HelpText": "Akamai Host (no HTTP/HTTPS). Available in Luna Portal.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "8482001d-a6fc-4e72-b9be-8cc584a39b36",
+      "Name": "AkamaiAction",
+      "Label": "Action",
+      "HelpText": "The action to execute on the purge operation",
+      "DefaultValue": "invalidate",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "invalidate
+remove"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "e1c3dfa0-7118-4e23-9315-c03ea3662125",
+      "Name": "AkamaiDomain",
+      "Label": "Domain",
+      "HelpText": "The Akamai domain to perform the purge operation on",
+      "DefaultValue": "production",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "production
+staging"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedOn": "2019-02-11T18:51:20.358Z",
+  "LastModifiedBy": "ajwightm",
+  "$Meta": {
+    "ExportedAt": "2019-02-11T18:51:20.358Z",
+    "OctopusVersion": "3.13.10",
+    "Type": "ActionTemplate"
+  },
+  "Category": "Akamai"
+}

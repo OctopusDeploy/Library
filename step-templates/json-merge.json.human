@@ -1,0 +1,146 @@
+{
+  "Id": "6bb1fb50-de38-4380-a5ef-7f21ac3a3e6f",
+  "Name": "JSON - Merge Files",
+  "Description": "Merge JSON files",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "function Get-RequiredParam($Name) {\r
+    $result = $null\r
+\r
+    if ($OctopusParameters -ne $null) {\r
+        $result = $OctopusParameters[$Name]\r
+    }\r
+\r
+    if ($result -eq $null) {\r
+        $variable = Get-Variable $Name -EA SilentlyContinue    \r
+        if ($variable -ne $null) {\r
+            $result = $variable.Value\r
+        }\r
+    }\r
+\r
+    if ($result -eq $null) {\r
+\t\tthrow \"Missing parameter value $Name\"\r
+    }\r
+\r
+    return $result\r
+}\r
+\r
+function Merge-Objects($file1, $file2) {\r
+    $propertyNames = $($file2 | Get-Member -MemberType *Property).Name\r
+    foreach ($propertyName in $propertyNames) {\r
+\t\t# Check if property already exists\r
+        if ($file1.PSObject.Properties.Match($propertyName).Count) {\r
+            if ($file1.$propertyName.GetType().Name -eq 'PSCustomObject') {\r
+\t\t\t\t# Recursively merge subproperties\r
+                $file1.$propertyName = Merge-Objects $file1.$propertyName $file2.$propertyName\r
+            } else {\r
+\t\t\t\t# Overwrite Property\r
+                $file1.$propertyName = $file2.$propertyName\r
+            }\r
+        } else {\r
+\t\t\t# Add property\r
+            $file1 | Add-Member -MemberType NoteProperty -Name $propertyName -Value $file2.$propertyName\r
+        }\r
+    }\r
+    return $file1\r
+}\r
+\r
+function Merge-Json($sourcePath, $transformPath, $failIfTransformMissing, $outputPath) {\r
+\tif(!(Test-Path $sourcePath)) {\r
+\t\tWrite-Host \"Source file $sourcePath does not exist!\"\r
+\t\tExit 1\r
+\t}\r
+\t\r
+\t$sourceObject = (Get-Content -Path $sourcePath -Encoding UTF8) -join \"`n\" | ConvertFrom-Json\r
+\t$mergedObject = $sourceObject\r
+\t\r
+\tif (!(Test-Path $transformPath)) {\r
+\t\tWrite-Host \"Transform file $transformPath does not exist!\"\r
+\t\tif ([System.Convert]::ToBoolean($failIfTransformMissing)) {\r
+\t\t\tExit 1\r
+\t\t}\r
+\t\tWrite-Host 'Source file will be written to output without changes'\r
+\t} else {\r
+\t\tWrite-Host 'Applying transformations'\r
+\t\t$transformObject = (Get-Content -Path $transformPath -Encoding UTF8) -join \"`n\" | ConvertFrom-Json\r
+\t\t$mergedObject = Merge-Objects $sourceObject $transformObject\r
+\t}\r
+\t\r
+\tWrite-Host \"Writing merged JSON to $outputPath...\"\r
+\t$mergedJson = $mergedObject | ConvertTo-Json -Depth 200\r
+\t[System.IO.File]::WriteAllLines($outputPath, $mergedJson)\r
+}\r
+\r
+$ErrorActionPreference = 'Stop'\r
+\r
+if($OctopusParameters -eq $null) {\r
+    Write-Host 'OctopusParameters is null...exiting with 1'\r
+    Exit 1    \r
+}\r
+\r
+$sourceFilePath = Get-RequiredParam 'jmf_SourceFile'\r
+$transformFilePath = Get-RequiredParam 'jmf_TransformFile'\r
+$failIfTransformFileMissing = Get-RequiredParam 'jmf_FailIfTransformFileMissing'\r
+$outputFilePath = Get-RequiredParam 'jmf_OutputFile'\r
+\r
+Merge-Json $sourceFilePath $transformFilePath $failIfTransformFileMissing $outputFilePath"
+  },
+  "Parameters": [
+    {
+      "Id": "ff6ebb11-b388-460b-835e-5cf98ae394ed",
+      "Name": "jmf_SourceFile",
+      "Label": "Source file",
+      "HelpText": "Path to the source file",
+      "DefaultValue": "Required",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "f4695bf4-817a-4029-92b8-3e0c9f7da324",
+      "Name": "jmf_TransformFile",
+      "Label": "Transform file",
+      "HelpText": "Path to the file with the changes",
+      "DefaultValue": "Required",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "8b5e7f58-a167-46c9-9260-6c49f4945943",
+      "Name": "jmf_FailIfTransformFileMissing",
+      "Label": "Fail if transform file missing",
+      "HelpText": "Should the script fail if the transformation file is missing?",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "16e43e45-5bc7-4e13-a0d1-4c699cadd259",
+      "Name": "jmf_OutputFile",
+      "Label": "Output file",
+      "HelpText": "Path to the output file",
+      "DefaultValue": "Required",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "jonasjanusauskas",
+  "$Meta": {
+    "ExportedAt": "2019-01-31T13:01:36.386Z",
+    "OctopusVersion": "2018.2.3",
+    "Type": "ActionTemplate"
+  },
+  "Category": "json"
+}

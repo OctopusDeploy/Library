@@ -1,0 +1,175 @@
+{
+  "Id": "03bb1a08-52be-43ad-bdfd-117eb562b414",
+  "Name": "Azure Functions Deployment",
+  "Description": "Deploys Azure Functions via the Kudu API to an Azure Function App.
+
+DO NOT RUN THIS STEP ON AN AZURE WEB APP TARGET. USE A PLAIN TENTACLE TARGET ONLY.
+
+Process:
+1. Deploys the package to a tentacle.
+2. Zips up the deployment artefacts and uploads the resulting zip file.
+
+This process enables the following:
+- Config and variable transform 
+- Package type agnostic (i.e. will work with .nupkg as well as .zip files)
+- Retention policies can be applied to the target in step 1
+
+**Notes:**
+
+This deployment step requires an available tentacle to deploy the package to before the final package is deployed to Azure. This tentacle does not need to be within the target deployment environment. It is advised to install the tentacle on the Octopus Deploy server, and deploy to that tentacle.
+
+The target Function App will not be purged before deployment. This is by design of the Kudu API. An advantage of this is that multiple deployment packages can be deployed to a single Function App, as long as each function to be deployed has a unique name. However, you should be careful not to expect functions that have been removed from the deployment package to also be removed from the Functions App.
+
+The package to deploy should mirror exactly the file and folder structure that the Functions App expects. A quick and easy way to get this up and running is to download an existing Function App's content from the Azure portal, and upload the downloaded zip file to Octopus Deploy via the Library > Packages page.",
+  "ActionType": "Octopus.TentaclePackage",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Package.AutomaticallyRunConfigurationTransformationFiles": "True",
+    "Octopus.Action.Package.AutomaticallyUpdateAppSettingsAndConnectionStrings": "True",
+    "Octopus.Action.EnabledFeatures": "Octopus.Features.CustomScripts,Octopus.Features.JsonConfigurationVariables",
+    "Octopus.Action.Package.DownloadOnTentacle": "False",
+    "Octopus.Action.Package.FeedId": "feeds-builtin",
+    "Octopus.Action.Package.JsonConfigurationVariablesEnabled": "True",
+    "Octopus.Action.CustomScripts.PostDeploy.ps1": "$installationPath = $OctopusParameters[\"Octopus.Action.Package.InstallationDirectoryPath\"]
+$packageId = $OctopusParameters[\"Octopus.Action.Package.PackageId\"]
+$packageVersion = $OctopusParameters[\"Octopus.Action.Package.PackageVersion\"]
+
+Write-Host \"Installation Path: $($installationPath)\"
+Write-Host \"Package ID: $($packageId)\"
+Write-Host \"Package Version: $($packageVersion)\"
+
+$zipFilePath = \"$($installationPath)\\$($packageId).$($packageVersion).zip\"
+
+Write-Host \"Zip File Path: $($zipFilePath)\"
+
+Compress-Archive -Path \"$($installationPath)\\*\" -DestinationPath $zipFilePath
+
+Write-Host \"Deployment zip file created\"
+
+$username = $OctopusParameters[\"Azf.Username\"]
+$password = $OctopusParameters[\"Azf.Password\"]
+$appName = $OctopusParameters[\"Azf.ApplicationName\"]
+
+if(!$username){
+    Write-Error \"No Username has been supplied. You can do this from the Step Details page of this step.\"
+    
+    exit 1;
+}
+
+
+if(!$password){
+    Write-Error \"No Password has been supplied. You can do this from the Step Details page of this step.\"
+    
+    exit 1;
+}
+
+
+if(!$appName){
+    Write-Error \"No Application Name has been supplied. You can do this from the Step Details page of this step.\"
+    
+    exit 1;
+}
+
+$authHeader = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes((\"{0}:{1}\" -f $username,$password)))
+
+$apiUrl = \"https://$($appName).scm.azurewebsites.net/api/zipdeploy\"
+
+Write-Host \"Uploading deployment zip file to $($apiUrl)\"
+
+# Set secure protocols
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+
+Invoke-RestMethod -Uri $apiUrl -Headers @{Authorization=(\"Basic {0}\" -f $authHeader)} -Method POST -InFile $zipFilePath -ContentType \"multipart/form-data\"
+
+Write-Host \"Upload complete\"
+",
+    "Octopus.Action.Package.PackageId": "#{Azf.PackageName}",
+    "Octopus.Action.Package.JsonConfigurationVariablesTargets": "#{Azf.JsonConfigFiles}",
+    "Octopus.Action.CustomScripts.PreDeploy.ps1": "",
+    "Octopus.Action.CustomScripts.Deploy.ps1": ""
+  },
+  "Parameters": [
+    {
+      "Id": "538b02c5-ca4c-4bb6-aadc-e46906e69537",
+      "Name": "Azf.Username",
+      "Label": "Username",
+      "HelpText": "See [Kudu Deployment Credentials](https://github.com/projectkudu/kudu/wiki/Deployment-credentials#user-level-credentials-aka-deployment-credentials) for more information.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "5510ce13-6016-471b-a65d-051597c0c972",
+      "Name": "Azf.Password",
+      "Label": "Password",
+      "HelpText": "See [Kudu Deployment Credentials](https://github.com/projectkudu/kudu/wiki/Deployment-credentials#user-level-credentials-aka-deployment-credentials) for more information.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2bcc2c06-26c7-48c1-9408-1892ecd15910",
+      "Name": "Azf.ApplicationName",
+      "Label": "Application Name",
+      "HelpText": "This value can be determined from the URL of your application. i.e.: https://{ApplicationName}.azurewebsites.net",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "f6ac1609-2cdf-4ba9-a598-6c32df68db85",
+      "Name": "Azf.PackageName",
+      "Label": "Package Name",
+      "HelpText": "The name of the package to deploy.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "0d71cd13-9fb7-4b7f-b352-004a96d6a741",
+      "Name": "Azf.JsonConfigFiles",
+      "Label": "Json Configuration Files",
+      "HelpText": "A comma- or newline-separated list of file names to replace settings in, relative to the package contents. Extended wildcard syntax is supported. E.g., appsettings.json, Config\\*.json, **\\specific-folder\\*.json.. Configuration values can be replaced using a `:` separated key, starting from the root of the hierarchy.
+
+Consider the following appsettings.json file:
+
+    {
+    \"Data\": {
+      \"DefaultConnection\": {
+        \"ConnectionString\": \"Server=(localdb)\\\\SQLEXPRESS;Database=OctoFX;Trusted_Connection=True\"
+      }
+    }
+  }
+
+To replace the value of `ConnectionString` you would add a variable name `Data:DefaultConnection:ConnectionString` to your project variables / library variable set. The JSON also supports extended template syntax.
+
+The 'Target files' field supports extended template syntax. Conditional `if` and `unless`:
+
+    #{if MyVar}...#{/if}
+
+Iteration over variable sets or comma-separated values with `each`:
+
+    #{each mv in MyVar}...#{mv}...#{/each}",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "twerthi",
+  "$Meta": {
+    "ExportedAt": "2020-03-15T18:13:57.632Z",
+    "OctopusVersion": "2019.13.7",
+    "Type": "ActionTemplate"
+  },
+  "Category": "azureFunctions"
+}

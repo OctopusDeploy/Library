@@ -1,0 +1,117 @@
+{
+  "Id": "a55a825b-8e8b-4995-8143-0f9dd7b6bcfa",
+  "Name": "Seq - Log Deployment",
+  "Description": "Post details of the deployment to a [Seq](https://getseq.net) log server. Add this as the last step in a process, and ensure it is set to run always (on success and failure).",
+  "ActionType": "Octopus.Script",
+  "Version": 22,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "function Open-Seq ([string] $url, [string] $apiKey, $properties = @{})\r
+{\r
+  return @{ Url = $url; ApiKey = $apiKey; Properties = $properties.Clone() }\r
+}\r
+  \r
+function Send-SeqEvent (\r
+    $seq,\r
+    [string] $text,\r
+    [string] $level,\r
+    $properties = @{},\r
+    [string] $exception = $null,\r
+    [switch] $template)\r
+{\r
+  if (-not $level) {\r
+    $level = 'Information'\r
+  }\r
+   \r
+  if (@('Verbose', 'Debug', 'Information', 'Warning', 'Error', 'Fatal') -notcontains $level) {\r
+    $level = 'Information'\r
+  }\r
+  \r
+  $allProperties = $seq[\"Properties\"].Clone()\r
+  $allProperties += $properties\r
+  \r
+  $messageTemplate = \"{Text}\"\r
+  \r
+  if ($template) {\r
+    $messageTemplate = $text;\r
+  } else {\r
+    $allProperties += @{ Text = $text; }\r
+  }\r
+  \r
+  $exceptionProperty = \"\"\r
+  if ($exception) {\r
+      $exceptionProperty = \"\"\"Exception\"\": $($exception | ConvertTo-Json),\"\r
+  }\r
+  \r
+  $body = \"{\"\"Events\"\": [ {\r
+    \"\"Timestamp\"\": \"\"$([System.DateTimeOffset]::Now.ToString('o'))\"\",\r
+    \"\"Level\"\": \"\"$level\"\",\r
+    $exceptionProperty\r
+    \"\"MessageTemplate\"\": $($messageTemplate | ConvertTo-Json),\r
+    \"\"Properties\"\": $($allProperties | ConvertTo-Json) }]}\"\r
+  \r
+  $target = \"$($seq[\"Url\"])/api/events/raw?apiKey=$($seq[\"ApiKey\"])\"\r
+  \r
+  Invoke-RestMethod -Uri $target -Body $body -ContentType \"application/json\" -Method POST\r
+}\r
+\r
+Write-Output \"Logging the deployment result to Seq at $SeqServerUrl...\"\r
+\r
+$seq = Open-Seq $SeqServerUrl -apiKey $SeqApiKey\r
+\r
+$properties = @{\r
+    ProjectName = $OctopusParameters['Octopus.Project.Name'];\r
+    ReleaseNumber = $OctopusParameters['Octopus.Release.Number'];\r
+    Result = \"succeeded\";\r
+    EnvironmentName = $OctopusParameters['Octopus.Environment.Name'];\r
+    DeploymentName = $OctopusParameters['Octopus.Deployment.Name'];\r
+    Channel = $OctopusParameters['Octopus.Release.Channel.Name'];\r
+    DeploymentLink = $OctopusParameters['#{if Octopus.Web.ServerUri}Octopus.Web.ServerUri#{else}Octopus.Web.BaseUrl#{/if}'] + $OctopusParameters['Octopus.Web.DeploymentLink']\r
+}\r
+\r
+$level = \"Information\"\r
+$exception = $null\r
+if ($OctopusParameters['Octopus.Deployment.Error']) {\r
+    $level = \"Error\"\r
+    $properties[\"Result\"] = \"failed\"\r
+    $properties[\"Error\"] = $OctopusParameters['Octopus.Deployment.Error']\r
+    $exception = $OctopusParameters['Octopus.Deployment.ErrorDetail']\r
+}\r
+\r
+try {\r
+    Send-SeqEvent $seq \"A deployment of {ProjectName} release {ReleaseNumber} {Result} in {EnvironmentName}\" -level $level -template -properties $properties -exception $exception\r
+} catch [Exception] {\r
+    [System.Console]::Error.WriteLine(\"Unable to write deployment details to Seq\")\r
+    $_.Exception | format-list -force\r
+}\r
+"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "SeqServerUrl",
+      "Label": "Seq server URL",
+      "HelpText": "The URL of the Seq server.",
+      "DefaultValue": "http://localhost:5341",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "SeqApiKey",
+      "Label": "Seq API key",
+      "HelpText": "If an [API key](http://docs.getseq.net/docs/api-keys) is required for writing events, specify it here.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "LastModifiedBy": "harrisonmeister",
+  "$Meta": {
+    "ExportedAt": "2023-02-16T15:38:44.043Z",
+    "OctopusVersion": "2021.1.7687",
+    "Type": "ActionTemplate"
+  },
+  "Category": "seq"
+}
