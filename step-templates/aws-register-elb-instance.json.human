@@ -1,0 +1,171 @@
+{
+  "Id": "cc1ae822-3dcf-4041-a790-69a1267552c2",
+  "Name": "AWS - Register ELB Instance",
+  "Description": "Registers an instance with an ELB",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Part 2 of 2\r
+# Part 1 Deregisters an EC2 instance from an ELB\r
+# Part 2 Registers an EC2 instance with an ELB and waits for it to be InService\r
+\r
+$ec2Region = $OctopusParameters['ec2Region']\r
+$ec2User = $OctopusParameters['ec2ClientId']\r
+$ec2Credentials = $OctopusParameters['ec2Credentials']\r
+$elbName = $OctopusParameters['elbName']\r
+$instanceId = \"\"\r
+$registrationCheckInterval = $OctopusParameters['registrationCheckInterval']\r
+$maxRegistrationCheckCount = $OctopusParameters['maxRegistrationCheckCount']\r
+\r
+# Load EC2 credentials (not sure if this is needed when executed from an EC2 box)\r
+try\r
+{\r
+\tWrite-Host \"Loading AWS Credentials...\"\r
+\tImport-Module AWSPowerShell\r
+\tSet-AWSCredentials -AccessKey $ec2User -SecretKey $ec2Credentials\r
+\tSet-DefaultAWSRegion $ec2Region\r
+\tWrite-Host \"AWS Credentials Loaded.\"\r
+}\r
+catch\r
+{\r
+\tWrite-Error -Message \"Failed to load AWS Credentials.\" -Exception $_.Exception\r
+\tExit 1\r
+}\r
+\r
+# Get EC2 Instance\r
+try\r
+{\r
+\t$response = Invoke-RestMethod -Uri \"http://169.254.169.254/latest/meta-data/instance-id\" -Method Get\r
+\tif ($response)\r
+\t{\r
+\t\t$instanceId = $response\r
+\t}\r
+\telse\r
+\t{\r
+\t\tWrite-Error -Message \"Returned Instance ID does not appear to be valid\"\r
+\t\tExit 1\r
+\t}\r
+}\r
+catch\r
+{\r
+\tWrite-Error -Message \"Failed to load instance ID from AWS.\" -Exception $_.Exception\r
+\tExit 1\r
+}\r
+\r
+# Register the current EC2 instance\r
+Write-Host \"Registering instance $instanceId with $elbName.\"\r
+try\r
+{\r
+\tRegister-ELBInstanceWithLoadBalancer -LoadBalancerName $elbName -Instance $instanceId\r
+\tWrite-Host \"Instance Registered, waiting for registration to complete.\"\r
+\t\r
+\t$instanceState = (Get-ELBInstanceHealth -LoadBalancerName $elbName -Instance $instanceId).State\r
+\tWrite-Host \"Current State: $instanceState\"\r
+\t\r
+\t$checkCount = 0\r
+\t\r
+\tWrite-Host \"Retry Parameters:\"\r
+\tWrite-Host \"Maximum Checks: $maxRegistrationCheckCount\"\r
+\tWrite-Host \"Check Interval: $registrationCheckInterval\"\r
+\t\r
+\tWhile ($instanceState -ne \"InService\" -and $checkCount -le $maxRegistrationCheckCount)\r
+\t{\t\r
+\t\t$checkCount += 1\r
+\t\t\r
+\t\t# Wait a bit until we check the status\r
+\t\tWrite-Host \"Waiting for $registrationCheckInterval seconds for instance to register\"\r
+\t\tStart-Sleep -Seconds $registrationCheckInterval\r
+\t\t\r
+\t\tif ($checkCount -le $maxRegistrationCheckCount)\r
+\t\t{\r
+\t\t\tWrite-Host \"$checkCount/$maxRegistrationCheckCount Attempts\"\r
+\t\t}\r
+\t\t\r
+\t\t$instanceState = (Get-ELBInstanceHealth -LoadBalancerName $elbName -Instance $instanceId).State\r
+\t\t\r
+\t\tWrite-Host \"Current instance state: $instanceState\"\r
+\t}\r
+\t\r
+\tif ($instanceState -eq \"InService\")\r
+\t{\r
+\t\tWrite-Host \"Registration complete.\"\r
+\t}\r
+\telse\r
+\t{\r
+\t\tWrite-Error -Message \"Failed to register instance: $instanceState\"\r
+\t\tExit 1\r
+\t}\r
+}\r
+catch\r
+{\r
+\tWrite-Error -Message \"Failed to Register instance.\" -Exception $_.Exception\r
+\tExit 1\r
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ec2ClientId",
+      "Label": "AWS EC2 Client Id",
+      "HelpText": "The client id to use when authenticating with AWS",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "ec2Credentials",
+      "Label": "AWS EC2 Client Secret",
+      "HelpText": "The client secret used to authenticate with AWS",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "elbName",
+      "Label": "AWS ELB Name",
+      "HelpText": "The name of the AWS ELB to add the instance to",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "registrationCheckInterval",
+      "Label": "Registration Check Interval",
+      "HelpText": "The number of seconds to wait before checking to see if the Instance has properly registered with the ELB",
+      "DefaultValue": "10",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "maxRegistrationCheckCount",
+      "Label": "Maximum Registration Checks",
+      "HelpText": "The maximum number of registration checks to perform before the step fails.",
+      "DefaultValue": "10",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ec2Region",
+      "Label": "AWS EC2 Region",
+      "HelpText": "The region in which the ELB lives",
+      "DefaultValue": "us-east-1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-04-30T13:23:14.350+00:00",
+  "LastModifiedBy": "DudeSolutions",
+  "$Meta": {
+    "ExportedAt": "2015-04-30T13:25:21.128+00:00",
+    "OctopusVersion": "2.6.5.1010",
+    "Type": "ActionTemplate"
+  },
+  "Category": "aws"
+}

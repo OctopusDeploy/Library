@@ -1,0 +1,241 @@
+{
+    "Id": "6a0db144-3ad5-46bb-bd7d-02b22b98a559",
+    "Name": "Oracle - Add Database User To Role",
+    "Description": "Adds database user to a role",
+    "ActionType": "Octopus.Script",
+    "Version": 2,
+    "Author": "twerthi",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "# Define functions
+function Get-ModuleInstalled
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName
+    )
+
+    # Check to see if the module is installed
+    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))
+    {
+        # It is installed
+        return $true
+    }
+    else
+    {
+        # Module not installed
+        return $false
+    }
+}
+
+function Install-PowerShellModule
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName,
+        $LocalModulesPath
+    )
+
+\t# Check to see if the package provider has been installed
+    if ((Get-NugetPackageProviderNotInstalled) -ne $false)
+    {
+    \t# Display that we need the nuget package provider
+        Write-Host \"Nuget package provider not found, installing ...\"
+        
+        # Install Nuget package provider
+        Install-PackageProvider -Name Nuget -Force
+    }
+
+\t# Save the module in the temporary location
+    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force
+}
+
+function Get-NugetPackageProviderNotInstalled
+{
+\t# See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+function Get-UserInRole
+{
+\t# Define parameters
+    param (
+    $Username,
+    $RoleName)
+    
+\t# Execute query
+    $userRole = Invoke-SqlQuery \"SELECT * FROM DBA_ROLE_PRIVS WHERE GRANTEE = '$Username' AND GRANTED_ROLE = '$RoleName'\"
+
+    # Check to see if anything was returned
+    if ($userRole.ItemArray.Count -gt 0)
+    {
+        # Found
+        return $true
+    }
+    
+
+    # Not found
+    return $false
+}
+
+# Define PowerShell Modules path
+$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName
+$env:PSModulePath = \"$LocalModules$([System.IO.Path]::PathSeparator)$env:PSModulePath\"
+$PowerShellModuleName = \"SimplySql\"
+
+# Set secure protocols
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Check to see if SimplySql module is installed
+if ((Get-ModuleInstalled -PowerShellModuleName $PowerShellModuleName) -ne $true)
+{
+    # Tell user what we're doing
+    Write-Output \"PowerShell module $PowerShellModuleName is not installed, downloading temporary copy ...\"
+
+    # Install temporary copy
+    Install-PowerShellModule -PowerShellModuleName $PowerShellModuleName -LocalModulesPath $LocalModules
+}
+
+# Display
+Write-Output \"Importing module $PowerShellModuleName ...\"
+
+# Check to see if it was downloaded
+if ((Test-Path -Path \"$LocalModules\\$PowerShellModuleName\") -eq $true)
+{
+\t# Use specific location
+    $PowerShellModuleName = \"$LocalModules\\$PowerShellModuleName\"
+}
+
+# Import the module
+Import-Module -Name $PowerShellModuleName
+
+# Create credential object for the connection
+$SecurePassword = ConvertTo-SecureString $oracleLoginPasswordWithAddRoleRights -AsPlainText -Force
+$ServerCredential = New-Object System.Management.Automation.PSCredential ($oracleLoginWithAddRoleRights, $SecurePassword)
+
+try
+{
+\t# Connect to MySQL
+    Open-OracleConnection -Datasource $oracleServerName -Credential $ServerCredential -Port $oracleServerPort -ServiceName $oracleServiceName
+
+    # See if database exists
+    $userInRole = Get-UserInRole -Username $oracleUsername -RoleName $oracleRoleName
+
+    if ($userInRole -eq $false)
+    {
+        # Create database
+        Write-Output \"Adding user $oracleUsername to role $oracleRoleName ...\"
+        $executionResults = Invoke-SqlUpdate \"GRANT `\"$oracleRoleName`\" TO `\"$oracleUsername`\"\"
+
+        # See if it was created
+        $userInRole = Get-UserInRole -Username $oracleUsername -RoleName $oracleRoleName
+            
+        # Check array
+        if ($userInRole -eq $true)
+        {
+            # Success
+            Write-Output \"$oracleUserName added to $oracleRoleName successfully!\"
+        }
+        else
+        {
+            # Failed
+            Write-Error \"Failure adding $oracleUserName to $oracleRoleName!\"
+        }
+    }
+    else
+    {
+    \t# Display message
+        Write-Output \"User $oracleUsername is already in role $oracleRoleName\"
+    }
+}
+finally
+{
+    Close-SqlConnection
+}
+
+
+",
+      "Octopus.Action.EnabledFeatures": ""
+    },
+    "Parameters": [
+      {
+        "Id": "66790019-ca40-41cc-8849-5995557e34c1",
+        "Name": "oracleServerName",
+        "Label": "Server name",
+        "HelpText": "Name of the Oracle server.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "d29f262e-74d2-4c7b-acb3-67b642b614c4",
+        "Name": "oracleServerPort",
+        "Label": "Port",
+        "HelpText": "Port that the Oracle server listens on.",
+        "DefaultValue": "1521",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "330f737b-dc2b-4ceb-9d27-168c1b5f6e18",
+        "Name": "oracleServiceName",
+        "Label": "Service Name",
+        "HelpText": "Service name for Oracle database.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0531e03b-c152-46e4-ab2d-7cb8093aa641",
+        "Name": "oracleLoginWithAddRoleRights",
+        "Label": "Login name",
+        "HelpText": "Login name of a user that can add roles to other users.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "5bddbafe-0ca0-4037-9dd1-d522abc5838e",
+        "Name": "oracleLoginPasswordWithAddRoleRights",
+        "Label": "Login password",
+        "HelpText": "Password for the login account.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "2c6ee772-96f6-4803-b6a1-5d57a58b28f0",
+        "Name": "oracleUsername",
+        "Label": "User name",
+        "HelpText": "Name of the user to add the role to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "7f806b37-e0d5-4560-873e-de6c73f80161",
+        "Name": "oracleRoleName",
+        "Label": "Role name",
+        "HelpText": "Name of the role to add to the user.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2020-08-21T21:54:08.753Z",
+      "OctopusVersion": "2020.3.2",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "twerthi",
+    "Category": "oracle"
+  }
