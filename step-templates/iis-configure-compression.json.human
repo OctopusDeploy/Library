@@ -1,0 +1,82 @@
+{
+  "Id": "66dc7184-8736-4ab8-be65-51cb3933eaef",
+  "Name": "IIS - Configure Compression",
+  "Description": "Configures the MIME types used in static and dynamic compression e.g. The application/json MIME type can be configured to be served using GZIP compression.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$psPath = 'MACHINE/WEBROOT/APPHOST';
+
+if ($StaticMimeTypes)
+{
+    $filter = \"system.webServer/httpCompression/staticTypes\";
+    
+    $existingStaticMimeTypes = (Get-WebConfigurationProperty -pspath $psPath -filter $filter -name \".\").Collection;
+    foreach ($staticMimeType in $StaticMimeTypes.split(\",\"))
+    {
+        if ($staticMimeType)
+        {
+            if (($existingStaticMimeTypes | ? { $_.mimeType -eq $staticMimeType }).Count -ne 0)
+            {
+                Remove-WebConfigurationProperty -pspath $psPath -filter $filter -name \".\" -AtElement @{mimeType=$staticMimeType};
+                Write-Output \"Static MIME type $staticMimeType removed.\";
+            }
+            
+            Add-WebConfigurationProperty -pspath $psPath -filter $filter -name \".\" -value @{mimeType=$staticMimeType;enabled='True'};
+            Write-Output \"Static MIME type $staticMimeType added.\";
+        }
+    }
+}
+
+if ($DynamicMimeTypes)
+{
+    $filter = \"system.webServer/httpCompression/dynamicTypes\";
+    
+    $existingDynamicMimeTypes = (Get-WebConfigurationProperty -pspath $psPath -filter $filter -name \".\").Collection;
+    foreach ($dynamicMimeType in $DynamicMimeTypes.split(\",\"))
+    {
+        if ($dynamicMimeType)
+        {
+            if (($existingDynamicMimeTypes | ? { $_.mimeType -eq $dynamicMimeType }).Count -ne 0)
+            {
+                Remove-WebConfigurationProperty -pspath $psPath -filter $filter -name \".\" -AtElement @{mimeType=$dynamicMimeType};
+                Write-Output \"Dynamic MIME type $dynamicMimeType removed.\";
+            }
+            
+            Add-WebConfigurationProperty -pspath $psPath -filter $filter -name \".\" -value @{mimeType=$dynamicMimeType;enabled='True'};
+            Write-Output \"Dynamic MIME type $dynamicMimeType added.\";
+        }
+    }
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "StaticMimeTypes",
+      "Label": "Static Compression MIME Types",
+      "HelpText": "The MIME types to be added for static compression separated by commas. Example: _application/json,application/xml_",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DynamicMimeTypes",
+      "Label": "Dynamic Compression MIME Types",
+      "HelpText": "The MIME types to be added for dynamic compression separated by commas. Example: _application/json,application/xml_",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2016-01-22T10:27:42.848+00:00",
+    "OctopusVersion": "3.2.19",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}

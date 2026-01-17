@@ -1,0 +1,351 @@
+{
+    "Id": "cd3b6172-ed9a-4c42-a588-4c78c3e3b08a",
+    "Name": "Slack - Detailed Notification - Bash",
+    "Description": "Posts deployment status to Slack optionally including additional details (release number, environment name, release notes etc.) as well as error description and link to failure log page.",
+    "ActionType": "Octopus.Script",
+    "Version": 4,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptBody": "# Get values into variables
+includeFieldProject=$(get_octopusvariable \"IncludeFieldProject\")
+includeFieldEnvironment=$(get_octopusvariable \"IncludeFieldEnvironment\")
+includeFieldMachine=$(get_octopusvariable \"includeFieldMachine\")
+includeFieldTenant=$(get_octopusvariable \"IncludeFieldTenant\")
+includeFieldUsername=$(get_octopusvariable \"IncludeFieldUsername\")
+includeFieldRelease=$(get_octopusvariable \"IncludeFieldRelease\")
+includeFieldReleaseNotes=$(get_octopusvariable \"IncludeFieldReleaseNotes\")
+includeFieldErrorMessageOnFailure=$(get_octopusvariable \"IncludeErrorMessageOnFailure\")
+includeFieldLinkOnFailure=$(get_octopusvariable \"IncludeLinkOnFailure\")
+
+function convert_ToBoolean () {
+\tlocal stringValue=$1
+    local returnValue=\"\"
+
+    if [[ \"$stringValue\" == \"True\" ]]
+    then
+    \treturnValue=true
+    else
+    \treturnValue=false
+    fi
+    
+    echo \"$returnValue\"
+}
+
+function slack_Populate_StatusInfo (){
+    \tlocal success=$1
+    \tlocal deployment_info=$(get_octopusvariable \"DeploymentInfoText\")
+\t\tlocal jsonBody=\"{ \"
+\t\t
+        if [[ \"$success\" == true ]]
+        then
+        \tjsonBody+='\"color\": \"good\",'
+            jsonBody+='\"title\": \"Success\",'
+            jsonBody+='\"fallback\": \"Deployed successfully '
+            jsonBody+=\"$deployment_info\\\"\"
+        else
+        \tjsonBody+='\"color\": \"danger\",'
+            jsonBody+='\"title\": \"Failed\",'
+            jsonBody+='\"fallback\": \"Failed to deploy '
+            jsonBody+=\"$deployment_info\\\"\"
+        fi
+        
+        #jsonBody+=\"}\"
+        
+        echo $jsonBody
+}
+
+function populate_field () {
+\tlocal title=$1
+    local value=$2
+    local body=\"\"
+    
+    body+='{'
+    body+='\"short\": \"true\",'
+    body+='\"title\": '
+    body+=\"\\\"$title\\\"\"
+    body+=\",\"
+    body+='\"value\": '
+    body+=\"\\\"$value\\\"\"
+    body+='}'
+    
+    echo \"$body\"
+}
+
+
+function slack_Populate_Fields (){
+\tlocal status_info=$1
+    local fieldsJsonBody=\"\"
+    declare -a testArray
+    
+   if [[ \"$includeFieldProject\" == true ]]
+   then
+    testArray+=(\"$(populate_field \"Project\" \"$(get_octopusvariable \"Octopus.Project.Name\")\")\")
+   fi
+    
+   if [[ \"$includeFieldEnvironment\" == true ]]
+   then
+    testArray+=(\"$(populate_field \"Environment\" \"$(get_octopusvariable \"Octopus.Environment.Name\")\")\")
+   fi
+   
+   if [[ \"$includeFieldMachine\" == true ]]
+   then
+    testArray+=(\"$(populate_field \"Machine\" \"$(get_octopusvariable \"Octopus.Machine.Name\")\")\")
+   fi
+      
+   if [[ \"$includeFieldTenant\" == true ]]
+   then
+    testArray+=(\"$(populate_field \"Tenant\" \"$(get_octopusvariable \"Octopus.Deployment.Tenant.Name\")\")\")
+   fi
+   
+   if [[ \"$includeFieldUsername\" == true ]]
+   then
+    testArray+=(\"$(populate_field \"Username\" \"$(get_octopusvariable \"Octopus.Deployment.CreatedBy.Username\")\")\")
+   fi
+   
+   if [[ \"$includeFieldRelease\" == true ]]
+   then
+    testArray+=(\"$(populate_field \"Release\" \"$(get_octopusvariable \"Octopus.Release.Number\")\")\")
+   fi
+   
+   if [[ \"$includeFieldReleaseNotes\" == true ]]
+   then
+    testArray+=(\"$(populate_field \"Changes in this release\" \"$(get_octopusvariable \"Octopus.Release.Notes\")\")\")
+   fi
+      
+   if [[ \"$status_info\" == false ]]
+   then
+     if [[ \"$includeFieldErrorMessageOnFailure\" == true ]]
+     then
+      testArray+=(\"$(populate_field \"Error text\" \"$(get_octopusvariable \"Octopus.Deployment.Error\")\")\")
+     fi
+
+     if [[ \"$includeFieldLinkOnFailure\" == true ]]
+     then
+      baseUrl=\"$(get_octopusvariable \"Octopus.Web.ServerUri\")\"
+      testArray+=(\"$(populate_field \"See the process\" \"$baseUrl$(get_octopusvariable \"Octopus.Web.DeploymentLink\")\")\")
+     fi
+   fi
+   
+   
+   ( IFS=$','; echo \"${testArray[*]}\" )   
+   
+}
+
+function slack_rich_notification () {
+\tlocal success=$1
+    local jsonBody=\"{ \"
+    
+    jsonBody+='\"channel\": '
+    jsonBody+=\"\\\"$(get_octopusvariable \"Channel\")\\\",\"
+    jsonBody+='\"username\": '
+    jsonBody+=\"\\\"$(get_octopusvariable \"Username\")\\\",\"
+    jsonBody+='\"icon_url\": '
+    jsonBody+=\"\\\"$(get_octopusvariable \"IconUrl\")\\\",\"
+    jsonBody+='\"attachments\": ['
+    jsonBody+=$(slack_Populate_StatusInfo \"$success\")
+    jsonBody+=',\"fields\": '
+    jsonBody+=\"[$(slack_Populate_Fields \"$success\")]\"
+    jsonBody+=\"}]}\"
+    
+    echo \"$jsonBody\"
+}
+
+# Convert include* variables to actual boolean values
+includeFieldProject=$(convert_ToBoolean \"$includeFieldProject\")
+includeFieldEnvironment=$(convert_ToBoolean \"$includeFieldEnvironment\")
+includeFieldMachine=$(convert_ToBoolean \"$includeFieldMachine\")
+includeFieldTenant=$(convert_ToBoolean \"$includeFieldTenant\")
+includeFieldUsername=$(convert_ToBoolean \"$includeFieldUsername\")
+includeFieldRelease=$(convert_ToBoolean \"$includeFieldRelease\")
+includeFieldReleaseNotes=$(convert_ToBoolean \"$includeFieldReleaseNotes\")
+includeFieldErrorMessageOnFailure=$(convert_ToBoolean \"$includeFieldErrorMessageOnFailure\")
+includeFieldLinkOnFailure=$(convert_ToBoolean \"$includeFieldLinkOnFailure\")
+
+success=true
+
+if [[ ! -z $(get_octopusvariable \"Octopus.Deployment.Error\") ]]
+then
+\tsuccess=false
+fi
+
+# Build json payload
+json_payload=$(slack_rich_notification $success)
+
+webook_url=$(get_octopusvariable \"HookUrl\")
+
+# Send webhook - redirect stderr to stdout
+wget --post-data=\"$json_payload\" --secure-protocol=\"auto\" \"$webook_url\" 2>&1
+
+# Check for error
+if [[ $? -ne 0 ]]
+then
+    fail_step \"Failed!\"
+fi
+
+",
+      "Octopus.Action.Script.Syntax": "Bash",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.RunOnServer": "false"
+    },
+    "Parameters": [
+      {
+        "Id": "d9109767-c4a0-44d4-9501-bdd82be0f935",
+        "Name": "HookUrl",
+        "Label": "Webhook URL",
+        "HelpText": "The Webhook URL provided by Slack, including token.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+      },
+      {
+        "Id": "d0a459eb-4a63-48e2-8a81-a03540eb1576",
+        "Name": "Channel",
+        "Label": "Channel handle",
+        "HelpText": "Which Slack channel to post notifications to.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+      },
+      {
+        "Id": "706ba5da-6c0f-487f-9ac2-90c32fd04a84",
+        "Name": "IconUrl",
+        "Label": "Icon URL",
+        "HelpText": "The icon to use for this user in Slack",
+        "DefaultValue": "https://octopus.com/content/resources/favicon.png",
+        "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+      },
+      {
+        "Id": "53a41383-6e54-42ba-ad91-d85c28651299",
+        "Name": "Username",
+        "Label": "",
+        "HelpText": "The username shown in Slack against these notifications",
+        "DefaultValue": "Octopus Deploy",
+        "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+      },
+      {
+        "Id": "1f5c2164-f4a5-485b-adb0-2714eea6cff8",
+        "Name": "DeploymentInfoText",
+        "Label": "Main message",
+        "HelpText": "Long information message shown in slack. This message is prefixed with \"Deployed successfully\" or \"Failed to deploy\" depending on status.",
+        "DefaultValue": "#{Octopus.Project.Name} release #{Octopus.Release.Number} to #{Octopus.Environment.Name} (#{Octopus.Machine.Name})",
+        "DisplaySettings": {
+          "Octopus.ControlType": "MultiLineText"
+        }
+      },
+      {
+        "Id": "3538eb46-3c2f-4f81-aad1-434da1e2c30b",
+        "Name": "IncludeFieldRelease",
+        "Label": "Include release number field",
+        "HelpText": "Shows short field with release number name",
+        "DefaultValue": "false",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "57985f0b-6bf6-4b41-aaf8-f8a6ce65547b",
+        "Name": "IncludeFieldReleaseNotes",
+        "Label": "Include release notes Field",
+        "HelpText": "Release notes are only included on successful deployment",
+        "DefaultValue": "false",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "97309be1-e7cb-43ab-9721-13ceab6bf7ca",
+        "Name": "IncludeFieldMachine",
+        "Label": "Include machine name field",
+        "HelpText": "Shows short field with machine name",
+        "DefaultValue": "false",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "b0415f67-00e5-4568-b099-0f107d5e54ae",
+        "Name": "IncludeFieldProject",
+        "Label": "Include project field",
+        "HelpText": null,
+        "DefaultValue": "True",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "29772dc0-ddd2-4406-932b-e09e87d3d1c6",
+        "Name": "IncludeFieldEnvironment",
+        "Label": "Include environment name field",
+        "HelpText": "Shows short field with environment name",
+        "DefaultValue": "false",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "ee313203-4485-4320-b27b-03562724352a",
+        "Name": "IncludeFieldTenant",
+        "Label": "Include tenant name field",
+        "HelpText": "Shows short field with name of tenant",
+        "DefaultValue": "false",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "0f113c63-9a5c-493d-8942-3db978b41240",
+        "Name": "IncludeFieldUsername",
+        "Label": "Include username field",
+        "HelpText": "Shows the username of user that initiated deployment",
+        "DefaultValue": "false",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "0cdec31d-400b-4615-b91a-4f2a5b640b45",
+        "Name": "IncludeLinkOnFailure",
+        "Label": "Include deployment process link on failure",
+        "HelpText": "When deployment failed a link \"Open process page\" is added to the notification pointing to deployment process page",
+        "DefaultValue": "false",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "51fc4209-a97a-4868-8f27-c1076350b581",
+        "Name": "IncludeErrorMessageOnFailure",
+        "Label": "Include error message text on failure",
+        "HelpText": "When deployment failed error text is shown as part of notification",
+        "DefaultValue": "false",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "d33e02de-a949-472f-a1f4-447425507e6b",
+        "Name": "OctopusBaseUrl",
+        "Label": "Octopus base url",
+        "HelpText": "Base URL to add to the links in the notification. If octopus server dashboard is at \"http://octopus/app\" include all before the \"app\" part (\"http://octopus\").",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "LastModifiedOn": "2022-07-19T08:50:00.000+00:00",
+    "LastModifiedBy": "TristanUnibuddy",
+    "$Meta": {
+      "ExportedAt": "2022-07-19T08:54:06.595Z",
+      "OctopusVersion": "2022.3.2617-hotfix.4278",
+      "Type": "ActionTemplate"
+    },
+    "Category": "Slack"
+  }
