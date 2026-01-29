@@ -1,0 +1,436 @@
+{
+  "Id": "70ea4820-7d02-4015-a691-8c77b5ab14d5",
+  "Name": "Pingdom - Create Uptime Check",
+  "Description": "Creates Pingdom http check using [Create New Check API method](https://www.pingdom.com/resources/api#MethodCreate+New+Check).",
+  "ActionType": "Octopus.Script",
+  "Version": 43,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Package.DownloadOnTentacle": "False",
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null,
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Ref https://www.pingdom.com/resources/api#MethodCreate+New+Check
+
+Function Get-Parameter() {
+    Param(
+        [parameter(Mandatory=$true)]
+        [string]$Name, 
+        [switch]$Required, 
+        $Default, 
+        [switch]$FailOnValidate
+    )
+
+    $result = $null
+    $errMessage = [string]::Empty
+
+    If ($OctopusParameters -ne $null) {
+        $result = $OctopusParameters[$Name]
+        Write-Host (\"Octopus parameter value for \" + $Name + \": \" + $result)
+    }
+
+    If ($result -eq $null) {
+        $variable = Get-Variable $Name -EA SilentlyContinue
+        if ($variable -ne $null) {
+            $result = $variable.Value
+        }
+    }
+
+    If ($result -eq $null -or [string]::IsNullOrEmpty($result)) {
+        If ($Required) {
+            $errMessage = \"Missing value for $Name\"
+        } ElseIf (-Not $Default -eq $null) {
+            Write-Host (\"Default value: \" + $Default)
+            $result = $Default
+        }
+    }
+
+    If (-Not [string]::IsNullOrEmpty($errMessage)) {
+        If ($FailOnValidate) {
+            Throw $errMessage
+        } Else {
+            Write-Warning $errMessage
+        }
+    }
+
+    return $result
+}
+
+Function Test-Any() { 
+   begin { 
+      $any = $false
+   } 
+   process { 
+      $any = $true
+   } 
+   end { 
+      $any
+   } 
+} 
+
+& {
+    Write-Host \"Start PingdomCreateUptimeCheck\"
+
+    Add-Type -AssemblyName System.Web
+
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+    $throwErrorWhenFailed = [System.Convert]::ToBoolean([string](Get-Parameter -Name \"Pingdom.ThrowErrorWhenFailed\" -Default \"False\"))
+
+    $pingdomUsername = [string] (Get-Parameter -Name \"Pingdom.Username\" -Required -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomPassword = [string] (Get-Parameter -Name \"Pingdom.Password\" -Required -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomAppKey = [string] (Get-Parameter -Name \"Pingdom.AppKey\" -Required -FailOnValidate:$throwErrorWhenFailed)
+
+    $pingdomCheckName = [string] (Get-Parameter -Name \"Pingdom.CheckName\" -Required -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckTarget = [string] (Get-Parameter -Name \"Pingdom.CheckTarget\" -Required -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckType = \"http\"
+    $pingdomCheckIntervalMinutes = [System.Nullable[int]] (Get-Parameter -Name \"Pingdom.CheckIntervalMinutes\" -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckContactIds = [string] (Get-Parameter -Name \"Pingdom.CheckContactIds\" -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckSendNotificationWhenDown = [System.Nullable[int]] (Get-Parameter -Name \"Pingdom.CheckSendNotificationWhenDown\" -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckNotifyAgainEvery = [System.Nullable[int]] (Get-Parameter -Name \"Pingdom.CheckNotifyAgainEvery\" -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckNotifyWhenBackUp = [string](Get-Parameter -Name \"Pingdom.CheckNotifyWhenBackUp\" -Default \"True\" -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckTags = [string] (Get-Parameter -Name \"Pingdom.CheckTags\" -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckHttpUrl = [string] (Get-Parameter -Name \"Pingdom.CheckHttpUrl\" -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckHttpEncryptionEnabled = [string](Get-Parameter -Name \"Pingdom.CheckHttpEncryptionEnabled\" -Default \"False\" -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckHttpTargetPort = [System.Nullable[int]] (Get-Parameter -Name \"Pingdom.CheckHttpTargetPort\" -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckAuth = [string] (Get-Parameter -Name \"Pingdom.CheckAuth\" -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckShouldContain = [string] (Get-Parameter -Name \"Pingdom.CheckShouldContain\" -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckShouldNotContain = [string] (Get-Parameter -Name \"Pingdom.CheckShouldNotContain\" -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckPostData = [string] (Get-Parameter -Name \"Pingdom.CheckPostData\" -FailOnValidate:$throwErrorWhenFailed)
+    $pingdomCheckIntegrationIds = [string] (Get-Parameter -Name \"Pingdom.CheckIntegrationIds\" -FailOnValidate:$throwErrorWhenFailed)
+
+    $apiVersion = \"2.1\"
+    $url = \"https://api.pingdom.com/api/{0}/checks\" -f $apiVersion
+    $securePassword = ConvertTo-SecureString $pingdomPassword -AsPlainText -Force
+    $credential = New-Object System.Management.Automation.PSCredential($pingdomUsername, $securePassword)
+    $headers = @{ 
+        \"App-Key\" = $pingdomAppKey
+    }
+
+    # Validate if check already registered
+
+    Write-Host \"Getting uptime check list to find check by name: $url\"
+    Try {
+        $response = Invoke-RestMethod -Uri $url -Method Get -ContentType \"application/json\" -Credential $credential -Headers $headers
+    } Catch {
+        $errMessage = \"Error occured when getting uptime check in Pingdom: \" + $_.Exception.Message
+        If($throwErrorWhenFailed -eq $true) {
+            Write-Error $errMessage
+        }
+        Else {
+            Write-Warning $errMessage
+        }
+    }
+
+    $checkExists = $response.checks | Where-Object { $_.name -eq $pingdomCheckName } | Test-Any
+    If ($checkExists -eq $true) {
+        Write-Host \"Check with name $pingdomCheckName already registered. New check will not be created!\"
+        Exit
+    }
+
+    # Create new check
+
+    $apiParameters = @{}
+    $apiParameters.Add(\"name\", $pingdomCheckName)
+    $apiParameters.Add(\"host\", $pingdomCheckTarget)
+    $apiParameters.Add(\"type\", $pingdomCheckType)
+    $apiParameters.Add(\"contactids\", $pingdomCheckContactIds)
+    $apiParameters.Add(\"integrationids\", $pingdomCheckIntegrationIds)
+    If ($pingdomCheckIntervalMinutes -ne $null) {
+        $apiParameters.Add(\"resolution\", $pingdomCheckIntervalMinutes)
+    }
+    If ($pingdomCheckSendNotificationWhenDown -ne $null) {
+        $apiParameters.Add(\"sendnotificationwhendown\", $pingdomCheckSendNotificationWhenDown)
+    }
+    If ($pingdomCheckNotifyAgainEvery -ne $null) {
+        $apiParameters.Add(\"notifyagainevery\", $pingdomCheckNotifyAgainEvery)
+    }
+    If ($pingdomCheckNotifyWhenBackUp -ne $null) {
+        $apiParameters.Add(\"notifywhenbackup\", $pingdomCheckNotifyWhenBackUp.ToLower())
+    }
+    If ($pingdomCheckTags -ne $null) {
+        $apiParameters.Add(\"tags\", $pingdomCheckTags)
+    }
+    If (-Not [string]::IsNullOrEmpty($pingdomCheckHttpUrl)) {
+        $apiParameters.Add(\"url\", $pingdomCheckHttpUrl)
+    }
+    If ($pingdomCheckHttpEncryptionEnabled -ne $null) {
+        $apiParameters.Add(\"encryption\", $pingdomCheckHttpEncryptionEnabled.ToLower())
+    }
+    If ($pingdomCheckHttpTargetPort -ne $null) {
+        $apiParameters.Add(\"port\", $pingdomCheckHttpTargetPort)
+    }
+    If (-Not [string]::IsNullOrEmpty($pingdomCheckAuth)) {
+        $apiParameters.Add(\"auth\", $pingdomCheckAuth)
+    }
+    If (-Not [string]::IsNullOrEmpty($pingdomCheckShouldContain)) {
+        $apiParameters.Add(\"shouldcontain\", $pingdomCheckShouldContain)
+    }
+    If (-Not [string]::IsNullOrEmpty($pingdomCheckShouldNotContain)) {
+        $apiParameters.Add(\"shouldnotcontain\", $pingdomCheckShouldNotContain)
+    }
+    If (-Not [string]::IsNullOrEmpty($pingdomCheckPostData )) {
+        $apiParameters.Add(\"postdata\", $pingdomCheckPostData)
+    }
+
+    If ($apiParameters.Count -gt 0) {
+        $queryString = \"\"
+        $apiParameters.Keys | ForEach-Object { 
+            $queryString += ($_ + \"=\" + [System.Web.HttpUtility]::UrlEncode($apiParameters.Item($_)) + \"&\")
+        }
+        $requestBody = $queryString.Substring(0, $queryString.Length - 1)
+        $url += \"?$requestBody\"
+    }
+
+    Write-Host \"Creating new uptime check: $url\"
+    Write-Host \"Request body: $requestBody\"
+    Try {
+        $response = Invoke-RestMethod -Uri $url -Method Post -Body $requestBody -ContentType \"application/json\" -Credential $credential -Headers $headers
+        Write-Host (\"Successfully added uptime check in Pingdom: Name = \" + $response.check.name + \", Id = \" + $response.check.id)
+    } Catch {
+        $errMessage = \"Error occured when adding uptime check in Pingdom: \" + $_.Exception + \"`n\"
+        $errMessage += \"Response: \" + $_
+        If($throwErrorWhenFailed -eq $true) {
+            Write-Error $errMessage
+        }
+        Else {
+            Write-Warning $errMessage
+        }
+    }
+
+    Write-Host \"End PingdomCreateUptimeCheck\"
+}"
+  },
+  "Parameters": [
+    {
+      "Id": "16cdd666-9822-428c-9c1e-fb8943039a98",
+      "Name": "Pingdom.Username",
+      "Label": "Username",
+      "HelpText": "Mandatory.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "d5b36e0f-3c55-4b63-9971-4c9147218514",
+      "Name": "Pingdom.Password",
+      "Label": "Password",
+      "HelpText": "Mandatory.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2f33c3ed-202a-4711-8897-a47329c18b8d",
+      "Name": "Pingdom.AppKey",
+      "Label": "App key",
+      "HelpText": "Mandatory.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "754d2183-3b3b-4170-898b-f759af555f69",
+      "Name": "Pingdom.CheckName",
+      "Label": "Name",
+      "HelpText": "Mandatory.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "c04286a9-d4e4-4c33-985e-67f52b3a9549",
+      "Name": "Pingdom.CheckTarget",
+      "Label": "Target",
+      "HelpText": "Mandatory.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "96e4c38b-4d43-4083-ace3-510f945a4202",
+      "Name": "Pingdom.CheckIntervalMinutes",
+      "Label": "Interval",
+      "HelpText": "Check interval in minutes. Integer (1, 5, 15, 30, 60)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "7fc1f49f-446c-4836-8966-b1786d45f6b1",
+      "Name": "Pingdom.CheckContactIds",
+      "Label": "Contact Ids",
+      "HelpText": "Pingdom contact identifiers. For example contactids=154325,465231,765871.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "f76811df-7a79-4fee-a491-46c6ce4bc813",
+      "Name": "Pingdom.CheckIntegrationIds",
+      "Label": "",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "963c6ff8-b79e-408d-9729-036b58c42857",
+      "Name": "Pingdom.CheckSendNotificationWhenDown",
+      "Label": "Send notification when down",
+      "HelpText": "Send notification when down n times.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "6ba72782-3eee-465c-9176-659de024f8dd",
+      "Name": "Pingdom.CheckNotifyAgainEvery",
+      "Label": "Notify every",
+      "HelpText": "Notify again every n result. 0 means that no extra notifications will be sent.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "9ad13abe-13ab-466c-bd0e-a51637bece3b",
+      "Name": "Pingdom.CheckSendToEmail",
+      "Label": "Send to email",
+      "HelpText": null,
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "8a958bb9-5a61-4956-b79d-7f990271b127",
+      "Name": "Pingdom.CheckNotifyWhenBackUp",
+      "Label": "Notify when back up",
+      "HelpText": "Notify when back up again.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "93e9f063-b0b9-495b-8774-fd140b96a640",
+      "Name": "Pingdom.CheckTags",
+      "Label": "Tags",
+      "HelpText": "Pingdom check tags. Example: octopus,azure.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "9d579e60-2228-4521-9178-2da35817d0b8",
+      "Name": "Pingdom.CheckHttpEncryptionEnabled",
+      "Label": "Http encryption enabled",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "e289c1f6-cfbc-4774-ac97-395ac353b3b3",
+      "Name": "Pingdom.CheckHttpTargetPort",
+      "Label": "Http target port",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "dcda6fd8-9e42-40c4-9213-f77e9e67b974",
+      "Name": "Pingdom.CheckAuth",
+      "Label": "Auth",
+      "HelpText": "Username and password for target HTTP authentication. Example: user:password.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "bab9c934-dfb4-42c3-817f-22b58a8ef3d5",
+      "Name": "Pingdom.CheckShouldContain",
+      "Label": "Should contain",
+      "HelpText": "Target site should contain this string.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "96e83352-1dce-4d16-bce7-0f8d4929ced7",
+      "Name": "Pingdom.CheckShouldNotContain",
+      "Label": "Should not contain",
+      "HelpText": "Target site should NOT contain this string. If shouldcontain is also set, this parameter is not allowed.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "60570a61-678f-4ef2-90e5-c70d7b53ecb4",
+      "Name": "Pingdom.CheckPostData",
+      "Label": "Post data",
+      "HelpText": "Data that should be posted to the web page, for example submission data for a sign-up or login form. The data needs to be formatted in the same way as a web browser would send it to the web server",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "fdb84b63-f86b-4aff-b9e9-e9166d512f51",
+      "Name": "Pingdom.ThrowErrorWhenFailed",
+      "Label": "Error when failed",
+      "HelpText": "When checked, throws Octopus exception if template script has failed.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "sarbis",
+  "$Meta": {
+    "ExportedAt": "2018-06-11T13:49:31.508Z",
+    "OctopusVersion": "2018.4.12",
+    "Type": "ActionTemplate"
+  },
+  "Category": "pingdom"
+}

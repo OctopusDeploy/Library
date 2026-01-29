@@ -1,0 +1,161 @@
+{
+  "Id": "b2385b12-e5b5-440f-bed8-6598c29b2528",
+  "Name": "Chocolatey - Install Package",
+  "Description": "Installs or upgrades a package using the Chocolatey package manager.",
+  "ActionType": "Octopus.Script",
+  "Version": 6,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+$chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"Machine\") + \"\\bin\"
+if(-not (Test-Path $chocolateyBin)) {
+    Write-Output \"Environment variable 'ChocolateyInstall' was not found in the system variables. Attempting to find it in the user variables...\"
+    $chocolateyBin = [Environment]::GetEnvironmentVariable(\"ChocolateyInstall\", \"User\") + \"\\bin\"
+}
+
+$choco = \"$chocolateyBin\\choco.exe\"
+
+if (-not (Test-Path $choco)) {
+    throw \"Chocolatey was not found at $chocolateyBin.\"
+}
+
+$chocoArgs = @('install')
+if (-not $ChocolateyPackageId) {
+    throw \"Please specify the ID of an application package to install.\"
+}
+else {
+    $chocoArgs += $ChocolateyPackageId -split ' '
+}
+
+$chocoVersion = & $choco --version
+Write-Output \"Running Chocolatey version $chocoVersion\"
+
+if (-not $ChocolateyPackageVersion) {
+    Write-Output \"Installing package(s) $ChocolateyPackageId from the Chocolatey package repository...\"
+} else {
+    Write-Output \"Installing package $ChocolateyPackageId version $ChocolateyPackageVersion from the Chocolatey package repository...\"
+    $chocoArgs += @('--version', $ChocolateyPackageVersion)
+}
+
+if([System.Version]::Parse($chocoVersion) -ge [System.Version]::Parse(\"0.9.8.33\")) {
+    Write-Output \"Adding --yes to arguments passed to Chocolatey\"
+    $chocoArgs += @(\"--yes\")
+}
+
+if (![String]::IsNullOrEmpty($ChocolateyCacheLocation)) {
+    Write-Output \"Using --cache-location $ChocolateyCacheLocation\"
+    $chocoArgs += @(\"--cache-location\", \"`\"'$ChocolateyCacheLocation'`\"\")
+}
+
+if (![String]::IsNullOrEmpty($ChocolateySource)) {
+    Write-Output \"Using package --source $ChocolateySource\"
+    $chocoArgs += @('--source', \"`\"'$ChocolateySource'`\"\")
+}
+
+if (($ChocolateyNoProgress -eq 'True') -and ([System.Version]::Parse($chocoVersion) -ge [System.Version]::Parse(\"0.10.4\"))) {
+    Write-Output \"Disabling download progress with --no-progress\"
+    $chocoArgs += @('--no-progress')
+}
+
+if (![String]::IsNullOrEmpty($ChocolateyOtherParameters)) {
+\t$chocoArgs += $ChocolateyOtherParameters -split ' '
+}
+
+# execute the command line
+Write-Output \"Running the command: $choco $chocoArgs\"
+& $choco $chocoArgs
+
+if ($global:LASTEXITCODE -eq 3010) { 
+\t# ignore reboot required exit code
+    Write-Output \"A restart may be required for the package to work\"
+    $global:LASTEXITCODE = 0
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.EnabledFeatures": ""
+  },
+  "Parameters": [
+    {
+      "Id": "449e25a9-2984-4cb7-b190-ae5114cfbb19",
+      "Name": "ChocolateyPackageId",
+      "Label": "(Required) Package Name",
+      "HelpText": "The name of the Chocolatey package to install. Install multiple packages by separating them with a space.
+
+Examples:
+
+* _git_
+* _git_ _vscode_ _notepadplusplus_
+",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "17ff15ac-f925-493c-9330-64180687f44c",
+      "Name": "ChocolateyPackageVersion",
+      "Label": "(Optional) Version",
+      "HelpText": "If a specific version of the Chocolatey package is required enter it here. Otherwise, leave this field blank to use the latest version. Example: _2.3.4_.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8bad47c8-9537-4e8d-8ff4-0508df29ed67",
+      "Name": "ChocolateyCacheLocation",
+      "Label": "(Optional) Cache Location",
+      "HelpText": "Use a specific folder to cache the Chocolatey package.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e4251d60-1a9c-4ee4-aa49-bd2ecfd5d64e",
+      "Name": "ChocolateySource",
+      "Label": "(Optional) Package Source",
+      "HelpText": "Use a package source to install Chocolatey packages from. This can be a http or https URL, a local folder or file share. When using URL's don't forget the trailing `/` at the end.
+
+For example: 
+
+* _https://chocolatey.org/api/v2/_
+* _c:\\choco-packages_
+* _\\\\business.server.local\\chocolatey-packages_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7790d99f-9fb2-4cfb-bdcb-74b4d254dba7",
+      "Name": "ChocolateyNoProgress",
+      "Label": "(Optional) Disable Download Progress",
+      "HelpText": "Disables the download progress percentage being displayed as this can generate a lot of output for the logs.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "e994f28e-f306-4af9-90da-0ad68ec8f30c",
+      "Name": "ChocolateyOtherParameters",
+      "Label": "(Optional) Other Parameters",
+      "HelpText": "Add additional Chocolatey parameters here, separated by spaces, and they will be prefixed to the end of the Chocolatey command being executed. Examples:
+
+* _--ignorepackagecodes_
+* _--ignorepackagecodes --requirechecksum --allow-downgrade_",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2020-08-10T15:59:10.300Z",
+    "OctopusVersion": "2020.3.2",
+    "Type": "ActionTemplate"
+  },
+  "Category": "chocolatey"
+}

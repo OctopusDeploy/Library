@@ -1,0 +1,87 @@
+{
+  "Id": "22483ce2-1444-4c02-861c-fb9533959e16",
+  "Name": "Trigger TeamCity Build",
+  "Description": "Trigger a specific Team City build from an Octopus Deploy process.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$buildConfId = $OctopusParameters['BuildConfigurationId']\r
+\r
+$teamCityUrl = $OctopusParameters['TeamCityUrl']\r
+$teamCityUsername = $OctopusParameters['TeamCityUsername']\r
+$teamCityPassword = $OctopusParameters['TeamCityPassword']\r
+\r
+$url = $teamCityUrl + '/httpAuth/app/rest/buildQueue'\r
+$contentTemplate = '<build><buildType id=\"{0}\"/></build>'\r
+$content = $contentTemplate -f $buildConfId\r
+$encodedContent = [System.Text.Encoding]::UTF8.GetBytes($content)\r
+\r
+Write-Host \"================================================================================\"\r
+Write-Host \"Triggering build with Id $buildConfId in TeamCity. Server:\" $teamCityUrl \r
+Write-Host \"================================================================================\"\r
+\r
+$req = [System.Net.WebRequest]::Create($url)\r
+$req.Credentials = new-object System.Net.NetworkCredential($teamCityUsername, $teamCityPassword)\r
+$req.Method =\"POST\"\r
+$req.ContentType = \"application/xml\"\r
+\r
+$req.ContentLength = $encodedContent.length\r
+$requestStream = $req.GetRequestStream()\r
+$requestStream.Write($encodedContent, 0, $encodedContent.length)\r
+$requestStream.Close()\r
+\r
+$resp = $req.GetResponse()\r
+$reader = new-object System.IO.StreamReader($resp.GetResponseStream())\r
+$reader.ReadToEnd() | Write-Host\r
+",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "BuildConfigurationId",
+      "Label": null,
+      "HelpText": "The Id of the build configuration to trigger.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "TeamCityUrl",
+      "Label": null,
+      "HelpText": "The URL of the Team City server.
+E.g. `http://teamcity.example.com`.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "TeamCityUsername",
+      "Label": null,
+      "HelpText": "The username to use for accessing TeamCity.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "TeamCityPassword",
+      "Label": null,
+      "HelpText": "The password for the TeamCity user.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-03-16T10:45:58.588+00:00",
+  "LastModifiedBy": "bjorgvino",
+  "$Meta": {
+    "ExportedAt": "2015-03-16T10:47:31.328+00:00",
+    "OctopusVersion": "2.6.3.886",
+    "Type": "ActionTemplate"
+  },
+  "Category": "teamcity"
+}

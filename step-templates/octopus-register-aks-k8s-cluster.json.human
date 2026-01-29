@@ -1,0 +1,327 @@
+{
+    "Id": "eff227d2-2cd6-4d86-90ae-6258cee53d0a",
+    "Name": "Register AKS Cluster with Octopus Deploy",
+    "Description": "Step template to Register an AKS Cluster with Octopus Deploy using the Octopus Deploy API",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "Author": "octobob",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.RunOnServer": "true",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$OctopusAPIKey = $OctopusParameters[\"RegisterAzureCluster.Octopus.Api.Key\"]
+$RegistrationName = $OctopusParameters[\"RegisterAzureCluster.AKS.Name\"]
+$ClusterResourceGroup = $OctopusParameters[\"RegisterAzureCluster.ResourceGroup.Name\"]
+$OctopusUrl = $OctopusParameters[\"RegisterAzureCluster.Octopus.Base.Url\"]
+$Roles = $OctopusParameters[\"RegisterAzureCluster.Roles.List\"]
+$Environments = $OctopusParameters[\"RegisterAzureCluster.Environment.List\"]
+$SpaceId = $OctopusParameters[\"Octopus.Space.Id\"]
+$MachinePolicyIdOrName = $OctopusParameters[\"RegisterAzureCluster.MachinePolicy.IdOrName\"]
+$AzureAccountId = $OctopusParameters[\"RegisterAzureCluster.Azure.Account\"]
+$Tenants = $OctopusParameters[\"RegisterAzureCluster.Tenant.List\"]
+$DeploymentType = $OctopusParameters[\"RegisterAzureCluster.Tenant.DeploymentType\"]
+$WorkerPoolNameOrId = $OctopusParameters[\"RegisterAzureCluster.WorkerPool.IdOrName\"]
+$OverwriteExisting = $OctopusParameters[\"RegisterAzureCluster.Overwrite.Existing\"]
+$OverwriteExisting = $OverwriteExisting -eq \"True\"
+
+Write-Host \"AKS Name: $RegistrationName\"
+Write-Host \"Resoure Group Name: $ClusterResourceGroup\"
+Write-Host \"Octopus Url: $OctopusUrl\"
+Write-Host \"Role List: $Roles\"
+Write-Host \"Environments: $Environments\"
+Write-Host \"Machine Policy Name or Id: $MachinePolicyIdOrName\"
+Write-Host \"Azure Account Id: $AzureAccountId\"
+Write-Host \"Tenant List: $Tenants\"
+Write-Host \"Deployment Type: $DeploymentType\"
+Write-Host \"Worker Pool Name or Id: $WorkerPoolNameOrId\"
+Write-Host \"Overwrite Existing: $OverwriteExisting\"
+
+$header = New-Object \"System.Collections.Generic.Dictionary[[String],[String]]\"
+$header.Add(\"X-Octopus-ApiKey\", $OctopusAPIKey)
+
+$baseApiUrl = \"$OctopusUrl/api\"
+$baseApiInformation = Invoke-RestMethod $baseApiUrl -Headers $header
+if ((Get-Member -InputObject $baseApiInformation.Links -Name \"Spaces\" -MemberType Properties) -ne $null)
+{  \t
+\t$baseApiUrl = \"$baseApiUrl/$SpaceId\"    
+}
+
+Write-Host \"Base API Url: $baseApiUrl\"
+
+$existingMachineResultsUrl = \"$baseApiUrl/machines?partialName=$RegistrationName&skip=0&take=1000\"
+Write-Host \"Attempting to find existing machine with similar name at $existingMachineResultsUrl\"
+$existingMachineResponse = Invoke-RestMethod $existingMachineResultsUrl -Headers $header
+Write-Host $existingMachineResponse
+
+$machineFound = $false
+$machineId = $null
+foreach ($item in $existingMachineResponse.Items)
+{
+\tif ($item.Name -eq $RegistrationName)
+    {
+    \t$machineFound = $true
+        if ($OverwriteExisting)
+        {
+        \t$machineId = $item.Id 
+        }
+        break
+    }
+}
+
+if ($machineFound -and $OverwriteExisting -eq $false)
+{
+\tWrite-Highlight \"Machine already exists, skipping registration\"
+    Exit 0
+}
+
+$roleList = $Roles -split \",\"
+$environmentList = $Environments -split \",\"
+$environmentIdList = @()
+Write-Host \"Getting the ids for all environments specified\"
+foreach($environment in $environmentList)
+{
+\tWrite-Host \"Getting the id for the environment $environment\"
+    $environmentEscaped = $environment.Replace(\" \", \"%20\")
+    $environmentUrl = \"$baseApiUrl/environments?skip=0&take=1000&name=$environmentEscaped\"
+    $environmentResponse = Invoke-RestMethod $environmentUrl -Headers $header 
+
+    $environmentId = $environmentResponse.Items[0].Id
+    if ($environmentId -eq $null)
+    {
+    \tWrite-Host \"The environment $environment cannot be found in this space, exiting\"
+        exit 1
+    }
+    Write-Host \"The id for environment $environment is $environmentId\"
+    $environmentIdList += $environmentId
+}
+$tenantList = $Tenants -split \",\"
+$tenantIdList = @()
+
+foreach($tenant in $tenantList)
+{
+\tif ([string]::IsNullOrWhiteSpace($tenant) -eq $false)
+    {    
+      Write-Host \"Getting the id for tenant $tenant\"
+      $tenantEscaped = $tenant.Replace(\" \", \"%20\")
+      $tenantUrl = \"$baseApiUrl/tenants?skip=0&take=1000&name=$tenantEscaped\"
+      $tenantResponse = Invoke-RestMethod $tenantUrl -Headers $header 
+
+      $tenantId = $tenantResponse.Items[0].Id
+      Write-Host \"The id for tenant $tenant is $tenantId\"
+      $tenantIdList += $tenantId
+    }
+}
+
+$machinePolicyId = $machinePolicyIdOrName
+if ($machinePolicyIdOrName.StartsWith(\"MachinePolicies-\") -eq $false)
+{
+\tWrite-Host \"The machine policy specified $machinePolicyIdOrName appears to be a name\"
+\t$machinePolicyNameEscaped = $machinePolicyIdOrName.Replace(\" \", \"%20\")
+\t$machinePolicyResponse = Invoke-RestMethod \"$baseApiUrl/machinepolicies?partialName=$machinePolicyNameEscaped\" -Headers $header
+        
+    $machinePolicyId = $machinePolicyResponse.Items[0].Id
+    Write-Host \"The machine policy id is $machinePolicyId\"
+}
+
+if ([string]::IsNullOrWhiteSpace($machinePolicyId) -eq $true)
+{
+\tWrite-Host \"The machine policy $machinePolicyIdOrName cannot be found, exiting\"
+    exit 1
+}
+
+$workerPoolId = $WorkerPoolNameOrId
+if ([string]::IsNullOrWhiteSpace($workerPoolId) -eq $false -and $workerPoolId.StartsWith(\"WorkerPools-\") -eq $false)
+{
+\tWrite-Host \"The worker pool $workerPoolId appears to be a name, looking it up\"
+    $workerPoolNameEscaped = $workerPoolId.Replace(\" \", \"%20\")
+    $workerPoolResponse = Invoke-RestMethod \"$baseApiUrl/workerpools?partialName=$workerPoolNameEscaped\" -Headers $header
+    
+    $workerPoolId = $workerPoolResponse.Items[0].Id
+    Write-Host \"The worker pool id is $workerPoolId\"
+}
+
+$rawRequest = @{
+\tId = $machineId;
+    MachinePolicyId = $MachinePolicyId;
+    Name = $RegistrationName;
+\tIsDisabled = $false;
+\tHealthStatus = \"Unknown\";
+\tHasLatestCalamari = $true;
+\tStatusSummary = $null;
+\tIsInProcess = $true;
+\tEndpoint = @{
+    \tId = $null;
+\t\tCommunicationStyle = \"Kubernetes\";
+\t\tLinks = $null;
+\t\tAccountType = \"AzureServicePrincipal\";
+        ClusterUrl = $null;
+        ClusterCertificate = $null;
+        SkipTlsVerification = $false;
+        DefaultWorkerPoolId = $workerPoolId;
+        Authentication = @{
+        \tAuthenticationType = \"KubernetesAzure\";
+            AccountId = $AzureAccountId;
+            ClusterName = $RegistrationName;
+            ClusterResourceGroup = $ClusterResourceGroup
+        };
+    };
+\tLinks = $null;\t
+\tRoles = $roleList;
+\tEnvironmentIds = $environmentIdList;
+\tTenantIds = $tenantIdList;
+    TenantedDeploymentParticipation = $DeploymentType;
+\tTenantTags = @()}
+
+$jsonRequest = $rawRequest | ConvertTo-Json -Depth 10
+
+Write-Host \"Sending in the request $jsonRequest\"
+
+$machineUrl = \"$baseApiUrl/machines\"
+$method = \"POST\"
+if ($OverwriteExisting -and $machineId -ne $null)
+{
+\t$machineUrl = \"$machineUrl/$machineId\" 
+  \t$method = \"PUT\"
+}
+
+Write-Host \"Posting to url $machineUrl\"
+$machineResponse = Invoke-RestMethod $machineUrl -Headers $header -Method $method -Body $jsonRequest
+
+Write-Host \"Create machine's response: $machineResponse\""
+    },
+    "Parameters": [
+      {
+        "Id": "e98dc4e2-0766-4d2d-a753-eafe294fdeea",
+        "Name": "RegisterAzureCluster.Octopus.Base.Url",
+        "Label": "Octopus Base Url",
+        "HelpText": "The base url of your Octopus Deploy instance.  Example: https://samples.octopus.app",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "cb3cdd41-3d1f-49c6-820e-acfa24bf5a88",
+        "Name": "RegisterAzureCluster.Octopus.Api.Key",
+        "Label": "Octopus Api Key",
+        "HelpText": "The API key of a user in Octopus Deploy who has permissions to register the cluster.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "1d3d8695-27a3-4d3e-9457-6b483253a609",
+        "Name": "RegisterAzureCluster.Azure.Account",
+        "Label": "Azure Account",
+        "HelpText": "The Azure Account with permissions to access the AKS cluster",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "AzureAccount"
+        }
+      },
+      {
+        "Id": "ca9d9733-2032-466b-9e80-2aa6abd3c977",
+        "Name": "RegisterAzureCluster.AKS.Name",
+        "Label": "AKS Cluster Name",
+        "HelpText": "The name of the AKS Cluster Name to register with Octopus Deploy.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "1e3c6a4a-09da-4cd1-989f-93be59ad7f16",
+        "Name": "RegisterAzureCluster.ResourceGroup.Name",
+        "Label": "AKS Resource Group Name",
+        "HelpText": "Name of the Azure Resource Group where the AKS cluster is located.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "fa4bd89d-bb86-4d3f-87ff-17125cd88f24",
+        "Name": "RegisterAzureCluster.Roles.List",
+        "Label": "Role CSV List",
+        "HelpText": "Comma separated list of environments to assign to the AKS cluster in Octopus Deploy.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "0c80326d-cdc1-439d-be6b-fbab4da42cda",
+        "Name": "RegisterAzureCluster.Environment.List",
+        "Label": "Environment CSV List",
+        "HelpText": "Comma separated list of environments to assign to the AKS cluster in Octopus Deploy.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "667a18b3-1694-4333-87a4-9be712b59122",
+        "Name": "RegisterAzureCluster.Tenant.List",
+        "Label": "Tenant CSV List",
+        "HelpText": "(Optional) If this is for a tenant, the a comma separated list of tenants to assign the AKS cluster to in Octopus Deploy",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "db2de612-45bb-4e4a-ab95-64083dd80393",
+        "Name": "RegisterAzureCluster.Tenant.DeploymentType",
+        "Label": "Tenanted Deployments",
+        "HelpText": "Choose the kind of deployment where this deployment target should be included.",
+        "DefaultValue": "Untenanted",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "Untenanted|Exclude from tenanted deployments (default)
+Tenanted|Include only in tenanted deployments
+TenantedOrUntenanted|Include in both tenanted and untenanted deployments"
+        }
+      },
+      {
+        "Id": "5ef91f37-b13b-413d-955c-872c7f274c7e",
+        "Name": "RegisterAzureCluster.MachinePolicy.IdOrName",
+        "Label": "Machine Policy Id Or Name",
+        "HelpText": "Enter in the name or the Id of the Machine Policy in Octopus Deploy for the AKS Cluster.",
+        "DefaultValue": "Default Machine Policy",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "c4c45925-d7a4-4e41-9c2d-a8d73a6292b1",
+        "Name": "RegisterAzureCluster.WorkerPool.IdOrName",
+        "Label": "Worker Pool Id or Name",
+        "HelpText": "The name or id of the worker pool all communication will go through for the K8s cluster.  Leave blank for the default worker pool.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "94b90acb-a054-4886-91e0-79e9881709f9",
+        "Name": "RegisterAzureCluster.Overwrite.Existing",
+        "Label": "Overwrite Existing Registration",
+        "HelpText": "Indicates if the existing cluster should be overwritten",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      }
+    ],
+    "LastModifiedBy": "octobob",
+    "$Meta": {
+      "ExportedAt": "2020-04-13T15:37:29.866Z",
+      "OctopusVersion": "2020.1.10",
+      "Type": "ActionTemplate"
+    },
+    "Category": "octopus"
+  }

@@ -1,0 +1,125 @@
+{
+  "Id": "3d61fa51-3352-4af6-b532-7ae1f48218b7",
+  "Name": "Delete Resource Group If Exists (AZ Module)",
+  "Description": "This step uses the new `az` modules to delete a resource group if it exist.  
+
+Requires `Octopus Deploy 2020.1` or later.
+
+Requires a worker with the `az` module installed on it.  That module is not bundled with Octopus Deploy.",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 1,
+  "Author": "octobob",
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Azure.AccountId": "#{DeleteResourceGroup.Azure.Account}",
+    "Octopus.Action.Script.ScriptBody": "$resourceGroupName = $OctopusParameters[\"DeleteResourceGroup.ResourceGroup.Name\"]
+$resourceGroupLocationAbbr = $OctopusParameters[\"DeleteResourceGroup.ResourceGroup.Location.Abbr\"]
+
+$existingResourceGroups = (az group list --query \"[?location=='$resourceGroupLocationAbbr']\") | ConvertFrom-JSON
+
+$deleteResourceGroup = $false
+foreach ($resourceGroupFound in $existingResourceGroups)
+{\t
+\tWrite-Host \"Checking if current resource group $($resourceGroupFound.name) matches $resourceGroupName\"
+    if ($resourceGroupFound.name -eq $resourceGroupName)
+    {
+    \t$deleteResourceGroup = $true
+    \tWrite-Highlight \"Resource group found, deleting\"
+    \tbreak
+    }
+}
+
+if ($deleteResourceGroup)
+{
+\tWrite-Host \"Deleting the $resourceGroupName because it was found\"
+\taz group delete -n $resourceGroupName -y
+}"
+  },
+  "Parameters": [
+    {
+      "Id": "b854aba4-4acb-428d-b981-79d1f2f50537",
+      "Name": "DeleteResourceGroup.Azure.Account",
+      "Label": "Azure Account",
+      "HelpText": "The Azure Account with the necessary permissions to create resource groups.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "c7e43d70-f9ac-43cb-95a8-6a0e75ad40c6",
+      "Name": "DeleteResourceGroup.ResourceGroup.Name",
+      "Label": "Resource Group Name",
+      "HelpText": "The name of the resource group to create.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e1bd7e57-5ad0-445b-9d11-6642acc55b88",
+      "Name": "DeleteResourceGroup.ResourceGroup.Location.Abbr",
+      "Label": "The Resource Group Abbreviated Location",
+      "HelpText": "The abbreviated resource group location, for example: centralus",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "centralus|Americas - Central US
+eastus|Americas - East US
+eastus2|Americas - East US 2
+northcentralus|Americas - North Central US
+southcentralus|Americas - South Central US
+westus|Americas - West US
+westus2|Americas - West US 2
+westcentralus|Americas - West Central US
+canadacentral|Americas - Canada Central
+canadaeast|Americas - Canada East
+brazilsouth|Americas - Brazil South
+eastasia|Asia Pacific - East Asia
+southeastasia|Asia Pacific - Southeast Asia
+australiacentral|Asia Pacific - Australia Central
+australiacentral2|Asia Pacific - Australia Central 2
+australiaeast|Asia Pacific - Australia East
+australiasoutheast|Asia Pacific - Australia Southeast
+chinaeast|Asia Pacific - China East
+chinaeast2|Asia Pacific - China East 2
+chinanorth|Asia Pacific - China North
+chinanorth2|Asia Pacific - China North 2
+centralindia|Asia Pacific - Central India
+southindia|Asia Pacific - South India
+westindia|Asia Pacific - West India
+japaneast|Asia Pacific - Japan East
+japanwest|Asia Pacific - Japan West
+koreacentral|Asia Pacific - Korea Central
+koreasouth|Asia Pacific - Korea South
+northeurope|Europe - North Europe
+westeurope|Europe - West Europe
+francecentral|Europe - France Central
+francesouth|Europe - France South
+germanynorth|Europe - Germany North
+germanywestcentral|Europe - Germany West Central
+norwayeast|Europe - Norway East
+norwaywest|Europe - Norway West
+spaincentral|Europe - Spain Central
+switzerlandnorth|Europe - Switzerland North
+switzerlandwest|Europe - Switzerland West
+uksouth|Europe - UK South
+ukwest|Europe - UK West
+southafricanorth|Middle East and Africa - South Africa North
+southafricawest|Middle East and Africa - South Africa West
+uaecentral|Middle East and Africa - UAE Central
+uaenorth|Middle East and Africa - UAE North"
+      }
+    }
+  ],
+  "LastModifiedBy": "octobob",
+    "$Meta": {
+      "ExportedAt": "2020-04-13T15:37:29.866Z",
+      "OctopusVersion": "2020.1.10",
+      "Type": "ActionTemplate"
+    },
+    "Category": "azure"
+}

@@ -1,0 +1,427 @@
+{
+  "Id": "5e359c05-89a0-4a13-98a4-d54b0415bb45",
+  "Name": "Dyn - Create an A Record",
+  "Description": "Creates an A record in the specified zone with the specified details. 
+
+NOTE: The API User MUST have the follow permissions:
+\t- UserLogin
+\t- UserChangepw
+\t- RecordAdd
+\t- RecordUpdate
+        - RecordGet
+\t- ZoneGet
+\t- ZoneAddNode
+\t- ZonePublish
+\t- ZoneChangeset
+",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "#--------------------------------------------------------------------\r
+#Log In Variables\r
+\r
+$dynLogInURI = \"https://api.dynect.net/REST/Session/\"\r
+\r
+$dynCustomerName = $OctopusParameters[\"dynCustomerName\"] \r
+\r
+$dynUserName = $OctopusParameters[\"dynUserName\"] \r
+\r
+$dynPassword = $OctopusParameters[\"dynPassword\"] \r
+\r
+#--------------------------------------------------------------------\r
+#Get A Record Variables\r
+\r
+$dynARecordURI = \"https://api.dynect.net/REST/ARecord\"\r
+\r
+$dynZone = $OctopusParameters[\"dynZone\"]\r
+\r
+$dynFQDN = $OctopusParameters[\"dynFQDN\"] \r
+\r
+#--------------------------------------------------------------------\r
+#A Record information to check\r
+\r
+$createNewARecord = $FALSE\r
+\r
+$UpdateARecord = $FALSE\r
+\r
+$dynCorrectTTL = $OctopusParameters[\"dynCorrectTTL\"]\r
+\r
+$dynCorrectIPAddress = $OctopusParameters[\"dynCorrectIPAddress\"] \r
+\r
+\r
+#--------------------------------------------------------------------\r
+#Publish Zone Variables\r
+\r
+$dynPublishURI = \"https://api.dynect.net/REST/Zone\"\r
+\r
+$publishZone = $FALSE\r
+\r
+\r
+\r
+\r
+Write-Output \"`n-------------------------`n\"\r
+\r
+#--------------------------------------------------------------------\r
+#Log In and Retrieve Token for this session\r
+\r
+Write-Output \"Logging into Dyn and retrieving session Authentication Token.\"\r
+\r
+$dynCredentials = @{}\r
+\r
+$dynCredentials.Add(\"customer_name\", $dynCustomerName)\r
+$dynCredentials.Add(\"user_name\", $dynUserName)\r
+$dynCredentials.Add(\"password\", $dynPassword)\r
+\r
+$dynCredentialsJSON = ConvertTo-Json -InputObject $dynCredentials\r
+\r
+$dynLoginResults = Invoke-RestMethod -Uri $dynLogInURI -Body $dynCredentialsJSON -ContentType 'application/json' -Method Post\r
+\r
+if($dynLoginResults.status -ne \"success\")\r
+{\r
+    Write-Error \"Invalid Log In Details. Please try again.\" -ErrorId E4\r
+}\r
+else\r
+{\r
+    Write-Output \"`nLog in was successful.\"\r
+}\r
+\r
+\r
+\r
+$dynSessionToken = @{}\r
+\r
+$dynSessionToken.Add(\"Auth-Token\", $dynLoginResults.data.token)\r
+\r
+\r
+Write-Output \"`n-------------------------`n\"\r
+\r
+#--------------------------------------------------------------------\r
+#Get A Record \r
+\r
+Write-Output \"Retrieving specified A record information.`n\"\r
+\r
+#get and search all records to get the correct record ID (not a unique id) for existing A Records\r
+#this is done to check if a A Record does not exist already. This is the only way to do it without getting an error.\r
+$dynAllRecordsURI = \"https://api.dynect.net/REST/AllRecord/$dynZone\"\r
+\r
+ \r
+$dynAllRecordResults = Invoke-RestMethod -Uri $dynAllRecordsURI -Headers $dynSessionToken -ContentType 'application/json' -Method Get \r
+\r
+for($i = 0; $i -lt $dynAllRecordResults.data.Length; $i++)\r
+{\r
+    \r
+    $a = $dynAllRecordResults.data.Get($i)\r
+\r
+    $result = $a.contains($dynFQDN)\r
+\r
+    if($result -eq $TRUE)\r
+    {\r
+        $dynARecordString = $dynAllRecordResults.data.Get($i)\r
+\r
+        $dynARecordExists = $TRUE\r
+\r
+        $i = $dynAllRecordResults.data.Length\r
+    }\r
+    else\r
+    {\r
+        $dynARecordExists = $FALSE\r
+    }\r
+}\r
+\r
+\r
+\r
+#checks to see if there is more than one A record with the same name.\r
+if($dynARecordExists -eq $TRUE)\r
+{\r
+    $dynARecordURI = \"$dynARecordURI/$dynZone/$dynFQDN\" \r
+ \r
+    $dynARecordResults = Invoke-RestMethod -Uri $dynARecordURI -Headers $dynSessionToken -ContentType 'application/json' -Method Get \r
+\r
+    if($dynARecordResults.data.Length -gt 1)\r
+    {\r
+        Write-Error \"`nThere is more than one A record with the Fully Qualified Domain Name (FQDN) of $dynFQDN. `nThis script does not handle more than one A record witht the same FQDN\" -ErrorId E1\r
+    }\r
+\r
+    if($dynARecordResults.status -ne \"success\")\r
+    {\r
+        Write-Error \"Error occurred while trying to retrieve the A Record. Please check the host name and the Fully Qualified Domain Name are correct.\" -ErrorId E1\r
+    }\r
+}\r
+\r
+\r
+\r
+#Checks if the an A record was returned or needs to be created\r
+if(($dynARecordResults.data.Length -eq 0) -or ($dynARecordExists -eq $FALSE))\r
+{\r
+    $createNewARecord = $TRUE\r
+\r
+    Write-Warning \"$dynFQDN does not exists. Creating $dynFQDN now.\"\r
+}\r
+else\r
+{\r
+    #get information for the specified record\r
+    $dynARecordString = $dynARecordResults.data\r
+\r
+    $dynARecordURI = \"https://api.dynect.net$dynARecordString/\"\r
+\r
+    $dynARecord = Invoke-RestMethod -Uri $dynARecordURI -Headers $dynSessionToken -ContentType 'application/json' -Method Get \r
+\r
+    $dynARecord = $dynARecord.data\r
+\r
+    Write-Output \"`n$dynFQDN has successfully been retrieved.\"\r
+    \r
+    Write-Output \"`n-------------------------`n\"\r
+\r
+}\r
+\r
+#--------------------------------------------------------------------\r
+#create new A record\r
+\r
+if($createNewARecord -eq $TRUE)\r
+{\r
+    $dynCreateURI = \"https://api.dynect.net/REST/ARecord/$dynZone/$dynFQDN\"   \r
+\r
+    $rData = @{}\r
+\r
+    $rData.Add(\"address\", $dynCorrectIPAddress)\r
+\r
+    $dynCreateARecord = @{}\r
+\r
+    $dynCreateARecord.Add(\"ttl\", $dynCorrectTTL)\r
+    $dynCreateARecord.Add(\"rdata\", $rData)\r
+\r
+    $dynCreateARecordJSON = ConvertTo-Json -InputObject $dynCreateARecord\r
+\r
+    $dynCreateResult = Invoke-RestMethod -Uri $dynCreateURI -ContentType 'application/json' -Headers $dynSessionToken -Body $dynCreateARecordJSON  -Method Post\r
+\r
+    if($dynCreateResult.status -ne \"success\")\r
+    {\r
+        Write-Error \"An error occurred while creating the new A Record. Please check the details that have been entered are correct and try again.\" -ErrorId E4\r
+\r
+    }\r
+    else\r
+    {\r
+        Write-Output \"$dynFQDN has successfully been added to the $dynZone zone in Dyn.\"\r
+\r
+        $publishZone = $TRUE\r
+    }\r
+\r
+    Write-Output \"`n-------------------------`n\"\r
+\r
+\r
+}\r
+\r
+\r
+\r
+#--------------------------------------------------------------------\r
+#checking specified A Record to see if it is correct if it exists\r
+if($createNewARecord -eq $FALSE)\r
+{\r
+    Write-Output \"Checking to see if $dynFQDN is current and contains the correct information.\"\r
+\r
+    if($dynARecord.rdata.address -ne $dynCorrectIPAddress)\r
+    {\r
+        $UpdateARecord = $TRUE\r
+\r
+        Write-Warning \"`n$dynFQDN is out of date. Updating now\"\r
+\r
+    }\r
+\r
+    if($UpdateARecord -eq $FALSE)\r
+    {\r
+        Write-Output \"`n$dynFQDN is up-to-date\"\r
+    }\r
+\r
+    Write-Output \"`n-------------------------`n\"\r
+}\r
+#--------------------------------------------------------------------\r
+#Update A record\r
+\r
+if($UpdateARecord -eq $TRUE)\r
+{\r
+    Write-Output \"Updating $dynFQDN so that is matches the current information saved in the system.\"\r
+\r
+    $dynUpdateURI = $dynARecordURI\r
+\r
+    $rData = @{}\r
+\r
+    $rData.Add(\"address\", $dynCorrectIPAddress)\r
+\r
+    $dynUpdatedARecord = @{}\r
+\r
+    \r
+    $dynUpdatedARecord.Add(\"ttl\", $dynCorrectTTL)\r
+    $dynUpdatedARecord.Add(\"rdata\", $rData)\r
+\r
+    $dynUpdatedARecord = ConvertTo-Json -InputObject $dynUpdatedARecord\r
+\r
+    $dynUpdateResult = Invoke-RestMethod -Uri $dynUpdateURI -ContentType 'application/json' -Headers $dynSessionToken -Body $dynUpdatedARecord -Method Put\r
+    \r
+    if($dynUpdateResult.status -ne \"success\")\r
+    {\r
+        Write-Error \"An error occured while trying to update the $dynFQDN record\"\r
+    }\r
+    else\r
+    {\r
+        Write-Output \"`nUpdate was successful. Just needs to be published to make it offical.\"\r
+        \r
+        $publishZone = $TRUE\r
+\r
+    }\r
+\r
+\r
+    Write-Output \"`n-------------------------`n\"\r
+\r
+}\r
+\r
+#--------------------------------------------------------------------\r
+#publish update or creation of A Record\r
+\r
+if($publishZone -eq $TRUE)\r
+{\r
+\r
+    Write-Output \"Publishing changes made to $dynZone\"\r
+\r
+    $publish = @{}\r
+    $publish.Add(\"publish\", 'true')\r
+\r
+    $publish = ConvertTo-Json -InputObject $publish\r
+\r
+    $dynPublishURI = \"$dynPublishURI/$dynZone/\"\r
+\r
+    $dynPublishResults = Invoke-RestMethod -Uri $dynPublishURI -ContentType 'application/json' -Headers $dynSessionToken -Body $publish -Method Put\r
+\r
+    if($dynPublishResults.status -ne \"success\")\r
+    {\r
+        Write-Error \"An error occurred during the publication of the $dynZone zone.\" -ErrorId E4\r
+    }\r
+    else\r
+    {\r
+        Write-Output \"`n$dynZone has successfully been published.\"\r
+    }\r
+\r
+        Write-Output \"`n-------------------------`n\"\r
+\r
+}\r
+\r
+\r
+\r
+\r
+#--------------------------------------------------------------------\r
+#Log Out of session\r
+\r
+Write-Output \"Logging out and deleting this session's authentication token\"\r
+\r
+$dynLogOutResults = Invoke-RestMethod -Uri $dynLogInURI -ContentType 'application/json' -Headers $dynSessionToken -Method Delete\r
+\r
+While(($dynLogOutResults.status -ne \"success\") -and ($tries -lt 10))\r
+{\r
+    Write-Output \"`nWaiting to log out of Dyn\"\r
+    $tries++\r
+    Start-Sleep -Seconds 1\r
+}\r
+\r
+if($dynLogOutResults.status -eq \"success\")\r
+{\r
+    $dynSessionToken.Clear()\r
+    Write-Output $dynSessionToken\r
+    Write-Output \"`nThis session has been ended successfully and the authentication token has been deleted.\"\r
+    \r
+}\r
+else\r
+{\r
+    Write-Error \"`nAn error occurred while logging out.\" -ErrorId E4\r
+}\r
+\r
+"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "dynCustomerName",
+      "Label": "Dyn Customer Name",
+      "HelpText": "The Dyn customer name,  usually the company name",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "dynUserName",
+      "Label": "Dyn User Name",
+      "HelpText": "User Name of the user that will perform this step
+
+NOTE: The API User MUST have the follow permissions:
+\t- UserLogin
+\t- UserChangepw
+\t- RecordAdd
+\t- RecordUpdate
+        - RecordGet
+\t- ZoneGet
+\t- ZoneAddNode
+\t- ZonePublish
+\t- ZoneChangeset",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "dynPassword",
+      "Label": "Password",
+      "HelpText": "Password of the user to access Dyn",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "dynZone",
+      "Label": "Dyn Zone",
+      "HelpText": "The name of the Zone, where you want the A record to be created
+
+For example: myzone.com",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "dynFQDN",
+      "Label": "Fully Qualified Domain Name",
+      "HelpText": "The name of the A record that is being created in Fully Qualified Domain Name format
+
+For example: newrecord.myzone.com",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "dynCorrectTTL",
+      "Label": "Time to Live",
+      "HelpText": "Limits the lifespan or lifetime of data in a computer network",
+      "DefaultValue": "0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "dynCorrectIPAddress",
+      "Label": "IPv4 Address",
+      "HelpText": "The IPv4 address of the new A record",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-11-26T22:39:11.556+00:00",
+  "LastModifiedBy": "timhunt303",
+  "$Meta": {
+    "ExportedAt": "2015-11-27T06:25:11.275+00:00",
+    "OctopusVersion": "3.1.7",
+    "Type": "ActionTemplate"
+  },
+  "Category": "dyn"
+}

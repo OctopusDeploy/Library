@@ -1,0 +1,223 @@
+{
+  "Id": "c3ff8c78-c1cd-43ea-aedb-f5ac7dac3352",
+  "Name": "Web Deploy to Azure by convention",
+  "Description": "Makes it super simple to deploy websites to different regions inside a single process.
+
+This script assumes that you want to deploy websites like these to multiple regions:
+
+- playground.mydomain.com
+- status.mydomain.com
+
+When you deploy to staging and production to 3 regions, this means that each website requires 3 (regions) * 2 (deployment slots) = 6 scripts. If you want this deployed using ms web deploy, you will need 6 * 5 = 30 variables (for a single website).
+
+With this convention script you only need a few variables, but it requires some convention (mostly done by Azure anyway):
+
+- [prefix]-[websitename]-[region]
+- [prefix]-[websitename]-[region]-staging
+
+So
+
+- mydomain-playground-eu-west
+- mydomain-playground-eu-west-staging
+
+The following variables are required:
+
+- AzurePrefix
+- AzureName
+- AzurePassword-[region]
+- AzurePassword-[region]-staging
+
+The password is required for each region and deployment slot, the rest is fully determined by convention.",
+  "ActionType": "Octopus.Script",
+  "Version": 29,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::LoadWithPartialName(\"Microsoft.Web.Deployment\")\r
+# A collection of functions that can be used by script steps to determine where packages installed\r
+# by previous steps are located on the filesystem.\r
+ \r
+function Find-InstallLocations {\r
+    $result = @()\r
+    $OctopusParameters.Keys | foreach {\r
+        if ($_.EndsWith('].Output.Package.InstallationDirectoryPath')) {\r
+            $result += $OctopusParameters[$_]\r
+        }\r
+    }\r
+    return $result\r
+}\r
+ \r
+function Find-InstallLocation($stepName) {\r
+    $result = $OctopusParameters.Keys | where {\r
+        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\r
+    } | select -first 1\r
+ \r
+    if ($result) {\r
+        return $OctopusParameters[$result]\r
+    }\r
+ \r
+    throw \"No install location found for step: $stepName\"\r
+}\r
+ \r
+function Find-SingleInstallLocation {\r
+    $all = @(Find-InstallLocations)\r
+    if ($all.Length -eq 1) {\r
+        return $all[0]\r
+    }\r
+    if ($all.Length -eq 0) {\r
+        throw \"No package steps found\"\r
+    }\r
+    throw \"Multiple package steps have run; please specify a single step\"\r
+}\r
+\r
+function Test-LastExit($cmd) {\r
+    if ($LastExitCode -ne 0) {\r
+        Write-Host \"##octopus[stderr-error]\"\r
+        write-error \"$cmd failed with exit code: $LastExitCode\"\r
+    }\r
+}\r
+\r
+# Somehow we can only check for exactly 'True'\r
+$isStagingText = $OctopusParameters['IsStaging'];\r
+$isStaging = $isStagingText -eq \"True\"\r
+\r
+Write-Host \"Is staging text: $isStagingText\"\r
+Write-Host \"Is staging: $isStaging\"\r
+\r
+$stepName = $OctopusParameters['WebDeployPackageStepName']\r
+if ([string]::IsNullOrEmpty($stepName)) {\r
+\tWrite-Host \"Defaulting to step name Extract package\"\r
+\t$stepName = \"Extract package\"\r
+}\r
+\r
+if ($isStaging) {\r
+\t$stepName = $stepName + \" - staging\"\r
+}\r
+\r
+$stepPath = \"\"\r
+if (-not [string]::IsNullOrEmpty($stepName)) {\r
+    Write-Host \"Finding path to package step: $stepName\"\r
+    $stepPath = Find-InstallLocation $stepName\r
+} else {\r
+    $stepPath = Find-SingleInstallLocation\r
+}\r
+Write-Host \"Package was installed to: $stepPath\"\r
+\r
+Write-Host \"##octopus[stderr-progress]\"\r
+ \r
+Write-Host \"Publishing Website\"\r
+\r
+$prefix = $OctopusParameters['Prefix']\r
+if ([string]::IsNullOrEmpty($prefix)) {\r
+\tWrite-Host \"Prefix is empty, reading prefix from variable set using AzurePrefix\"\r
+\t$prefix = $OctopusParameters['AzurePrefix']\r
+}\r
+\r
+$websiteName = $OctopusParameters['WebsiteName']\r
+if ([string]::IsNullOrEmpty($websiteName)) {\r
+\tWrite-Host \"WebsiteName is empty, reading website name from variable set using AzureName\"\r
+\t$websiteName = $OctopusParameters['AzureName']\r
+}\r
+\r
+$regionName = $OctopusParameters['RegionName']\r
+\r
+$publishUrl = \"$prefix-$websiteName-$regionName\"\r
+if ($isStaging) {\r
+\t$publishUrl = $publishUrl + \"-staging\"\r
+}\r
+$publishUrl = $publishUrl + \".scm.azurewebsites.net:443\"\r
+\r
+$userName = '$' + \"$prefix-$websiteName-$regionName\"\r
+if ($isStaging) {\r
+\t$userName = $userName + \"__staging\"\r
+}\r
+\r
+$passwordKey = \"AzurePassword-$regionName\"\r
+if ($isStaging) {\r
+\t$passwordKey = $passwordKey + \"-staging\"\r
+}\r
+\r
+Write-Host \"Using the following values to publish:\"\r
+Write-Host \" * Publish url: $publishUrl\"\r
+Write-Host \" * Website name: $websiteName\"\r
+Write-Host \" * User name: $userName\"\r
+Write-Host \" * Password variable: $passwordKey\"\r
+\r
+$destBaseOptions = new-object Microsoft.Web.Deployment.DeploymentBaseOptions\r
+$destBaseOptions.UserName = $userName\r
+$destBaseOptions.Password =  $OctopusParameters[$passwordKey]\r
+$destBaseOptions.ComputerName = \"https://$publishUrl/msdeploy.axd?site=$websiteName\"\r
+$destBaseOptions.AuthenticationType = \"Basic\"\r
+\r
+$syncOptions = new-object Microsoft.Web.Deployment.DeploymentSyncOptions\r
+#$syncOptions.WhatIf = $false\r
+$syncOptions.UseChecksum = $true\r
+\r
+$deploymentObject = [Microsoft.Web.Deployment.DeploymentManager]::CreateObject(\"contentPath\", $stepPath)\r
+$deploymentObject.SyncTo(\"contentPath\", $websiteName, $destBaseOptions, $syncOptions)"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "WebsiteName",
+      "Label": "Website Name",
+      "HelpText": "The name of the website (e.g. playground)
+
+If you leave this empty, this field will use the _AzureName_ variable.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "RegionName",
+      "Label": "Region Name",
+      "HelpText": "The name of the region (e.g. eu-west)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "IsStaging",
+      "Label": "Is Staging",
+      "HelpText": "Determines whether this is staging or not.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "Prefix",
+      "Label": "Prefix",
+      "HelpText": "The prefix. If you are smart, your websites look like this:
+
+[prefix]-[websitename]-[region]
+
+This allows you to deploy a lot of subdomains for a complete solution to multiple regions.
+
+If you leave this empty, this field will use the _AzurePrefix_ variable.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "WebDeployPackageStepName",
+      "Label": "Package step name",
+      "HelpText": "Name of the previously-deployed package step that contains the files that you want to deploy.
+
+If you leave this empty, this field will default to 'Extract package'",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "GeertvanHorrik",
+  "$Meta": {
+    "ExportedAt": "2015-11-03T00:25:05.516+00:00",
+    "OctopusVersion": "3.0.20.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "webDeploy"
+}

@@ -1,0 +1,94 @@
+{
+  "Id": "c37ccd22-2b31-4263-8389-9e63868519b4",
+  "Name": "HipChat - Notify (API v1)",
+  "Description": "Send a success notification when this step is executed.",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$message = if ($OctopusParameters['HipChatMessage']) { $OctopusParameters['HipChatMessage'] } else { \"(successful) \" + $OctopusParameters['Octopus.Project.Name'] + \" [v$($OctopusParameters['Octopus.Release.Number'])] deployed to $($OctopusParameters['Octopus.Environment.Name'])  on $($OctopusParameters['Octopus.Machine.Name'])\" } \r
+#---------\r
+$apitoken = $OctopusParameters['HipChatAuthToken']\r
+$roomid = $OctopusParameters['HipChatRoomId']\r
+$from = $OctopusParameters['HipChatFrom']\r
+$colour = $OctopusParameters['HipChatColor']\r
+\r
+Try \r
+{\r
+\t#Do the HTTP POST to HipChat\r
+\t$post = \"auth_token=$apitoken&room_id=$roomid&from=$from&color=$colour&message=$message&notify=1&message_format=text\"\r
+\t$webRequest = [System.Net.WebRequest]::Create(\"https://api.hipchat.com/v1/rooms/message\")\r
+\t$webRequest.ContentType = \"application/x-www-form-urlencoded\"\r
+\t$postStr = [System.Text.Encoding]::UTF8.GetBytes($post)\r
+\t$webrequest.ContentLength = $postStr.Length\r
+\t$webRequest.Method = \"POST\"\r
+\t$requestStream = $webRequest.GetRequestStream()\r
+\t$requestStream.Write($postStr, 0,$postStr.length)\r
+\t$requestStream.Close()\r
+\t\r
+\t[System.Net.WebResponse] $resp = $webRequest.GetResponse();\r
+\t$rs = $resp.GetResponseStream();\r
+\t[System.IO.StreamReader] $sr = New-Object System.IO.StreamReader -argumentList $rs;\r
+\t$sr.ReadToEnd();\t\t\t\t\t\r
+}\r
+catch [Exception] {\r
+\t\"Woah!, wasn't expecting to get this exception. `r`n $_.Exception.ToString()\"\r
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "HipChatRoomId",
+      "Label": "Room Id",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HipChatAuthToken",
+      "Label": "Auth token",
+      "HelpText": "For API version 1.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HipChatFrom",
+      "Label": "From name",
+      "HelpText": null,
+      "DefaultValue": "Octopus Deploy",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HipChatColor",
+      "Label": "Color",
+      "HelpText": "HipChat message color",
+      "DefaultValue": "green",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HipChatMessage",
+      "Label": "Message",
+      "HelpText": "You can use variables here. Leave blank for the default build notification format.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2014-06-11T02:21:16.787+00:00",
+    "OctopusVersion": "2.4.7.85",
+    "Type": "ActionTemplate"
+  },
+  "Category": "hipchat"
+}

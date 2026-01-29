@@ -1,0 +1,94 @@
+{
+  "Id": "1f40e418-17bf-4b3e-bbe7-c6d41cbded93",
+  "Name": "Azure Web App - Restart",
+  "Description": "Restarts an azure web app.
+<hr />
+
+*<p>Note This template is designed to run against an azure web app octopus target </p>*
+*<p>Depends on Azure CLI and powershell to be installed on the running machine</p>*",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Azure.AccountId": "#{azWebApp.AzureAcct}",
+    "Octopus.Action.Script.ScriptBody": "try {az --version}
+catch
+{
+    throw \"az CLI not installed\"
+}
+
+$webApp = $OctopusParameters[\"Octopus.Action.Azure.WebAppName\"]
+$resourceGroup = $OctopusParameters[\"Octopus.Action.Azure.ResourceGroupName\"]
+$startIfStopped = $OctopusParameters[\"azWebApp.StartIfStopped\"]
+
+Write-Host \"Checking webapp $webApp status in resource group $resourceGroup\"
+
+$appState = az webapp list --resource-group $resourceGroup --query \"[?name=='$webApp'].{state: state, hostName: defaultHostName}\" | ConvertFrom-Json
+if($appState.state -eq \"stopped\")
+{
+    if($startIfStopped -eq 'true')
+    {
+        Write-Host \"Webapp is not running. Starting...\" -NoNewline
+    \taz webapp start --name $webApp --resource-group $resourceGroup
+        Write-Host \"Done\"
+    }
+    else
+    {
+      Throw \"Webapp is not running.\"
+    }
+}
+
+Write-Host \"Webapp running, restarting\"
+
+else
+{
+\tWrite-Host \"Restarting $webApp in resource group $resourceGroup\"
+\taz webapp restart --name $webApp --resource-group $resourceGroup
+}
+
+Start-Sleep -s 5
+
+$appState = az webapp list --resource-group $resourceGroup --query \"[?name=='$webApp'].{state: state, hostName: defaultHostName}\" | ConvertFrom-Json
+
+if($appState.state -ne \"running\")
+{
+\tThrow \"Webapp failed to start.  Check the app's activity/error log\"
+}
+
+write-host \"Webapp $webApp running. Check at: $($appState.hostName)\"
+"
+  },
+  "Parameters": [
+    {
+      "Id": "e732ddaa-a43b-4369-8813-065286069d65",
+      "Name": "azWebApp.AzureAcct",
+      "Label": "Azure Account",
+      "HelpText": "The azure account that has access to the web app",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "901ec60b-0ffd-4d08-be6f-fa9e8aec457a",
+      "Name": "azWebApp.StartIfStopped",
+      "Label": "Start if stopped",
+      "HelpText": "If the web app is stopped, start it",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2022-05-17T10:59:12.694Z",
+    "OctopusVersion": "2022.1.2495",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "zogamorph",
+  "Category": "azure"
+}

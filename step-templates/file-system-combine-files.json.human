@@ -1,0 +1,150 @@
+{
+  "Id": "a1983aec-a8ca-4fda-b763-081fd0acecf8",
+  "Name": "File System - Combine all files in directory into single file",
+  "Description": "This step template will take all the files in a single directory, sort them alphabetically, and combine them into a single file.  
+
+Optional, it will create an artifact for that file so it can be reviewed.  ",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$sourceDirectoryPath = $OctopusParameters[\"CombineFiles.Directory.Source\"]
+$sourceDirectoryPackagePath = $OctopusParameters[\"CombineFiles.Directory.PackageSource\"]
+$sourceDirectoryFilter = $OctopusParameters[\"CombineFiles.Directory.Filter\"]
+$destinationFile = $OctopusParameters[\"CombineFiles.Destination.FileName\"]
+$createArtifact = $OctopusParameters[\"CombineFiles.Destination.CreateArtifact\"]
+$commentCharacters = $OctopusParameters[\"CombineFiles.Destination.CommentCharacters\"]
+
+if ([string]::IsNullOrWhiteSpace($sourceDirectoryPackagePath) -eq $false){
+\tWrite-Host \"A previous package path was specified, grabing that\"
+\t$sourceDirectory = $OctopusParameters[\"Octopus.Action[$sourceDirectoryPackagePath].Output.Package.InstallationDirectoryPath\"]
+    $sourceDirectory = \"$sourceDirectory\\$sourceDirectoryPath\"
+}
+else {
+\t$sourceDirectory = \"$sourceDirectoryPath\"
+}
+
+Write-Host \"Source Directory: $sourceDirectory\"
+Write-Host \"Source File Filter: $sourceDirectoryFilter\"
+Write-Host \"Combined File Name: $destinationFile\"
+Write-Host \"Create Artifact: $createArtifact\"
+Write-Host \"Comment Characters: $commentCharacters\"
+
+if ([string]::IsNullOrWhiteSpace($sourceDirectory)){
+\tthrow-exception \"The source directory variable is required.\"
+}
+
+if ((Test-Path $sourceDirectory) -eq $false){
+\tWrite-Host \"The directory $sourceDirectory was not found, skipping\"
+\texit 0
+}
+
+if ((Test-Path $destinationFile) -eq $false){
+\tWrite-Host \"Creating the file: $destinationFile\"
+\tNew-Item -Path $destinationFile -ItemType \"file\"
+}
+else {
+\tWrite-Host \"The file $destinationFile already exists\"
+}
+
+if ([string]::IsNullOrWhiteSpace($sourceDirectoryFilter)){
+\tWrite-Host \"Source directory filter not specified, grabbing all files\"
+\t$filePath = \"$sourceDirectory\\*\"
+}
+else {
+\tWrite-Host \"Source directory filter specified, grabbing filtered files\"
+\t$filePath = \"$sourceDirectory\\*\"
+}
+
+Write-Host \"Getting child items using $filePath\"
+$filesToCombine = Get-ChildItem -Path $filePath -File | Sort-Object -Property Name
+
+foreach ($file in $filesToCombine)
+{
+\tWrite-Host \"Adding content to $changeScript from $file\"
+
+\tif ([string]::IsNullOrWhiteSpace($commentCharacters) -eq $false){    
+\t\tAdd-Content -Path $destinationFile -Value \"$commentCharacters Contents from $file\"
+    }
+    
+\tAdd-Content -Path $destinationFile -Value (Get-Content $file)        
+} 
+
+if ($createArtifact -eq \"True\"){\t 
+  New-OctopusArtifact -Path \"$destinationFile\"
+}"
+  },
+  "Parameters": [
+    {
+      "Id": "4754945b-530f-4da5-bb50-94bd8b7a2239",
+      "Name": "CombineFiles.Directory.PackageSource",
+      "Label": "Source Package Step",
+      "HelpText": "**Optional** - The name of the package step containing the files to combine.  Leave this blank if the full path is in the Source Directory.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Id": "ee8d882e-f278-4211-93d7-7dadc6d9978d",
+      "Name": "CombineFiles.Directory.Source",
+      "Label": "Source Directory",
+      "HelpText": "**Optional** - The folder containing all the files to combine into a single file.  If using this with the source package step variable then this is the relative path to that.  Otherwise this is the full path to it.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "373ddecf-5038-4791-9ed5-dadc464b61de",
+      "Name": "CombineFiles.Directory.Filter",
+      "Label": "Source File Filter",
+      "HelpText": "**Optional** - The filter to apply when looking for tiles.  Example *.sql or *.txt.  If omitted it will grab all files in the directory.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9690b60a-7e25-412f-b9b2-0889bfc225b7",
+      "Name": "CombineFiles.Destination.FileName",
+      "Label": "Combined File Name",
+      "HelpText": "**Required** - the file name of all the combined files.  Must include the full path.  IE C:\\Testing\\NewFile.sql",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "50b49c3d-d9a4-49a2-b4f7-896d49cbc87b",
+      "Name": "CombineFiles.Destination.CommentCharacters",
+      "Label": "Comment Characters",
+      "HelpText": "**Optional** - Use this if you want to include the file name in your combined file as comments.  You will need to specify the comment characters for the language of the file.  For example \"--\" for SQL files, \"//\" for C# files.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a06deb13-1561-4df0-8aee-d73696841863",
+      "Name": "CombineFiles.Destination.CreateArtifact",
+      "Label": "Create Artifact",
+      "HelpText": "Indicates if the combined file should be uploaded to Octopus Deploy as an artifact.  Useful when combining multiple SQL scripts into a single file so a DBA can review it.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2018-11-07T14:34Z",
+  "LastModifiedBy": "octobob",
+  "$Meta": {
+    "ExportedAt": "2018-10-12T18:54:49.750Z",
+    "OctopusVersion": "2018.8.8",
+    "Type": "ActionTemplate"
+  },
+  "Category": "filesystem"
+}

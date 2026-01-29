@@ -1,0 +1,109 @@
+{
+  "Id": "b50efca4-ceb6-4e40-b000-d593d7f5ff76",
+  "Name": "WinSW - Install",
+  "Description": "Verify that WinSW is installed, if it is not, install it.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$winswPath = $OctopusParameters[\"winsw-path\"]
+$winswFilename = $OctopusParameters[\"winsw-filename\"]
+$winswFullPath = \"$winswPath\\$winswFilename\"
+$winswUrl = $OctopusParameters[\"winsw-url\"]
+$winswAutoInstall = $OctopusParameters[\"winsw-auto-install\"]
+
+Write-Host \"Checking to ensure WinSW is installed.\"
+Write-Host \"For more information on WinSW check out https://github.com/winsw/winsw\"
+
+Write-Host \"WinSW should be installed at $winswFullPath\"
+Write-Host \"Checking to ensure base path is located at $winswPath\"
+
+if (-not (Test-Path -LiteralPath \"$winswPath\" -PathType Container)) {
+\tWrite-Host \"Path was not found. Creating the directory now.\"
+    
+    New-Item -Path \"$winswPath\" -ItemType Directory
+    
+    Write-Host \"Directory created.\"
+}
+
+
+if (-not (Test-Path -LiteralPath \"$winswFullPath\" -PathType Leaf)) {
+
+\tWrite-Host \"WinSW was not found at '$winswFullPath'. Check to see if auto install flag is true.\"
+    
+    if ($winswAutoInstall -eq $true) {
+    \t
+        Write-Host \"Flag is true, installing WinSW from $winswUrl to $winswFullPath\"
+        
+        if ($winswUrl -eq $false) {
+        \t
+            Write-Error \"WinSW download URL is not set.\"
+            
+        } else {
+        \t
+            Invoke-WebRequest -Uri $OctopusParameters[\"winsw-url\"] -OutFile \"$winswFullPath\"
+        
+        \tWrite-Host \"WinSW installed at $winswPath.\"
+        }
+        
+    } else {
+    \t
+        Write-Error \"Flag is false, you will need to install WinSW to $winswFullPath.\"
+        
+    }
+}",
+    "Octopus.Action.EnabledFeatures": ""
+  },
+  "Parameters": [
+    {
+      "Id": "edd462d9-3e00-40de-8ce3-cc387938e237",
+      "Name": "winsw-url",
+      "Label": "WinSW URL",
+      "HelpText": "WinSW URL to download.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "47ca8207-301d-41ac-96fc-e3122bdeaa21",
+      "Name": "winsw-path",
+      "Label": "WinSW Path",
+      "HelpText": "Location where WinSW is installed.",
+      "DefaultValue": "c:\\winsw\\base",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "037be70a-c8f6-479b-a62c-7d77ef7d3a94",
+      "Name": "winsw-auto-install",
+      "Label": "WinSW Auto Install",
+      "HelpText": "Should WinSW automatically install.",
+      "DefaultValue": "true",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "9221c0e5-e544-43a2-acb4-40f601b46115",
+      "Name": "winsw-filename",
+      "Label": "WinSW Filename",
+      "HelpText": "Name of the base winsw file.",
+      "DefaultValue": "winsw.exe",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-08-03T13:53:12.815Z",
+    "OctopusVersion": "2020.3.2",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "cryptic-ai",
+  "Category": "Windows"
+}

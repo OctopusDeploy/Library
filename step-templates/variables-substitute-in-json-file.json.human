@@ -1,0 +1,173 @@
+{
+  "Id": "9E85B3EB-7C19-4F3A-9E9E-71923198EE09",
+  "Name": "Variables - Substitute in Json file",
+  "Description": "Use this step template after the Deploy API step template to substitute variables in a target json file like appsettings.json with Octopus scoped variables. Currently supported data types are string, boolean, interger, decimal and non-empty string arrays and can replace these types inside nested types as well as long as you name them like prop:subprop:subsubprop (like AppMetrics:GlobalTags:env) in octopus like we do today...this should be enough for most of the needs for files like appsettings.json",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "function Get-Param($Name, [switch]$Required, $Default) {
+    $result = $null
+
+    if ($OctopusParameters -ne $null) {
+        $result = $OctopusParameters[$Name]
+    }
+
+    if ($result -eq $null) {
+        $variable = Get-Variable $Name -EA SilentlyContinue    
+        if ($variable -ne $null) {
+            $result = $variable.Value
+        }
+    }
+
+    if ($result -eq $null) {
+        if ($Required) {
+            throw \"Missing parameter value $Name\"
+        } else {
+            $result = $Default
+        }
+    }
+
+    return $result
+}
+
+$ErrorActionPreference = \"Stop\"
+
+function UpdateJsonFile ([hashtable]$variables, [string]$fullpath) {
+    Write-Host 'Starting the json file variable substitution' $variables.Count
+    if ($variables -eq $null) {
+        throw \"Missing parameter value $variables\"
+    }
+
+\t$pathExists = Test-Path $fullpath
+\tif(!$pathExists) {
+\t\tWrite-Host 'ERROR: Path '$fullpath ' does not exist'
+\t\tExit 1
+\t}
+
+\t$json = Get-Content $fullpath -Raw | ConvertFrom-Json
+    Write-Host 'Json content read from file'
+
+\tforeach($variable in $variables.GetEnumerator()) {
+\t\t$key = $variable.Key
+        Write-Host 'Processing' $key
+        $keys = $key.Split(':')
+\t\t$sub = $json
+\t\t$pre = $json
+\t\t$found = $true
+\t\t$lastKey = ''
+\t\tforeach($k in $keys) {
+\t\t\tif($sub | Get-Member -name $k -Membertype Properties){
+\t\t\t\t$pre = $sub
+\t\t\t\t$sub = $sub.$k
+\t\t\t}
+\t\t\telse
+\t\t\t{
+\t\t\t\t$found = $false
+\t\t\t\tbreak
+\t\t\t}
+
+\t\t\t$lastKey = $k
+\t\t}
+
+\t\tif($found) {
+            Write-Host $key 'found in Json content'
+            if($pre.$lastKey -eq $null) {
+                Write-Host $key 'is null in the original source json...values CANNOT be null on the source json file...exiting with 1'
+                Exit 1
+            }
+
+\t\t\t$typeName = $pre.$lastKey.GetType().Name
+\t\t\t[bool]$b = $true
+\t\t\t[int]$i = 0
+\t\t\t[decimal]$d = 0.0
+\t\t\tif($typeName -eq 'String'){
+\t\t\t\t$pre.$lastKey = $variable.Value
+\t\t\t}
+\t\t\telseif($typeName -eq 'Boolean' -and [bool]::TryParse($variable.Value, [ref]$b)) {
+\t\t\t\t$pre.$lastKey = $b
+\t\t\t}
+\t\t\telseif($typeName -eq 'Int32' -and [int]::TryParse($variable.Value, [ref]$i)){
+\t\t\t\t$pre.$lastKey = $i
+\t\t\t}
+\t\t\telseif($typeName -eq 'Decimal' -and [decimal]::TryParse($variable.Value, [ref]$d)){
+\t\t\t\t$pre.$lastKey = $d
+\t\t\t}
+\t\t\telseif($typeName -eq 'Object[]') {
+                if($pre.$lastKey.Length -ne 0 -and $pre.$lastKey[0].GetType().Name -eq 'String') {
+\t\t\t\t    $pre.$lastKey = $variable.Value.TrimStart('[').TrimEnd(']').Split(',')
+                }
+                else {
+                    Write-Host 'ERROR: Cannot handle ' $key ' with type ' $typeName 
+\t\t\t\t    'Only nonempty string arrays are supported at the moment meaning that it has to be a 
+\t\t\t\t    string array with atleast one element in it in the original source appsettings.json 
+\t\t\t\t    file...Skipping update and exiting with 1'
+\t\t\t\t    Exit 1
+                }
+\t\t\t}
+\t\t\telse {
+\t\t\t\tWrite-Host 'ERROR: Cannot handle ' $key ' with type ' $typeName 
+\t\t\t\t'Only string, boolean, interger, decimal and non-empty string arrays are supported at the moment
+                ...Skipping update and exiting with 1'
+\t\t\t\tExit 1
+\t\t\t}
+
+            Write-Host $key 'updated in json content with value' $pre.$lastKey 
+
+\t\t}
+        else {
+            Write-Host $key 'not found in Json content...skipping it'
+        }
+\t}
+    
+\t$json | ConvertTo-Json -depth 99 | Set-Content $fullpath
+
+    
+    Write-Host $fullpath 'file variables updated successfully...Done'
+}
+
+
+if($OctopusParameters -eq $null) {
+    Write-Host 'OctopusParameters is null...exiting with 1'
+    Exit 1    
+}
+
+function ConvertListToHashtable([object[]]$list) {
+    $h = @{}
+    foreach ($element in $list) {
+\t    $h.Add($element.Key, $element.Value)
+    }
+    return $h
+}
+
+$oParams = $OctopusParameters.getenumerator() | where-object {$_.key -notlike \"Octopus*\" -and $_.key -notlike \"env:*\"}
+
+UpdateJsonFile `
+(ConvertListToHashtable $oParams) `
+(Get-Param \"JsonFilePath\" -Required)
+"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "JsonFilePath",
+      "Label": "Path to the json file",
+      "HelpText": "For example if your appsettings.json file is in 
+c:\\web\\site1\\appsettings.json then set this value to
+**c:\\web\\site1\\appsettings.json**. You can use Octopus 
+variables here like 
+**#{Deployment_InstallationPath}\\\\#{Octopus.Release.Number}\\appsettings.json** as the value of this variable. A good idea is to copy the value from the Install to variable in the Deploy API step template and add \\appsettings.json if that is your target json file",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "mysterio2465",
+  "$Meta": {
+    "ExportedAt": "2017-05-29T11:51:18.310Z",
+    "OctopusVersion": "3.2.11",
+    "Type": "ActionTemplate"
+  },
+  "Category": "Octopus"
+}

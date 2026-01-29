@@ -1,0 +1,270 @@
+{
+    "Id": "d166457a-1421-4731-b143-dd6766fb95d5",
+    "Name": "Calculate Deployment Mode",
+    "Description": "This step uses Octopus [System Variables](https://octopus.com/docs/projects/variables/system-variables) to calculate the deployment mode.  
+
+# Deployment Mode
+The potential modes are:
+- **Deploy**: A newer version is being deployed to the target environment.  For example, `2021.1.4` is being deployed to **Production** to replace `2021.0.5`.
+- **Rollback**: An older version is being deployed to the target environment. For example, `2021.0.5` is being deployed to **Production** to replace `2021.1.4`.
+- **Redeploy**: The same version is being deployed to the target environment.  For example, `2021.1.4` is being deployed to **Production** which already has `2021.1.4`.
+
+**Please note**: This step template uses the release numbers to calculate the deployment mode.  It doesn't look at any packages.
+
+# Version Difference
+After calculating the deployment mode, the step template will calculate the version difference.  The potential options are:
+- **Identical**: No differences between the previous release and the current release were found.
+- **Major**: The first number (2021 in 2021.1.2.10) is different between the previous release and the current release.
+- **Minor**: The second number (1 in 2021.1.2.10) is different between the previous release and the current release.
+- **Build**: The third number (2 in 2021.1.2.10) is different between the previous release and the current release.
+- **Revision**: The fourth number (10 in 2021.1.2.10) is different between the previous release and the current release.
+
+# Manual or Automatic Trigger
+The step template will also determine if the deployment was caused by a trigger or is a manual deployment.  Potential values are `True` (caused by a trigger) or `False` (manual deployment).
+
+# Output Variables
+
+The following output variables will be set:
+- **DeploymentMode**: Will either be `Deploy`, `Rollback` or `Redeploy`.
+- **Trigger**: Will either be `True` or `False`.  Indicates if this deployment was caused by a trigger (scheduled or deployment target).
+- **VersionChange**: Will either be `Identical`, `Major`, `Minor`, `Build`, or `Revision`.
+
+## Variable Run Condition Output Variables
+To make it easier to use, the step template will set a number of run condition output variables.  
+
+### Variable Run Condition Usage
+Variable Run Conditions will _always_ be evaluated.  Even if there is an error.  If the run condition comes back as **Truthy** it will run the step.  
+
+To limit when the step runs, wrap the output variable with an if/then or unless clause:
+- **Always Run**: `#{Octopus.Action[Calculate Deployment Mode].Output.RunOnDeploy}`  
+- **Success**: Only run when previous steps succeeds `#{unless Octopus.Deployment.Error}#{Octopus.Action[Calculate Deployment Mode].Output.RunOnDeploy}#{/unless}`
+- **Failure**: Only run when previous steps fail `#{if Octopus.Deployment.Error}#{Octopus.Action[Calculate Deployment Mode].Output.RunOnDeploy}#{/if}`
+
+**Hint:** Replace **RunOnDeploy** from the above examples with one of the variables from below.
+
+### Deployment Mode Run Conditions
+- **RunOnDeploy**: Only run the step when the **DeploymentMode** is `Deploy`.
+- **RunOnRollback**: Only run the step when the **DeploymentMode** is `Rollback`.
+- **RunOnRedeploy**: Only run the step when the **DeploymentMode** is `Redeploy`.
+- **RunOnDeployOrRollback**: Only run the step when the **DeploymentMode** is`Deploy` or `Rollback`.
+- **RunOnDeployOrRedeploy**: Only run the step when the **DeploymentMode** is`Deploy` or `Redeploy`.
+- **RunOnRedeployOrRollback**: Only run the step when the **DeploymentMode** is `Redeploy` or `Rollback`.
+
+### Version Change Run Conditions
+- **RunOnMajorVersionChange**: Only run the step when the **VersionChange** is `Major`.
+- **RunOnMinorVersionChange**: Only run the step when the **VersionChange** is `Minor`.
+- **RunOnMajorOrMinorVersionChange**: Only run the step when the **VersionChange** is `Major` or `Minor`.
+- **RunOnBuildVersionChange**: Only run the step when the **VersionChange** is `Build`.
+- **RunOnRevisionVersionChange**: Only run the step when the **VersionChange** is `Revision`.
+
+# Usage 
+
+**Important:** This step template is designed for deployment processes only.  Runbooks have no concept of deployments, redeployments, or rollbacks.
+
+This step was designed to run on a worker (or the Octopus Server).  It can run on targets, but the output variables will all be the same; running on targets will do nothing but waste compute cycles.",
+    "ActionType": "Octopus.Script",
+    "Version": 5,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.RunOnServer": "true",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "$currentReleaseNumber = $OctopusParameters[\"Octopus.Release.Number\"]
+$previousReleaseNumber = $OctopusParameters[\"Octopus.Release.CurrentForEnvironment.Number\"]
+$lastAttemptedReleaseNumber = $OctopusParameters[\"Octopus.Release.PreviousForEnvironment.Number\"]
+$stepName = $OctopusParameters[\"Octopus.Action.StepName\"]
+$triggerName = $OctopusParameters[\"Octopus.Deployment.Trigger.Name\"]
+
+Write-Host \"The current release number is $currentReleaseNumber\"
+Write-Host \"The last succesful release to this environment was $previousReleaseNumber\"
+Write-Host \"The last release that was attempted on this environment was $lastAttemptedReleaseNumber\"
+Write-Host \"The deployment name is $deploymentName\"
+
+if ($previousReleaseNumber -like \"*-*\")
+{
+\t$previousReleaseNumber = $previousReleaseNumber.SubString(0, $previousReleaseNumber.IndexOf(\"-\"))
+}
+
+if ($currentReleaseNumber -like \"*-*\")
+{
+\t$currentReleaseNumber = $currentReleaseNumber.SubString(0, $currentReleaseNumber.IndexOf(\"-\"))
+}
+
+if ($lastAttemptedReleaseNumber -like \"*-*\")
+{
+\t$lastAttemptedReleaseNumber = $lastAttemptedReleaseNumber.SubString(0, $lastAttemptedReleaseNumber.IndexOf(\"-\"))
+}
+
+Write-Host \"The non-pre release tag previous version for the environment was $previousReleaseNumber\"
+Write-Host \"The non-pre release tag current release number is $currentReleaseNumber\"
+Write-Host \"The non-pre release tag of the last attempted version for the environment was $lastAttemptedReleaseNumber\"
+
+$currentVersion = [System.Version]$currentReleaseNumber
+$previousVersion = [System.Version]$previousReleaseNumber
+$lastAttemptedVersion = [System.Version]$lastAttemptedReleaseNumber
+
+$differentVersions = $false
+$versionToCompare = $previousVersion
+if ($currentVersion -gt $previousVersion)
+{
+\tWrite-Host \"The current release number $currentReleaseNumber is greater than the previous successful release number $previousReleaseNumber.\"
+\tif ($currentVersion -lt $lastAttemptedVersion)
+    {
+    \tWrite-Host \"The current release number $currentReleaseNumber is less than the last attempted release number $lastAttemptedReleaseNumber.  Setting deployment mode to rollback.\"
+\t    $deploymentMode = \"Rollback\"
+        $versionToCompare = $lastAttemptedVersion
+    }
+    else
+    {
+    \tWrite-Host \"The current release number $curentReleaseNumber is greater than the last attempted release number $lastAttemptedReleaseNumber.  Setting deployment mode to deploy.\"
+        $deploymentMode = \"Deploy\"
+    }
+}
+elseif ($currentVersion -lt $previousVersion)
+{
+\tWrite-Host \"The current release number $currentReleaseNumber is less than the previous successful release number $previousReleaseNumber.  Setting deployment mode to rollback.\"
+    $deploymentMode = \"Rollback\"
+    $differentVersions = $true
+}
+elseif ($currentVersion -lt $lastAttemptedVersion)
+{
+\tWrite-Host \"The current release number $currentReleaseNumber is less than the last attempted release number $lastAttemptedReleaseNumber.  Setting the deployment mode to rollback.\"
+    $deploymentMode = \"Rollback\"
+    $differentVersions = $true
+    $versionToCompare = $lastAttemptedVersion
+}
+else
+{
+\tWrite-Host \"The current release number $currentReleaseNumber matches the previous release number $previousReleaseNumber.  Setting deployment mode to redeployment.\"
+    $deploymentMode = \"Redeploy\"
+}
+
+$differenceKind = \"Identical\"
+if ($differentVersions)
+{
+\tif ($currentVersion.Major -ne $versionToCompare.Major)
+    {
+    \tWrite-Host \"$currentReleaseNumber is a major version change from $versionToCompare\"
+    \t$differenceKind = \"Major\"
+    }
+    elseif ($currentVersion.Minor -ne $versionToCompare.Minor)
+    {
+    \tWrite-Host \"$currentReleaseNumber is a minor version change from $versionToCompare\"
+    \t$differenceKind = \"Minor\"
+    }
+    elseif ($currentVersion.Build -ne $versionToCompare.Build)
+    {
+    \tWrite-Host \"$currentReleaseNumber is a build version change from $versionToCompare\"
+    \t$differenceKind = \"Build\"
+    }
+    elseif ($currentVersion.Revision -ne $versionToCompare.Revision)
+    {
+    \tWrite-Host \"$currentReleaseNumber is a revision version change from $versionToCompare\"
+    \t$differenceKind = \"Revision\"
+    }
+}
+
+$trigger = $false
+if ([string]::IsNullOrWhiteSpace($triggerName) -eq $false)
+{
+\tWrite-Host \"This task was created by trigger $triggerName.\"
+    $trigger = $true
+}
+
+Set-OctopusVariable -Name \"DeploymentMode\" -Value $deploymentMode
+Set-OctopusVariable -Name \"VersionChange\" -Value $differenceKind
+Set-OctopusVariable -Name \"Trigger\" -Value $trigger
+
+Write-Highlight @\"
+Output Variables Created:
+   \t- Octopus.Action[$($stepName)].Output.DeploymentMode - Set to '$deploymentMode'
+    - Octopus.Action[$($stepName)].Output.VersionChange - Set to '$differenceKind'
+    - Octopus.Action[$($stepName)].Output.Trigger - Set to '$trigger'
+
+Deployment Mode Run Conditions Output Variables:
+   \t- Octopus.Action[$($stepName)].Output.RunOnRollback
+    - Octopus.Action[$($stepName)].Output.RunOnDeploy
+    - Octopus.Action[$($stepName)].Output.RunOnRedeploy
+    - Octopus.Action[$($stepName)].Output.RunOnDeployOrRollback
+    - Octopus.Action[$($stepName)].Output.RunOnDeployOrRedeploy
+    - Octopus.Action[$($stepName)].Output.RunOnRollbackOrRedeploy
+
+Version Change Run Conditions Output Variables:
+   \t- Octopus.Action[$($stepName)].Output.RunOnMajorVersionChange
+    - Octopus.Action[$($stepName)].Output.RunOnMinorVersionChange
+    - Octopus.Action[$($stepName)].Output.RunOnMajorOrMinorVersionChange
+    - Octopus.Action[$($stepName)].Output.RunOnBuildVersionChange
+    - Octopus.Action[$($stepName)].Output.RunOnRevisionVersionChange
+  
+Variable run conditions are always evaluated, even if there is an error.  Use the following examples to control when your step runs.  Replace RunOnDeploy from below examples with one of the variables from above.  
+- Always Run: `#{Octopus.Action[$stepName].Output.RunOnDeploy}`  
+- Success: Only run when previous steps succeeds `##{unless Octopus.Deployment.Error}#{Octopus.Action[$stepName].Output.RunOnDeploy}##{/unless}`
+- Failure: Only run when previous steps fail `##{if Octopus.Deployment.Error}#{Octopus.Action[$stepName].Output.RunOnDeploy}##{/if}`
+
+\"@
+
+$runOnRollback = \"#{if Octopus.Action[$($stepName)].Output.DeploymentMode == \"\"Rollback\"\"}True#{else}False#{/if}\"
+Write-Host \"Setting the output variable 'Octopus.Action[$($stepName)].Output.RunOnRollback' so you can use it as a run condition\"
+Write-Verbose $runOnRollback
+Set-OctopusVariable -Name \"RunOnRollback\" -Value $runOnRollback
+
+$runOnDeploy = \"#{if Octopus.Action[$($stepName)].Output.DeploymentMode == \"\"Deploy\"\"}True#{else}False#{/if}\"
+Write-Host \"Setting the output variable 'Octopus.Action[$($stepName)].Output.RunOnDeploy' so you can use it as a run condition\"
+Write-Verbose $runOnDeploy
+Set-OctopusVariable -Name \"RunOnDeploy\" -Value $runOnDeploy
+
+$runOnRedeploy = \"#{if Octopus.Action[$($stepName)].Output.DeploymentMode == \"\"Redeploy\"\"}True#{else}False#{/if}\"
+Write-Host \"Setting the output variable 'Octopus.Action[$($stepName)].Output.RunOnRedeploy' so you can use it as a run condition\"
+Write-Verbose $runOnRedeploy
+Set-OctopusVariable -Name \"RunOnRedeploy\" -Value $runOnRedeploy
+
+$runOnDeployOrRollback = \"#{if Octopus.Action[$($stepName)].Output.DeploymentMode != \"\"Redeploy\"\"}True#{else}False#{/if}\"
+Write-Host \"Setting the output variable 'Octopus.Action[$($stepName)].Output.RunOnDeployOrRollback' so you can use it as a run condition\"
+Write-Verbose $runOnDeployOrRollback
+Set-OctopusVariable -Name \"RunOnDeployOrRollback\" -Value $runOnDeployOrRollback
+
+$runOnDeployOrRedeploy = \"#{if Octopus.Action[$($stepName)].Output.DeploymentMode != \"\"Rollback\"\"}True#{else}False#{/if}\"
+Write-Host \"Setting the output variable 'Octopus.Action[$($stepName)].Output.RunOnDeployOrRedeploy' so you can use it as a run condition\"
+Write-Verbose $runOnDeployOrRedeploy
+Set-OctopusVariable -Name \"RunOnDeployOrRedeploy\" -Value $runOnDeployOrRedeploy
+
+$runOnRedeployOrRollback = \"#{if Octopus.Action[$($stepName)].Output.DeploymentMode != \"\"Deploy\"\"}True#{else}False#{/if}\"
+Write-Host \"Setting the output variable 'Octopus.Action[$($stepName)].Output.RunOnRedeployOrRollback' so you can use it as a run condition\"
+Write-Verbose $runOnRedeployOrRollback
+Set-OctopusVariable -Name \"RunOnRedeployOrRollback\" -Value $runOnRedeployOrRollback
+
+$runOnMajorVersionChange = \"#{if Octopus.Action[$($stepName)].Output.VersionChange == \"\"Major\"\"}True#{else}False#{/if}\"
+Write-Host \"Setting the output variable 'Octopus.Action[$($stepName)].Output.RunOnMajorVersionChange' so you can use it as a run condition\"
+Write-Verbose $runOnMajorVersionChange
+Set-OctopusVariable -Name \"RunOnMajorVersionChange\" -Value $runOnMajorVersionChange
+
+$runOnMinorVersionChange = \"#{if Octopus.Action[$($stepName)].Output.VersionChange == \"\"Minor\"\"}True#{else}False#{/if}\"
+Write-Host \"Setting the output variable 'Octopus.Action[$($stepName)].Output.RunOnMinorVersionChange' so you can use it as a run condition\"
+Write-Verbose $runOnMinorVersionChange
+Set-OctopusVariable -Name \"RunOnMinorVersionChange\" -Value $runOnMinorVersionChange
+
+$runOnMajorOrMinorVersionChange = \"#{if Octopus.Action[$stepName].Output.VersionChange == \"\"Major\"\"}True#{else}#{if Octopus.Action[$stepName].Output.VersionChange == \"\"Minor\"\"}True#{else}False#{/if}#{/if}\"
+Write-Host \"Setting the output variable 'Octopus.Action[$($stepName)].Output.RunOnMajorOrMinorVersionChange' so you can use it as a run condition\"
+Write-Verbose $runOnMajorOrMinorVersionChange
+Set-OctopusVariable -Name \"RunOnMajorOrMinorVersionChange\" -Value $runOnMajorOrMinorVersionChange
+
+$runOnBuildVersionChange = \"#{if Octopus.Action[$($stepName)].Output.VersionChange == \"\"Build\"\"}True#{else}False#{/if}\"
+Write-Host \"Setting the output variable 'Octopus.Action[$($stepName)].Output.RunOnBuildVersionChange' so you can use it as a run condition\"
+Write-Verbose $runOnBuildVersionChange
+Set-OctopusVariable -Name \"RunOnBuildVersionChange\" -Value $runOnBuildVersionChange
+
+$runOnRevisionVersionChange = \"#{if Octopus.Action[$($stepName)].Output.VersionChange == \"\"Revision\"\"}True#{else}False#{/if}\"
+Write-Host \"Setting the output variable 'Octopus.Action[$($stepName)].Output.RunOnRevisionVersionChange' so you can use it as a run condition\"
+Write-Verbose $runOnRevisionVersionChange
+Set-OctopusVariable -Name \"RunOnRevisionVersionChange\" -Value $runOnRevisionVersionChange"
+    },
+    "Parameters": [],
+    "$Meta": {
+      "ExportedAt": "2021-11-02T13:48:09.120Z",
+      "OctopusVersion": "2021.1.7738",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "BobJWalker",
+    "Category": "octopus"
+  }

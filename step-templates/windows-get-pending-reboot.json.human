@@ -1,0 +1,102 @@
+{
+  "Id": "814c4265-62ec-44d3-9d42-800aef8f7380",
+  "Name": "Windows - Get Pending Reboot",
+  "Description": "Get pending reboot status from computer.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$TempErrAct = $ErrorActionPreference 
+    $ErrorActionPreference = \"Stop\"   
+    Foreach ($Computer in $ComputerName) 
+      { 
+        Try 
+          { 
+            # Setting pending values to false to cut down on the number of else statements 
+            $PendFileRename,$Pending,$SCCM = $false,$false,$false 
+\t\t\t
+            # Setting CBSRebootPend to null since not all versions of Windows has this value 
+            $CBSRebootPend = $null 
+\t\t\t
+            # Querying WMI for build version 
+            $WMI_OS = Get-WmiObject -Class Win32_OperatingSystem -Property BuildNumber, CSName -ComputerName $Computer 
+\t\t\t
+            # Making registry connection to the local/remote computer 
+            $RegCon = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey([Microsoft.Win32.RegistryHive]\"LocalMachine\",$Computer) 
+\t\t\t
+            # If Vista/2008 & Above query the CBS Reg Key 
+            If ($WMI_OS.BuildNumber -ge 6001) 
+              { 
+                $RegSubKeysCBS = $RegCon.OpenSubKey(\"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\\").GetSubKeyNames() 
+                $CBSRebootPend = $RegSubKeysCBS -contains \"RebootPending\" 
+              }#End If ($WMI_OS.BuildNumber -ge 6001) 
+\t\t\t  
+            # Query WUAU from the registry 
+            $RegWUAU = $RegCon.OpenSubKey(\"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\\") 
+            $RegWUAURebootReq = $RegWUAU.GetSubKeyNames() 
+            $WUAURebootReq = $RegWUAURebootReq -contains \"RebootRequired\" 
+\t\t\t
+            # Query PendingFileRenameOperations from the registry 
+            $RegSubKeySM = $RegCon.OpenSubKey(\"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\\") 
+            $RegValuePFRO = $RegSubKeySM.GetValue(\"PendingFileRenameOperations\",$null) 
+\t\t\t
+            # Closing registry connection 
+            $RegCon.Close() 
+\t\t\t
+            # If PendingFileRenameOperations has a value set $RegValuePFRO variable to $true 
+            If ($RegValuePFRO) 
+              { 
+                $PendFileRename = $true 
+              }#End If ($RegValuePFRO) 
+           
+            # If any of the variables are true, set $Pending variable to $true 
+            If ($CBSRebootPend -or $WUAURebootReq -or $PendFileRename) 
+              { 
+                $Pending = $true 
+              }#End If ($CBS -or $WUAU -or $PendFileRename) 
+            # Creating Custom PSObject and Select-Object Splat 
+\t\t\t$SelectSplat = @{ 
+\t\t\t    Property=('Computer','CBServicing','WindowsUpdate','PendFileRename','PendFileRenVal','RebootPending') 
+\t\t\t    } 
+            New-Object -TypeName PSObject -Property @{ 
+                Computer=$WMI_OS.CSName 
+                CBServicing=$CBSRebootPend 
+                WindowsUpdate=$WUAURebootReq 
+                PendFileRename=$PendFileRename 
+                PendFileRenVal=$RegValuePFRO 
+                RebootPending=$Pending 
+                } | Select-Object @SelectSplat 
+          }#End Try 
+        Catch 
+          { 
+            Write-Warning \"$Computer`: $_\" 
+            # If $ErrorLog, log the file to a user specified location/path 
+            If ($ErrorLog) 
+              { 
+                Out-File -InputObject \"$Computer`,$_\" -FilePath $ErrorLog -Append 
+              }#End If ($ErrorLog) 
+          }#End Catch 
+      }#End Foreach ($Computer in $ComputerName) 
+\t  $ErrorActionPreference = $TempErrAct ",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ComputerName",
+      "Label": "Computer name",
+      "HelpText": "Computer Name to get pending reboot status from.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2014-05-30T20:34:01.920+00:00",
+    "OctopusVersion": "2.4.7.85",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}

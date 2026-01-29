@@ -1,0 +1,182 @@
+{
+  "Id": "110a8b1e-4da4-498a-9209-ef8929c31168",
+  "Name": "Microsoft Teams - Post a message",
+  "Description": "Posts a message to Microsoft Teams using a general webhook.",
+  "ActionType": "Octopus.Script",
+  "Version": 24,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# Helper functions
+function Retry-Command {
+    [CmdletBinding()]
+    Param(
+        [Parameter(Position=0, Mandatory=$true)]
+        [scriptblock]$ScriptBlock,
+ 
+        [Parameter(Position=1, Mandatory=$false)]
+        [int]$Maximum = 5,
+
+        [Parameter(Position=2, Mandatory=$false)]
+        [int]$Delay = 100
+    )
+
+    Begin {
+        $count = 0
+    }
+
+    Process {
+    \t$ex=$null
+        do {
+            $count++
+            
+            try {
+                Write-Verbose \"Attempt $count of $Maximum\"
+                $ScriptBlock.Invoke()
+                return
+            } catch {
+                $ex = $_
+                Write-Warning \"Error occurred executing command (on attempt $count of $Maximum): $($ex.Exception.Message)\"
+                Start-Sleep -Milliseconds $Delay
+            }
+        } while ($count -lt $Maximum)
+
+        # Throw an error after $Maximum unsuccessful invocations. Doesn't need
+        # a condition, since the function returns upon successful invocation.
+        throw \"Execution failed (after $count attempts): $($ex.Exception.Message)\"
+    }
+}
+# End Helper functions
+[int]$timeoutSec = $null
+[int]$maximum = 1
+[int]$delay = 100
+
+if(-not [int]::TryParse($OctopusParameters['Timeout'], [ref]$timeoutSec)) { $timeoutSec = 60 }
+
+
+If ($OctopusParameters[\"TeamsPostMessage.RetryPosting\"] -eq $True) {
+\tif(-not [int]::TryParse($OctopusParameters['RetryCount'], [ref]$maximum)) { $maximum = 1 }
+\tif(-not [int]::TryParse($OctopusParameters['RetryDelay'], [ref]$delay)) { $delay = 100 }
+\t
+    Write-Verbose \"Setting maximum retries to $maximum using a $delay ms delay\"
+}
+
+$payload = @{
+    title = $OctopusParameters['Title']
+    text = $OctopusParameters['Body'];
+    themeColor = $OctopusParameters['Color'];
+}
+
+Retry-Command -Maximum $maximum -Delay $delay -ScriptBlock {
+\t# Declare variable for parameters
+    $invokeParameters = @{}
+    $invokeParameters.Add(\"Method\", \"POST\")
+    $invokeParameters.Add(\"Uri\", $OctopusParameters['HookUrl'])
+    $invokeParameters.Add(\"Body\", ($payload | ConvertTo-Json -Depth 4))
+    $invokeParameters.Add(\"ContentType\", \"application/json; charset=utf-8\")
+    $invokeParameters.Add(\"TimeoutSec\", $timeoutSec)
+    
+    # Check for UseBasicParsing
+    if ((Get-Command Invoke-RestMethod).Parameters.ContainsKey(\"UseBasicParsing\"))
+    {
+    \t# Add the basic parsing argument
+        $invokeParameters.Add(\"UseBasicParsing\", $true)
+    }
+
+\t$Response = Invoke-RestMethod @invokeParameters
+    Write-Verbose \"Response: $Response\"
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Id": "433c8776-2bff-44e0-a903-ab15288cadc8",
+      "Name": "HookUrl",
+      "Label": "Webhook Url",
+      "HelpText": "The specific URL provided by Microsoft Teams when adding an _Incoming WebHook_ connector to a team channel. Copy and paste the full Webhook URL from Microsoft Teams here.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3a51e22f-1c46-4b07-b91e-d36e70578463",
+      "Name": "Title",
+      "Label": "Message title",
+      "HelpText": "The title of the message that will be posted to your Microsoft Teams channel.",
+      "DefaultValue": "#{Octopus.Project.Name} #{Octopus.Release.Number} deployed to #{Octopus.Environment.Name}#{if Octopus.Deployment.Tenant.Id} for #{Octopus.Deployment.Tenant.Name}#{/if}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "11af257b-4c16-4a2a-8b5f-b42ab493d43d",
+      "Name": "Body",
+      "Label": "Message body",
+      "HelpText": "The message body of post being added to your Microsoft Teams channel.",
+      "DefaultValue": "For more information, please see [deployment details](#{if Octopus.Web.ServerUri}#{Octopus.Web.ServerUri}#{else}#{Octopus.Web.BaseUrl}#{/if}#{Octopus.Web.DeploymentLink})!",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "ad6a1f33-949e-4570-966e-1e2bbdfa8042",
+      "Name": "Color",
+      "Label": "Color",
+      "HelpText": "The color to use for the border on the side of the message.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2d51e4e8-1f81-444f-934f-21a3051e7423",
+      "Name": "Timeout",
+      "Label": "Timeout in seconds",
+      "HelpText": "The maximum timeout in seconds for each request.",
+      "DefaultValue": "60",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b8835767-e7fe-4ef9-9492-893ca98950f6",
+      "Name": "TeamsPostMessage.RetryPosting",
+      "Label": "Retry posting message",
+      "HelpText": "Should retries be made? If this option is enabled, the step will attempt to retry the posting of message to teams up to the set retry count. Default: `False`.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "da4ce68b-4813-5cea-c788-372e82643e93",
+      "Name": "TeamsPostMessage.RetryCount",
+      "Label": "Retry Count",
+      "HelpText": "The maximum number of times to retry the post before allowing failure. Default 1",
+      "DefaultValue": "1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "16d42450-c6c5-0b26-92a2-0b3e4eefb28e",
+      "Name": "TeamsPostMessage.RetryDelay",
+      "Label": "Retry delay in milliseconds",
+      "HelpText": "The amount of time in milliseconds to wait between retries. Default 100",
+      "DefaultValue": "100",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "twerthi",
+  "$Meta": {
+    "ExportedAt": "2023-08-31T20:39:39.222Z",
+    "OctopusVersion": "2023.2.13239",
+    "Type": "ActionTemplate"
+  },
+  "Category": "microsoft-teams"
+}

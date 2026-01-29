@@ -1,0 +1,297 @@
+{
+  "Id": "a3078bc0-0615-4220-84e8-bb1f271a90f9",
+  "Name": "Variables - Substitute in Files",
+  "Description": "This step template attempts to replace Octopus variable placeholders in one or more file(s) with their values from the `$OctopusParameters` Dictionary.
+
+---
+
+### Version 18+:
+
+Version 18 and higher pins the version of Octostache and Sprache (an Octostache dependency) to the following versions:
+- Octostache: [version 3.2.1](https://www.nuget.org/packages/Octostache/3.2.1)
+- Sprache: [version 2.3.1](https://www.nuget.org/packages/Sprache/2.3.1)
+
+This is to resolve issues when running the step template on Windows, where the .NET 4.0 (`net40`) version is no longer present in newer versions of these libraries.
+
+**As a result, no new functionality available in Octostache, such as new commands/functions, will be present**
+
+If you need later functionality, use the built-in Octopus [variable substitution feature](https://octopus.com/docs/projects/variables/variable-substitutions).
+
+### Breaking Change - version 15+:
+
+Previous versions of this step template would attempt to find the Octostache library bundled with [Calamari](https://github.com/OctopusDeploy/Calamari) as part of a deployment or runbook. Due to compatibility issues running the `netstandard` version of Octostache bundled with newer versions of Calamari on Windows PowerShell, **this functionality has now been removed**.
+
+As a result, **version 15** and higher of this step template now look for Octostache on the deployment target or worker in the NuGet cache. If it's not found, it will attempt to download two required binaries:
+
+1. Octostache from [nuget.org](https://www.nuget.org/packages/Octostache)
+1. Sprache (an Octostache dependency) from [nuget.org](https://www.nuget.org/packages/Sprache)
+
+If access to [nuget.org](https://www.nuget.org) is restricted on your deployment target or worker, this step template may fail to execute successfully.
+
+In that case, it's recommended to use the built-in Octopus [variable substitution feature](https://octopus.com/docs/projects/variables/variable-substitutions).
+
+---
+
+### Notes:
+
+- Tested on Windows PowerShell only running Octopus **2023.2.4954**.
+",
+  "ActionType": "Octopus.Script",
+  "Version": 19,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\";
+function Get-Exceptions {
+    param ($ExceptionObject)
+    
+    if ($null -ne $ExceptionObject.InnerException) {
+        Get-Exceptions -ExceptionObject $ExceptionObject.InnerException
+    }
+    
+    Write-Warning \"Exception is: $($ExceptionObject.Message)\"
+}
+
+function Resolve-OctopusVariablesInTemplate {
+    <#
+.SYNOPSIS
+\tResolves Octopus variables in files with their values from a OctopusParameters
+
+.DESCRIPTION
+\tLooks for files using Get-ChildItem and in each of the files replaces ${Variable} with the value from $OctopusParameters.
+\tFiles are written back using UTF-8.
+\tRequires PowerShell 3.0 or higher.
+
+.PARAMETER Path
+\tPassed to Get-ChildItem to find the files you want to process
+
+.PARAMETER Filter
+\tPassed to Get-ChildItem to find the files you want to process
+
+.PARAMETER Include
+\tPassed to Get-ChildItem to find the files you want to process
+
+.PARAMETER Exclude
+\tPassed to Get-ChildItem to find the files you want to process
+\t
+.PARAMETER Recurse
+\tPassed to Get-ChildItem to find the files you want to process
+
+#>
+    Param(
+        [string]$Path,
+        [string]$Filter = \"*.config\",
+        [string[]]$Include,
+        [string[]]$Exclude,
+        [switch]$Recurse,
+        [string]$OctostacheLocation
+    )
+\t
+    if (-not $OctopusParameters) { throw \"No OctopusParameters found\" }
+\t
+    Write-Output \"Tentacle Version: $env:TentacleVersion\"
+    Write-Output \"PowerShell version...\"
+    Write-Output $PSVersionTable
+    Write-Output \"Path = $Path\"
+\t
+    Write-Output \"Getting target files...\"
+    $TargetFiles = Get-ChildItem -File -Path $Path -Filter $Filter -Include $Include -Exclude $Exclude -Recurse:$Recurse
+    if ($TargetFiles.Count -eq 0) {
+        Write-Warning \"`tDid not find any files to process!\"
+        return
+    }
+    else {
+        Write-Output \"`tFound $($TargetFiles.Count) file(s)\"
+    }
+\t
+    Import-Octostache -OctostacheLocation $OctostacheLocation
+
+    foreach ($File in $TargetFiles) {
+        Resolve-VariablesUsingOctostache $File.FullName
+    }        
+}
+
+
+function Import-Octostache {
+    Param(
+        [string]$OctostacheLocation
+    )
+    
+    $OctostachePath = $null
+    $SprachePath = $null
+    
+    Write-Output \"Searching for installed version of Octostache.\"
+    if (-not [string]::IsNullOrWhiteSpace($OctostacheLocation)) {
+        if (-not (Test-Path $OctostacheLocation)) {
+            Write-Error \"Octostache path: $OctostacheLocation doesnt exist.\"
+            Exit 1
+        }
+        Write-Verbose \"Searching in $OctostacheLocation for Octostache.dll\"
+        $OctostacheLibraryLocations = Get-ChildItem -File -Path $OctostacheLocation -Filter \"OctoStache.dll\" -Recurse
+        $OctostachePath = ($OctostacheLibraryLocations | Select-Object -First 1).FullName
+        Write-Verbose \"Searching in $OctostacheLocation for Sprache.dll\"
+        $SpracheLibraryLocations = Get-ChildItem -File -Path $OctostacheLocation -Filter \"Sprache.dll\" -Recurse
+        $SprachePath = ($SpracheLibraryLocations | Select-Object -First 1).FullName
+    }
+    else {
+        try {
+            $OctostachePackage = (Get-Package Octostache -ErrorAction Stop) | Select-Object -First 1
+        } 
+        catch {
+            $OctostachePackage = $null
+        }
+
+        if ($null -eq $OctostachePackage) {
+            Write-Output \"Downloading Octostache (v3.2.1) from nuget.org.\"
+            Install-Package Octostache -MaximumVersion \"3.2.1\" -source https://www.nuget.org/api/v2 -Force -SkipDependencies
+            $OctostachePackage = (Get-Package Octostache) | Select-Object -First 1
+        }
+    
+        $OctostachePath = Join-Path (Get-Item $OctostachePackage.source).Directory.FullName \"lib/net40/Octostache.dll\"
+
+        try {
+            $SprachePackage = (Get-Package Sprache -ErrorAction Stop) | Select-Object -First 1
+        } 
+        catch {
+            $SprachePackage = $null
+        }
+
+        if ($null -eq $SprachePackage) {
+            Write-Output \"Downloading Sprache (v2.3.1) from nuget.org.\"
+            Install-Package Sprache -MaximumVersion \"2.3.1\" -source https://www.nuget.org/api/v2 -Force -SkipDependencies
+            $SprachePackage = @(Get-Package Sprache) | Select-Object -First 1
+        }
+
+        $SprachePath = Join-Path (Get-Item $SprachePackage.source).Directory.FullName \"lib/net40/Sprache.dll\"
+    }
+
+    Write-Verbose \"Octostache path: $OctostachePath\"
+    Write-Verbose \"Sprache path: $SprachePath\"
+
+    if ([string]::IsNullOrWhiteSpace($OctostachePath) -or [string]::IsNullOrWhiteSpace($SprachePath)) {
+        Write-Error \"Couldnt locate either the Octostache or Sprache library.\"
+        Exit 1
+    }
+
+    Write-Output \"Adding type $SprachePath\"
+    Add-Type -Path $SprachePath
+
+    Write-Output \"Adding type $OctostachePath\"
+    Add-Type -Path $OctostachePath
+}
+
+function Resolve-VariablesUsingOctostache {
+    Param(
+        [string]$TemplateFile
+    )
+\t\t
+    Write-Output \"Loading template file $TemplateFile...\"
+    $TemplateContent = Get-Content -Raw $TemplateFile
+    Write-Output \"`tRead $($TemplateContent.Length) bytes\"
+\t
+    $Dictionary = New-Object -TypeName Octostache.VariableDictionary
+\t
+    # Load the hastable into the dictionary
+    Write-Output \"Loading `$OctopusParameters...\"
+    foreach ($Variable in $OctopusParameters.GetEnumerator()) {
+        Write-Verbose \"#{$($Variable.Key)} = $($Variable.Value)\"
+        $Dictionary.Set($Variable.Key, $Variable.Value)
+    }
+\t
+    Write-Output \"Resolving variables...\"
+    
+    try {
+        $EvaluatedTemplate = $Dictionary.Evaluate($TemplateContent)
+    }
+    catch {
+        Get-Exceptions -ExceptionObject $Error.Exception
+        throw
+    }
+\t
+    Write-Output \"Writing the resolved template to $($TemplateFile) (UTF8 encoding)\"
+    #$EvaluatedTemplate | Out-File $TemplateFile -Force\t-Encoding UTF8
+    $EvaluatedTemplate -join \"rn\" | Set-Content $TemplateFile -NoNewLine -Encoding UTF8 -Force
+    Write-Output \"Done!\"
+}
+
+$FunctionParameters = @{}
+
+if ($null -ne $OctopusParameters['Path']) { $FunctionParameters.Add('Path', $OctopusParameters['Path']) }
+if ($null -ne $OctopusParameters['Filter']) { $FunctionParameters.Add('Filter', $OctopusParameters['Filter']) }
+if ($null -ne $OctopusParameters['Include']) { $FunctionParameters.Add('Include', $($OctopusParameters['Include'] -split \"`n\")) }
+if ($null -ne $OctopusParameters['Exclude']) { $FunctionParameters.Add('Exclude', $($OctopusParameters['Exclude'] -split \"`n\")) }
+if ($null -ne $OctopusParameters['Recurse']) { $FunctionParameters.Add('Recurse', [System.Convert]::ToBoolean($OctopusParameters['Recurse'])) }
+if (-not [string]::IsNullOrWhiteSpace($OctopusParameters['Variables.SubstituteInFiles.OctostacheLocation'])) { $FunctionParameters.Add('OctostacheLocation', $OctopusParameters['Variables.SubstituteInFiles.OctostacheLocation']) }
+
+Resolve-OctopusVariablesInTemplate @FunctionParameters",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Name": "Path",
+      "Label": "Path",
+      "HelpText": "Specifies a path to one or more locations. Wildcards are permitted. The default location is the current directory (.).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Filter",
+      "Label": "Filter",
+      "HelpText": "Specifies, as a string array, a filter for an item or items that are included in the operation. Wildcards are permitted.",
+      "DefaultValue": "*.config",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Include",
+      "Label": "Include",
+      "HelpText": "Specifies, as a string array, an item or items that are included in the operation. Enter a path element or pattern, such as *.txt. Wildcards are permitted. Leave this empty if you have specified a Filter.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "Exclude",
+      "Label": "Exclude",
+      "HelpText": "Specifies, as a string array, an item or items that are excluded in the operation. Enter a path element or pattern, such as *.txt. Wildcards are permitted. Leave this empty if you have specified a Filter.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "Recurse",
+      "Label": "Recurse",
+      "HelpText": "Search the specified locations and in all sub-directories of those locations.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "Variables.SubstituteInFiles.OctostacheLocation",
+      "Label": "Octostache library location",
+      "HelpText": "*Optional* - Provide the location that contains both of the required  `Octostache.dll` and `Sprache.dll` libraries. 
+
+- *If this value is not provided, the libraries will be searched for on the target or worker, and if not found will be downloaded from [nuget.org](https://www.nuget.org).*
+- If more than one matching file is found, the first one will be used.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedAt": "2023-04-04T10:37:47.270Z",
+  "LastModifiedBy": "twerthi",
+  "$Meta": {
+    "ExportedAt": "2024-02-05T21:47:52.063Z",
+    "OctopusVersion": "2023.4.8290",
+    "Type": "ActionTemplate"
+  },
+  "Category": "octopus"
+}

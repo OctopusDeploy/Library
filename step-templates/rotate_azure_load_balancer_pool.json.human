@@ -1,0 +1,177 @@
+{
+  "Id": "947623c6-940d-4a54-a18b-c755a1035dce",
+  "Name": "Rotate Azure Load Balancer Pool",
+  "Description": "Updates all rules on an Azure load balancer to point to the next backend pool in a specified list. The current backend pool will be determined and the next pool in a provided list will become the target of all rules. If the current pool doesn't exist in the list, the first pool in the list will be used. This means that a specific pool can be chosen by specifying only a single pool.",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Script.ScriptBody": "$LoadBalancerNames = [string]$OctopusParameters['RotateAzureLoadBalancerPool.LoadBalancerName']\r
+$AvailablePools = [string]$OctopusParameters['RotateAzureLoadBalancerPool.AvailablePools']\r
+$RuleNames = [string]$OctopusParameters['RotateAzureLoadBalancerPool.RuleNames']\r
+$WhatIf = [bool]::Parse($OctopusParameters['RotateAzureLoadBalancerPool.WhatIf'])\r
+\r
+if ($null -eq $LoadBalancerNames) {\r
+    throw 'No load balancers selected. Please select at least one load balancer.'\r
+} else {\r
+    # Trim white space and blank lines and get all load balancers that match the names.\r
+    $loadBalancers = $LoadBalancerNames.Split(\"`n\").Trim().Where({ $_ }) | ForEach-Object { Get-AzLoadBalancer -Name $_ }\r
+}\r
+if ($null -eq $AvailablePools) {\r
+    throw 'No pools selected. Please select at least one pool.'\r
+} else {\r
+    $AvailablePools = $AvailablePools.Split(\"`n\").Trim().Where({ $_ }) # Trim white space and blank lines.\r
+}\r
+if ($null -eq $RuleNames) {\r
+    throw 'No rules selected. Please select at least one rule name or use an asterisk (*) to select all rules.'\r
+} else {\r
+    $RuleNames = $RuleNames.Split(\"`n\").Trim().Where({ $_ }) # Trim white space and blank lines.\r
+}\r
+\r
+foreach ($loadBalancer in $loadBalancers) {\r
+    $loadBalancerName = $loadBalancer.Name\r
+    $resourceGroupName = $loadBalancer.ResourceGroupName\r
+    $allPools = Get-AzLoadBalancerBackendAddressPool -LoadBalancerName $loadBalancerName -ResourceGroupName $resourceGroupName\r
+\r
+    Write-Host \"Updating Load Balancer '$loadBalancerName'.\"\r
+\r
+    # Start by assuming no rules match\r
+    $rules = @()\r
+\r
+    # Add each distinct rule that matches one of the rule names\r
+    foreach ($ruleName in $RuleNames) {\r
+        $rules += $LoadBalancer.LoadBalancingRules | Where-Object {\r
+            $_.Id.Split('/')[-1] -like $ruleName -and\r
+            $_.Id -notin $rules.Id\r
+        }\r
+    }\r
+\r
+    if ($rules.Count -eq 0) {\r
+        Write-Warning \"No matching rules were found on load balancer '$loadBalancerName'.\"\r
+        continue\r
+    }\r
+\r
+    # Resolve any wildcards in AvailablePools to get a list of valid pool names.\r
+    $validPoolNames = @()\r
+    foreach ($name in $AvailablePools) {\r
+        $validPoolNames += $allPools.Name | Where-Object { $_ -like $name }\r
+    }\r
+\r
+    # The same pool could match multiple wildcards so get a unique list\r
+    if ($validPoolNames) {\r
+        $validPoolNames = [array]($validPoolNames | Select-Object -Unique)\r
+    } else {\r
+        Write-Warning \"No valid pools were found on load balancer '$loadBalancerName'.\"\r
+        continue\r
+    }\r
+\r
+    # Update each rule with a new pool \r
+    foreach ($rule in $rules) {\r
+        $currentPoolName = $rule.BackendAddressPool.Id.Split('/')[-1]\r
+\r
+        # This will find the next pool in the list, cycling back to the beginning if at the end. If the current pool isn't in the list,\r
+        # its index will be -1. The next index will be zero so the first pool will be selected. \r
+        $index = $validPoolNames.IndexOf($currentPoolName)\r
+        $nextIndex = ($index + 1) % $validPoolNames.Count\r
+        $newPoolName = $validPoolNames[$nextIndex]\r
+\r
+        # Get the new pool to use\r
+        if ($newPoolName -in $allPools.Name) {\r
+            $newPool = Get-AzLoadBalancerBackendAddressPool -ResourceGroupName $resourceGroupName -LoadBalancerName $loadBalancerName -Name $newPoolName\r
+        } else {\r
+            throw \"Backend Pool '$newPoolName' does not exist on load balancer '$loadBalancerName'.\"\r
+        }\r
+\r
+        if ($currentPoolName -eq $newPoolName) {\r
+            Write-Highlight \"Rule '$($rule.Name)' is already pointing to pool '$currentPoolName' on load balancer '$loadBalancerName'.\"\r
+        } else {\r
+            Write-Highlight \"Rule '$($rule.Name)' is pointing to pool '$currentPoolName'. Updating to pool '$newPoolName' on load balancer '$loadBalancerName'.\"\r
+            $rule.BackendAddressPool.Id = $newPool.Id\r
+\r
+            foreach ($pool in $rule.BackendAddressPools) {\r
+                $pool.Id = $newPool.Id\r
+            }\r
+        }\r
+    }\r
+\r
+    if ($WhatIf) {\r
+        Write-Highlight \"WhatIf is set to true so skipping changes on Azure for load balancer '$loadBalancerName'.\"\r
+    } else {\r
+        Write-Verbose \"Writing changes to Azure for load balancer '$loadBalancerName'.\"\r
+        Set-AzLoadBalancer -LoadBalancer $loadBalancer | Out-Null\r
+    }\r
+}\r
+",
+    "Octopus.Action.Azure.AccountId": "#{RotateAzureLoadBalancerPool.Account}"
+  },
+  "Parameters": [
+    {
+      "Id": "cef3a407-e9e1-44e5-9dcf-9dcf586f4958",
+      "Name": "RotateAzureLoadBalancerPool.Account",
+      "Label": "Account",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "7a8c14dd-072d-432e-9071-296381dd9cc9",
+      "Name": "RotateAzureLoadBalancerPool.LoadBalancerName",
+      "Label": "Load Balancer",
+      "HelpText": "The name of the load balancer to use. Multiple load balancers can be selected if they have the same pool names. Wildcards are supported.
+
+Enter one load balancer per line.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "1295c989-efbd-4605-a362-b72ea9762c4f",
+      "Name": "RotateAzureLoadBalancerPool.AvailablePools",
+      "Label": "Available Pools",
+      "HelpText": "A list of available pools to use. If multiple pools are specified, rules will be updated to use the next pool in the list. If a single pool is specified, rules will use that pool. Wildcards are supported.
+
+Enter one pool per line.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "ed5fc080-37c8-44ce-a89a-76313c89f10d",
+      "Name": "RotateAzureLoadBalancerPool.RuleNames",
+      "Label": "Rule Names",
+      "HelpText": "A list of rule names to update. Wildcards are supported.
+
+Enter one rule per line.",
+      "DefaultValue": "*",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "27caa59c-5f1a-42f8-a545-5075d47f3182",
+      "Name": "RotateAzureLoadBalancerPool.WhatIf",
+      "Label": "What If",
+      "HelpText": "Will just report expected changes, but not update the load balancer.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AzurePowerShell",
+  "$Meta": {
+    "ExportedAt": "2023-11-22T03:48:35.019Z",
+    "OctopusVersion": "2023.2.13113",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "REOScotte",
+  "Category": "octopus"
+}

@@ -1,0 +1,129 @@
+{
+    "Id": "18ed1352-b0be-4669-aa9a-35309a669aff",
+    "Name": "Delete Azure Resource Group - AzureRM",
+    "Description": "Step to delete an Azure Resource Group using the bundled AzureRM cmdlets with Octopus Deploy.  It will first check to see if the resource group exists, and if it does exist, it will delete it.",
+    "ActionType": "Octopus.AzurePowerShell",
+    "Version": 1,
+    "Author": "octobob",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Azure.AccountId": "#{DeleteResourceGroup.Azure.Account}",
+      "Octopus.Action.Script.ScriptBody": "$resourceGroupName = $OctopusParameters[\"DeleteResourceGroup.ResourceGroup.Name\"]
+$resourceGroupLocation = $OctopusParameters[\"DeleteResourceGroup.ResourceGroup.Location\"]
+
+$deleteResourceGroup = $false
+Try {
+\tWrite-Host \"Getting list of existing resource groups\"
+\t$resourceGroupList = Get-AzureRmResourceGroup -Location \"$resourceGroupLocation\"    
+    
+    Write-Host \"Looping through resource group list\"
+    foreach ($resourceGroupItem in $resourceGroupList)
+    {
+    \tWrite-Host \"Checking if current resource group $($resourceGroupItem.ResourceGroupName) matches $resourceGroupName\"
+    \tif ($resourceGroupItem.ResourceGroupName -eq $resourceGroupName)
+        {
+    \t\t$deleteResourceGroup = $true
+            Write-Highlight \"Found resource group to delete\"
+            break
+        }
+    }
+    
+} Catch {
+\t$deleteResourceGroup = $true
+}
+
+if ($deleteResourceGroup -eq $true){
+\tWrite-Host \"Resource group exists, deleting it\"
+    Remove-AzureRMResourceGroup -Name $resourceGroupName -Force\t
+}
+
+
+"
+    },
+    "Parameters": [
+      {
+        "Id": "d0ff0ef9-90c8-4646-85ac-99e3aa8aa051",
+        "Name": "DeleteResourceGroup.Azure.Account",
+        "Label": "Azure Account",
+        "HelpText": "The Azure Account to authenticate with to delete the resource group",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "AzureAccount"
+        }
+      },
+      {
+        "Id": "a2a3bc84-1be8-46c1-8d9b-2669edd33721",
+        "Name": "DeleteResourceGroup.ResourceGroup.Name",
+        "Label": "Resource Group Name",
+        "HelpText": "The name of the resource group to delete",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "f0ca9228-92a6-4392-808e-5f767c62e2c7",
+        "Name": "DeleteResourceGroup.ResourceGroup.Location",
+        "Label": "Resource Group Location",
+        "HelpText": "The location where this resource group is located",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "Central US|Americas - Central US
+East US|Americas - East US
+East US 2|Americas - East US 2
+North Central US|Americas - North Central US
+South Central US|Americas - South Central US
+West US|Americas - West US
+West US 2|Americas - West US 2
+West Central US|Americas - West Central US
+Canada Central|Americas - Canada Central
+Canada East|Americas - Canada East
+Brazil South|Americas - Brazil South
+East Asia|Asia Pacific - East Asia
+Southeast Asia|Asia Pacific - Southeast Asia
+Australia Central|Asia Pacific - Australia Central
+Australia Central 2|Asia Pacific - Australia Central 2
+Australia East|Asia Pacific - Australia East
+Australia Southeast|Asia Pacific - Australia Southeast
+China East|Asia Pacific - China East
+China East 2|Asia Pacific - China East 2
+China North|Asia Pacific - China North
+China North 2|Asia Pacific - China North 2
+Central India|Asia Pacific - Central India
+South India|Asia Pacific - South India
+West India|Asia Pacific - West India
+Japan East|Asia Pacific - Japan East
+Japan West|Asia Pacific - Japan West
+Korea Central|Asia Pacific - Korea Central
+Korea South|Asia Pacific - Korea South
+North Europe|Europe - North Europe
+West Europe|Europe - West Europe
+France Central|Europe - France Central
+France South|Europe - France South
+Germany North|Europe - Germany North
+Germany West Central|Europe - Germany West Central
+Norway East|Europe - Norway East
+Norway West|Europe - Norway West
+Spain Central|Europe - Spain Central
+Switzerland North|Europe - Switzerland North
+Switzerland West|Europe - Switzerland West
+UK South|Europe - UK South
+UK West|Europe - UK West
+South Africa North|Middle East and Africa - South Africa North
+South Africa West|Middle East and Africa - South Africa West
+UAE Central|Middle East and Africa - UAE Central
+UAE North|Middle East and Africa - UAE North"
+        }
+      }
+    ],
+    "LastModifiedBy": "octobob",
+    "$Meta": {
+      "ExportedAt": "2020-04-13T15:27:10.581Z",
+      "OctopusVersion": "2020.1.10",
+      "Type": "ActionTemplate"
+    },
+    "Category": "azure"
+  }

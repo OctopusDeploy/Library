@@ -1,0 +1,476 @@
+{
+  "Id": "7e818c42-8c59-4a14-b612-2b9cb69fcf4a",
+  "Name": "AWS - Configure Lambda API Gateway Integration",
+  "Description": "Configures an API v2 Gateway to connect to and invoke a Lambda Function.  That includes:
+
+- Integration on the API Gateway
+- Route on the API Gateway
+- Permission Policy on AWS Lambda (Aliases are supported)
+
+**Please Note:** Your AWS Lambda function **MUST** exist prior to running this step.
+
+This step uses the following AWS CLI commands to create the integration and route.  You will be required to install the AWS CLI on your server/worker for this to work.  The AWS CLI is pre-installed on the [dynamic workers](https://octopus.com/docs/infrastructure/workers/dynamic-worker-pools) in Octopus Cloud as well as the provided docker containers for [Execution Containers](https://octopus.com/docs/deployment-process/execution-containers-for-workers).
+
+APIGatewayV2 CLI Methods
+- [create-integration](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/create-integration.html)
+- [create-route](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/create-route.html)
+- [get-apis](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/get-apis.html)
+- [get-integrations](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/get-integrations.html)
+- [get-routes](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/get-routes.html)
+- [get-vpc-links](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/get-vpc-links.html)
+- [update-integration](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/update-integration.html)
+
+Lambda CLI Methods
+- [add-permission](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/add-permission.html)
+- [get-policy](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/get-policy.html)
+- [remove-permission](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/remove-permission.html)
+
+
+## Output Variables
+
+This step template sets the following output variables:
+
+- `ApiGatewayEndPoint`: The endpoint of the API Gateway
+- `ApiGatewayId`: The id of the API Gateway
+- `ApiGatewayArn`: The ARN of the API Gateway",
+  "ActionType": "Octopus.AwsRunScript",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "False",    
+    "Octopus.Action.AwsAccount.Variable": "#{AWS.Api.Gateway.Account}",
+    "Octopus.Action.Aws.Region": "#{AWS.Api.Gateway.Region}",
+    "Octopus.Action.Script.ScriptBody": "$ApiGatewayName = $OctopusParameters[\"AWS.Api.Gateway.Name\"]
+$ApiRouteKey = $OctopusParameters[\"AWS.Api.Gateway.Route.Key\"]
+$ApiLambdaUri = $OctopusParameters[\"AWS.Api.Gateway.Lambda.Arn\"]
+$ApiPayloadFormatVersion = $OctopusParameters[\"AWS.Api.Gateway.Integration.PayloadFormatVersion\"]
+$ApiConnection = $OctopusParameters[\"AWS.Api.Gateway.Integration.Connection\"]
+$ApiIntegrationMethod = $OctopusParameters[\"AWS.Api.Gateway.Integration.HttpMethod\"]
+$ApiLambdaAlias = $OctopusParameters[\"AWS.Api.Gateway.Lambda.Alias\"]
+$ApiRegion = $OctopusParameters[\"AWS.Api.Gateway.Region\"]
+
+$stepName = $OctopusParameters[\"Octopus.Step.Name\"]
+
+if ([string]::IsNullOrWhiteSpace($ApiGatewayName))
+{
+\tWrite-Error \"The parameter Gateway Name is required.\"
+    Exit 1
+}
+
+if ([string]::IsNullOrWhiteSpace($ApiRouteKey))
+{
+\tWrite-Error \"The parameter Route Key is required.\"
+    Exit 1
+}
+
+if ([string]::IsNullOrWhiteSpace($ApiLambdaUri))
+{
+\tWrite-Error \"The parameter Lambda ARN is required.\"
+    Exit 1
+}
+
+if ([string]::IsNullOrWhiteSpace($ApiPayloadFormatVersion))
+{
+\tWrite-Error \"The parameter Payload Format Version is required.\"
+    Exit 1
+}
+
+if ([string]::IsNullOrWhiteSpace($ApiIntegrationMethod))
+{
+\tWrite-Error \"The parameter Http Method is required.\"
+    Exit 1
+}
+
+Write-Host \"Gateway Name: $ApiGatewayName\"
+Write-Host \"Route Key: $ApiRouteKey\"
+Write-Host \"Lambda ARN: $ApiLambdaUri\"
+Write-Host \"Lambda Alias: $ApiLambdaAlias\"
+Write-Host \"Payload Format Version: $ApiPayloadFormatVersion\"
+Write-Host \"VPC Connection: $ApiConnection\"
+Write-host \"API Region: $apiRegion\"
+
+if ([string]::IsNullOrWhiteSpace($apiLambdaAlias) -eq $false)
+{
+\tWrite-Host \"Alias specified, adding it to the Lambda ARN\"
+\t$apiLambdaIntegrationArn = \"$($apiLambdaUri):$($apiLambdaAlias)\"
+}
+else
+{
+\tWrite-Host \"No alias specified, going directly to the lambda function\"
+\t$apiLambdaIntegrationArn = $apiLambdaUri
+}
+
+$apiQueryOutput = aws apigatewayv2 get-apis --no-paginate
+$apiQueryOutput = ($apiQueryOutput | ConvertFrom-JSON)
+
+$apiList = @($apiQueryOutput.Items)
+$apiGatewayToUpdate = $null
+foreach ($api in $apiList)
+{
+\tif ($api.Name.ToLower().Trim() -eq $apiGatewayName.ToLower().Trim())
+    {
+    \tWrite-Highlight \"Found the gateway $apiGatewayName\"
+    \t$apiGatewayToUpdate = $api
+        break
+    }
+}
+
+if ($null -eq $apiGatewayToUpdate)
+{
+\tWrite-Error \"Unable to find the gateway with the name $apiGatewayName\"
+    exit 1
+}
+
+Write-Host $apiGatewayToUpdate
+
+$apiId = $apiGatewayToUpdate.ApiId
+Write-Host \"The id of the api gateway is $apiId\"
+
+$apiConnectionType = \"INTERNET\"
+if ([string]::IsNullOrWhiteSpace($ApiConnection) -eq $false)
+{
+\t$apiConnectionType = \"VPC_LINK\"
+    $existingVPCLinks = aws apigatewayv2 get-vpc-links --no-paginate
+    $existingVPCLinks = ($existingVPCLinks | ConvertFrom-JSON)
+    
+    $existingVPCLinkList = @($existingVPCLinks.Items)
+    foreach ($vpc in $existingVPCLinkList)
+    {
+    \tif ($vpc.Name.ToLower().Trim() -eq $ApiConnection.ToLower().Trim())
+        {
+        \tWrite-Host \"The name $($vpc.Name) matches $apiConnection\"
+        \t$apiConnectionId = $vpc.VpcLinkId
+            break
+        }
+        elseif ($vpc.VpcLinkId.ToLower().Trim() -eq $apiConnection.ToLower().Trim())
+        {
+        \tWrite-Host \"The vpc link id $($vpc.VpcLinkId) matches $apiConnection\"
+        \t$apiConnectionId = $vpc.VpcLinkId
+            break
+        }
+    }
+    
+    if ([string]::IsNullOrWhiteSpace($apiConnectionId) -eq $true)
+    {
+    \tWrite-Error \"The VPC Connection $apiConnection could not be found.  Please check the name or ID and try again.  Please note: names can be updated, if you are matching by name double check nothing has changed.\"
+        exit 1
+    }    
+}
+
+$apiIntegrations = aws apigatewayv2 get-integrations --api-id \"$apiId\" --no-paginate
+$apiIntegrations = ($apiIntegrations | ConvertFrom-JSON)
+
+$integrationList = @($apiIntegrations.Items)
+$integrationToUpdate = $null
+foreach ($integration in $integrationList)
+{
+\tif ($integration.IntegrationUri -eq $apiLambdaIntegrationArn -and $integration.ConnectionType -eq $apiConnectionType -and $integration.IntegrationType -eq \"AWS_PROXY\" -and $integration.PayloadFormatVersion -eq $ApiPayloadFormatVersion)
+    {
+    \tWrite-Highlight \"Found the existing integration $($integration.Id)\"
+    \t$integrationToUpdate = $integration
+        break
+    }
+}
+
+if ($null -ne $integrationToUpdate)
+{
+\tWrite-Highlight \"Updating existing integration\"
+}
+else
+{
+\tWrite-Highlight \"Creating new integration\"
+    if ($apiConnectionType -eq \"INTERNET\")
+    {
+    \tWrite-Host \"Command line: aws apigatewayv2 create-integration --api-id \"\"$apiId\"\" --connection-type \"\"$apiConnectionType\"\" --integration-method \"\"$ApiIntegrationMethod\"\" --integration-type \"\"AWS_PROXY\"\" --integration-uri \"\"$apiLambdaIntegrationArn\"\" --payload-format-version \"\"$ApiPayloadFormatVersion\"\" \"
+    \t$integrationToUpdate = aws apigatewayv2 create-integration --api-id \"$apiId\" --connection-type \"$apiConnectionType\" --integration-method \"$ApiIntegrationMethod\" --integration-type \"AWS_PROXY\" --integration-uri \"$apiLambdaIntegrationArn\" --payload-format-version \"$ApiPayloadFormatVersion\"
+    }
+    else
+    {
+    \tWrite-Host \"Command line: aws apigatewayv2 create-integration --api-id \"\"$apiId\"\" --connection-type \"\"$apiConnectionType\"\" --connection-id \"\"$ApiConnectionId\"\" --integration-method \"\"$ApiIntegrationMethod\"\" --integration-type \"\"AWS_PROXY\"\" --integration-uri \"\"$apiLambdaIntegrationArn\"\" --payload-format-version \"\"$ApiPayloadFormatVersion\"\" \"
+    \t$integrationToUpdate = aws apigatewayv2 create-integration --api-id \"$apiId\" --connection-type \"$apiConnectionType\" --connection-id \"$ApiConnectionId\" --integration-method \"$ApiIntegrationMethod\" --integration-type \"AWS_PROXY\" --integration-uri \"$apiLambdaIntegrationArn\" --payload-format-version \"$ApiPayloadFormatVersion\"    
+    }
+    
+    $integrationToUpdate = ($integrationToUpdate | ConvertFrom-JSON)
+}
+
+If ($null -eq $integrationToUpdate)
+{
+\tWrite-Error \"There was an error finding or creating the integration.\"
+    Exit 1
+}
+
+Write-Host \"$integrationToUpdate\"
+
+Write-Host \"Command line: aws apigatewayv2 update-integration --api-id \"\"$apiId\"\" --integration-id \"\"$($integrationToUpdate.IntegrationId)\"\" --integration-method \"\"$ApiIntegrationMethod\"\" \"
+$updateResult = aws apigatewayv2 update-integration --api-id \"$apiId\" --integration-id \"$($integrationToUpdate.IntegrationId)\" --integration-method \"$ApiIntegrationMethod\"
+
+Write-Host \"Command line: aws apigatewayv2 get-routes --api-id \"\"$apiId\"\" --no-paginate\"
+$apiRoutes = aws apigatewayv2 get-routes --api-id \"$apiId\" --no-paginate
+$apiRoutes = ($apiRoutes | ConvertFrom-JSON)
+
+$routeList = @($apiRoutes.Items)
+$routeToUpdate = $null
+$routePath = \"$ApiIntegrationMethod $ApiRouteKey\"
+$routeTarget = \"integrations/$($integrationToUpdate.IntegrationId)\"
+foreach ($route in $routeList)
+{
+\tWrite-Host \"Comparing $($route.RouteKey) with $routePath and $($route.Target) with $routeTarget\"
+\tif ($route.RouteKey -eq $routePath -and $route.Target -eq $routeTarget)
+    {
+    \tWrite-Highlight \"Found the existing path $($route.RouteId)\"
+    \t$routeToUpdate = $route
+        break
+    }
+}
+
+if ($null -eq $routeToUpdate)
+{
+\tWrite-Highlight \"The route with the path $routePath pointing to integration $($integrationToUpdate.IntegrationId) does not exist.  Creating that one now.\"
+    $routeResult = aws apigatewayv2 create-route --api-id \"$apiId\" --route-key \"$routePath\" --target \"$routeTarget\"
+}
+else
+{
+\tWrite-Highlight \"The route with the path $routePath pointing to integration $($integrationToUpdate.IntegrationId) already exists.  Leaving that alone.\"   
+}
+
+$accountInfo = aws sts get-caller-identity
+$accountInfo = ($accountInfo | ConvertFrom-JSON)
+
+if ($apiRoute -notcontains \"*default\")
+{
+\t$routeKeyToUse = $apiRouteKey
+    $statementIdToUse = \"$($ApiGatewayName)$($apiRouteKey.Replace(\"/\", \"-\"))\"
+}
+else
+{
+\t$routeKeyToUse = \"\"
+    $statementIdToUse = \"$ApiGatewayName\"
+}
+$sourceArn = \"arn:aws:execute-api:$($apiRegion):$($accountInfo.Account):$($apiId)/*/*$routeKeyToUse\"
+
+Write-Host \"Source ARN: $sourceArn\"
+$hasExistingPolicy = $false
+$deleteExistingPolicy = $false
+
+try
+{
+\tWrite-Host \"Getting existing policies\"
+\t$existingPolicy = aws lambda get-policy --function-name \"$apiLambdaIntegrationArn\" 2> $null
+    
+    if ($LASTEXITCODE -eq 255 -or $LASTEXITCODE -eq 254)
+    {
+    \tWrite-Host \"Last exit code was $LASTEXITCODE the policy does not exist\"
+    \t$hasExistingPolicy = $false
+    }
+    else
+    {
+    \tWrite-Host \"The policy exists\"
+    \t$hasExistingPolicy = $true
+    }
+    
+    $existingPolicy = ($existingPolicy | ConvertFrom-JSON)
+    Write-Host $existingPolicy
+    
+    $policyObject = ($existingPolicy.Policy | ConvertFrom-JSON)
+    
+\t$statementList = @($policyObject.Statement)
+    Write-Host \"Statement List $statementList\"
+    
+    foreach ($existingStatement in $statementList)
+    {
+    \tWrite-Host $existingStatement
+    \tWrite-Host \"Comparing $($existingStatement.Sid) with $statementIdToUse and $($existingStatement.Condition.ArnLike.'AWS:SourceArn') with $sourceArn\"
+    \tif ($existingStatement.Sid -eq \"$statementIdToUse\" -and $existingStatement.Condition.ArnLike.'AWS:SourceArn' -ne \"$sourceArn\")
+        {
+        \tWrite-Host \"The policy exists but it is not pointing to the write source arn, recreating it.\"
+        \t$deleteExistingPolicy = $true
+        }
+    }
+}
+catch
+{
+\tWrite-Host \"Error pulling back the policies, this typically means the policy does not exist\"
+\t$hasExistingPolicy = $false
+}
+
+if ($hasExistingPolicy -eq $true -and $deleteExistingPolicy -eq $true)
+{
+\tWrite-Highlight \"Removing the existing policy $statementIdToUse\"
+    aws lambda remove-permission --function-name \"$apiLambdaIntegrationArn\" --statement-id \"$statementIdToUse\"
+}
+
+if ($hasExistingPolicy -eq $false -or $deleteExistingPolicy -eq $true)
+{
+\tWrite-Highlight \"Adding the policy $statementIdToUse\"
+\taws lambda add-permission --function-name \"$apiLambdaIntegrationArn\" --statement-id \"$statementIdToUse\" --action \"lambda:InvokeFunction\" --principal \"apigateway.amazonaws.com\" --qualifier \"$ApiLambdaAlias\" --source-arn \"$sourceArn\"
+}
+
+Write-Highlight \"Setting the output variable 'Octopus.Action[$($stepName)].Output.ApiGatewayEndPoint' to $($apiGatewayToUpdate.ApiEndpoint)\"
+Set-OctopusVariable -name \"ApiGatewayEndPoint\" -value \"$($apiGatewayToUpdate.ApiEndpoint)\"
+
+Write-Highlight \"Setting the output variable 'Octopus.Action[$($stepName)].Output.ApiGatewayId' to $apiId\"
+Set-OctopusVariable -name \"ApiGatewayId\" -value \"$apiId\"
+
+Write-Highlight \"Setting the output variable 'Octopus.Action[$($stepName)].Output.ApiGatewayArn' to $sourceArn\"
+Set-OctopusVariable -name \"ApiGatewayArn\" -value \"$sourceArn\"
+"
+  },
+  "Parameters": [
+    {
+      "Id": "6a63ef8c-5f0b-4501-beca-fc3839f7f5c9",
+      "Name": "AWS.Api.Gateway.Name",
+      "Label": "API Gateway Name",
+      "HelpText": "Required.
+
+The name of the API gateway to create the integration and route.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0fb1f1fa-35f6-46b3-bf4a-527ddd98fb80",
+      "Name": "AWS.Api.Gateway.Account",
+      "Label": "AWS Account",
+      "HelpText": "Required.
+
+The account used to update the API Gateway.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AmazonWebServicesAccount"
+      }
+    },
+    {
+      "Id": "a42498df-fadd-45d1-9271-78e80edb9623",
+      "Name": "AWS.Api.Gateway.Region",
+      "Label": "AWS Region",
+      "HelpText": "Required.
+
+The region where the API gateway is in.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "us-east-2|US East (Ohio)
+us-east-1|US East (N. Virginia)
+us-west-1|US West (N. California)
+us-west-2|US West (Oregon)
+af-south-1|Africa (Cape Town)
+ap-east-1|Asia Pacific (Hong Kong)
+ap-south-1|Asia Pacific (Mumbai)
+ap-northeast-3|Asia Pacific (Osaka-Local)
+ap-northeast-2|Asia Pacific (Seoul)
+ap-southeast-1|Asia Pacific (Singapore)
+ap-southeast-2|Asia Pacific (Sydney)
+ap-northeast-1|Asia Pacific (Tokyo)
+ca-central-1|Canada (Central)
+eu-central-1|Europe (Frankfurt)
+eu-west-1|Europe (Ireland)
+eu-west-2|Europe (London)
+eu-south-1|Europe (Milan)
+eu-west-3|Europe (Paris)
+eu-north-1|Europe (Stockholm)
+me-south-1|Middle East (Bahrain)
+sa-east-1|South America (São Paulo)"
+      }
+    },
+    {
+      "Id": "bd681a63-f62c-4dcb-a401-ae43428075ed",
+      "Name": "AWS.Api.Gateway.Integration.Connection",
+      "Label": "VPC Connection",
+      "HelpText": "Optional.
+
+The VPC connection you wish to use with this link.  Supports:
+
+- VPC Link Name - The name of the VPC link specified when it was created.
+- VPC Link Id - The 6-character alphanumeric key assigned by AWS to the VPC Link.
+
+**Please note**: Sending a value in will change the connection type from `INTERNET` to `VPC_LINK`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "607e787d-d0bd-47b9-984e-2195d58278ed",
+      "Name": "AWS.Api.Gateway.Route.Key",
+      "Label": "Route Key",
+      "HelpText": "Required.
+
+The route key for the route.  Examples:
+
+- `$default`
+- `/signup`",
+      "DefaultValue": "$default",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f255a0c5-f2e6-4739-af59-a0329c6ddb14",
+      "Name": "AWS.Api.Gateway.Integration.HttpMethod",
+      "Label": "HTTP Method",
+      "HelpText": "Required.
+
+The HTTP method of the route and integration you wish to create.",
+      "DefaultValue": "ANY",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "ANY|ANY
+POST|POST
+PUT|PUT
+GET|GET
+DELETE|DELETE"
+      }
+    },
+    {
+      "Id": "6552c873-6576-4272-a724-a3b257b1b13e",
+      "Name": "AWS.Api.Gateway.Lambda.Arn",
+      "Label": "Lambda ARN",
+      "HelpText": "Required.
+
+The ARN of the AWS Lambda to connect to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "261a89c2-dc9b-4608-8f76-fcb07385725c",
+      "Name": "AWS.Api.Gateway.Lambda.Alias",
+      "Label": "Lambda Alias",
+      "HelpText": "Required.
+
+The alias in the lambda function to use when the API Gateway invokes the function.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4c281de7-1922-4d78-b16d-9c60cd2d2477",
+      "Name": "AWS.Api.Gateway.Integration.PayloadFormatVersion",
+      "Label": "Payload Format Version",
+      "HelpText": "Required.
+
+The payload format version specifies the format of the data that API Gateway sends to a Lambda integration, and how API Gateway interprets the response from Lambda.",
+      "DefaultValue": "2.0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "1.0|1.0
+2.0|2.0"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AwsRunScript",
+  "$Meta": {
+    "ExportedAt": "2022-10-04T18:34:13.219Z",
+    "OctopusVersion": "2022.3.10594",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "aws"
+}

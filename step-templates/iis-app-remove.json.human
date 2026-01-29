@@ -1,0 +1,151 @@
+{
+  "Id": "a3edf679-e65a-4758-88a8-ec45a6c77563",
+  "Name": "IIS Application - Remove",
+  "Description": "Removes an IIS virtual application (a virtual directory with an application pool)",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "## --------------------------------------------------------------------------------------\r
+## Input\r
+## --------------------------------------------------------------------------------------\r
+\r
+$virtualPath = $OctopusParameters['VirtualPath']\r
+$parentSite = $OctopusParameters['ParentSite']\r
+\r
+## --------------------------------------------------------------------------------------\r
+## Helpers\r
+## --------------------------------------------------------------------------------------\r
+# Helper for validating input parameters\r
+function Validate-Parameter([string]$foo, [string[]]$validInput, $parameterName) {\r
+    Write-Host \"${parameterName}: $foo\"\r
+    if (! $foo) {\r
+        throw \"No value was set for $parameterName, and it cannot be empty\"\r
+    }\r
+    \r
+    if ($validInput) {\r
+        if (! $validInput -contains $foo) {\r
+            throw \"'$input' is not a valid input for '$parameterName'\"\r
+        }\r
+    }\r
+    \r
+}\r
+\r
+# Helper to run a block with a retry if things go wrong\r
+$maxFailures = 5\r
+$sleepBetweenFailures = Get-Random -minimum 1 -maximum 4\r
+function Execute-WithRetry([ScriptBlock] $command) {\r
+\t$attemptCount = 0\r
+\t$operationIncomplete = $true\r
+\r
+\twhile ($operationIncomplete -and $attemptCount -lt $maxFailures) {\r
+\t\t$attemptCount = ($attemptCount + 1)\r
+\r
+\t\tif ($attemptCount -ge 2) {\r
+\t\t\tWrite-Output \"Waiting for $sleepBetweenFailures seconds before retrying...\"\r
+\t\t\tStart-Sleep -s $sleepBetweenFailures\r
+\t\t\tWrite-Output \"Retrying...\"\r
+\t\t}\r
+\r
+\t\ttry {\r
+\t\t\t& $command\r
+\r
+\t\t\t$operationIncomplete = $false\r
+\t\t} catch [System.Exception] {\r
+\t\t\tif ($attemptCount -lt ($maxFailures)) {\r
+\t\t\t\tWrite-Output (\"Attempt $attemptCount of $maxFailures failed: \" + $_.Exception.Message)\r
+\t\t\t\r
+\t\t\t}\r
+\t\t\telse {\r
+\t\t\t    throw \"Failed to execute command\"\r
+\t\t\t}\r
+\t\t}\r
+\t}\r
+}\r
+\r
+## --------------------------------------------------------------------------------------\r
+## Configuration\r
+## --------------------------------------------------------------------------------------\r
+Validate-Parameter $virtualPath -parameterName \"Virtual path\"\r
+Validate-Parameter $parentSite -parameterName \"Parent site\"\r
+\r
+Add-PSSnapin WebAdministration -ErrorAction SilentlyContinue\r
+Import-Module WebAdministration -ErrorAction SilentlyContinue\r
+\r
+## --------------------------------------------------------------------------------------\r
+## Run\r
+## --------------------------------------------------------------------------------------\r
+\r
+Write-Host \"Getting web site $parentSite\"\r
+$site = Get-Website -name $parentSite\r
+if (!$site) {\r
+    throw \"The web site '$parentSite' does not exist. Please create the site first.\"\r
+}\r
+\r
+$parts = $virtualPath -split \"[/\\\\]\"\r
+$name = \"\"\r
+\r
+for ($i = 0; $i -lt $parts.Length; $i++) {\r
+    $name = $name + \"/\" + $parts[$i]\r
+    $name = $name.TrimStart('/').TrimEnd('/')\r
+    if ($i -eq $parts.Length - 1) {\r
+        \r
+    }\r
+    elseif ([string]::IsNullOrEmpty($name) -eq $false -and $name -ne \"/\") {\r
+        Write-Host \"Ensuring parent exists: $name\"\r
+\r
+        $app = Get-WebApplication -Name $name -Site $parentSite\r
+\r
+        if (!$app) {\r
+            $vdir = Get-WebVirtualDirectory -Name $name -site $parentSite\r
+            if (!$vdir) {\r
+                throw \"The application or virtual directory '$name' does not exist\"\r
+            }\r
+        }\r
+    }\r
+}\r
+\r
+$existing = Get-WebApplication -site $parentSite -Name $name\r
+\r
+Execute-WithRetry { \r
+    if ($existing) {\r
+        Write-Host \"Removing web application '$name'\"\r
+\t\tRemove-WebApplication -Name $name -Site $parentSite\r
+        Write-Host \"Web application removed\"\r
+    } else {\r
+        Write-Host \"Web application doesn't exist, nothing to remove.\"\r
+    }\r
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "VirtualPath",
+      "Label": "Virtual path",
+      "HelpText": "The name of the application to remove. For example, if the application that will be removed is at `/myapp`, enter `myapp`. To remove an application under a parent virtual directory or application, separate with slashes - for example: `/applications/myapp`",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ParentSite",
+      "Label": "Parent site",
+      "HelpText": "The name of the IIS web site to remove the application from. For example, to remove the application under the default web site, enter:
+
+    Default Web Site",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-05-20T20:25:09.714+00:00",
+  "LastModifiedBy": "lukerogers",
+  "$Meta": {
+    "ExportedAt": "2015-05-20T20:27:33.262+00:00",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}

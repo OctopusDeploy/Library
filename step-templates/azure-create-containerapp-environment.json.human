@@ -1,0 +1,253 @@
+{
+  "Id": "9b4b9fdc-2f97-4507-8df5-a0c1dd7464a5",
+  "Name": "Azure - Create Container App Environment",
+  "Description": "Creates a Container App Environment if it doesn't exist.  An output variable called `ManagedEnvironmentId` is created which holds the Id.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Define functions
+function Get-ModuleInstalled
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName
+    )
+
+    # Check to see if the module is installed
+    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))
+    {
+        # It is installed
+        return $true
+    }
+    else
+    {
+        # Module not installed
+        return $false
+    }
+}
+
+function Get-NugetPackageProviderNotInstalled
+{
+\t# See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+function Install-PowerShellModule
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName,
+        $LocalModulesPath
+    )
+
+\t# Check to see if the package provider has been installed
+    if ((Get-NugetPackageProviderNotInstalled) -ne $false)
+    {
+    \t# Display that we need the nuget package provider
+        Write-Host \"Nuget package provider not found, installing ...\"
+        
+        # Install Nuget package provider
+        Install-PackageProvider -Name Nuget -Force
+    }
+
+\t# Save the module in the temporary location
+    Write-Host \"Saving module $PowerShellModuleName to temporary folder ...\"
+    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force
+    Write-Host \"Save successful!\"
+}
+
+# Check to see if $IsWindows is available
+# Check to see if $IsWindows is available
+if ($null -eq $IsWindows)
+{
+     Write-Host \"Determining Operating System...\"
+    $IsWindows = ([System.Environment]::OSVersion.Platform -eq \"Win32NT\")
+    $IsLinux = ([System.Environment]::OSVersion.Platform -eq \"Unix\")
+}
+
+# Check to see if it's running on Windows
+if ($IsWindows)
+{
+\t# Disable the progress bar so downloading files via Invoke-WebRequest are faster
+    $ProgressPreference = 'SilentlyContinue'
+}
+
+if ($PSEdition -eq \"Core\") {
+    $PSStyle.OutputRendering = \"PlainText\"
+}
+
+# Define PowerShell Modules path
+$LocalModules = (New-Item \"$PWD/Modules\" -ItemType Directory -Force).FullName
+$env:PSModulePath = \"$LocalModules$([IO.Path]::PathSeparator)$env:PSModulePath\"
+$azureModule = \"Az.App\"
+
+# Get variables
+$templateAzureAccountClient = $OctopusParameters['Template.Azure.Account.ClientId']
+$templateAzureAccountPassword = $OctopusParameters['Template.Azure.Account.Password']
+$templateAzureAccountTenantId = $OctopusParameters['Template.Azure.Account.TenantId']
+$templateAzureResourceGroup = $OctopusParameters['Template.Azure.ResourceGroup.Name']
+$templateAzureSubscriptionId = $OctopusParameters['Template.Azure.Account.SubscriptionId']
+$templateEnvironmentName = $OctopusParameters['Template.ContainerApp.Environment.Name']
+$templateAzureLocation = $OctopusParameters['Template.Azure.Location.Name']
+
+# Check for required PowerShell module
+Write-Host \"Checking for module $azureModule ...\"
+
+if ((Get-ModuleInstalled -PowerShellModuleName $azureModule) -eq $false)
+{
+\t# Install the module
+    Install-PowerShellModule -PowerShellModuleName $azureModule -LocalModulesPath $LocalModules
+}
+
+# Import the necessary module
+Write-Host \"Importing module $azureModule ...\"
+Import-Module $azureModule
+
+# Check to see if the account was specified
+if (![string]::IsNullOrWhitespace($templateAzureAccountClient))
+{
+\t# Login using the provided account
+    Write-Host \"Logging in as specified account ...\"
+    
+\t# Create credential object for az module
+\t$securePassword = ConvertTo-SecureString $templateAzureAccountPassword -AsPlainText -Force
+\t$azureCredentials = New-Object System.Management.Automation.PSCredential ($templateAzureAccountClient, $securePassword)  
+
+    Connect-AzAccount -Credential $azureCredentials -ServicePrincipal -Tenant $templateAzureAccountTenantId | Out-Null
+    
+    Write-Host \"Login successful!\"
+}
+else
+{
+\tWrite-Host \"Using machine Managed Identity ...\"
+    Connect-AzAccount -Identity | Out-Null
+    
+    # Get Identity context
+    $identityContext = Get-AzContext
+    
+    # Set variables
+    $templateAzureSubscriptionId = $identityContext.Subscription
+    
+    if ([string]::IsNullOrWhitespace($templateAzureAccountTenantId))
+    {
+    \t$templateAzureAccountTenantId = $identityContext.Tenant
+    }
+    
+    Set-AzContext -Tenant $templateAzureAccountTenantId | Out-Null
+
+\tWrite-Host \"Successfully set context for Managed Identity!\"
+}
+
+# Check to see if Container App Environment already exists
+Write-Host \"Getting list of existing environments ...\"
+$existingEnvironments = Get-AzContainerAppManagedEnv -ResourceGroupName $templateAzureResourceGroup -SubscriptionId $templateAzureSubscriptionId
+$managedEnvironment = $null
+
+if (($null -ne $existingEnvironments) -and ($null -ne ($existingEnvironments | Where-Object {$_.Name -eq $templateEnvironmentName})))
+{
+\tWrite-Host \"Environment $templateEnvironmentName already exists.\"
+    $managedEnvironment = $existingEnvironments | Where-Object {$_.Name -eq $templateEnvironmentName}
+}
+else
+{
+\tWrite-Host \"Environment $templateEnvironmentName not found, creating ...\"
+    $managedEnvironment = New-AzContainerAppManagedEnv -EnvName $templateEnvironmentName -ResourceGroupName $templateAzureResourceGroup -Location $templateAzureLocation -AppLogConfigurationDestination \"\" # Empty AppLogConfigurationDestination is workaround for properties issue caused by marking this as required
+}
+
+# Set output variable
+Write-Host \"Setting output variable ManagedEnvironmentId to $($managedEnvironment.Id)\"
+Set-OctopusVariable -name \"ManagedEnvironmentId\" -value \"$($managedEnvironment.Id)\""
+  },
+  "Parameters": [
+    {
+      "Id": "4e3ee370-7f62-4d00-a8c2-bb8717b5d681",
+      "Name": "Template.Azure.ResourceGroup.Name",
+      "Label": "Azure Resource Group Name",
+      "HelpText": "Provide the resource group name to create the environment in.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "11ccbfe4-f170-4d25-bc55-e52327680613",
+      "Name": "Template.Azure.Account.SubscriptionId",
+      "Label": "Azure Account Subscription Id",
+      "HelpText": "The subscription ID of the Azure account to use.  This value can be retrieved from an Azure Account variable type.  Add an Azure Account to your project , then assign the `SubscriptionNumber` property to for this entry.  Leave blank to use the Managed Identity.
+
+For example, if your Azure Account variable is called MyAccount, the value for this input would be `#{MyAccount.SubscriptionNumber}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e1cf9fa6-e8b9-475a-9800-ef688f1e7ad5",
+      "Name": "Template.Azure.Account.ClientId",
+      "Label": "Azure Account Client Id",
+      "HelpText": "The subscription ID of the Azure account to use.  This value can be retrieved from an Azure Account variable type.  Add an Azure Account to your project , then assign the `Client` property to for this entry.   Leave blank to use the Managed Identity.
+
+For example, if your Azure Account variable is called MyAccount, the value for this input would be `#{MyAccount.Client}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4dbcd5a4-6d41-4ae0-ac69-76e27fc6bd28",
+      "Name": "Template.Azure.Account.TenantId",
+      "Label": "Azure Account Tenant Id",
+      "HelpText": "The subscription ID of the Azure account to use.  This value can be retrieved from an Azure Account variable type.  Add an Azure Account to your project , then assign the `TenantId` property to for this entry.   If blank, it will use the Managed Identity tenant.
+
+For example, if your Azure Account variable is called MyAccount, the value for this input would be `#{MyAccount.TenantId}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "99a141f5-2fa1-40b9-b04e-8d37fe259a27",
+      "Name": "Template.Azure.Account.Password",
+      "Label": "Azure Account Password",
+      "HelpText": "The subscription ID of the Azure account to use.  This value can be retrieved from an Azure Account variable type.  Add an Azure Account to your project , then assign the `Password` property to for this entry.   Leave blank to use the Managed Identity.
+
+For example, if your Azure Account variable is called MyAccount, the value for this input would be `#{MyAccount.Password}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "66f5ee93-3ba9-44e7-8a04-50535b1907cb",
+      "Name": "Template.ContainerApp.Environment.Name",
+      "Label": "Container App Environment Name",
+      "HelpText": "The name of the container app environment to create.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "92daa091-2b90-4615-9a2e-ffc52275ddb4",
+      "Name": "Template.Azure.Location.Name",
+      "Label": "Azure Location",
+      "HelpText": "The location in which to create the container app environment.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-07-05T15:56:04.248Z",
+    "OctopusVersion": "2023.3.4541",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "azure"
+}

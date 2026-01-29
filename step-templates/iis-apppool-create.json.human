@@ -1,0 +1,402 @@
+{
+  "Name": "IIS AppPool - Create",
+  "Description": "Creates or Reconfigures an IIS Application Pool",
+  "ActionType": "Octopus.Script",
+  "Version": 14,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function Validate-Parameter {
+    Param(
+        [Parameter(Position=0)][string]$Parameter,
+        [Parameter(Mandatory=$true, Position=1)][string]$ParameterName
+    )
+    if (!$ParameterName -contains 'Password') {
+        Write-Host ('{0}: {1}' -f ${ParameterName},$Parameter)
+    }
+    if (!$Parameter) {
+        Write-Error ('No value was set for {0}, and it cannot be empty' -f $ParameterName)
+    }
+}
+
+function Execute-Retry {
+    Param(
+        [Parameter(Mandatory=$true, Position=0)][ScriptBlock]$Command
+    )
+\t$attemptCount = 0
+\t$operationIncomplete = $true
+    $maxFailures = 5
+    $sleepBetweenFailures = Get-Random -minimum 1 -maximum 4
+\twhile ($operationIncomplete -and $attemptCount -lt $maxFailures) {
+\t\t$attemptCount = ($attemptCount + 1)
+\t\tif ($attemptCount -ge 2) {
+\t\t\tWrite-Output ('Waiting for {0} seconds before retrying ...' -f $sleepBetweenFailures)
+\t\t\tStart-Sleep -s $sleepBetweenFailures
+\t\t\tWrite-Output 'Retrying ...'
+\t\t}
+\t\ttry {
+\t\t\t& $Command
+\t\t\t$operationIncomplete = $false
+\t\t} catch [System.Exception] {
+\t\t\tif ($attemptCount -lt ($maxFailures)) {
+\t\t\t\tWrite-Output ('Attempt {0} of {1} failed: {2}' -f $attemptCount,$maxFailures,$_.Exception.Message)
+\t\t\t}
+\t\t\telse {
+                Write-Host 'Failed to execute command'
+\t\t\t}
+\t\t}
+\t}
+}
+
+function Get-ScheduledTimes {
+    Param(
+        [Parameter(Position=0)][string]$Schedule
+    )
+    if (!$Schedule) {
+        return @()
+    }
+    $minutes = $Schedule.Split(',')
+    $minuteArrayList = New-Object System.Collections.ArrayList(,$minutes)
+    return $minuteArrayList
+}
+
+[System.Reflection.Assembly]::LoadWithPartialName('Microsoft.Web.Administration')
+Add-PSSnapin WebAdministration -ErrorAction SilentlyContinue
+Import-Module WebAdministration -ErrorAction SilentlyContinue
+
+$appPoolName = $OctopusParameters['AppPoolName']
+$appPoolIdentityType = $OctopusParameters['AppPoolIdentityType']
+if ($appPoolIdentityType -eq 3) {
+    $appPoolIdentityUser = $OctopusParameters['AppPoolIdentityUser']
+    $appPoolIdentityPassword = $OctopusParameters['AppPoolIdentityPassword']
+}
+$appPoolLoadUserProfile = [boolean]::Parse($OctopusParameters['AppPoolLoadUserProfile'])
+$appPoolAutoStart = [boolean]::Parse($OctopusParameters['AppPoolAutoStart'])
+$appPoolEnable32BitAppOnWin64 = [boolean]::Parse($OctopusParameters['AppPoolEnable32BitAppOnWin64'])
+$appPoolManagedRuntimeVersion = $OctopusParameters['AppPoolManagedRuntimeVersion']
+$appPoolManagedPipelineMode = $OctopusParameters['AppPoolManagedPipelineMode']
+$appPoolIdleTimeout = [TimeSpan]::FromMinutes($OctopusParameters['AppPoolIdleTimeoutMinutes'])
+$appPoolPeriodicRecycleTime = $OctopusParameters['AppPoolPeriodicRecycleTime']
+$appPoolMaxProcesses = [int]$OctopusParameters['AppPoolMaxProcesses']
+$appPoolRegularTimeInterval = [TimeSpan]::FromMinutes($OctopusParameters['AppPoolRegularTimeInterval'])
+$appPoolQueueLength = [int]$OctopusParameters['AppPoolQueueLength']
+$appPoolStartMode = $OctopusParameters['AppPoolStartMode']
+$appPoolCpuAction = $OctopusParameters['AppPoolCpuLimitAction']
+$appPoolCpuLimit = [int]$OctopusParameters['AppPoolCpuLimit']
+
+Validate-Parameter -Parameter $appPoolName -ParameterName 'Application Pool Name'
+Validate-Parameter -Parameter $appPoolIdentityType -ParameterName 'Identity Type'
+if ($appPoolIdentityType -eq 3) {
+    Validate-Parameter -Parameter $appPoolIdentityUser -ParameterName 'Identity UserName'
+    # If using Group Managed Serice Accounts, the password should be allowed to be empty
+}
+Validate-Parameter -Parameter $appPoolLoadUserProfile -parameterName 'Load User Profile'
+Validate-Parameter -Parameter $appPoolAutoStart -ParameterName 'AutoStart'
+Validate-Parameter -Parameter $appPoolEnable32BitAppOnWin64 -ParameterName 'Enable 32-Bit Apps on 64-bit Windows'
+Validate-Parameter -Parameter $appPoolManagedRuntimeVersion -ParameterName 'Managed Runtime Version'
+Validate-Parameter -Parameter $appPoolManagedPipelineMode -ParameterName 'Managed Pipeline Mode'
+Validate-Parameter -Parameter $appPoolIdleTimeout -ParameterName 'Process Idle Timeout'
+Validate-Parameter -Parameter $appPoolMaxProcesses -ParameterName 'Maximum Worker Processes'
+Validate-Parameter -Parameter $appPoolStartMode -parameterName 'Start Mode'
+Validate-Parameter -Parameter $appPoolCpuAction -parameterName 'CPU Limit Action'
+Validate-Parameter -Parameter $appPoolCpuLimit -parameterName 'CPU Limit (percent)'
+
+$iis = (New-Object Microsoft.Web.Administration.ServerManager)
+$pool = $iis.ApplicationPools | Where-Object {$_.Name -eq $appPoolName} | Select-Object -First 1
+if ($pool -eq $null) {
+    Write-Output ('Creating Application Pool {0}' -f $appPoolName)
+    Execute-Retry {
+        $iis = (New-Object Microsoft.Web.Administration.ServerManager)
+        $iis.ApplicationPools.Add($appPoolName)
+        $iis.CommitChanges()
+    }
+}
+else {
+    Write-Output ('Application Pool {0} already exists, reconfiguring ...' -f $appPoolName)
+}
+$list = Get-ScheduledTimes -Schedule $appPoolPeriodicRecycleTime
+Execute-Retry {
+    $iis = (New-Object Microsoft.Web.Administration.ServerManager)
+    $pool = $iis.ApplicationPools | Where-Object {$_.Name -eq $appPoolName} | Select-Object -First 1
+    Write-Output ('Setting: AutoStart = {0}' -f $appPoolAutoStart)
+    $pool.AutoStart = $appPoolAutoStart
+    Write-Output ('Setting: Enable32BitAppOnWin64 = {0}' -f $appPoolEnable32BitAppOnWin64)
+    $pool.Enable32BitAppOnWin64 = $appPoolEnable32BitAppOnWin64
+    Write-Output ('Setting: IdentityType = {0}' -f $appPoolIdentityType)
+    $pool.ProcessModel.IdentityType = $appPoolIdentityType
+    if ($appPoolIdentityType -eq 3) {
+        Write-Output ('Setting: UserName = {0}' -f $appPoolIdentityUser)
+        $pool.ProcessModel.UserName = $appPoolIdentityUser
+        if (!$appPoolIdentityPassword) {
+            Write-Output ('Setting: Password = [empty]')
+        }
+        else {
+            Write-Output ('Setting: Password = [Omitted For Security]')
+        }
+        $pool.ProcessModel.Password = $appPoolIdentityPassword
+    }
+\tWrite-Output ('Setting: LoadUserProfile = {0}' -f $appPoolLoadUserProfile)
+    $pool.ProcessModel.LoadUserProfile = $appPoolLoadUserProfile
+    Write-Output ('Setting: ManagedRuntimeVersion = {0}' -f $appPoolManagedRuntimeVersion)
+    if ($appPoolManagedRuntimeVersion -eq 'No Managed Code') {
+        $pool.ManagedRuntimeVersion = ''
+    }
+    else {
+        $pool.ManagedRuntimeVersion = $appPoolManagedRuntimeVersion
+    }
+    Write-Output ('Setting: ManagedPipelineMode = {0}' -f $appPoolManagedPipelineMode)
+    $pool.ManagedPipelineMode = $appPoolManagedPipelineMode
+    Write-Output ('Setting: IdleTimeout = {0}' -f $appPoolIdleTimeout)
+    $pool.ProcessModel.IdleTimeout = $appPoolIdleTimeout
+    Write-Output ('Setting: MaxProcesses = {0}' -f $appPoolMaxProcesses)
+    $pool.ProcessModel.MaxProcesses = $appPoolMaxProcesses
+    Write-Output ('Setting: RegularTimeInterval = {0}' -f $appPoolRegularTimeInterval)
+    $pool.Recycling.PeriodicRestart.Time  = $appPoolRegularTimeInterval
+    Write-Output ('Setting: QueueLength = {0}' -f $appPoolQueueLength)
+    $pool.QueueLength  = $appPoolQueueLength
+    Write-Output ('Setting: CPU Limit (percent) = {0}' -f $appPoolCpuLimit)
+    ## Limit is stored in 1/1000s of one percent
+    $pool.Cpu.Limit = $appPoolCpuLimit * 1000
+    Write-Output ('Setting: CPU Limit Action = {0}' -f $appPoolCpuAction)
+    $pool.Cpu.Action = $appPoolCpuAction
+    Write-Output ('Setting: Schedule = {0}' -f $appPoolPeriodicRecycleTime)
+    $pool.Recycling.PeriodicRestart.Schedule.Clear()
+    foreach($timestamp in $list) {
+        $pool.Recycling.PeriodicRestart.Schedule.Add($timestamp)
+    }
+    if (Get-Member -InputObject $pool -Name StartMode -MemberType Properties)
+    {
+        Write-Output ('Setting: StartMode = {0}' -f $appPoolStartMode)
+        $pool.StartMode = $appPoolStartMode
+    }
+    else
+    {
+        Write-Output ('IIS does not support StartMode property, skipping this property...')
+    }
+    $iis.CommitChanges()
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.NuGetFeedId": null,
+    "Octopus.Action.Package.NuGetPackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "bd870787-9020-49e8-8add-ad9f5fb65125",
+      "Name": "AppPoolName",
+      "Label": "Application pool name",
+      "HelpText": "The name of the application pool that the application will run under.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "7d8d63e7-5f6e-4a21-a58f-0f0787e1654f",
+      "Name": "AppPoolIdentityType",
+      "Label": "Identity Type",
+      "HelpText": "The type of identity that the application pool will be using.",
+      "DefaultValue": "3",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "0|Local System
+1|Local Service
+2|Network Service
+3|Specific User...
+4|Application Pool Identity"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "4aabb8a8-df82-4462-be11-5f225466fa22",
+      "Name": "AppPoolIdentityUser",
+      "Label": "Specific User Name",
+      "HelpText": "_(Specific User)_ The user name to use with the application pool identity.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "701c812c-902c-4e2f-a888-cbf5d2fbf83d",
+      "Name": "AppPoolIdentityPassword",
+      "Label": "Specific User Password",
+      "HelpText": "_(Specific User)_ The password for the specific user to use with the application pool identity.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "63663052-6e0d-4ba8-ba95-f4213ba8aed2",
+      "Name": "AppPoolLoadUserProfile",
+      "Label": "Load User Profile",
+      "HelpText": "This setting specifies whether IIS loads the user profile for an application pool identity.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "c5c7d104-2d65-46da-a93f-bc3aea5ba1ab",
+      "Name": "AppPoolEnable32BitAppOnWin64",
+      "Label": "Enable 32-Bit Applications",
+      "HelpText": "Allows the application pool to run 32-bit applications when running on 64-bit windows.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "0af4b8ba-587f-4e92-a344-44a3408bad96",
+      "Name": "AppPoolAutoStart",
+      "Label": "Start Automatically",
+      "HelpText": "Automatically start the application pool when the application pool is created or whenever IIS is started.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "8eaf280a-7e17-4f03-90a1-29f66ca87b1a",
+      "Name": "AppPoolManagedRuntimeVersion",
+      "Label": "Managed Runtime Version",
+      "HelpText": "Specifies the CLR version to be used by the application pool.",
+      "DefaultValue": "v4.0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "v1.1|CLR v1.1 (.NET 1.0, 1.1)
+v2.0|CLR v2.0 (.NET 2.0, 3.0, 3.5)
+v4.0|CLR v4.0 (.NET 4.0, 4.5, 4.6)
+No Managed Code|No Managed Code (ASP.NET Core)"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "bae7e84e-b17c-49bb-aba1-44d8f0326881",
+      "Name": "AppPoolManagedPipelineMode",
+      "Label": "Managed Pipeline Mode",
+      "HelpText": "Specifies the request-processing mode that is used to process requests for managed content.",
+      "DefaultValue": "0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "0|Integrated
+1|Classic"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "cf5acda5-5261-40b9-ae6c-4067b35b9857",
+      "Name": "AppPoolIdleTimeoutMinutes",
+      "Label": "Process Idle Timeout",
+      "HelpText": "Amount of time (in minutes) a worker process will remain idle before it shuts down. A value of 0 means the process does not shut down after an idle timeout.",
+      "DefaultValue": "20",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "67c8fc44-00c6-4f0e-9b54-48acfe5792f9",
+      "Name": "AppPoolMaxProcesses",
+      "Label": "Maximum Worker Processes",
+      "HelpText": "Maximum number of worker processes permitted to service requests for the application pool.",
+      "DefaultValue": "1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "63bc9198-49b3-451d-b082-9faf38f759e2",
+      "Name": "AppPoolRegularTimeInterval",
+      "Label": "Regular Time Interval",
+      "HelpText": "Period of time (in minutes) after which an application pool will recycle. A value of 0 means the application pool does not recycle on a regular interval.",
+      "DefaultValue": "1740",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "3b5cadcd-3092-4eb7-aeb6-2b7896a22e10",
+      "Name": "AppPoolPeriodicRecycleTime",
+      "Label": "Application pool periodic recycle time",
+      "HelpText": "A specific local time, in minutes after midnight, when the application pool is recycled. Separate multiple times by using a ,\
+\
+Example: \\\"00:30:00\\\" for half an hour past midnight. or \\\"06:00:00\\\" for midnight and 6 am.",
+      "DefaultValue": "03:00:00",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "cf466a9a-40a1-4fe9-ab2d-f99eb92d1593",
+      "Name": "AppPoolQueueLength",
+      "Label": "Queue Length",
+      "HelpText": "Maximum number of requests that HTTP.sys will queue for the application pool. When the queue is full, new requests receive a 504 \"Service Unavailable\" response.",
+      "DefaultValue": "1000",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "cbf99ca9-7282-4bb2-99b8-82c1355c4bc0",
+      "Name": "AppPoolStartMode",
+      "Label": "Start Mode",
+      "HelpText": "Specifies whether the application pool should run in On Demand Mode or Always Running Mode.",
+      "DefaultValue": "OnDemand",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "OnDemand|On Demand
+AlwaysRunning|Always Running"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "7ef971c4-6493-481f-9711-91cf902a2bca",
+      "Name": "AppPoolCpuLimit",
+      "Label": "CPU Limit (percent)",
+      "HelpText": "Configures the maximum percentage of CPU time (in percent) that the worker processes in an application pool are allowed to consume over a period of time as indicated by the resetInterval attribute. If the limit set by the limit attribute is exceeded, an event is written to the event log and an optional set of events can be triggered. These optional events are determined by the action attribute.
+
+The default value is 0, which disables CPU limiting.",
+      "DefaultValue": "0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b5b33393-cd44-4af4-b1e2-0a090f42576e",
+      "Name": "AppPoolCpuLimitAction",
+      "Label": "CPU Limit Action",
+      "HelpText": "Configures the action that IIS takes when a worker process exceeds its configured CPU limit. The action attribute is configured on a per-application pool basis.
+
+The action attribute can be one of the following possible values. The default value is NoAction.",
+      "DefaultValue": "0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "0|NoAction
+1|KillW3wp
+2|Throttle
+3|ThrottleUnderLoad"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "droorda",
+  "$Meta": {
+    "ExportedAt": "2018-09-18T04:42:42.009Z",
+    "OctopusVersion": "2018.7.14",
+    "Type": "ActionTemplate"
+  },
+  "Id": "70a293d6-ee6a-4755-8e06-5f13d7e51fff",
+  "Category": "iis"
+}

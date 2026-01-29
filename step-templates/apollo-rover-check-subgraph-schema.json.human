@@ -1,0 +1,128 @@
+{
+  "Id": "a0f2d754-9cae-488d-820c-4798985fb8d9",
+  "Name": "Apollo Rover - Check Subgraph Schema",
+  "Description": "Check subgraph schema against Apollo Studio. This should be run before deploying the subgraph service when promoting to higher environments.
+
+The script installs the [Apollo Rover CLI](https://apollographql.com/docs/rover) and runs the `rover subgraph check` command.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Name": "SchemaPackage",
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "ApolloSchemaPackage",
+        "Purpose": ""
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "APOLLO_KEY=$(get_octopusvariable \"ApolloKey\")
+APOLLO_GRAPH_REF=$(get_octopusvariable \"ApolloGraphRef\")
+SUBGRAPH_NAME=$(get_octopusvariable \"ApolloSubgraphName\")
+SCHEMA=$(get_octopusvariable \"ApolloSchema\")
+ver=$(get_octopusvariable \"ApolloRoverVersion\")
+
+[ -z \"$ver\" ] || [ \"$ver\" == \"latest\" ] && ROVER_VERSION=\"latest\" || ROVER_VERSION=\"v$ver\"
+
+missing_params=()
+
+[ -z \"$APOLLO_KEY\" ] && missing_params+=(\"ApolloKey\")
+[ -z \"$APOLLO_GRAPH_REF\" ] && missing_params+=(\"ApolloGraphRef\")
+[ -z \"$SUBGRAPH_NAME\" ] && missing_params+=(\"SubgraphName\")
+[ -z \"$SCHEMA\" ] && missing_params+=(\"Schema\")
+
+if [ -n \"$missing_params\" ]; then
+  >&2 echo \"Missing parameters: ${missing_params[@]}\"
+  exit 1
+fi
+
+curl -sSL https://rover.apollo.dev/nix/$ROVER_VERSION -o installer
+
+if [ \"$(head -n1 installer)\" != \"#!/bin/bash\" ]; then
+  >&2 echo \"There was a problem fetching $ROVER_VERSION of Rover CLI:\"
+  >&2 cat installer
+  rm installer
+  exit 1
+fi
+
+sh installer --force 2>&1
+rm installer
+
+APOLLO_KEY=$APOLLO_KEY ~/.rover/bin/rover subgraph check $APOLLO_GRAPH_REF \\
+  --name $SUBGRAPH_NAME \\
+  --schema $SCHEMA \\
+  2>&1
+"
+  },
+  "Parameters": [
+    {
+      "Name": "ApolloRoverVersion",
+      "Label": "Apollo Rover Version",
+      "HelpText": "The version of the Apollo Rover CLI to use for running `rover subgraph check`.
+May be either semver (i.e. `0.19.1`), `latest`, or empty",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ApolloKey",
+      "Label": "Apollo Key",
+      "HelpText": "The API key to Apollo Studio",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "ApolloGraphRef",
+      "Label": "Apollo Graph Ref",
+      "HelpText": "The Apollo Studio graph variant",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ApolloSubgraphName",
+      "Label": "Subgraph Name",
+      "HelpText": "The name of the subgraph",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ApolloSchemaPackage",
+      "Label": "Schema Package",
+      "HelpText": "The package containing the schema file",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Name": "ApolloSchema",
+      "Label": "Schema",
+      "HelpText": "The path to the schema file",
+      "DefaultValue": "./SchemaPackage/schema.graphql",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-10-23T17:06:36.419Z",
+    "OctopusVersion": "2023.4.4265",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "parkerholladay",
+  "Category": "apollo"
+}

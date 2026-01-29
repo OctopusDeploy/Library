@@ -1,0 +1,97 @@
+{
+  "Id": "6042d737-5902-0729-ae57-8b6650a299da",
+  "Name": "Amazon Chime - Post Message",
+  "Description": "Posts a message to a Chime chat room using webhooks.",
+  "ActionType": "Octopus.Script",
+  "Version": 14,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$_WebHookUrl = $OctopusParameters['acpm_WebHookURL']
+$_ContentPayload = $OctopusParameters['acpm_ContentPayload']
+$_WarningOnFailure = [System.Convert]::ToBoolean($OctopusParameters['acpm_WarningOnFailure'])
+
+try {
+  #Encode the content message as JSON. ConvertTo-JSON adds quotes to the string.
+  $_EncodedContentPayload = $_ContentPayload | ConvertTo-JSON
+
+  #Create a JSON object that Chime wants
+  #https://docs.aws.amazon.com/chime/latest/ug/webhooks.html
+  $_JsonPayload = '{\"Content\":'
+  $_JsonPayload += $_EncodedContentPayload
+  $_JsonPayload += '}'
+
+  Write-Host \"Sending message to webhook.\"
+  Write-Host \"------ Message ------\"
+  Write-Host \"$_ContentPayload\"
+  Write-Host \"---- End Message ----\"
+\t
+  #Make the request and send the payload
+  Invoke-WebRequest \"$_WebHookUrl\" -UseBasicParsing -ContentType \"application/json\" -Method POST -Body $_JsonPayload | Out-Null
+  Write-Host \"Message successfully sent to webhook.\"
+}
+catch {
+  #If WarningOnFailure is not true, then write an error and fail the deployment.
+  if($_WarningOnFailure -eq $false) {
+    Write-Error \"Could not send message to Chime web hook.\"
+    if(!([string]::IsNullOrEmpty($_.Exception.Message))) {
+      Write-Error \"Exception Message: $($_.Exception.Message)\"
+    }
+  }
+  #Else, just write a warning and continue on.
+  else {
+    Write-Warning \"Could not send message to Chime web hook.\"
+    if(!([string]::IsNullOrEmpty($_.Exception.Message))) {
+      Write-Warning \"Exception Message: $($_.Exception.Message)\"
+    }
+  }
+}"
+  },
+  "Parameters": [
+    {
+      "Id": "2d88ad9d-7271-4488-bfdc-5ab045bb02ab",
+      "Name": "acpm_WebHookURL",
+      "Label": "Web Hook URL",
+      "HelpText": "The chat room webhook URL. For more information on Amazon Chime webhooks, visit their [documentation page](https://docs.aws.amazon.com/chime/latest/ug/webhooks.html).
+
+_Note: Only chat room admins can create webhooks._",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "c212ad8e-b56a-469e-a59d-1f23aeb72beb",
+      "Name": "acpm_ContentPayload",
+      "Label": "Message",
+      "HelpText": "The message that you want to display in the Chat Room. 
+
+_Line breaks and web links are supported._",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "6860f750-7715-4a4b-a9d4-345c8269cf6c",
+      "Name": "acpm_WarningOnFailure",
+      "Label": "Generate Warning on Failure?",
+      "HelpText": "If checked and this step template fails to execute correctly, the script will use Write-Warning instead of Write-Error, and the deployment won't fail.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "vlouwagie",
+  "$Meta": {
+    "ExportedAt": "2018-02-18T00:00:01.006Z",
+    "OctopusVersion": "4.1.5",
+    "Type": "ActionTemplate"
+  },
+  "Category": "amazon-chime"
+}

@@ -1,0 +1,422 @@
+{
+  "Id": "82f804fe-682e-4e0b-8c2a-a5f289a9cabc",
+  "Name": "RavenDB - Smuggler - Move Data Between Databases",
+  "Description": "To move data directly between two instances (or different databases in the same instance) using the between option introduced in Smuggler version 3.",
+  "ActionType": "Octopus.Script",
+  "Version": 10,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "\r
+# Variables\r
+\r
+#Location of the Raven Smuggler exe\r
+$ravenSmugglerPath = $OctopusParameters[\"ravenSmugglerPath\"]\r
+\r
+\r
+#--------------------------------------------------------------------\r
+# Source Database Variables\r
+\r
+#URL of RavenDB that is being backed up \r
+$sourceDatabaseURL = $OctopusParameters[\"sourceDatabaseURL\"]\r
+\r
+#name of the RavenDB that is being backed up\r
+$sourceDatabaseName = $OctopusParameters[\"sourceDatabaseName\"]\r
+\r
+#API Key for the Source Database\r
+$sourceDatabaseApiKey = $OctopusParameters[\"sourceDatabaseApiKey\"]\r
+\r
+\r
+#--------------------------------------------------------------------\r
+#Destination Database Variables\r
+\r
+#URL of destination RavenDB \r
+$destinationDatabaseURL = $OctopusParameters[\"destinationDatabaseURL\"]\r
+\r
+#Name of the destination RavenDB\r
+$destinationDatabaseName = $OctopusParameters[\"destinationDatabaseName\"]\r
+\r
+#API Key for the Destination Database\r
+$destinationDatabaseAPIKey = $OctopusParameters[\"destinationDatabaseAPIKey\"]\r
+\r
+\r
+\r
+#------------------------------------------------------------------------------\r
+# Other Variables retrieved from Octopus\r
+\r
+#Limit the back up to different types in the database\r
+#Get document option (true/false)\r
+$operateOnDocuments = $OctopusParameters[\"operateOnDocuments\"]\r
+\r
+#Get attachments option (true/false)\r
+$operateOnAttachments = $OctopusParameters[\"operateOnAttachments\"]\r
+\r
+#Get indexes option (true/false)\r
+$operateOnIndexes = $OctopusParameters[\"operateOnIndexes\"]\r
+\r
+#Get transformers option (true/false)\r
+$operateOnTransformers = $OctopusParameters[\"operateOnTransformers\"]\r
+\r
+#Get timeout option \r
+$timeout = $OctopusParameters[\"timeout\"]\r
+\r
+#Get wait for indexing option (true/false)\r
+$waitForIndexing = $OctopusParameters[\"waitForIndexing\"]\r
+\r
+\r
+#--------------------------------------------------------------------\r
+\r
+#checks to see if the entered database exists, return a boolean value depending on the outcome\r
+function doesRavenDBExist([string] $databaseChecking, [string]$URL)\r
+{\r
+    #retrieves the list of databases at the specified URL\r
+    $database_list = Invoke-RestMethod -Uri \"$URL/databases\" -Method Get\r
+    #checks if the database is at the specified URL\r
+    if ($database_list -contains $databaseChecking.ToString()) \r
+    {\r
+        return $TRUE\r
+    }\r
+    else \r
+    {\r
+        return $FALSE\r
+    }\r
+\r
+    \r
+}#ends does ravenDB exist function\r
+\r
+Write-Output \"`n-------------------------`n\"\r
+\r
+#--------------------------------------------------------------------\r
+#Checking the versions of Raven Server of both databases to see if they are compatible \r
+\r
+Write-Output \"Checking that both $sourceDatabaseName and $destinationDatabaseName are running the same version of RavenDB\"\r
+\r
+#Getting Source Database's build version\r
+$sourceVersionURL = \"$sourceDatabaseURL/databases/$sourceDatabaseName/build/version\"\r
+\r
+$sourceDatabaseVersion = Invoke-RestMethod -Uri $sourceVersionURL -Method Get\r
+\r
+#Getting destination Database's build version\r
+$destinationVersionURL = \"$destinationDatabaseURL/databases/$destinationDatabaseName/build/version\"\r
+\r
+$destinationDatabaseVersion = Invoke-RestMethod -Uri $destinationVersionURL -Method Get\r
+\r
+#Checks to see if they are the same version and build number\r
+if(($sourceDatabaseVersion.ProductVersion -eq $destinationDatabaseVersion.ProductVersion) -and ($sourceDatabaseVersion.BuildVersion -eq $destinationDatabaseVersion.BuildVersion))\r
+{\r
+    \r
+    Write-Output \"Source Database Product Version:\" $sourceDatabaseVersion.ProductVersion \r
+    Write-Output \"Source Database Build Version:\" $sourceDatabaseVersion.BuildVersion\r
+    Write-Output \"Destination Database Version:\" $destinationDatabaseVersion.ProductVersion \r
+    Write-Output \"Destination Database Build Version:\" $destinationDatabaseVersion.BuildVersion\r
+    Write-Output \"Source and destination Databases are running the same version of Raven Server\"\r
+    \r
+}\r
+else \r
+{\r
+    Write-Warning \"Source Database Version: $sourceDatabaseVersion\"\r
+    Write-Warning \"Destination Database Version: $destinationDatabaseVersion\"\r
+    Write-Warning \"The databases are running different versions of Raven Server\"\r
+}\r
+\r
+Write-Output \"`n-------------------------`n\"\r
+\r
+#--------------------------------------------------------------------\r
+\r
+#Check path to smuggler\r
+Write-Output \"Checking if Smuggler path is correct`n\"\r
+\r
+$smugglerPath = \"$ravenSmugglerPath\"\r
+\r
+$smuggler_Exists = Test-Path -Path $smugglerPath\r
+\r
+\r
+\r
+#if the path is correct, the script continues, throws an error if the path is wrong\r
+If($smuggler_Exists -eq $TRUE)\r
+{\r
+    Write-Output \"Smuggler exists\"\r
+\r
+}#ends if smuggler exists \r
+else\r
+{\r
+    Write-Error \"Smuggler can not be found `nCheck the directory: $ravenSmugglerPath\" -ErrorId E4\r
+    Exit 1\r
+}#ends else, smuggler can't be found\r
+\r
+Write-Output \"`n-------------------------`n\"\r
+\r
+#--------------------------------------------------------------------\r
+#Checking the version of smuggler\r
+\r
+$SmugglerVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($ravenSmugglerPath).FileVersion\r
+\r
+if($SmugglerVersion -cgt \"3\")\r
+{\r
+    Write-Output \"Smuggler Version: $SmugglerVersion\"\r
+}\r
+else\r
+{\r
+    Write-Error \"The version of Smuggler that is installed can NOT complete this step `nPlease update Smuggler before continuing\" -ErrorId E4\r
+    Exit 1\r
+}\r
+Write-Output \"`n-------------------------`n\"\r
+\r
+\r
+\r
+\r
+\r
+#--------------------------------------------------------------------\r
+\r
+\r
+#Checks if both Source database and destination database exist\r
+Write-Output \"Checking if both $sourceDatabaseName and $destinationDatabaseName exist`n\"\r
+\r
+$sourceDatabase_exists = doesRavenDBExist -databaseChecking $sourceDatabaseName -URL $sourceDatabaseURL \r
+\r
+$destinationDatabase_exists = doesRavenDBExist -databaseChecking $destinationDatabaseName -URL $destinationDatabaseURL\r
+\r
+\r
+#if both database exist a backup occurs\r
+if(($sourceDatabase_exists -eq $TRUE) -and ($destinationDatabase_exists -eq $TRUE))\r
+{\r
+\r
+    Write-Output \"Both $sourceDatabaseName and $destinationDatabaseName exist`n\"\r
+\r
+}#ends if \r
+#if the source database doesn’t exist an error is throw\r
+elseIf(($sourceDatabase_exists -eq $FALSE) -and ($destinationDatabase_exists -eq $TRUE))\r
+{\r
+\r
+    Write-Error \"$sourceDatabaseName does not exist. `nMake sure the database exists before continuing\" -ErrorId E4\r
+    Exit 1\r
+\r
+}\r
+#if the destination database doesn’t exist an error is throw\r
+elseIf(($destinationDatabase_exists -eq $FALSE) -and ($sourceDatabase_exists -eq $TRUE))\r
+{\r
+\r
+    Write-Error \"$destinationDatabaseName does not exist. `nMake sure the database exists before continuing\" -ErrorId E4\r
+    Exit 1\r
+\r
+}#ends destination db not exists\r
+else\r
+{\r
+\r
+    Write-Error \"Neither $sourceDatabaseName or $destinationDatabaseName exists. `nMake sure both databases exists\" -ErrorId E4\r
+    Exit 1\r
+\r
+}#ends else\r
+\r
+Write-Output \"`n-------------------------`n\"\r
+\r
+#--------------------------------------------------------------------\r
+#changing the types to export/import\r
+\r
+$operateTypes = @()\r
+\r
+\r
+if($operateOnDocuments -eq $TRUE)\r
+{\r
+    $operateTypes += \"Documents\"\r
+}\r
+if($operateOnIndexes -eq $TRUE)\r
+{\r
+    $operateTypes += \"Indexes\"\r
+}\r
+if($operateOnAttachments -eq $TRUE)\r
+{\r
+    $operateTypes += \"Attachments\"\r
+}\r
+if($operateOnTransformers -eq $TRUE)\r
+{\r
+    $operateTypes += \"Transformers\"\r
+}\r
+\r
+$Types = $operateTypes -join \",\"\r
+\r
+if($Types -ne \"\")\r
+{\r
+    Write-Output \"This back up is only operating on $Types\"\r
+\r
+    Write-Output \"`n-------------------------`n\"\r
+}\r
+\r
+\r
+#--------------------------------------------------------------------\r
+#check if wait for indexing is selected\r
+$Indexing = \"\"\r
+\r
+if($waitForIndexing -eq $TRUE)\r
+{\r
+    $Indexing = \"--wait-for-indexing\"\r
+}\r
+\r
+#--------------------------------------------------------------------\r
+#backing up source database into the destination database\r
+\r
+try\r
+{\r
+    Write-Output \"Attempting Backup up now\"\r
+    Write-Output \"`n-------------------------`n\"\r
+    & $ravenSmugglerPath between $sourceDatabaseURL $destinationDatabaseURL --database=$sourceDatabaseName --database2=$destinationDatabaseName --api-key=$sourceDatabaseApiKey --api-key2=$destinationDatabaseAPIKey --timeout=$Timeout $Indexing \r
+    Write-Output \"`n-------------------------`n\"\r
+    Write-Output \"Backup successful\" \r
+}#ends try\r
+catch\r
+{\r
+    Write-Error \"An error occurred during backup, please try again\" -ErrorId E4\r
+    Exit 1\r
+}#ends catch \r
+"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ravenSmugglerPath",
+      "Label": "Raven Smuggler Path",
+      "HelpText": "Full path to the Smuggler EXE. 
+ 
+For example **C:\\RavenDB\\Smuggler\\Raven.Smuggler.exe**",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "sourceDatabaseUrl",
+      "Label": "Source Database URL",
+      "HelpText": "The URL of the Raven database, where the **Source Database** is located. 
+
+For example **http://localhost:8080/**",
+      "DefaultValue": "http://localhost:8080/",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "sourceDatabaseName",
+      "Label": "Name of the Source Database",
+      "HelpText": "Name of the **Source Database** in Raven.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "sourceDatabaseApiKey",
+      "Label": "API Key for the Source Database",
+      "HelpText": "API Key needed to access the **Source Database**. 
+
+If key is not provided, anonymous authentication will be used.
+
+For more information: http://ravendb.net/docs/article-page/3.0/csharp/studio/accessing-studio",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "destinationDatabaseUrl",
+      "Label": "Destination Database URL",
+      "HelpText": "The URL of the Raven database, where the **Destination Database** is located. 
+
+For example **http://localhost:8080/**",
+      "DefaultValue": "http://localhost:8080/",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "destinationDatabaseName",
+      "Label": "Name of the Destination Database",
+      "HelpText": "Name of the **Destination Database** in Raven.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "destinationDatabaseApiKey",
+      "Label": "API Key for the Destination Database",
+      "HelpText": "API Key needed to access the **Destination Database**. 
+
+If key is not provided, anonymous authentication will be used.
+
+For more information: http://ravendb.net/docs/article-page/3.0/csharp/studio/accessing-studio",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "OperateDocuments",
+      "Label": "Operate on Documents",
+      "HelpText": "With Raven backup, you can choose which types are operated during the backup.
+
+Unselect this option to exclude **Documents** from the copying process.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "OperateAttachments",
+      "Label": "Operate on Attachments",
+      "HelpText": "With Raven backup, you can choose which types are operated during the backup.
+
+Unselect this option to exclude **Attachments** from the copying process.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "OperateIndexes",
+      "Label": "Operate on Indexes",
+      "HelpText": "With Raven backup, you can choose which types are operated during the backup.
+
+Unselect this option to exclude **Indexes** from the copying process.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "OperateTransformers",
+      "Label": "Operate on Transformers",
+      "HelpText": "With Raven backup, you can choose which types are operated during the backup.
+
+Unselect this option to exclude **Transformers** from the copying process.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "timeout",
+      "Label": "Timeout",
+      "HelpText": "The timeout (in milliseconds) to use for requests.",
+      "DefaultValue": "300000",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "WaitIndexing",
+      "Label": "Wait for Indexing",
+      "HelpText": "Wait until all indexing activity has been completed (Import Only).",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-11-12T22:39:11.556+00:00",
+  "LastModifiedBy": "timhunt303",
+  "$Meta": {
+    "ExportedAt": "2015-11-15T22:01:49.385+00:00",
+    "OctopusVersion": "3.1.7",
+    "Type": "ActionTemplate"
+  },
+  "Category": "ravendb"
+}

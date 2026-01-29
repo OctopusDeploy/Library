@@ -1,0 +1,96 @@
+{
+  "Id": "17092e2b-7fae-4aae-b8df-bb1c7ec76ff9",
+  "Name": "HTTP - Test URL (Bash)",
+  "Description": "Makes a GET request to a HTTP(S) end point and verifies that a particular status code is returned within a specified period of time",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "uri=$(get_octopusvariable \"uri\")\r
+expectedCode=$(get_octopusvariable \"expectedCode\")\r
+timeout=$(get_octopusvariable \"timeout\")\r
+success=false\r
+\r
+# required arguments checking\r
+if [[ $expectedCode == \"Unrecognized variable\"* ]] || [[ $uri == \"Unrecognized variable\"* ]] || [[ $timeout == \"Unrecognized variable\"* ]]\r
+then\r
+    echo \"[ERROR]: Missing required argument. Exit!\"\r
+    exit 1;\r
+fi\r
+\r
+echo \"Starting verification request to $uri\"\r
+echo \"Expecting response code $expectedCode\"\r
+\r
+end=$((SECONDS+$timeout))\r
+\r
+until $success || [ $SECONDS -ge $end ];\r
+do\r
+    code=$(curl --write-out %{http_code} --silent --output /dev/null $uri)\r
+    echo \"Recieved response code: $code\"\r
+    \r
+    if [ $code -eq $expectedCode ]\r
+    then\r
+        echo \"Sucesss! Found status code $expectedCode\"\r
+        success=true\r
+        exit 0\r
+    else\r
+        echo \"Trying again in 5 seconds...\"\r
+        sleep 5\r
+    fi\r
+done\r
+\r
+if ! $success\r
+then\r
+    echo \"Verification failed - giving up.\"\r
+    exit 1\r
+fi",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "d0191097-38d0-4b73-ae74-783a1e439cd4",
+      "Name": "uri",
+      "Label": "URI",
+      "HelpText": "The full Uri of the endpoint",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "cfc51640-dbc9-453f-8e59-9ed33607a6bd",
+      "Name": "expectedCode",
+      "Label": "Expected code",
+      "HelpText": "The expected HTTP status code",
+      "DefaultValue": "200",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "1f60efab-65fe-415b-8d9b-2f248543e302",
+      "Name": "timeout",
+      "Label": "Timeout (seconds)",
+      "HelpText": "The number of seconds before the step fails and times out",
+      "DefaultValue": "30",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "cjuroz",
+  "$Meta": {
+    "ExportedAt": "2017-02-17T05:46:18.745Z",
+    "OctopusVersion": "3.8.4",
+    "Type": "ActionTemplate"
+  },
+  "Category": "bash"
+}

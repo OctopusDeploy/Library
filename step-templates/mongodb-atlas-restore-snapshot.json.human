@@ -1,0 +1,155 @@
+{
+  "Id": "bf062dfe-de07-462c-8e7d-ec062b29e550",
+  "Name": "MongoDB Atlas - Restore cluster from latest snapshot",
+  "Description": "Allow the user to restore a cluster from the latest snapshot.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Author": "claude-uceda",
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$project_source = $OctopusParameters[\"matlas-project-source\"]
+$cluster_source = $OctopusParameters[\"matlas-cluster-source\"]
+$project_target = $OctopusParameters[\"matlas-project-target\"]
+$cluster_target = $OctopusParameters[\"matlas-cluster-target\"]
+$check_delay_seconds = $OctopusParameters[\"matlas-check-delay-seconds\"]
+
+$login = $OctopusParameters[\"matlas-public-key\"]
+$secret = $OctopusParameters[\"matlas-private-key\"]
+
+$check_delay_seconds_nb = ($check_delay_seconds -as [int])
+
+function Check-Required($name, $value) {
+\tif($value -eq $null -or $value -eq ''){
+    \tWrite-Error -Message \"Missing parameter or invalid value for '$name'. ($value)\" -ErrorAction Stop
+    }
+}
+
+Check-Required 'matlas-public-key' $login
+Check-Required 'matlas-private-key' $secret
+Check-Required 'matlas-project-source' $project_source
+Check-Required 'matlas-cluster-source' $cluster_source
+Check-Required 'matlas-project-target' $project_target
+Check-Required 'matlas-cluster-target' $cluster_target
+Check-Required 'matlas-check-delay-seconds' $check_delay_seconds_nb
+
+Write-Host \"Restoring from $($project_source)/$($cluster_source) to $($project_target)/$($cluster_target) using $login.\"
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+function Invoke-Api($uri, $method, $content) {\t
+
+\t$securedPassword = ConvertTo-SecureString -String $secret -AsPlainText -Force\t
+\t$credentials = New-Object System.Management.Automation.PSCredential ($login, $securedPassword)
+
+\ttry {
+\t\treturn Invoke-RestMethod -Uri $uri -Method $method -Credential $credentials -ContentType \"application/json\" -Body $content
+\t}
+\tcatch {
+\t\tWrite-Error -Message $_ -ErrorAction Stop
+\t}
+}
+
+$root = \"https://cloud.mongodb.com/api/atlas/v1.0\"
+$uri = New-Object System.Uri(\"$root/groups/$project_source/clusters/$cluster_source/backup/snapshots?itemsPerPage=5\")
+$results = Invoke-Api $uri \"GET\"
+$snapshots = $results.results | Where-Object { $_.status -eq \"completed\" }
+$snapshot = $snapshots[0]
+
+$uri = New-Object System.Uri(\"$root/groups/$project_source/clusters/$cluster_source/backup/restoreJobs\")
+$request = \"{`\"deliveryType`\":`\"automated`\", `\"snapshotId`\":`\"$($snapshot.id)`\", `\"targetClusterName`\":`\"$cluster_target`\", `\"targetGroupId`\":`\"$project_target`\"}\"
+$job = Invoke-Api $uri \"POST\" $request
+
+$uri = New-Object System.Uri(\"$root/groups/$project_source/clusters/$cluster_source/backup/restoreJobs/$($job.id)\")
+while ($null -eq $job.finishedAt -or $job.finishedAt -eq \"\") {
+
+\tWrite-Host \"Waiting for restore to complete.\"\t
+\tStart-Sleep -s $check_delay_seconds_nb
+\t$job = Invoke-Api $uri \"GET\"
+}
+
+Write-Host \"Restore completed.\"
+"
+  },
+  "Parameters": [
+    {
+      "Id": "0cfd5665-9bfc-413a-bc4a-7778a860b7f0",
+      "Name": "matlas-public-key",
+      "Label": "Public key",
+      "HelpText": "Mongo atlas public key",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "61cff00c-69b5-44b5-873d-742430ca2beb",
+      "Name": "matlas-private-key",
+      "Label": "Private key",
+      "HelpText": "Mongo atlas private key",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "3d86c70a-2a6c-4cb7-a04e-f7f43838554c",
+      "Name": "matlas-project-source",
+      "Label": "Project source's id",
+      "HelpText": "Project id of the cluster that will be the snapshot source.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2a32df2e-641d-41a0-9e56-dba341efe58d",
+      "Name": "matlas-cluster-source",
+      "Label": "Cluster source's name",
+      "HelpText": "Cluster that will be used to get the snapshot.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "bff9846a-980e-4a8f-b6bb-b43de82397c1",
+      "Name": "matlas-project-target",
+      "Label": "Project target's id",
+      "HelpText": "Project id of the cluster that will used to restore the snapshot.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e2aaa07d-9122-47ee-b3e9-008949ed5709",
+      "Name": "matlas-cluster-target",
+      "Label": "Cluster target's name",
+      "HelpText": "Cluster that will be used to restore the snapshot.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ac4c10c6-e487-4cec-902d-7cfaab7a3934",
+      "Name": "matlas-check-delay-seconds",
+      "Label": "Status check delay",
+      "HelpText": "Delay in seconds between each statuses check.",
+      "DefaultValue": "30",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2022-10-03T10:52:04.423Z",
+    "OctopusVersion": "2020.6.5394",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "claude-uceda",
+  "Category": "mongodb"
+}

@@ -1,0 +1,144 @@
+{
+  "Id": "e74ff6a3-65ce-4a3a-8cbd-2224653af3a2",
+  "Name": "File System - Check Disk Space",
+  "Description": "Checks all or specified fixed drives for free space, either as an absolute number (GB) or relative (%).
+If the available disk space does not meet the minimum requirements, as set in the parameters, as error is thrown.
+
+Author: Jim (Dimitrios) Andrakakis, [dandraka.com](https://dandraka.com)",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "
+# Jim (Dimitrios) Andrakakis
+# dandraka.com
+# December 2020
+
+param([int]$pSpaceGB = $fschkSpaceGB, 
+\t[int]$pSpacePercent = $fschkSpacePercent, 
+    [string]$pDrives = $fschkDrives)
+
+# ================= PARAMETERS, CONSTANTS ETC =================
+
+$ErrorActionPreference = \"Stop\"
+Clear-Host
+
+$win32_logicaldisk_LocalDiskDriveType = 3
+
+Write-Host \"Parameters: SpaceGB '$pSpaceGB'\"
+Write-Host \"Parameters: SpacePercent '$pSpacePercent'\"
+Write-Host \"Parameters: Drives '$pDrives'\"
+
+[bool]$checkSpaceAbsolute = $false
+[bool]$checkSpacePercent = $false
+[bool]$checkAllDrives = $true
+$driveList = New-Object System.Collections.ArrayList
+
+# ================= SANITY CHECKS =================
+
+$allDrives = get-wmiobject -class win32_logicaldisk | Where-Object { $_.DriveType -eq $win32_logicaldisk_LocalDiskDriveType } 
+Write-Host \"Drives found in the system: $($allDrives | ForEach-Object { $_.DeviceID })\"
+
+if ($pSpaceGB -gt 0) {
+    $checkSpaceAbsolute = $true
+    Write-Host \"Will check that space > $pSpaceGB\"
+}
+
+if ($pSpacePercent -gt 0) {
+    $checkSpacePercent = $true
+    Write-Host \"Will check that space > $pSpacePercent %\"
+}
+
+if ((-not $checkSpaceAbsolute) -and (-not $checkSpacePercent)) {
+    Write-Error \"Neither Space(GB) nor Space(%) check was specified. Please specify at least one.\"
+}
+
+if ([string]::IsNullOrWhiteSpace($pDrives)) {
+    foreach($d in $allDrives) { $driveList.Add($d) | Out-Null }
+    Write-Host \"Will check all fixed drives $($driveList | ForEach-Object { $_.DeviceID + \" \" })\"
+}
+else {
+    $checkAllDrives = $false
+    foreach($d in $allDrives) { if ($pDrives.Contains($d.DeviceID)) { $driveList.Add($d) | Out-Null | Out-Null } }
+    Write-Host \"Will check fixed drives $($driveList | ForEach-Object { $_.DeviceID + \" \" })\"
+}
+
+if ($driveList.Count -eq 0) {
+    Write-Error \"No drives were found or, most likely, the drive list parameter does not contain any of the existing drives.\"
+}
+
+# ================= RUN CHECKS =================
+foreach($d in $driveList) {
+    $driveDescr = \"$($d.DeviceID) [$($d.VolumeName)]\"
+    $pDrivespaceGBFree = [Math]::Round(($d.FreeSpace / [Math]::Pow(1024,3)), 1)
+    $pDrivespaceGBTotal = [Math]::Round(($d.Size / [Math]::Pow(1024,3)), 1)
+    $pDrivespacePercentFree = [Math]::Round($pDrivespaceGBFree / $pDrivespaceGBTotal,1) * 100
+    Write-Host \"Drive $driveDescr : Free $pDrivespaceGBFree GB ($pDrivespacePercentFree%), Total $pDrivespaceGBTotal GB\"
+
+    if ($checkSpaceAbsolute) {
+        if ($pDrivespaceGBFree -lt $pSpaceGB) { 
+            Write-Error \"Drive $driveDescr has less than the required space ($pSpaceGB GB)\"
+        }
+    }
+    if ($checkSpacePercent) {
+        if ($pDrivespacePercentFree -lt $pSpacePercent) { 
+            Write-Error \"Drive $driveDescr has less than the required space ($pSpacePercent %)\"
+        }
+    }
+}"
+  },
+  "Parameters": [
+    {
+      "Id": "640be7e1-aa4f-4cc8-b01c-4fe6ef1a3757",
+      "Name": "fschkSpaceGB",
+      "Label": "Required Disk Space (GB)",
+      "HelpText": "Number, integer.
+The minimum required space in GB.
+Zero means do not check GB.
+Example: 2
+which means 2GB.",
+      "DefaultValue": "1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0d28eda8-4fd0-47c5-8faf-6d1bd27a7247",
+      "Name": "fschkSpacePercent",
+      "Label": "Required Disk Space (%)",
+      "HelpText": "Number, integer.
+The minimum required space in % of the total space.
+Zero means do not check %.
+Example: 10
+which means 10%.",
+      "DefaultValue": "0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "00037224-9932-46e3-9cfb-5723e0b8d702",
+      "Name": "fschkDrives",
+      "Label": "Drives",
+      "HelpText": "Comma separated list of drive names to check.
+Please use the drive label, i.e. the drive letter and a colon (C: , D: etc).
+Example: C:,D:,H:
+which means, the check will be done on C:, D: and H:, if they exist; if some of them do not exist in the system, they will be ignored; if none of them exist, an error is thrown.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2020-12-14T11:00:00.000+00:00",
+  "LastModifiedBy": "dandraka",
+  "Category": "filesystem",
+  "$Meta": {
+    "ExportedAt": "2020-12-14T09:37:17.680Z",
+    "OctopusVersion": "2020.1.16",
+    "Type": "ActionTemplate"
+  }
+}

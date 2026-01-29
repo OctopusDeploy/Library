@@ -1,0 +1,373 @@
+{
+    "Id": "2417aab5-6d84-4e0d-bc86-b2255bd4028a",
+    "Name": "Venafi TPP - Export Certificate",
+    "Description": "This step template will authenticate against a Venafi TPP instance using an existing OAuth access token, and export a certificate using its Distinguished Name (DN). This is the absolute path to the certificate in the TPP instance.
+
+This is achieved using the VenafiPS PowerShell module's [Export-VenafiCertificate](https://venafips.readthedocs.io/en/latest/functions/Export-VenafiCertificate/) function.
+
+---
+
+**Options:**
+
+- Provide the distinguished name (DN) path to the certificate.
+- Choose from the following export formats:
+  - `Base64`
+  - `Base64 (PKCS #8)`
+  - `DER`
+  - `JKS`
+  - `PKCS #7`
+  - `PKCS #12` 
+- *Optional* - Provide a custom output path.
+- *Optional* - Provide a custom output filename. If not supplied, the filename will automatically be taken from the response.
+- *Optional* - Include the full certificate chain in the export.
+- *Optional* - Friendly name (Label or alias) to use. Permitted with `Base64` and `PKCS #12` formats. Required when format is `JKS`.
+- *Optional* - Include the private key in the export.
+- *Optional* - Provide a password to be used for the exported private key.
+- *Optional* - store the export certificate response in `JSON` format in an [Octopus sensitive output variable](https://octopus.com/docs/projects/variables/output-variables#sensitive-output-variables). This output variable can then be used in additional deployment or runbook steps.
+- *Optional* - on successful completion, you can revoke the access token used.
+
+---
+
+**Required:** 
+- The `VenafiPS` PowerShell module installed on the deployment target or worker. If the module can't be found, the step will attempt to download a version from the [PowerShell gallery](https://www.powershellgallery.com/packages/VenafiPS).
+- PowerShell `5` or greater.
+
+Notes:
+
+- Tested on Octopus `2021.2`.
+- Tested with VenafiPS `3.1.5`.
+- Tested with both Windows PowerShell and PowerShell Core on Linux.",
+    "ActionType": "Octopus.Script",
+    "Version": 3,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$ErrorActionPreference = 'Stop'
+
+# Variables
+$Server = $OctopusParameters[\"Venafi.TPP.ExportCert.Server\"]
+$Token = $OctopusParameters[\"Venafi.TPP.ExportCert.AccessToken\"]
+$Path = $OctopusParameters[\"Venafi.TPP.ExportCert.DNPath\"]
+$Format = $OctopusParameters[\"Venafi.TPP.ExportCert.Format\"]
+$OutPath = $OctopusParameters[\"Venafi.TPP.ExportCert.OutPath\"]
+$OutFileName = $OctopusParameters[\"Venafi.TPP.ExportCert.OutFileName\"]
+
+# Optional
+$IncludeChain = $OctopusParameters[\"Venafi.TPP.ExportCert.IncludeChain\"]
+$FriendlyName = $OctopusParameters[\"Venafi.TPP.ExportCert.FriendlyName\"]
+$IncludePrivateKey = $OctopusParameters[\"Venafi.TPP.ExportCert.IncludePrivateKey\"]
+$PrivateKeyPassword = $OctopusParameters[\"Venafi.TPP.ExportCert.PrivateKeyPassword\"]
+$OutputVariableName = $OctopusParameters[\"Venafi.TPP.ExportCert.OutputVariableName\"]
+$RevokeToken = $OctopusParameters[\"Venafi.TPP.ExportCert.RevokeTokenOnCompletion\"]
+
+# Validation
+if ([string]::IsNullOrWhiteSpace($Server)) {
+    throw \"Required parameter Venafi.TPP.ExportCert.Server not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($Token)) {
+    throw \"Required parameter Venafi.TPP.ExportCert.AccessToken not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($Path)) {
+    throw \"Required parameter Venafi.TPP.ExportCert.DNPath not specified\"
+}
+else {
+    if ($Path.Contains(\"\\\") -eq $False) {
+        throw \"At least one '\\' is required for the Venafi.TPP.ExportCert.DNPath value\"
+    }
+}
+if ([string]::IsNullOrWhiteSpace($Format)) {
+    throw \"Required parameter Venafi.TPP.ExportCert.Format not specified\"
+}
+else {
+    if ($Format -eq \"JKS\") {
+        if ([string]::IsNullOrWhiteSpace($PrivateKeyPassword)) {
+            throw \"Export format is JKS, and parameter Venafi.TPP.ExportCert.PrivateKeyPassword required but not set!\"
+        }
+    }
+}
+# Conditional validation
+if (-not [string]::IsNullOrWhiteSpace($OutPath)) {
+    if (-not (Test-Path $OutPath -PathType Container)) {
+        throw \"Optional parameter Venafi.TPP.ExportCert.OutPath specified but does not exist!\"
+    }
+}
+if ($IncludePrivateKey -eq $True) {
+    if ([string]::IsNullOrWhiteSpace($PrivateKeyPassword)) {
+        throw \"IncludePrivateKey set to true, but parameter Venafi.TPP.ExportCert.PrivateKeyPassword not specified\"
+    }
+}
+
+$SecureToken = ConvertTo-SecureString $Token -AsPlainText -Force
+[PSCredential]$AccessToken = New-Object System.Management.Automation.PsCredential(\"token\", $SecureToken)
+
+# Clean-up
+$Server = $Server.TrimEnd('/')
+
+# Required Modules
+function Get-NugetPackageProviderNotInstalled {
+    # See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+# Check to see if the package provider has been installed
+if ((Get-NugetPackageProviderNotInstalled) -ne $false) {
+    Write-Host \"Nuget package provider not found, installing ...\"    
+    Install-PackageProvider -Name Nuget -Force -Scope CurrentUser
+}
+
+Write-Host \"Checking for required VenafiPS module ...\"
+$required_venafips_version = 3.1.5
+$module_available = Get-Module -ListAvailable -Name VenafiPS | Where-Object { $_.Version -ge $required_venafips_version }
+if (-not ($module_available)) {
+    Write-Host \"Installing VenafiPS module ...\"
+    Install-Module -Name VenafiPS -MinimumVersion 3.1.5 -Scope CurrentUser -Force
+}
+else {
+    $first_match = $module_available | Select-Object -First 1 
+    Write-Host \"Found version: $($first_match.Version)\"
+}
+
+Write-Host \"Importing VenafiPS module ...\"
+Import-Module VenafiPS
+
+$StepName = $OctopusParameters[\"Octopus.Step.Name\"]
+
+Write-Verbose \"Venafi.TPP.ExportCert.Server: $Server\"
+Write-Verbose \"Venafi.TPP.ExportCert.AccessToken: ********\"
+Write-Verbose \"Venafi.TPP.ExportCert.DNPath: $Path\"
+Write-Verbose \"Venafi.TPP.ExportCert.Format: $Format\"
+Write-Verbose \"Venafi.TPP.ExportCert.OutPath: $OutPath\"
+Write-Verbose \"Venafi.TPP.ExportCert.OutFileName: $OutFileName\"
+Write-Verbose \"Venafi.TPP.ExportCert.IncludeChain: $IncludeChain\"
+Write-Verbose \"Venafi.TPP.ExportCert.FriendlyName: $FriendlyName\"
+Write-Verbose \"Venafi.TPP.ExportCert.IncludePrivateKey: $IncludePrivateKey\"
+Write-Verbose \"Venafi.TPP.ExportCert.PrivateKeyPassword: ********\"
+Write-Verbose \"Venafi.TPP.ExportCert.CertDetails.OutputVariableName: $OutputVariableName\"
+Write-Verbose \"Venafi.TPP.ExportCert.RevokeTokenOnCompletion: $RevokeTokenOnCompletion\"
+Write-Verbose \"Step Name: $StepName\"
+
+Write-Host \"Requesting new session from $Server\"
+New-VenafiSession -Server $Server -AccessToken $AccessToken
+
+# Export certificate
+$ExportCert_Params = @{
+    CertificateId = $Path;
+    Format        = $Format;
+}
+
+# Optional IncludeChain field
+if ($IncludeChain -eq $True) {
+    if ($Format -eq \"JKS\") {
+        Write-Warning \"The IncludeChain parameter is not supported with JKS export format, ignoring.\"
+    }
+    else {
+        $ExportCert_Params.IncludeChain = $True
+    }
+}
+
+# Optional FriendlyName field
+if (-not [string]::IsNullOrWhiteSpace($FriendlyName)) {
+    $ExportCert_Params.FriendlyName = $FriendlyName
+}
+
+if (-not [string]::IsNullOrWhiteSpace($PrivateKeyPassword)) {
+    $SecurePrivateKeyPassword = ConvertTo-SecureString $PrivateKeyPassword -AsPlainText -Force
+    if ($Format -eq \"JKS\") {
+        $ExportCert_Params.KeystorePassword = $SecurePrivateKeyPassword      
+    }
+    elseif ($IncludePrivateKey -eq $True) {
+        $ExportCert_Params.PrivateKeyPassword = $SecurePrivateKeyPassword    
+        $ExportCert_Params.IncludePrivateKey = $True
+    }
+}
+
+$ExportCertificateResponse = ((Export-VenafiCertificate @ExportCert_Params) 6> $null)
+
+if ($null -eq $ExportCertificateResponse -or $null -eq $ExportCertificateResponse.CertificateData) {
+    Write-Warning \"No certificate data returned for path: $Path`nCheck the path value represents a certificate, and not a folder.\"
+}
+else {
+    Write-Highlight \"Successfully retrieved certificate data to export for path: $Path\"
+    
+    if ([string]::IsNullOrWhiteSpace($OutPath) -eq $False) {
+        $Filename = $ExportCertificateResponse.Filename
+        if ([string]::IsNullOrWhiteSpace($OutFileName) -eq $False) {
+            $Filename = $OutFileName
+        }
+        $outFile = Join-Path -Path $OutPath -ChildPath ($Filename.Trim('\"'))
+        $bytes = [Convert]::FromBase64String($ExportCertificateResponse.CertificateData)
+        [IO.File]::WriteAllBytes($outFile, $bytes)
+        Write-Host ('Saved {0} with format {1}' -f $outFile, $ExportCertificateResponse.Format)
+    }
+    if ([string]::IsNullOrWhiteSpace($OutputVariableName) -eq $False) {
+        $CertificateJson = $ExportCertificateResponse | ConvertTo-Json -Compress -Depth 10 
+        Set-OctopusVariable -Name $OutputVariableName -Value $CertificateJson -Sensitive
+        Write-Highlight \"Created sensitive output variable: ##{Octopus.Action[$StepName].Output.$OutputVariableName}\"
+    }
+}
+
+if ($RevokeToken -eq $true) {
+    # Revoke TPP access token
+    Write-Host \"Revoking access token with $Server\"
+    Revoke-TppToken -AuthServer $Server -AccessToken $AccessToken -Force
+}"
+    },
+    "Parameters": [
+      {
+        "Id": "56ef4967-37f5-40a0-a66e-f3fa589b6467",
+        "Name": "Venafi.TPP.ExportCert.Server",
+        "Label": "Venafi TPP Server",
+        "HelpText": "*Required*: The URL of the Venafi TPP instance you want to export a certificate from.
+
+For example: `https://mytppserver.example.com`.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "49bcdbbb-3674-4901-8bf6-164e5e4bc395",
+        "Name": "Venafi.TPP.ExportCert.AccessToken",
+        "Label": "Venafi TPP Access Token",
+        "HelpText": "*Required*: The access token to authenticate against the TPP instance.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "e3156852-4ba9-4dc0-8d39-5a93c52b1910",
+        "Name": "Venafi.TPP.ExportCert.DNPath",
+        "Label": "Venafi TPP Certificate Path",
+        "HelpText": "*Required*: The Distinguished Name (DN) of the certificate you wish to export. This is the absolute path to the certificate in the TPP instance, separated by `\\`.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "4f9f4d4b-d686-4d00-aa93-af35b7df320b",
+        "Name": "Venafi.TPP.ExportCert.Format",
+        "Label": "Certificate Export Format",
+        "HelpText": "*Required*: The certificate export format. Valid options are:
+
+- `Base64`
+- `Base64 (PKCS #8)`
+- `DER`
+- `JKS`
+- `PKCS #7`
+- `PKCS #12` ",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "Base64|Base64
+Base64 (PKCS #8)|Base64 (PKCS #8)
+DER|DER
+JKS|JKS
+PKCS #7|PKCS #7
+PKCS #12|PKCS #12"
+        }
+      },
+      {
+        "Id": "7f7dc0f5-275e-4d32-a758-c942c9535bbc",
+        "Name": "Venafi.TPP.ExportCert.OutPath",
+        "Label": "Certificate output folder (Optional)",
+        "HelpText": "*Optional*: The folder path to save the certificate to. The folder must exist if this value is specified.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "48df6311-3eba-49b6-8adb-03b7d9eac8b4",
+        "Name": "Venafi.TPP.ExportCert.OutFileName",
+        "Label": "Certificate output filename (Optional)",
+        "HelpText": "*Optional*: The filename to save the exported certificate as. This value is used when the `Venafi.TPP.ExportCert.OutPath` parameter is set. 
+
+If not specified, the TPP filename will be used.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "309d30de-79b6-4461-8a54-1698aedd5822",
+        "Name": "Venafi.TPP.ExportCert.IncludeChain",
+        "Label": "Include certificate chain (Optional)",
+        "HelpText": "*Optional*: Include the certificate chain with the exported certificate. Not supported with `DER` or `JKS` format. Default: `False`.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "71fecac3-25c4-4161-9135-94815a485f03",
+        "Name": "Venafi.TPP.ExportCert.FriendlyName",
+        "Label": "Friendly Name (Optional)",
+        "HelpText": "*Optional*: Label or alias to use. Permitted with `Base64` and `PKCS #12` formats. Required when Format is `JKS`. ",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "2aaedf1d-be93-4df4-856c-c69650db452a",
+        "Name": "Venafi.TPP.ExportCert.IncludePrivateKey",
+        "Label": "Include Private Key (Optional)",
+        "HelpText": "*Optional*: Include the private key in the certificate export. If this is selected, the `Venafi.TPP.Export.PrivateKeyPassword` must also be provided. Default: `False`.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      },
+      {
+        "Id": "2d168360-bcbf-4bdc-833d-a9c182e98a47",
+        "Name": "Venafi.TPP.ExportCert.PrivateKeyPassword",
+        "Label": "Private Key password (Optional)",
+        "HelpText": "*Optional*: The password required to include the private key. Not supported with `DER` or `PKCS #7` formats.  You must adhere to the following rules: 
+
+- Password is at least 12 characters. 
+- Comprised of at least three of the following: 
+  - Uppercase alphabetic letters 
+  - Lowercase alphabetic letters 
+  - Numeric characters 
+  - Special characters",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "84f92dd5-064b-47e5-bb11-3dd0faacfeb4",
+        "Name": "Venafi.TPP.ExportCert.OutputVariableName",
+        "Label": "Certificate output variable name (Optional)",
+        "HelpText": "*Optional*: Create an output variable with the certificate details returned from the export call. The certificate details will be stored in `JSON` format.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "606acdfe-641a-47f2-a4ea-56559477ea0c",
+        "Name": "Venafi.TPP.ExportCert.RevokeTokenOnCompletion",
+        "Label": "Revoke access token on completion?",
+        "HelpText": "Should the access token used be revoked once the step has been completed successfully? Default: `False`.",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      }
+    ],
+    "LastModifiedAt": "2021-08-18T15:22:55.551Z",
+    "LastModifiedBy": "harrisonmeister",
+    "$Meta": {
+      "ExportedAt": "2021-08-18T15:22:55.551Z",
+      "OctopusVersion": "2021.3.1432",
+      "Type": "ActionTemplate"
+    },
+    
+    "Category": "venafi"
+}

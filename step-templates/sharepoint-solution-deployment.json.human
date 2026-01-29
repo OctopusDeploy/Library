@@ -1,0 +1,143 @@
+{
+  "Id": "7ac03a43-cb18-4e83-a114-b158a2bb2a52",
+  "Name": "SharePoint Solution Deployment",
+  "Description": "SharePoint Solution Deployment for 2010 & 2013.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$DeployedPath = $OctopusParameters[\"Octopus.Action[$NugetPackageStepName].Output.Package.InstallationDirectoryPath\"]\r
+$ReleaseNumber = $OctopusParameters[\"Octopus.Release.Number\"]\r
+\r
+Write-Host \"Deploy Path: $DeployedPath\"\r
+Write-Host \"Release Number: $ReleaseNumber\"\r
+\r
+function Deploy-SPSolution($wsp) {\r
+\r
+\t$wspName = $wsp.SubString($wsp.LastIndexOf(\"\\\") + 1)\r
+\r
+\t$solution = Get-SPSolution -Identity $wspName -ErrorAction silentlycontinue\r
+\r
+\tif ($solution -ne $null) \r
+\t{ \r
+\t    Write-Output \"'$wspName' solution already installed - removing solution\"\r
+\t\t\r
+\t\t# need to take a back up of this wsp before uninstalling it.\t\t\r
+\t\tif($solution.ContainsWebApplicationResource) {\r
+\t        $solution | Uninstall-SPSolution -AllWebApplications -Confirm:$false\r
+\t    }\r
+\t    else {\r
+\t        $solution | Uninstall-SPSolution -Confirm:$false\r
+\t    }\r
+\t\t\r
+\t\twhile ($solution.JobExists) {\r
+\t\t    Start-Sleep 30\r
+\t\t}\r
+\t\t\r
+\t\tWrite-Output \"$wspName has been uninstalled successfully.\"\r
+\r
+\t    Write-Output \"Removing '$wspName' solution from farm\" \r
+\t    $solution | Remove-SPSolution -Force -Confirm:$false \r
+\t\r
+\t\t# now install \r
+\t\tWrite-Output \"Installing solution '$wspName'\" \r
+\t\tAdd-SPSolution -LiteralPath \"$wsp\" | Out-Null\r
+\t\t\r
+\t\tWrite-Output \"$wsp solution added sucessfully\"\r
+\t\tif(($solution -ne $null) -and ($solution.ContainsWebApplicationResource)) {\r
+\t\t\tInstall-SPSolution -Identity $wspName –AllwebApplications -GACDeployment -Force -Confirm:$false\r
+\t\t}\r
+\t\telse {\r
+\t\t\tInstall-SPSolution -Identity $wspName -GACDeployment -Force -Confirm:$false\r
+\t\t}\r
+\r
+\t\t<#\r
+\t\twhile ($Solution.Deployed -eq $false) {\r
+\t\t    Start-Sleep 30\r
+\t\t}\r
+\t\t#>\r
+\t}\r
+\telse {\r
+\t\tWrite-Output \"Installing solution '$wspName'\" \r
+\t\tAdd-SPSolution -LiteralPath \"$wsp\"  -ErrorAction Stop\r
+\t\tInstall-SPSolution -Identity $wspName -GACDeployment -Force -ErrorAction Stop\r
+\t}\r
+}\r
+\r
+function Start-AdminService() {\r
+\t$AdminServiceName = \"SPAdminV4\"\r
+\t\r
+\tif ($(Get-Service $AdminServiceName).Status -eq \"Stopped\") {\r
+\t    Start-Service $AdminServiceName\r
+\t   \tWrite-Host \"$AdminServiceName service was not running, now started.\"\r
+\t\treturn $false;\r
+\t}\r
+\t\r
+\treturn $true\r
+}\r
+\r
+function Stop-AdminService($IsAdminServiceWasRunning) {\r
+\t$AdminServiceName = \"SPAdminV4\"\t\r
+\tif ($IsAdminServiceWasRunning -eq $false ) { \r
+\t\tStop-Service $AdminServiceName\t\r
+\t}\r
+}\r
+\r
+#region Main\r
+try\r
+{\r
+\t# add powershell snap in for sharepoint functions\r
+\tif ((Get-PSSnapin \"Microsoft.SharePoint.PowerShell\" -ErrorAction SilentlyContinue) -eq $null) { \r
+\t    Add-PSSnapin \"Microsoft.SharePoint.PowerShell\" -ErrorAction SilentlyContinue\r
+\t}\r
+\t\r
+\t#Admin service\r
+\t$IsAdminServiceWasRunning = $true;\r
+\t\r
+\t$IsAdminServiceWasRunning = Start-AdminService\r
+\t\r
+\t$wspFiles = @()\r
+\t\r
+\t# get all report files for deployment\r
+    Write-Host \"Getting all .wsp files\"\r
+    Get-ChildItem $DeployedPath -Recurse -Filter \"*.wsp\" | ForEach-Object { If(($wspFiles -contains $_.FullName) -eq $false) {$wspFiles += $_.FullName}}\r
+    Write-Host \"# of wsp files found: $($wspFiles.Count)\"\r
+\t\r
+\t# loop through array\r
+    foreach($wsp in $wspFiles) {\r
+\t\tDeploy-SPSolution $wsp\r
+\t}\t\r
+\t\r
+\tStop-AdminService $IsAdminServiceWasRunning\r
+\t\r
+\t#Remove SharePoint Snapin\r
+\tRemove-PsSnapin Microsoft.SharePoint.PowerShell\r
+}\r
+finally\r
+{\r
+    \r
+}\r
+\r
+#endregion",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "NugetPackageStepName",
+      "Label": "SharePoint Solution Package Step",
+      "HelpText": "Select the step in this project which downloads the SharePoint package.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-10-09T12:33:38.798+00:00",
+  "LastModifiedBy": "jasmin-mistry",
+  "$Meta": {
+    "ExportedAt": "2015-10-09T16:20:24.330+00:00",
+    "OctopusVersion": "2.6.5.1010",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sharepoint"
+}

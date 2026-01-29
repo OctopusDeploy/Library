@@ -1,0 +1,221 @@
+{
+  "Id": "cccd7fe9-b3b5-4f56-84bd-2986d5e68e06",
+  "Name": "Argo - Rollouts Promote",
+  "Description": "Promotes an Argo Rollout.",
+  "ActionType": "Octopus.KubernetesRunScript",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "# Installs the Argo Rollouts plugin
+function Install-Plugin
+{
+# Define parameters
+\tparam ($PluginUri,
+           $PluginFilename
+    )
+    
+    # Check for plugin folder
+    if ((Test-Path -Path \"$PWD/plugins\") -eq $false)
+    {
+\t\t# Create new plugins folder
+        New-Item -Path \"$PWD/plugins\" -ItemType \"Directory\"
+        
+        # Add to path
+        $env:PATH = \"$($PWD)/plugins$([IO.Path]::PathSeparator)\" + $env:PATH
+    }
+
+\t# Download plugin
+\tInvoke-WebRequest -Uri \"$PluginUri\" -OutFile \"$PWD/plugins/$PluginFilename\"
+
+\t# Make file executable
+    if ($IsLinux)
+    {
+\t\t# Make it executable
+    \tchmod +x ./plugins/$PluginFilename
+    }
+    
+    if ($IsWindows)
+    {
+    \t# Update filename to include .exe extension
+        Rename-Item -Path \"$PWD/plugins/$PluginFilename\" -NewName \"$PWD/plugins/$($PluginFilename).exe\"
+    }
+}
+
+# When listing plugins, kubectl looks in all paths defined in $env:PATH and will fail if the path does not exist
+function Verify-Path-Variable
+{
+\t# Get current path and split into array
+    $paths = $env:PATH.Split([IO.Path]::PathSeparator)
+    $verifiedPaths = @()
+    
+    # Loop through paths
+    foreach ($path in $paths)
+    {
+    \t# Check for existence
+        if ((Test-Path -Path $path) -eq $true)
+        {
+        \t# Add to verified
+            $verifiedPaths += $path
+        }
+    }
+    
+    # Return verified paths
+    return ($verifiedPaths -join [IO.Path]::PathSeparator)
+}
+
+function Get-Plugin-Installed
+{
+\t# Define parameters
+    param (
+    \t$PluginName,
+        $InstalledPlugins
+        )
+        
+   \t$isInstalled = $false
+   
+\tforeach ($plugin in $installedPlugins)
+   \t{
+\t\tif ($plugin -like \"$($PluginName)*\")
+        {
+        \t$isInstalled = $true
+          \tbreak
+        }
+\t}
+    
+    return $isInstalled
+}
+
+# Check to see if $IsWindows is available
+if ($null -eq $IsWindows) {
+    Write-Host \"Determining Operating System...\"
+    $IsWindows = ([System.Environment]::OSVersion.Platform -eq \"Win32NT\")
+    $IsLinux = ([System.Environment]::OSVersion.Platform -eq \"Unix\")
+}
+
+# Fix ANSI Color on PWSH Core issues when displaying objects
+if ($PSEdition -eq \"Core\") {
+    $PSStyle.OutputRendering = \"PlainText\"
+}
+
+# Check to see if it's running on Windows
+if ($IsWindows) {
+    # Disable the progress bar so downloading files via Invoke-WebRequest are faster
+    $ProgressPreference = 'SilentlyContinue'
+}
+
+# Set TLS
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Verify all PATH variables are avaialable
+$env:PATH = Verify-Path-Variable
+if ($IsLinux)
+{
+\t$pluginUri = \"https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64\"
+}
+
+if ($IsWindows)
+{
+\t$pluginUri = \"https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-windows-amd64\"
+}
+
+try 
+{
+    # Check to see if plugins are installed
+    $pluginList = (kubectl plugin list 2>&1)
+
+    # This is the path that Linux will take
+    if ($lastExitCode -ne 0 -and $pluginList.Exception.Message -eq \"error: unable to find any kubectl plugins in your PATH\") 
+    {
+        Install-Plugin -PluginUri $pluginUri -PluginFilename \"kubectl-argo-rollouts\"
+    }
+    else
+    {
+        # Parse list
+    \t$pluginList = $pluginList.Split(\"`n\", [System.StringSplitOptions]::RemoveEmptyEntries)
+        
+        if ((Get-Plugin-Installed -PluginName \"kubectl-argo-rollouts\" -InstalledPlugins $pluginList) -eq $false)
+        {
+        \tInstall-Plugin -PluginUri $pluginUri -PluginFilename \"kubectl-argo-rollouts\"
+        }
+        else
+        {
+        \tWrite-Host \"Argo Rollout kubectl plugin found ...\"
+        }
+    }    
+}
+catch
+{
+\t# On Windows, the executable will cause an error if no plugins found so this the path Windows will take
+    if ($_.Exception.Message -eq \"error: unable to find any kubectl plugins in your PATH\")
+    {
+\t\tInstall-Plugin -PluginUri $pluginUri -PluginFilename \"kubectl-argo-rollouts\"    
+    }
+    else
+    {
+    \t# Something else happened, we need to surface the error
+        throw
+    }
+}
+
+# Get parameters
+$rolloutsName = $OctopusParameters['Argo.Rollout.Name']
+$rolloutsNamespace = $OctopusParameters['Argo.Rollout.Namespace']
+$rolloutsFullPromotion = [System.Convert]::ToBoolean($OctopusParameters['Argo.Rollout.FullPromotion'])
+
+# Create arguments array
+$kubectlArguments = @(\"argo\", \"rollouts\", \"promote\", $rolloutsName, \"--namespace\", $rolloutsNamespace)
+
+# Check for additional argument
+if ($rolloutsFullPromotion)
+{
+\t$kubectlArguments += \"--full\"
+}
+
+# Promote rollout
+kubectl $kubectlArguments"
+  },
+  "Parameters": [
+    {
+      "Id": "d1dbd00e-facb-494d-bf10-27ba68334f30",
+      "Name": "Argo.Rollout.Name",
+      "Label": "Rollout Name",
+      "HelpText": "Name of the Argo Rollout to promote.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c9c4937a-e833-4df0-8f31-b53722b881c3",
+      "Name": "Argo.Rollout.Namespace",
+      "Label": "Namespace",
+      "HelpText": "The namespace to execute the promotion of the rollout against.",
+      "DefaultValue": "default",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "efaf2401-e059-4724-b2b3-30ac8864e450",
+      "Name": "Argo.Rollout.FullPromotion",
+      "Label": "Full Promotion",
+      "HelpText": "Fully promote a rollout to desired version, skipping analysis, pauses, and steps",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.KubernetesRunScript",
+  "$Meta": {
+    "ExportedAt": "2024-06-06T19:55:28.116Z",
+    "OctopusVersion": "2024.1.12815",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "argo"
+}

@@ -1,0 +1,377 @@
+{
+  "Id": "89806198-6216-4034-a934-6de6a3f445b0",
+  "Name": "RavenDB - Update Properties within a Document",
+  "Description": "Retrieves the specified document by a Raven Query, updates selected variables with values from octopus Variables. Replaces the current document with the newly created document with the updated values.
+**IMPORTANT**: Any variable that is being updated **MUST** have an Octopus Variable that has exactly the same name (including capitals, any special characters, etc.) prefixed with “Property_”. This is the case of **BOTH** document variables and Metadata variables. I.E. if you wanted TestMode change, you **MUST** have an Octopus Variable named Property_TestMode (same name, and capitals, etc.).
+",
+  "ActionType": "Octopus.Script",
+  "Version": 50,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "\r
+#Variables\r
+\r
+#--------------------------------------------------------------------\r
+#RavenDB database variables\r
+\r
+#URL address of RavenDB\r
+$ravenDatabaseURL = $OctopusParameters[\"ravenDatabaseURL\"]\r
+\r
+#Name of the database\r
+$ravenDatabaseName = $OctopusParameters[\"ravenDatabaseName\"]\r
+\r
+#--------------------------------------------------------------------\r
+#RavenDB Query variables\r
+\r
+#Raven Query\r
+#$ravenQuery = $OctopusParameters[\"ravenQuery\"]\r
+\r
+#Name of the settings document\r
+$ravenDocumentName = $OctopusParameters[\"ravenDocumentName\"]\r
+\r
+#--------------------------------------------------------------------\r
+#Setting Variables\r
+\r
+#list of settings variables that are to be changed\r
+$includeSettingList = $OctopusParameters[\"includeSettingList\"]\r
+\r
+#list of settings variables that are NOT to be changed\r
+$excludeSettingList = $OctopusParameters[\"excludeSettingList\"]\r
+\r
+#--------------------------------------------------------------------\r
+#Metadata variables\r
+\r
+#list of metadata variables that are to be changed\r
+$includeMetadataList = $OctopusParameters[\"includeMetadataList\"]\r
+\r
+#list of metadata variables that are NOT to be changed\r
+$excludeMetadataList = $OctopusParameters[\"excludeMetadataList\"]\r
+\r
+\r
+#--------------------------------------------------------------------\r
+#other variables\r
+\r
+$octopusVariableList = $OctopusParameters.GetEnumerator()\r
+\r
+\r
+\r
+Write-Output \"`n-------------------------`n\"\r
+#--------------------------------------------------------------------\r
+#checks to see if the entered database exists, return a Boolean value depending on the outcome\r
+function doesRavenDBExist([string] $databaseChecking, [string]$URL)\r
+{\r
+    #retrieves the list of databases at the specified URL\r
+    $database_list = Invoke-RestMethod -Uri \"$ravenDatabaseURL/databases\" -Method Get\r
+    #checks if the database is at the specified URL\r
+    if ($database_list -contains $databaseChecking.ToString()) \r
+    {\r
+        return $TRUE\r
+    }\r
+    else \r
+    {\r
+        return $FALSE\r
+    }\r
+\r
+    \r
+\r
+}#ends does ravenDB exist function\r
+\r
+\r
+Write-Output \"`n-------------------------`n\"\r
+#--------------------------------------------------------------------    \r
+#check to see if the database exists\r
+       \r
+\r
+Write-Output \"Checking if $ravenDatabaseName exists\"\r
+\r
+$database_exists = doesRavenDBExist -databaseChecking $ravenDatabaseName -URL $ravenDatabaseURL\r
+\r
+\r
+#only proceeds if database exists\r
+if ($database_exists -eq $TRUE)\r
+{\r
+    Write-Output \"$ravenDatabaseName exists\"\r
+            \r
+}#ends database exists if statement \r
+else \r
+{\r
+    Write-Error \"$ravenDatabaseName doesn't exists. `nMake sure the database exists before continuing\" -ErrorId E4\r
+    Exit 1\r
+}\r
+\r
+\r
+Write-Output \"`n-------------------------`n\"   \r
+         \r
+#--------------------------------------------------------------------\r
+#Get current setings and change them accordingly\r
+\r
+$allSettingsJSON = $null\r
+\r
+Write-Output \"Getting Document: $ravenDatabaseName\"\r
+\r
+$settingsURI = \"$ravenDatabaseURL/databases/$ravenDatabaseName/docs/$ravenDocumentName\"\r
+\r
+    \r
+\r
+try {\r
+    #Gets settings from the specific Uri\r
+    $allSettings = Invoke-RestMethod -Uri $settingsURI -Method Get\r
+\r
+} catch {\r
+    if ($_.Exception.Response.StatusCode.Value__ -ne 404) {\r
+  \r
+    $_.Exception\r
+    }\r
+}\r
+\r
+#check to make sure the query return some results\r
+if($allSettings -eq $null)\r
+{\r
+    Write-Error \"An error occurred while querying the database. `nThe query did not return any values. `nPlease enter a new query\" -ErrorId E4\r
+    Exit 1\r
+}\r
+\r
+$includeList = @()\r
+\r
+($includeSettingList.Split(\", \") | ForEach {\r
+    $includeList += $_.ToString()\r
+})\r
+\r
+     \r
+Write-Output \"Updating the Settings document\"\r
+try\r
+{\r
+    \r
+\r
+    #changes the values of the included settings within the original settings document to values from Octopus Variables\r
+    for($i = 0; $i -lt $includeList.length; $i++)\r
+    {\r
+        \r
+        \r
+        #checks if the any of the include setting list is in the exclude setting list\r
+        if($excludeSettingList -notcontains $includeList[$i])\r
+        {\r
+            \r
+            \r
+            $octopusVariableList = $OctopusParameters.GetEnumerator()\r
+            \r
+            #loops through the variable list to find the corresponding value to the settings variable\r
+            foreach($varKey in $octopusVariableList)\r
+            {\r
+                \r
+                \r
+                $newSettingVar = $includeList[$i].ToString()\r
+                \r
+                $newSettingVar = \"Property_$newSettingVar\"\r
+                \r
+                #sets the setting variable to the correct variable in octopus\r
+                if($varKey.Key -eq $newSettingVar)\r
+                {\r
+                    \r
+                    \r
+\r
+                    $allSettings.($includeList[$i]) = $varKey.Value \r
+\r
+                }#ends if\r
+\r
+            }#ends for each\r
+\r
+\r
+\r
+        }#ends check if settings in excluded list\r
+\r
+\r
+    }#ends for\r
+}#ends try\r
+catch\r
+{\r
+    Write-Error \"An error occurred while trying to find the Setting Variables.\" -ErrorId E4\r
+    Exit 1\r
+}\r
+\r
+\r
+Write-Output \"Update complete\"\r
+\r
+Write-Output \"`n-----------------------------\"\r
+\r
+#--------------------------------------------------------------------\r
+#set update metadata information\r
+\r
+Write-Output \"Updating the Metadata of the document\"\r
+\r
+$metadata = @{}\r
+\r
+$metadataList = @()\r
+\r
+($includeMetadataList.Split(\", \") | Foreach {\r
+    $metadataList += $_.ToString()\r
+})\r
+\r
+\r
+try\r
+{\r
+    for($i = 0; $i -lt $metadataList.length; $i++)\r
+    {\r
+    \r
+        if($excludeMetadataList -notcontains $metadataList[$i])\r
+        {\r
+        \r
+            $octopusVariableList = $OctopusParameters.GetEnumerator()\r
+        \r
+            foreach($varKey in $octopusVariableList)\r
+            {\r
+                \r
+                $newMetadataVar = $metadataList[$i]\r
+                \r
+                $newMetadataVar = \"Property_$newMetadataVar\"\r
+\r
+                if($varKey.Key -eq $newMetadataVar)\r
+                {\r
+                    \r
+                    $temp = $metadataList[$i].ToString()\r
+                    \r
+                    $metadata.Add(\"$temp\", $varKey.Value)\r
+                    \r
+                    \r
+                }\r
+            \r
+            }#ends foreach\r
+\r
+        }#ends if\r
+\r
+    }#Ends for \r
+}#ends try\r
+catch\r
+{\r
+    Write-Error \"An error occurred while trying to find the Metadata Variables.\" -ErrorId E4\r
+    Exit 1\r
+}\r
+\r
+\r
+Write-Output \"Metadata update complete\"\r
+\r
+\r
+\r
+#--------------------------------------------------------------------\r
+#converting settings to a JSON document\r
+\r
+Write-Output \"Converting settings to a JSON document\"\r
+\r
+#Converts allSettings to JSON so it can be added to RavenDB\r
+if ($allSettingsJSON -eq $null) \r
+{\r
+    $allSettingsJSON = ConvertTo-Json -InputObject $allSettings\r
+}\r
+\r
+\r
+\r
+Write-Output \"`n-------------------------`n\"\r
+\r
+#--------------------------------------------------------------------\r
+#inserting settings document\r
+\r
+Write-Output \"Restoring Document: $ravenDatabaseName . Inserting the new settings document to the database\"\r
+\r
+#URL to put the JSON document\r
+$putSettingsURI = \"$ravenDatabaseURL/databases/$ravenDatabaseName/docs/$ravenDocumentName\"\r
+\r
+#Puts the settings and metadata in the specified RavenDB\r
+try\r
+{\r
+\r
+    Invoke-RestMethod -Uri $putSettingsURI -Headers $metadata -Body $allSettingsJSON -Method Put\r
+        \r
+    Write-Output \"New settings have been successfully added to the database\"\r
+}\r
+catch\r
+{\r
+    Write-Error \"An error occurred while inserting the new settings document to the database\" -ErrorId E4\r
+} \r
+\r
+"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ravenDatabaseURL",
+      "Label": "URL of the Database",
+      "HelpText": "The URL of the database.
+
+For example: **http://localhost:8080/**",
+      "DefaultValue": "http://localhost:8080/",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ravenDatabaseName",
+      "Label": "Name of the Database",
+      "HelpText": "Name of the database in Raven",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ravenDocumentName",
+      "Label": "Name of the Document",
+      "HelpText": "Name of the document in Raven that the program will retrieve.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "includeSettingList",
+      "Label": "List of Included Document Variables",
+      "HelpText": "A List of document variables that the program will update based on values within Octopus Variables
+
+**IMPORTANT:** The names of the variables **MUST** be the same (including capitals, special characters, etc.)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "excludeSettingList",
+      "Label": "List of Excluded Document Variables",
+      "HelpText": "A list of document variables that the step will exclude from the updated version. 
+
+For example: if TestMode is in both the include and exclude document list, then TestMode will be excluded from the update.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "includeMetadataList",
+      "Label": "List of Included Metadata Variables",
+      "HelpText": "A List of Metadata variables that the program will update based on values within Octopus Variables
+
+**IMPORTANT:** The names of the variables **MUST** be the same (including capitals, special characters, etc.)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "excludeMetadataList",
+      "Label": "List of Excluded Metadata Variables",
+      "HelpText": "A list of Metadata variables that the step will exclude from the updated version. 
+
+For example: if Raven-Entity-Name is in both the include and exclude metadata lists, then Raven-Entity-Name will be excluded from the update.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2015-11-26T22:39:11.556+00:00",
+  "LastModifiedBy": "timhunt303",
+  "$Meta": {
+    "ExportedAt": "2015-11-26T22:00:53.359+00:00",
+    "OctopusVersion": "3.1.7",
+    "Type": "ActionTemplate"
+  },
+  "Category": "ravendb"
+}

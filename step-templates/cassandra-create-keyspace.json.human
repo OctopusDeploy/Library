@@ -1,0 +1,161 @@
+{
+    "Id": "8ab26143-22d7-4e2f-83a8-f0e2d74a4de2",
+    "Name": "Cassandra - Create database if not exists",
+    "Description": "This template creates a keyspace on a Cassandra server if it doesn't already exist.  **Note** this template is written in Python and requires that `pip` is installed to function correctly.,",
+    "ActionType": "Octopus.Script",
+    "Version": 4,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "Python",
+      "Octopus.Action.Script.ScriptBody": "# Import subprocess 
+import subprocess
+
+# Define function to install specified package
+def install(package):
+    subprocess.check_call([sys.executable, \"-m\", \"pip\", \"install\", package])
+
+
+# Supress warning when in a docker container
+print('##octopus[stderr-ignore]',flush = True)    
+    
+# Check to see if cassandra-module is installed
+print('Checking for Cassandra module ...',flush = True)
+if 'cassandra-driver' not in sys.modules:
+  # Install the cassandra-driver module
+  print('Installing cassandra-driver module ...',flush = True)
+  install('cassandra-driver')
+else:
+  print('cassandra-driver module is present ...',flush = True)
+
+# Import cassandra modules
+from cassandra.cluster import Cluster
+from cassandra.auth import PlainTextAuthProvider
+
+# Set username/password authentication provider
+auth_provider = PlainTextAuthProvider(
+        username='#{Cassandra.User.Name}', password='#{Cassandra.User.Password}')
+
+# Connect to server
+print('Connecting to server ...',flush = True)
+cluster = None
+
+if '#{Cassandra.User.Name}' != '' and '#{Cassandra.User.Password}' != '':
+\tcluster = Cluster(['#{Cassandra.Server.Name}'], auth_provider=auth_provider, port=#{Cassandra.Server.Port})
+else:
+\tcluster = Cluster(['#{Cassandra.Server.Name}'], port=#{Cassandra.Server.Port})
+                    
+# Conect to cluster
+session = cluster.connect()
+rows = session.execute(\"SELECT keyspace_name FROM system_schema.keyspaces;\")
+keyspace = next((x for x in rows if x.keyspace_name == '#{Cassandra.Keyspace.Name}'), None)
+
+if keyspace == None:
+  # Create json document
+  strategyjson = None
+  if '#{Cassandra.Server.Mode}' == \"SimpleStrategy\":
+      strategyjson = { 'class' : '#{Cassandra.Server.Mode}', 'replication_factor': '#{Cassandra.Replicas.Number}' }
+
+  if '#{Cassandra.Server.Mode}' == \"NetworkTopologyStrategy\":
+      strategyjson = { 'class' : '#{Cassandra.Server.Mode}', '#{Cassandra.Server.Name}' : '#{Cassandra.Replicas.Number}'}
+
+  # Create keyspace
+  print('Creating keyspace #{Cassandra.Keyspace.Name} ...',flush = True)
+  session.execute(\"CREATE KEYSPACE IF NOT EXISTS #{Cassandra.Keyspace.Name} WITH REPLICATION = {0};\".format(strategyjson))
+
+  # Verify keyspace was created
+  rows = session.execute(\"SELECT keyspace_name FROM system_schema.keyspaces;\")
+
+  keyspace = next((x for x in rows if x.keyspace_name == '#{Cassandra.Keyspace.Name}'), None)
+
+  if keyspace != None:
+    print('#{Cassandra.Keyspace.Name} created successfully!',flush = True)
+  else:
+    print('#{Cassandra.Keyspace.Name} was not created!',flush = True)
+    exit(1)
+else:
+  print('Keyspace #{Cassandra.Keyspace.Name} already exists.',flush = True)"
+    },
+    "Parameters": [
+      {
+        "Id": "93076332-862f-44c5-b003-f8d6c9138d2b",
+        "Name": "Cassandra.Server.Name",
+        "Label": "Server Name",
+        "HelpText": "Hostname or IP address of the Cassandra database server.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "8abf47c6-eec5-428d-be90-4b4443295867",
+        "Name": "Cassandra.Server.Port",
+        "Label": "Port",
+        "HelpText": "Port number that the Cassandra server is listening on.",
+        "DefaultValue": "9042",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "5630dc27-80d2-421c-bb99-a61b2e6bd439",
+        "Name": "Cassandra.User.Name",
+        "Label": "(Optional) Username",
+        "HelpText": "Username of the account that can create databases.  Leave blank if not using Username/Password authentication.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "1e7e73db-ca36-4bd6-9c5a-3f49506c7adf",
+        "Name": "Cassandra.User.Password",
+        "Label": "(Optional) Password",
+        "HelpText": "Password for the user account that can create databases.  Leave blank if not using Username/Password authentication.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "484d22fc-4a84-4459-ac4e-166731432709",
+        "Name": "Cassandra.Server.Mode",
+        "Label": "Server mode",
+        "HelpText": "The mode in which the Cassandra server is operating.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Select",
+          "Octopus.SelectOptions": "NetworkTopologyStrategy|Network Topology Strategy
+SimpleStrategy|Simple Strategy"
+        }
+      },
+      {
+        "Id": "b2c433be-66bb-4ee0-9246-59e62818b7bb",
+        "Name": "Cassandra.Keyspace.Name",
+        "Label": "Keyspace",
+        "HelpText": "Name of the Keyspace to create.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "73a696ca-26e3-4069-852a-3be63d5bd090",
+        "Name": "Cassandra.Replicas.Number",
+        "Label": "Number of replicas",
+        "HelpText": "The number of replicas to create.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "$Meta": {
+      "ExportedAt": "2023-05-03T22:44:27.358Z",
+      "OctopusVersion": "2023.1.10046",
+      "Type": "ActionTemplate"
+    },
+    "LastModifiedBy": "twerthi",
+    "Category": "cassandra"
+  }

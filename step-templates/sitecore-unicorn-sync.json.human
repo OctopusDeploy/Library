@@ -1,0 +1,116 @@
+{
+  "Id": "d5adc467-69a8-49ca-b4d0-4f793fad4d62",
+  "Name": "Sitecore Unicorn Sync",
+  "Description": "Syncs all the specified configurations via the Unicorn remote sync PowerShell script. Uses the newer MicroChap security layer. Please see the following post for instructions: http://www.sitecorenutsbolts.net/2016/03/14/Octopus-Deploy-Step-for-Unicorn-Sync/",
+  "ActionType": "Octopus.Script",
+  "Version": 14,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = 'Stop'\r
+\r
+Add-Type -Path \"${MicroChap}\\MicroCHAP.dll\"\r
+\r
+Function Sync-Unicorn {\r
+\tParam(\r
+\t\t[Parameter(Mandatory=$True)]\r
+\t\t[string]$ControlPanelUrl,\r
+\r
+\t\t[Parameter(Mandatory=$True)]\r
+\t\t[string]$SharedSecret,\r
+\r
+\t\t[Parameter(Mandatory=$True)]\r
+\t\t[string[]]$Configurations,\r
+\r
+\t\t[string]$Verb = 'Sync'\r
+\t)\r
+\r
+\t# PARSE THE URL TO REQUEST\r
+\t$parsedConfigurations = ($Configurations) -join \"^\"\r
+\r
+\t$url = \"{0}?verb={1}&configuration={2}\" -f $ControlPanelUrl, $Verb, $parsedConfigurations\r
+\r
+\tWrite-Host \"Sync-Unicorn: Preparing authorization for $url\"\r
+\r
+\t# GET AN AUTH CHALLENGE\r
+\t$challenge = Get-Challenge -ControlPanelUrl $ControlPanelUrl\r
+\r
+\tWrite-Host \"Sync-Unicorn: Received challenge: $challenge\"\r
+\r
+\t# CREATE A SIGNATURE WITH THE SHARED SECRET AND CHALLENGE\r
+\t$signatureService = New-Object MicroCHAP.SignatureService -ArgumentList $SharedSecret\r
+\r
+\t$signature = $signatureService.CreateSignature($challenge, $url, $null)\r
+\r
+\tWrite-Host \"Sync-Unicorn: Created signature $signature, executing $Verb...\"\r
+\r
+\t# USING THE SIGNATURE, EXECUTE UNICORN\r
+\t$result = Invoke-WebRequest -Uri $url -Headers @{ \"X-MC-MAC\" = $signature; \"X-MC-Nonce\" = $challenge } -TimeoutSec 10800 -UseBasicParsing\r
+\r
+\t$result.Content\r
+}\r
+\r
+Function Get-Challenge {\r
+\tParam(\r
+\t\t[Parameter(Mandatory=$True)]\r
+\t\t[string]$ControlPanelUrl\r
+\t)\r
+\r
+\t$url = \"$($ControlPanelUrl)?verb=Challenge\"\r
+\r
+\t$result = Invoke-WebRequest -Uri $url -TimeoutSec 360 -UseBasicParsing\r
+\r
+\t$result.Content\r
+}\r
+\r
+$configs = $Configurations.split(\"`n\")\r
+Sync-Unicorn -ControlPanelUrl \"$($SiteUrl)/unicorn.aspx\" -SharedSecret $SharedSecret -Configurations $configs\r
+",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Name": "SharedSecret",
+      "Label": "Shared Secret",
+      "HelpText": "The shared secret used for the MicroChap handshake",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "SiteUrl",
+      "Label": "Site Url",
+      "HelpText": "The Url of your content authoring system. Must be able to view `/unicorn.aspx`",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "MicroChap",
+      "Label": "MicroCHAP DLL Location",
+      "HelpText": "The location of the MicroCHAP.dll file in your project",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Configurations",
+      "Label": "Configurations",
+      "HelpText": "Add a configuration per line",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2016-07-14T11:48:03.577+00:00",
+  "LastModifiedBy": "GuitarRich",
+  "$Meta": {
+    "ExportedAt": "2016-07-14T15:40:31.349+00:00",
+    "OctopusVersion": "3.3.4",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sitecore"
+}

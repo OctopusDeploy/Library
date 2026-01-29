@@ -1,0 +1,129 @@
+{
+  "Id": "21a2ae12-e721-42c1-901d-d6ed08007ca7",
+  "Name": "Slack - Notify Deployment",
+  "Description": "Notifies Slack of deployment status. Uses the Octopus Deploy system variable to determine whether a deployment was successful.",
+  "ActionType": "Octopus.Script",
+  "Version": 12,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function Slack-Rich-Notification ($notification)
+{
+    $payload = @{
+        channel = $OctopusParameters['Channel']
+        username = $OctopusParameters['Username'];
+        icon_url = $OctopusParameters['IconUrl'];
+        attachments = @(
+            @{
+            fallback = $notification[\"fallback\"];
+            color = $notification[\"color\"];
+            fields = @(
+                @{
+                title = $notification[\"title\"];
+                title_link = $notification[\"title_link\"];
+                value = $notification[\"value\"];
+                });
+            };
+        );
+    }
+
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-RestMethod -Method POST -Body ($payload | ConvertTo-Json -Depth 4) -Uri $OctopusParameters['HookUrl']  -ContentType 'application/json' -UseBasicParsing
+}
+
+$OctopusBaseUri = $OctopusWebBaseUrl
+$UseServerUri = [boolean]::Parse($OctopusParameters['UseServerUri']);
+if ($UseServerUri) {
+\t$OctopusBaseUri = $OctopusWebServerUri
+}
+
+$IncludeMachineName = [boolean]::Parse($OctopusParameters['IncludeMachineName']);
+if ($IncludeMachineName) {
+    $MachineName = $OctopusParameters['Octopus.Machine.Name'];
+    if ($MachineName) {
+      $FormattedMachineName = \"($MachineName)\";
+    }
+}
+
+if ($OctopusParameters['Octopus.Deployment.Error'] -eq $null){
+    Slack-Rich-Notification @{
+        title = \"Success\";
+        title_link = \"$OctopusBaseUri$OctopusWebDeploymentLink\";
+        value = \"Deploy <$OctopusBaseUri$OctopusWebProjectLink|$OctopusProjectName> release <$OctopusBaseUri$OctopusWebReleaseLink|$OctopusReleaseNumber> to $OctopusEnvironmentName $OctopusActionTargetRoles $OctopusDeploymentTenantName $FormattedMachineName\";
+        fallback = \"Deployed $OctopusProjectName release $OctopusReleaseNumber to $OctopusEnvironmentName successfully\";
+        color = \"good\";
+    };
+} else {
+    Slack-Rich-Notification @{
+        title = \"Failed\";
+        title_link = \"$OctopusBaseUri$OctopusWebDeploymentLink\";
+        value = \"Deploy <$OctopusBaseUri$OctopusWebProjectLink|$OctopusProjectName> release <$OctopusBaseUri$OctopusWebReleaseLink|$OctopusReleaseNumber> to $OctopusEnvironmentName $OctopusActionTargetRoles $OctopusDeploymentTenantName $FormattedMachineName\";
+        fallback = \"Failed to deploy $OctopusProjectName release $OctopusReleaseNumber to $OctopusEnvironmentName\";
+        color = \"danger\";
+    };
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "Parameters": [
+    {
+      "Name": "HookUrl",
+      "Label": "Webhook URL",
+      "HelpText": "The Webhook URL provided by Slack, including token.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "Channel",
+      "Label": "Channel handle",
+      "HelpText": "Which Slack channel to post notifications to.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "IconUrl",
+      "Label": "Icon URL",
+      "HelpText": "The icon to use for this user in Slack.",
+      "DefaultValue": "https://octopus.com/content/resources/favicon.png",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Username",
+      "Label": null,
+      "HelpText": "The username shown in Slack against these notifications.",
+      "DefaultValue": "Octopus Deploy",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "IncludeMachineName",
+      "Label": "Include machine name",
+      "HelpText": "Should machine name be included in notification to Slack?",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Name": "UseServerUri",
+      "Label": "Use ServerUri",
+      "HelpText": "If checked then uses `Octopus.Web.ServerUri` instead of `#{if Octopus.Web.ServerUri}#{Octopus.Web.ServerUri}#{else}#{Octopus.Web.BaseUrl}#{/if}`.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedOn": "2022-03-08T04:18:00.000+00:00",
+  "LastModifiedBy": "twerthi",
+  "$Meta": {
+    "ExportedAt": "2022-09-08T17:58:51.938Z",
+    "OctopusVersion": "2022.2.8136",
+    "Type": "ActionTemplate"
+  },
+  "Category": "slack"
+}

@@ -1,0 +1,93 @@
+{
+  "Id": "6fa0fab6-4799-4d81-944d-3c7b54530870",
+  "Name": "Stop Service With Kill",
+  "Description": "This steps stops the specified service and in case it does not respond or times out, the service will be killed.",
+  "ActionType": "Octopus.Script",
+  "Version": 8,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$svcName = $OctopusParameters['ServiceName']
+$svcTimeout = $OctopusParameters['ServiceStopTimeout']
+
+function Stop-ServiceWithTimeout ([string] $name, [int] $timeoutSeconds) {
+    $timespan = New-Object -TypeName System.Timespan -ArgumentList 0,0,$timeoutSeconds
+
+    If ($svc = Get-Service $svcName -ErrorAction SilentlyContinue) {
+        if ($svc -eq $null) { return $true }
+        if ($svc.Status -eq [ServiceProcess.ServiceControllerStatus]::Stopped) { return $true }
+        $svc.Stop()
+        try {
+            Write-Host \"Stopping Service\" $svcTimeout \"Timeout\"
+            $svc.WaitForStatus([ServiceProcess.ServiceControllerStatus]::Stopped, $timespan)
+        }
+        catch [ServiceProcess.TimeoutException] {
+            Write-Host \"Timeout stopping service $($svc.Name)\"
+            return $false
+        }
+        Write-Host \"Service Sucessfully stopped\"
+        return $true
+
+    } Else {
+        Write-Host \"Service does not exist, this is acceptable. Probably the first time deploying to this target\"
+        Exit
+    }
+}
+
+Write-Host \"Checking service\"
+
+$svcpid = (get-wmiobject Win32_Service | where{$_.Name -eq $svcName}).ProcessId
+Write-Host \"Found PID \" + $svcpid 
+
+Stop-ServiceWithTimeout -name $svcName -timeoutSeconds $svcTimeout
+
+Write-Host \"Rechecking service\"
+$svcpid = (get-wmiobject Win32_Service | where{$_.Name -eq $svcName}).ProcessId
+Write-Host \"Found PID \" + $svcpid 
+
+$service = Get-Service -name $svcName | Select -Property Status
+if($service.Status -ne \"Stopped\"){\tStart-Sleep -seconds 5 }
+
+#Check-Service process 
+if($svcpid){
+    #still exists?
+    $p = get-process -id $svcpid -ErrorAction SilentlyContinue
+    if($p){
+        Write-Host \"Killing Service\"
+        Stop-Process $p.Id -force
+    }
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Id": "7ad7cec6-c5c8-40a9-8657-793f88ea1c0f",
+      "Name": "ServiceName",
+      "Label": "Service Name",
+      "HelpText": "Name of the service to stop",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2ece0f23-76b7-490d-808f-64e5612ac0eb",
+      "Name": "ServiceStopTimeout",
+      "Label": "Service Stop Timeout",
+      "HelpText": "Amount of time in seconds to wait before killing the Process",
+      "DefaultValue": "10",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2018-11-05T03:59:57.028Z",
+  "LastModifiedBy": "benjimac93",    
+  "$Meta": {
+    "ExportedAt": "2018-11-05T03:59:57.028Z",
+    "OctopusVersion": "2018.8.12",
+    "Type": "ActionTemplate"
+  },
+  "Category": "windows"
+}

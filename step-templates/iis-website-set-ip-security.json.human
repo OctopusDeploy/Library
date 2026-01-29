@@ -1,0 +1,144 @@
+{
+  "Id": "2aab8e8b-6a55-462c-91ca-3c2a395e82a5",
+  "Name": "IIS Website - Set IP Security",
+  "Description": "Takes a list of ip/mask and allow them in ipsecurity",
+  "ActionType": "Octopus.Script",
+  "Version": 10,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false",
+    "Octopus.Action.Script.ScriptBody": "$existingRules = Get-WebConfiguration /system.webServer/security/ipSecurity/* -location $Site -pspath IIS://;\r
+[Object[]]$newRules = @();\r
+\r
+$ips = $IpAddresses -split '\
+';\r
+$ips = $ips.Trim('\\r');\r
+foreach ($u in $ips) {\r
+    $a = $u.Split(\"/\");\r
+    $newRules += [Object]@{ ipAddress = $a[0]; subnetMask = $a[1]; allowed = $true };\r
+}\r
+\r
+if ($EnableProxyMode -eq \"true\") {\r
+    Write-Output \"Enabling proxy mode\"\r
+    set-webconfigurationproperty -Filter /system.webServer/security/ipSecurity -location $Site -Name \"enableProxyMode\" -Value \"true\"\r
+}\r
+\r
+if ($SetDeny -eq \"true\") {\r
+    Write-Output \"Setting Deny rule\"\r
+    set-webconfigurationproperty -Filter /system.webServer/security/ipSecurity -location $Site -Name \"allowUnlisted\" -Value \"false\"\r
+}\r
+\r
+function addRules([string]$website, [Object[]]$newRules, [Object[]]$oldRules) {\r
+\r
+    foreach ($rule in $newRules) {\r
+        if (ruleExists $rule $oldRules) {\r
+            Write-Host \"Rule $($rule.ipAddress)/$($rule.subnetMask) already exists\";\r
+\r
+            continue;\r
+        }\r
+\r
+        $value = @{ipAddress = $($rule.ipAddress); allowed = \"true\" }\r
+        if ([string]::IsNullOrEmpty($rule.subnetMask)) {\r
+            Write-Output \"Adding ip $($rule.ipAddress) to allow\"\r
+        }\r
+        else {\r
+            Write-Output \"Adding ip $($rule.ipAddress)/$($rule.subnetMask) to allow\"\r
+            $value.subnetMask = $rule.subnetMask;\r
+        }\r
+\r
+        add-webconfiguration /system.webServer/security/ipSecurity -location $website -value $value -pspath IIS://\r
+    }    \r
+}\r
+\r
+function clearRules([string]$website, [Object[]]$newRules, [Object[]]$oldRules) {\r
+\r
+    foreach ($rule in $oldRules) {\r
+        if (ruleExists $rule $newRules) {\r
+            continue;\r
+        }\r
+\r
+        Write-Host \"Rule $($rule.ipAddress)/$($rule.subnetMask) is not exists, remove it\";\r
+\r
+        Clear-WebConfiguration -Filter $rule.ItemXPath -location $rule.Location\r
+    }    \r
+}\r
+\r
+function ruleExists([Object]$rule, [Object[]]$rules) {\r
+    foreach ($r in $rules) {\r
+        if ($r.ipAddress -eq $rule.ipAddress -and $r.allowed -eq $rule.allowed) {\r
+            if ($r.subnetMask -eq $rule.subnetMask) {\r
+                return $true;\r
+            }\r
+\r
+            if (([string]::IsNullOrEmpty($r.subnetMask) -or $r.subnetMask -eq \"255.255.255.255\") -and ([string]::IsNullOrEmpty($rule.subnetMask) -or $rule.subnetMask -eq \"255.255.255.255\")) {\r
+                return $true;\r
+            }\r
+        }\r
+    }\r
+\r
+    return $false;\r
+}\r
+\r
+addRules $Site $newRules $existingRules;\r
+clearRules $Site $newRules $existingRules;\r
+",
+    "Octopus.Action.Script.ScriptFileName": null,
+    "Octopus.Action.Package.FeedId": null,
+    "Octopus.Action.Package.PackageId": null
+  },
+  "Parameters": [
+    {
+      "Id": "357e87c7-908c-4cdb-af63-8818cef5bd23",
+      "Name": "Site",
+      "Label": "Name of Website",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "9db7ed01-c348-48ee-868b-ebcd0d87cce1",
+      "Name": "IpAddresses",
+      "Label": "List of ip addresses",
+      "HelpText": "A newline separated list of IP addresses and/or IP address and subnet mask pairs in the format <IPAddress>/<SubnetMask>.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2854ab2d-a000-48dd-9b20-6930c73c96fb",
+      "Name": "EnableProxyMode",
+      "Label": "Enable proxy mode",
+      "HelpText": "If the website is running behind a proxy, this setting most likely need to be checked.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "7d8cc90e-281e-4718-a0e9-b1daa522d5c9",
+      "Name": "SetDeny",
+      "Label": "Set deny",
+      "HelpText": "If checked, IIS will be changed to \"Deny\" all IP addresses not added to the list.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "olsh",
+  "$Meta": {
+    "ExportedAt": "2021-03-01T11:24:20.680Z",
+    "OctopusVersion": "3.7.4",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}

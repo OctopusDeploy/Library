@@ -1,0 +1,80 @@
+{
+  "Id": "2a939210-3f1c-4a66-a535-40ba7cd709fb",
+  "Name": "SSL Certificate - Install",
+  "Description": "Installs an SSL certificate on the target machine",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$base64Certificate = $OctopusParameters['Base64Certificate']
+$password = $OctopusParameters['Password']
+$location = $OctopusParameters['StoreLocation']
+$name = $OctopusParameters['StoreName']
+
+Write-Host \"Adding/updating certificate in store\"
+
+$certBytes = [System.Convert]::FromBase64String($base64Certificate)
+$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certBytes, $password, \"MachineKeySet,PersistKeySet\")
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store($name, $location)
+$store.Open(\"ReadWrite\")
+$store.Add($cert)
+$store.Close()",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Base64Certificate",
+      "Label": "Base64 certificate",
+      "HelpText": "The certificate, encoded as a base64 string",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "Password",
+      "Label": "Password",
+      "HelpText": "The certificate password",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "StoreName",
+      "Label": "StoreName",
+      "HelpText": "The name of the certificate store",
+      "DefaultValue": "My",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "AddressBook
+AuthRoot
+CA
+Disallowed
+My
+Root
+TrustedPeople
+TrustedPublisher"
+      }
+    },
+    {
+      "Name": "StoreLocation",
+      "Label": "StoreLocation",
+      "HelpText": "The location of the certificate store",
+      "DefaultValue": "LocalMachine",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "CurrentUser
+LocalMachine"
+      }
+    }
+  ],
+  "LastModifiedOn": "2016-10-14T03:01:44.952+00:00",
+  "LastModifiedBy": "kp-tseng",
+  "$Meta": {
+    "ExportedAt": "2014-10-01T07:43:57.503+00:00",
+    "OctopusVersion": "2.5.8.447",
+    "Type": "ActionTemplate"
+  },
+  "Category": "ssl"
+}

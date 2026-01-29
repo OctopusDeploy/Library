@@ -1,0 +1,103 @@
+{
+  "Id": "f4566d84-85bb-42df-9f3c-0b146a57e90f",
+  "Name": "F5 GTM - Enable or Disable",
+  "Description": "Enables or disables pools in the F5 GTM
+",
+  "ActionType": "Octopus.Script",
+  "Version": 12,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "Add-PSSnapIn iControlSnapIn. F5 iControlSnapIn can be downloaded from here https://devcentral.f5.com/articles/icontrol-cmdlets \r
+\r
+Initialize-F5.iControl -HostName $OctopusParameters['HostName'] -Username $OctopusParameters['Username'] -Password $OctopusParameters['Password']\r
+\r
+$Pool = $OctopusParameters['PoolName'];\r
+\r
+$PoolA = (, $Pool);\r
+$MemberEnabledState = New-Object -TypeName iControl.GlobalLBPoolMemberMemberEnabledState;\r
+$MemberEnabledState.member = New-Object iControl.CommonIPPortDefinition;\r
+$MemberEnabledState.member.address = $OctopusParameters['MemberIP'];\r
+$MemberEnabledState.member.port = $OctopusParameters['MemberPort'];\r
+$MemberEnabledState.state = $OctopusParameters['EnableOrDisable'];\r
+[iControl.GlobalLBPoolMemberMemberEnabledState[]]$MemberEnabledStateA = [iControl.GlobalLBPoolMemberMemberEnabledState[]](, $MemberEnabledState);\r
+[iControl.GlobalLBPoolMemberMemberEnabledState[][]]$MemberEnabledStateAofA = [iControl.GlobalLBPoolMemberMemberEnabledState[][]](, $MemberEnabledStateA);\r
+\r
+(Get-F5.iControl).GlobalLBPoolMember.set_enabled_state($PoolA, $MemberEnabledStateAofA);",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "EnableOrDisable",
+      "Label": "GTM status",
+      "HelpText": null,
+      "DefaultValue": "STATE_ENABLED",
+      "DisplaySettings": {
+        "Octopus.SelectOptions": "STATE_ENABLED|Enable
+STATE_DISABLED|Disable",
+        "Octopus.ControlType": "Select"
+      }
+    },
+    {
+      "Name": "PoolName",
+      "Label": "GTM Pool name",
+      "HelpText": null,
+      "DefaultValue": "pl_DummyDeployWeb",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "MemberIP",
+      "Label": "GTM member IP",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "MemberPort",
+      "Label": "GTM member port",
+      "HelpText": null,
+      "DefaultValue": "80",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HostName",
+      "Label": "GTM host name",
+      "HelpText": null,
+      "DefaultValue": "192.168.45.204",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Username",
+      "Label": "GTM username",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Password",
+      "Label": "GTM password",
+      "HelpText": null,
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    }
+  ],
+  "LastModifiedOn": "2014-07-24T10:41:45.863+00:00",
+  "LastModifiedBy": "leeenglestone",
+  "$Meta": {
+    "ExportedAt": "2014-07-29T14:51:04.864+00:00",
+    "OctopusVersion": "2.5.4.280",
+    "Type": "ActionTemplate"
+  },
+  "Category": "f5"
+}

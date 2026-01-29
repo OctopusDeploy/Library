@@ -1,0 +1,226 @@
+{
+    "Id": "7e6f7f03-260a-4b52-9377-66f1c69b77d8",
+    "Name": "Venafi TPP - Generate OAuth Token",
+    "Description": "This step template will authenticate against a Venafi TPP instance and generate an OAuth token for specified scope/privileges using the VenafiPS PowerShell module's `New-TppToken` (an alias of the [VdcToken](https://venafips.readthedocs.io/en/latest/functions/New-VdcToken/) function).
+
+The following properties from the resulting OAuth token will be created as [Octopus sensitive variables](https://octopus.com/docs/projects/variables/output-variables#sensitive-output-variables):
+
+- `access_token` created with the name `AccessToken`
+- `Expires` created with the name `AccessTokenExpires` in the format `yyyy-MM-ddTHH:mm:ss`
+- `refresh_token` created with the name `RefreshToken`
+- `refresh_until` created with the name `RefreshTokenExpires` in the format `yyyy-MM-ddTHH:mm:ss`. *Note: This value can be empty*.
+
+These output variables can be used in additional deployment or runbook steps.
+
+---
+
+**Required:** 
+- The `VenafiPS` PowerShell module installed on the deployment target or worker. If the module can't be found, the step will attempt to download a version from the [PowerShell gallery](https://www.powershellgallery.com/packages/VenafiPS).
+
+Notes:
+
+- Tested on Octopus `2021.2`.
+- Tested with VenafiPS `3.1.5`.
+- Tested with both Windows PowerShell and PowerShell Core on Linux.",
+    "ActionType": "Octopus.Script",
+    "Version": 3,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$ErrorActionPreference = 'Stop'
+
+# Variables
+$StepName = $OctopusParameters[\"Octopus.Step.Name\"]
+$Server = $OctopusParameters[\"Venafi.TPP.OAuthToken.Server\"]
+$ClientID = $OctopusParameters[\"Venafi.TPP.OAuthToken.ClientID\"]
+$Username = $OctopusParameters[\"Venafi.TPP.OAuthToken.Username\"]
+$Password = $OctopusParameters[\"Venafi.TPP.OAuthToken.Password\"]
+$Scopes = $OctopusParameters[\"Venafi.TPP.OAuthToken.Scope\"]
+
+# Validation
+if ([string]::IsNullOrWhiteSpace($Server)) {
+    throw \"Required parameter Venafi.TPP.OAuthToken.Server not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($ClientID)) {
+    throw \"Required parameter Venafi.TPP.OAuthToken.ClientID not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($Username)) {
+    throw \"Required parameter Venafi.TPP.OAuthToken.Username not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($Password)) {
+    throw \"Required parameter Venafi.TPP.OAuthToken.Password not specified\"
+}
+if ([string]::IsNullOrWhiteSpace($Scopes)) {
+    throw \"Required parameter Venafi.TPP.OAuthToken.Scope not specified\"
+}
+
+# Clean-up
+$Server = $Server.TrimEnd('/')
+
+# Required Modules
+function Get-NugetPackageProviderNotInstalled {
+    # See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+# Check to see if the package provider has been installed
+if ((Get-NugetPackageProviderNotInstalled) -ne $false) {
+    Write-Host \"Nuget package provider not found, installing ...\"    
+    Install-PackageProvider -Name Nuget -Force -Scope CurrentUser
+}
+
+Write-Host \"Checking for required VenafiPS module ...\"
+$required_venafips_version = 3.1.5
+$module_available = Get-Module -ListAvailable -Name VenafiPS | Where-Object { $_.Version -ge $required_venafips_version }
+if (-not ($module_available)) {
+    Write-Host \"Installing VenafiPS module ...\"
+    Install-Module -Name VenafiPS -MinimumVersion 3.1.5 -Scope CurrentUser -Force
+}
+else {
+    $first_match = $module_available | Select-Object -First 1 
+    Write-Host \"Found version: $($first_match.Version)\"
+}
+
+Write-Host \"Importing VenafiPS module ...\"
+Import-Module VenafiPS
+
+$AccessTokenScope = @{}
+
+$Scopes -Split \";\" | ForEach-Object {
+    $Scope = ($_ -Split \":\")
+    $Type = $Scope[0]
+    $Privileges = $null
+    
+    if ($Scope.Length -gt 1) {
+        $Privileges = $Scope[1].TrimEnd(\",\")
+    }
+    
+    if ($AccessTokenScope.ContainsKey($Type)) {
+        $CurrentPrivileges = $AccessTokenScope[$Type]
+        # If no privilege, set to $null
+        if ([string]::IsNullOrWhiteSpace($Privileges)) {
+            $AccessTokenScope[$Type] = $null
+        }
+        else {
+            $AccessTokenScope[$Type] = if ([string]::IsNullOrWhiteSpace($CurrentPrivileges)) { $Privileges } else { \"$($CurrentPrivileges),$Privileges\" }  
+        }
+    }
+    else {
+        $AccessTokenScope.Add($Type, $Privileges)
+    }
+}
+
+if ($AccessTokenScope.Keys.Count -lt 1) {
+    throw \"No scopes could be determined!\"
+}
+
+$scopeString = @($AccessTokenScope.GetEnumerator() | ForEach-Object { if ($_.Value) { '{0}:{1}' -f $_.Key, $_.Value } else { $_.Key } }) -join ';'
+
+# Get TPP access token
+[PSCredential]$Credential = New-Object System.Management.Automation.PSCredential ($Username, (ConvertTo-SecureString $Password -AsPlainText -Force))
+
+Write-Host \"Requesting new OAuth token from: $Server for ClientId: $ClientID with scope '$scopeString' ...\"
+$tppTokenResponse = New-TppToken -AuthServer $Server -ClientId $ClientID -Scope $AccessTokenScope -Credential $Credential
+
+$AccessToken = $tppTokenResponse.AccessToken.GetNetworkCredential().Password
+$Expiry = $tppTokenResponse.Expires.ToString(\"s\")
+$RefreshToken = $tppTokenResponse.RefreshToken.GetNetworkCredential().Password
+$RefreshExpires = $tppTokenResponse.RefreshExpires
+
+# Refresh Expiry can be $null
+if ($null -ne $RefreshExpires) {
+    $RefreshExpires = $RefreshExpires.ToString(\"s\")
+}
+
+Set-OctopusVariable -Name \"AccessToken\" -Value $AccessToken -Sensitive
+Write-Host \"Created output variable: ##{Octopus.Action[$StepName].Output.AccessToken}\"
+Set-OctopusVariable -Name \"AccessTokenExpires\" -Value $Expiry -Sensitive
+Write-Host \"Created output variable: ##{Octopus.Action[$StepName].Output.AccessTokenExpires}\"
+Set-OctopusVariable -Name \"RefreshToken\" -Value $RefreshToken -Sensitive
+Write-Host \"Created output variable: ##{Octopus.Action[$StepName].Output.RefreshToken}\"
+Set-OctopusVariable -Name \"RefreshTokenExpires\" -Value $RefreshExpires -Sensitive
+Write-Host \"Created output variable: ##{Octopus.Action[$StepName].Output.RefreshTokenExpires}\""
+    },
+    "Parameters": [
+      {
+        "Id": "7ca2062d-9153-4606-bbab-441c893f9739",
+        "Name": "Venafi.TPP.OAuthToken.Server",
+        "Label": "Venafi TPP Server",
+        "HelpText": "The URL of the Venafi TPP instance you are connecting to.
+
+For example: `https://mytppserver.example.com`",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "57631dfd-965b-4bfa-9f34-5e9147cdb702",
+        "Name": "Venafi.TPP.OAuthToken.ClientID",
+        "Label": "Venafi Application ClientID",
+        "HelpText": "Application Id (also known as `ClientId`) configured in Venafi for token-based authentication.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "83bfad97-50d1-49b9-9d9b-dc2ba87d9281",
+        "Name": "Venafi.TPP.OAuthToken.Username",
+        "Label": "Venafi Username",
+        "HelpText": "Username to request API token.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "05280b11-3dd6-41d7-a970-2328478a4b52",
+        "Name": "Venafi.TPP.OAuthToken.Password",
+        "Label": "Venafi Password",
+        "HelpText": "Password to request API token.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "b7edd6a4-20bb-47fe-8181-42ca5af9adb2",
+        "Name": "Venafi.TPP.OAuthToken.Scope",
+        "Label": "Access token scope",
+        "HelpText": "Scopes and privilege restrictions for the access token. Scopes can include:
+
+- `agent`
+- `certificate`
+- `code signing`
+- `configuration`
+- `restricted`
+- `security`
+- `ssh`
+- `statistics`
+
+See the [Venafi Auth SDK](https://docs.venafi.com/Docs/21.1/TopNav/Content/SDK/AuthSDK/t-SDKa-Setup-OAuth.php) for more info.
+
+Multiple values can be supplied separated by `;`. 
+
+For a privilege restriction of none or read, just use the scope as the value. For example, to include management of certificates and include ssh with no privilege restriction, use: `certificate:manage;ssh`.
+
+If multiple values for the same scope are provided they will be concatenated, *unless* a value of no privilege is found. If that occurs, then the \"last entry\" wins.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "LastModifiedAt": "2024-04-10T17:28:31.301Z",
+    "LastModifiedBy": "harrisonmeister",
+    "$Meta": {
+      "ExportedAt": "2021-07-30T10:36:31.301Z",
+      "OctopusVersion": "2021.2.6775",
+      "Type": "ActionTemplate"
+    },
+    "Category": "venafi"
+  }

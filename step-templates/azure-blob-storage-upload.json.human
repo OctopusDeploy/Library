@@ -1,0 +1,196 @@
+{
+  "Id": "0b167d34-832e-4c96-8a8f-2ea0a6c0fe0c",
+  "Name": "Azure Blob Storage Upload",
+  "Description": "Upload files in a directory to a specified Azure Storage blob container.",
+  "ActionType": "Octopus.Script",
+  "Version": 14,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "function Find-InstallLocations {
+    $result = @()
+    $OctopusParameters.Keys | foreach {
+        if ($_.EndsWith('].Output.Package.InstallationDirectoryPath')) {
+            $result += $OctopusParameters[$_]
+        }
+    }
+    return $result
+}
+
+function Find-InstallLocation($stepName) {
+    $result = $OctopusParameters.Keys | where {
+        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)
+    } | select -first 1
+ 
+    if ($result) {
+        return $OctopusParameters[$result]
+    }
+ 
+    throw \"No install location found for step: $stepName\"
+}
+
+function Find-SingleInstallLocation {
+    $all = @(Find-InstallLocations)
+    if ($all.Length -eq 1) {
+        return $all[0]
+    }
+    if ($all.Length -eq 0) {
+        throw \"No package steps found\"
+    }
+    throw \"Multiple package steps have run; please specify a single step\"
+}
+
+# Check if Windows Azure Powershell is avaiable 
+try{ 
+    Import-Module Azure -ErrorAction Stop
+}catch{
+    throw \"Windows Azure Powershell not found! Please make sure to install them from http://www.windowsazure.com/en-us/downloads/#cmd-line-tools\" 
+}
+
+Import-AzurePublishSettingsFile $PublishSettingsFile
+
+# The script has been tested on Powershell 3.0
+Set-StrictMode -Version 3
+
+$stepPath = \"\"
+if (-not [string]::IsNullOrEmpty($NugetPackageStepName)) {
+    Write-Host \"Finding path to package step: $NugetPackageStepName\"
+    $stepPath = Find-InstallLocation $NugetPackageStepName
+} else {
+    $stepPath = Find-SingleInstallLocation
+}
+Write-Host \"Package was installed to: $stepPath\"
+
+$fullPath = \"$stepPath\\$CopyDirectory\"
+Write-Host \"Copying Files in: $fullPath\"
+
+# Get a list of files from the project folder
+$files = @(ls -Path $fullPath -File -Recurse)
+
+$fileCount = $files.Count
+Write-Host \"Found $fileCount Files: $files\"
+
+$context = New-AzureStorageContext `
+    -StorageAccountName $StorageAccount `
+    -StorageAccountKey $StorageAccountKey
+
+if ($files -ne $null -and $files.Count -gt 0)
+{
+    # Create the storage container.
+    $existingContainer = Get-AzureStorageContainer -Context $context | 
+        Where-Object { $_.Name -like $StorageContainer }
+
+    if (-not $existingContainer)
+    {
+        $newContainer = New-AzureStorageContainer `
+                            -Context $context `
+                            -Name $StorageContainer `
+                            -Permission Blob
+        \"Storage container '\" + $newContainer.Name + \"' created.\"
+    }
+
+    # Upload the files to storage container.
+    $fileCount = $files.Count
+    $time = [DateTime]::UtcNow
+    if ($files.Count -gt 0)
+    {
+        foreach ($file in $files) 
+        {
+            $blobFileName = $file.FullName.Replace($fullPath, '').TrimStart('\\')
+            $contentType = switch ([System.IO.Path]::GetExtension($file))
+\t        {
+\t            \".css\" {\"text/css\"}
+\t            \".js\" {\"text/javascript\"}
+\t            \".json\" {\"application/json\"}
+\t            \".html\" {\"text/html\"}
+\t            \".png\" {\"image/png\"}
+\t            \".svg\" {\"image/svg+xml\"}
+\t            default {\"application/octet-stream\"}
+\t        }
+
+            Set-AzureStorageBlobContent `
+                -Container $StorageContainer `
+                -Context $context `
+                -File $file.FullName `
+                -Blob $blobFileName `
+                -Properties @{ContentType=$contentType} `
+                -Force
+        }
+    }
+
+    $duration = [DateTime]::UtcNow - $time
+
+    \"Uploaded \" + $files.Count + \" files to blob container '\" + $StorageContainer + \"'.\"
+    \"Total upload time: \" + $duration.TotalMinutes + \" minutes.\"
+}
+else
+{
+    Write-Warning \"No files found.\"
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "CopyDirectory",
+      "Label": "Copy Directory",
+      "HelpText": "Replicates files and directory under the Copy Directory.
+Eg. `Content/CDN` that is located at the root of the nuget package.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "PublishSettingsFile",
+      "Label": "Publish Settings File",
+      "HelpText": "Absolute path on the tentacle to the Azure publishsettings file to use.
+Eg. `C:\\Azure\\Azure.publishsettings`",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "StorageAccount",
+      "Label": "Storage Account",
+      "HelpText": "The Azure Storage Account to use.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "StorageAccountKey",
+      "Label": "Storage Account Key",
+      "HelpText": "The primary or secondary key for the Azure Storage Account.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "StorageContainer",
+      "Label": "Storage Container",
+      "HelpText": "The storage container to use.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "NugetPackageStepName",
+      "Label": "Nuget Package Step Name",
+      "HelpText": "Name of the previously-deployed package step that contains the Copy Directory.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "shawnmclean",
+  "$Meta": {
+    "ExportedAt": "2016-01-21T07:21:36.182+00:00",
+    "OctopusVersion": "3.1.3",
+    "Type": "ActionTemplate"
+  },
+  "Category": "azure"
+}

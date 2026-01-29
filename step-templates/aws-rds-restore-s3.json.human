@@ -1,0 +1,148 @@
+{
+  "Id": "55848421-44b9-403c-b1f0-ba8a84b1f177",
+  "Name": "AWS RDS SQL Server - Restore from S3 Bucket",
+  "Description": "Will restore a database backup from an S3 bucket",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "Write-Host \"SqlLoginWhoHasRights $rdsSqlRestoreBackupSqlLoginUserWhoHasCreateUserRights\"
+Write-Host \"CreateSqlServer $rdsSqlRestoreBackupSqlServer\"
+Write-Host \"CreateDatabaseName $rdsSqlRestoreBackupDatabaseName\"
+Write-Host \"Backup S3 Bucket $rdsSqlRestoreBackupS3Bucket\"
+Write-Host \"Backup File Name $rdsSqlRestoreBackupFileName\"
+
+if ([string]::IsNullOrWhiteSpace($rdsSqlRestoreBackupSqlLoginUserWhoHasCreateUserRights) -eq $true){
+\tWrite-Host \"No username found, using integrated security\"
+    $connectionString = \"Server=$rdsSqlRestoreBackupSqlServer;Database=msdb;integrated security=true;\"
+}
+else {
+\tWrite-Host \"Username found, using SQL Authentication\"
+    $connectionString = \"Server=$rdsSqlRestoreBackupSqlServer;Database=msdb;User ID=$rdsSqlRestoreBackupSqlLoginUserWhoHasCreateUserRights;Password=$rdsSqlRestoreBackupSqlLoginPasswordWhoHasRights;\"
+}
+
+$sqlConnection = New-Object System.Data.SqlClient.SqlConnection
+$sqlConnection.ConnectionString = $connectionString
+
+$command = New-Object System.Data.SqlClient.SqlCommand(\"dbo.rds_restore_database\", $sqlConnection)
+$command.CommandType = [System.Data.CommandType]'StoredProcedure'
+
+$backupDestParamValue = \"arn:aws:s3:::$rdsSqlRestoreBackupS3Bucket/$rdsSqlRestoreBackupFileName\"
+$command.Parameters.AddWithValue(\"s3_arn_to_restore_from\", $backupDestParamValue)
+$command.Parameters.AddWithValue(\"with_norecovery\", 0)
+$command.Parameters.AddWithValue(\"restore_db_name\", $rdsSqlRestoreBackupDatabaseName)
+
+$taskStatusCommand = New-Object System.Data.SqlClient.SqlCommand(\"dbo.rds_task_status\", $sqlConnection)
+$taskStatusCommand.CommandType = [System.Data.CommandType]'StoredProcedure'
+$taskStatusCommand.Parameters.AddWithValue(\"db_name\", $rdsSqlRestoreBackupDatabaseName)
+
+$taskStatusAdapter = New-Object System.Data.SqlClient.SqlDataAdapter $taskStatusCommand
+
+Write-Host \"Opening the connection to $rdsSqlRestoreBackupSqlServer\"
+$sqlConnection.Open()
+    
+Write-Host \"Executing backup\"
+$command.ExecuteNonQuery()
+
+Write-Host \"Closing the connection to $rdsSqlRestoreBackupSqlServer\"
+$sqlConnection.Close()
+
+Write-Host \"Getting status of backup\"
+$backupIsActive = $true
+
+While ($backupIsActive)
+{
+\tWrite-Host \"Opening the connection to $rdsSqlRestoreBackupSqlServer\"
+\t$sqlConnection.Open()
+    
+    $taskStatusDataSet = New-Object System.Data.DataSet
+\t$taskStatusAdapter.Fill($taskStatusDataSet)
+    $taskStatus = $taskStatusDataSet.Tables[0].Rows[0][\"lifecycle\"]
+    $taskComplete = $taskStatusDataSet.Tables[0].Rows[0][\"% complete\"]
+    
+    Write-Host \"The task is $taskComplete% complete.\"
+    $backupIsActive = $taskStatus -eq \"CREATED\" -or $taskStatus -eq \"IN_PROGRESS\"
+    
+    Write-Host \"Closing the connection to $rdsSqlRestoreBackupSqlServer\"
+\t$sqlConnection.Close()
+    
+    Start-Sleep -Seconds 5
+}"
+  },
+  "Parameters": [
+    {
+      "Id": "3e45bb88-3632-4115-a0d5-54680615f0ca",
+      "Name": "rdsSqlRestoreBackupSqlServer",
+      "Label": "SQL Server",
+      "HelpText": "The SQL Server to perform the work on",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "880a4e73-64fe-4a36-b4c3-a281b64e3c23",
+      "Name": "rdsSqlRestoreBackupSqlLoginUserWhoHasCreateUserRights",
+      "Label": "SQL Login",
+      "HelpText": "The login of the user who has permissions to create a database.
+
+Leave blank for integrated security",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6689fbe5-f47a-4800-945d-df50fc19c7b0",
+      "Name": "rdsSqlRestoreBackupSqlLoginPasswordWhoHasRights",
+      "Label": "SQL Password",
+      "HelpText": "The password of the user who has permissions to create SQL Logins
+
+Leave blank for integrated security",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "1a358cca-5cd1-41ae-b763-fcaf2c7350f9",
+      "Name": "rdsSqlRestoreBackupDatabaseName",
+      "Label": "Database Name",
+      "HelpText": "The name of the database to restore to",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c5e2fa69-1b42-4427-91d2-10e1a13af744",
+      "Name": "rdsSqlRestoreBackupS3Bucket",
+      "Label": "S3 Bucket Name",
+      "HelpText": "The name of the bucket (including any sub directories).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ea9d9eb8-9c0f-4c69-a6d4-4d00e43383af",
+      "Name": "rdsSqlRestoreBackupFileName",
+      "Label": "Backup File Name and Extension",
+      "HelpText": "The name of the back up file (including the extension).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-08-18T13:27:31.393Z",
+    "OctopusVersion": "2020.4.0-ci0428",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "octobob",
+  "Category": "aws"
+}

@@ -1,0 +1,136 @@
+{
+  "Id": "40af3b8d-83b0-499e-99ed-e4b1093a7633",
+  "Name": "Datadog - Create Event",
+  "Description": "Datadog is cloud monitoring service which allows you to push arbitrary events into via an api.  This task allows you to create an event to correlate with other data.",
+  "ActionType": "Octopus.Script",
+  "Version": 3,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Lets handle our own errors here
+$ErrorActionPreference = \"continue\"
+
+$apiKey = $OctopusParameters['ApiKey']
+$title = $OctopusParameters['EventTitle']
+$body = $OctopusParameters['EventBody']
+$alertType = $OctopusParameters['AlertType']
+$priority = $OctopusParameters['Priority']
+$tags = $OctopusParameters['Tags']
+$endpoint = $OctopusParameters['DatadogEndpoint']
+$eventsApiEndpoint = \"/api/v1/events\"
+
+# Write out some debug information
+Write-Host \"Event Title: $title\"
+Write-Host \"Event Body: $body\"
+Write-Host \"Alert Type: $alertType\"
+Write-Host \"Priority: $priority\"
+Write-Host \"Tags: $tags\"
+Write-Host \"Datadog Endpoint: $endpoint$eventsApiEndpoint\"
+
+# Create the url from basic information
+$url = \"$endpoint$eventsApiEndpoint`?api_key=$apiKey\"
+$tagString = [system.String]::Join(\"`\",`\"\", $tags.Split(\",\"))
+
+$json = @\"
+{
+      \"title\": \"$title\",
+      \"text\": \"$body\",
+      \"priority\": \"$priority\",
+      \"tags\": [\"$tagString\"],
+      \"alert_type\": \"$alertType\"
+  }
+\"@
+
+# Make the response and handle exceptions **Requires PS 3.0 + 
+try {
+    $response = Invoke-WebRequest -Uri $url -Method POST -Body ($json | ConvertFrom-Json | ConvertTo-Json) -ContentType \"Application/json\" -UseBasicParsing
+}catch{
+    Write-Error \"Error: $_\"
+    EXIT 0
+}
+
+# Some Error handling here
+if($response.StatusCode -ne 202){
+    Write-Error \"There was an error listing response content below to debug\"
+    $response.RawContent
+}else{
+    Write-Host \"Sent Successfully\"
+}
+
+# We usually don't want to fail a deployment because of this
+EXIT 0",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "ApiKey",
+      "Label": "Datadog Api Key",
+      "HelpText": "The api key used to authenticate with Datadog.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "EventTitle",
+      "Label": "Title",
+      "HelpText": "The title for the event to publish.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "EventBody",
+      "Label": "Body",
+      "HelpText": "The text to provide more information about the event.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AlertType",
+      "Label": "Alert Type",
+      "HelpText": "The alert type out of the following options: \"error\", \"warning\", \"info\" or \"success\".",
+      "DefaultValue": "info",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Priority",
+      "Label": "Priority",
+      "HelpText": "The priority out of the following: \"normal\" or \"low\".",
+      "DefaultValue": "normal",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Tags",
+      "Label": "Tags",
+      "HelpText": "A comma separated list of tags to identify the event.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DatadogEndpoint",
+      "Label": "Datadog Endpoint",
+      "HelpText": "The endpoint for datadog, for most (if not all) instances this should just be \"https://app.datadoghq.com\"",
+      "DefaultValue": "https://app.datadoghq.com",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2014-07-08T02:19:06.141+00:00",
+    "OctopusVersion": "2.4.10.235",
+    "Type": "ActionTemplate"
+  },
+  "Category": "datadog"
+}

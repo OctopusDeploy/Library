@@ -1,0 +1,112 @@
+{
+  "Id": "a032159b-0742-4982-95f4-59877a31fba3",
+  "Name": "IIS Website - Delete",
+  "Description": "Deletes a website in IIS.",
+  "ActionType": "Octopus.Script",
+  "Version": 10,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "$webSiteName = $OctopusParameters['WebSiteName']
+if (! $webSiteName) {
+    throw \"Web Site Name cannot be empty, please specify the web site to delete\"
+}
+
+# Helper to run a block with a retry if things go wrong
+$maxFailures = 5
+$sleepBetweenFailures = Get-Random -minimum 1 -maximum 4
+function Execute-WithRetry([ScriptBlock] $command) {
+\t$attemptCount = 0
+\t$operationIncomplete = $true
+
+\twhile ($operationIncomplete -and $attemptCount -lt $maxFailures) {
+\t\t$attemptCount = ($attemptCount + 1)
+
+\t\tif ($attemptCount -ge 2) {
+\t\t\tWrite-Output \"Waiting for $sleepBetweenFailures seconds before retrying...\"
+\t\t\tStart-Sleep -s $sleepBetweenFailures
+\t\t\tWrite-Output \"Retrying...\"
+\t\t}
+
+\t\ttry {
+\t\t\t& $command
+
+\t\t\t$operationIncomplete = $false
+\t\t} catch [System.Exception] {
+\t\t\tif ($attemptCount -lt ($maxFailures)) {
+\t\t\t\tWrite-Output (\"Attempt $attemptCount of $maxFailures failed: \" + $_.Exception.Message)
+\t\t\t
+\t\t\t}
+\t\t\telse {
+\t\t\t    throw \"Failed to execute command\"
+\t\t\t}
+\t\t}
+\t}
+}
+
+Add-PSSnapin WebAdministration -ErrorAction SilentlyContinue
+Import-Module WebAdministration -ErrorAction SilentlyContinue
+
+pushd IIS:\\
+
+try {
+    Write-Output \"Deleting web site $webSiteName\"
+    $sitePath = (\"IIS:\\Sites\\\" + $webSiteName)
+    
+    Write-Output $sitePath
+    
+    $site = Get-Item $sitePath -ErrorAction SilentlyContinue
+    if (! $site) {
+        Write-Output \"$webSiteName does not exist\"
+    }
+    else {
+        
+        Execute-WithRetry {
+            $state = Get-WebSiteState $webSiteName
+            if($state.Value -eq \"Started\") {
+                Write-Output \"Web site is running. Attempting to stop...\"
+                Stop-WebSite $webSiteName
+            }
+        }
+        
+        Write-Output \"Attempting to delete $webSiteName...\"
+        Execute-WithRetry {
+            Write-Output \"Removing SSL Bindings...\"
+            #Skipping default binding (Hostname $null) as it will break all sites which depend on this binding (non-SNI enabled sites will be grouped on the default binding! Remove-WebSite can handle this properly.)
+            Get-Item 'IIS:\\SslBindings\\' | Get-ChildItem | select $_.Sites | Where-Object { ($_.Sites -contains $webSiteName) -and ($_.Hostname -ne $null) } | Remove-Item
+            Write-Output \"Removing Web Bindings...\"
+            Get-WebBinding -Name $webSiteName | Remove-WebBinding
+            Write-Output \"Removing web site...\"
+            Remove-WebSite $webSiteName
+        }
+    }
+} catch [System.Exception] {
+    throw (\"Failed to execute command\" + $_.Exception.Message)
+}
+
+popd
+
+Write-Output \"IIS Configuration complete\"",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "WebsiteName",
+      "Label": "Website name",
+      "HelpText": "The name of the website in IIS to delete.
+
+Example: Default Web Site",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2021-04-22T14:41:30.252Z",
+    "OctopusVersion": "2020.4.6",
+    "Type": "ActionTemplate"
+  },
+  "Category": "iis"
+}

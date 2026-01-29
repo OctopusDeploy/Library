@@ -1,0 +1,335 @@
+{
+    "Id": "4a222ac3-ff4b-4328-8778-1c44eebdedde",
+    "Name": "MySQL - Create Database If Not Exists",
+    "Description": "Creates a MySQL database if it doesn't already exist.  This template is also compatible with MariaDB.
+
+Note - this template will install the Nuget package provider if it's not already present.",
+    "ActionType": "Octopus.Script",
+    "Author": "twerthi",
+    "Version": 9,
+    "Packages": [],
+    "Properties": {
+        "Octopus.Action.Script.ScriptSource": "Inline",
+        "Octopus.Action.Script.Syntax": "PowerShell",
+        "Octopus.Action.Script.ScriptBody": "# Define variables
+$connectionName = \"OctopusDeploy\"
+
+# Define functions
+function Get-ModuleInstalled {
+    # Define parameters
+    param(
+        $PowerShellModuleName
+    )
+
+    # Check to see if the module is installed
+    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName)) {
+        # It is installed
+        return $true
+    }
+    else {
+        # Module not installed
+        return $false
+    }
+}
+
+function Install-PowerShellModule {
+    # Define parameters
+    param(
+        $PowerShellModuleName,
+        $LocalModulesPath
+    )
+
+    # Check to see if the package provider has been installed
+    if ((Get-NugetPackageProviderNotInstalled) -ne $false) {
+        # Display that we need the nuget package provider
+        Write-Host \"Nuget package provider not found, installing ...\"
+        
+        # Install Nuget package provider
+        Install-PackageProvider -Name Nuget -Force
+    }
+
+    # Save the module in the temporary location
+    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force
+}
+
+function Get-NugetPackageProviderNotInstalled {
+    # See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+function Get-DatabaseExists {
+    # Define parameters
+    param ($DatabaseName)
+    
+    # Execute query
+    return Invoke-SqlQuery \"SHOW DATABASES LIKE '$DatabaseName';\" -ConnectionName $connectionName
+}
+
+# Define PowerShell Modules path
+$LocalModules = (New-Item \"$PSScriptRoot\\Modules\" -ItemType Directory -Force).FullName
+$env:PSModulePath = \"$LocalModules$([System.IO.Path]::PathSeparator)$env:PSModulePath\"
+$PowerShellModuleName = \"SimplySql\"
+
+# Set secure protocols
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Check to see if SimplySql module is installed
+if ((Get-ModuleInstalled -PowerShellModuleName $PowerShellModuleName) -ne $true) {
+    # Tell user what we're doing
+    Write-Output \"PowerShell module $PowerShellModuleName is not installed, downloading temporary copy ...\"
+
+    # Install temporary copy
+    Install-PowerShellModule -PowerShellModuleName $PowerShellModuleName -LocalModulesPath $LocalModules
+}
+
+# Display
+Write-Output \"Importing module $PowerShellModuleName ...\"
+
+# Check to see if it was downloaded
+if ((Test-Path -Path \"$LocalModules\\$PowerShellModuleName\") -eq $true) {
+    # Import from temp location
+    $PowerShellModuleName = \"$LocalModules\\$PowerShellModuleName\"
+}
+
+# Declare connection string
+$connectionString = \"Server=$createMySQLServerName;Port=$createPort;\"
+
+# Customize connection string based on authentication method
+switch ($mySqlAuthenticationMethod) {
+    \"awsiam\" {
+        # Region is part of the RDS endpoint, extract
+        $region = ($createMySQLServerName.Split(\".\"))[2]
+
+        Write-Host \"Generating AWS IAM token ...\"
+        $createUserPassword = (aws rds generate-db-auth-token --hostname $createMySQLServerName --region $region --port $createPort --username $createUsername)
+        
+        # Append remaining portion of connection string
+        $connectionString += \";Uid=$createUsername;Pwd=`\"$createUserPassword`\";\"
+
+        break
+    }
+
+    \"usernamepassword\" {
+        # Append remaining portion of connection string
+        $connectionString += \";Uid=$createUsername;Pwd=`\"$createUserPassword`\";\"
+        
+        break    
+    }
+
+    \"windowsauthentication\" {
+        # Append remaining portion of connection string
+        $connectionString += \";IntegratedSecurity=yes;Uid=$createUsername;\"
+
+        break
+    }
+
+    \"azuremanagedidentity\" {
+        Write-Host \"Generating Azure Managed Identity token ...\"
+        $token = Invoke-RestMethod -Method GET -Uri \"http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://ossrdbms-aad.database.windows.net\" -Headers @{\"MetaData\" = \"true\" }
+
+        $createUserPassword = $token.access_token
+
+        $connectionString += \";Uid=$createUsername;Pwd=`\"$createUserPassword`\";\"
+
+        break
+    }
+
+    \"gcpserviceaccount\" {
+        # Define header
+        $header = @{ \"Metadata-Flavor\" = \"Google\" }
+
+        # Retrieve service accounts
+        $serviceAccounts = Invoke-RestMethod -Method Get -Uri \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/\" -Headers $header
+
+        # Results returned in plain text format, get into array and remove empty entries
+        $serviceAccounts = $serviceAccounts.Split([Environment]::NewLine, [StringSplitOptions]::RemoveEmptyEntries)
+
+        # Retreive the specific service account assigned to the VM
+        $serviceAccount = $serviceAccounts | Where-Object { $_.Contains(\"iam.gserviceaccount.com\") }
+
+        if ([string]::IsNullOrWhiteSpace(($createUsername))) {
+            $createUsername = $serviceAccount.SubString(0, $serviceAccount.IndexOf(\".gserviceaccount.com\"))
+        }
+
+        Write-Host \"Generating GCP IAM token ...\"
+        # Retrieve token for account
+        $token = Invoke-RestMethod -Method Get -Uri \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/$serviceAccount/token\" -Headers $header
+        
+        $createUserPassword = $token.access_token
+        $connectionString += \";Uid=$createUsername;Pwd=`\"$createUserPassword`\";\"
+
+        break
+    }
+}
+
+
+# Import the module
+Import-Module -Name $PowerShellModuleName
+
+
+try {
+    # Connect to MySQL
+    $connectionString = \"Server=$createMySQLServerName;Port=$createPort;Uid=$createUsername;Pwd=$createUserPassword;\"
+    if ($createUseSSL -eq \"True\") {
+        # Append to connection string
+        $connectionString += \"SslMode=Required;\"
+    }
+    else {
+        # Disable ssl
+        $connectionString += \"SslMode=none;\"
+    }
+    
+    if (![string]::IsNullOrWhitespace($mysqlAdditionalParameters))
+    {
+      foreach ($parameter in $mysqlAdditionalParameters.Split(\",\"))
+      {
+          # Check for delimiter
+          if (!$connectionString.EndsWith(\";\") -and !$parameter.StartsWith(\";\"))
+          {
+              # Append delimeter
+              $connectionString +=\";\"
+          }
+
+          $connectionString += $parameter.Trim()
+      }
+    }
+       
+    Open-MySqlConnection -ConnectionString $connectionString -ConnectionName $connectionName
+
+    # See if database exists
+    $databaseExists = Get-DatabaseExists -DatabaseName $createDatabaseName
+
+    if ($databaseExists.ItemArray.Count -eq 0) {
+        # Create database
+        Write-Output \"Creating database $createDatabaseName ...\"
+        $executionResult = Invoke-SqlUpdate \"CREATE DATABASE $createDatabaseName;\" -ConnectionName $connectionName
+
+        # Check result
+        if ($executionResult -ne 1) {
+            # Commit transaction
+            Write-Error \"Create schema failed.\"
+        }
+        else {
+            # See if it was created
+            $databaseExists = Get-DatabaseExists -DatabaseName $createDatabaseName
+            
+            # Check array
+            if ($databaseExists.ItemArray.Count -eq 1) {
+                # Success
+                Write-Output \"$createDatabaseName created successfully!\"
+            }
+            else {
+                # Failed
+                Write-Error \"$createDatabaseName was not created!\"
+            }
+        }
+    }
+    else {
+        # Display message
+        Write-Output \"Database $createDatabaseName already exists.\"
+    }
+}
+finally {
+\t# Close connection if open
+    if ((Test-SqlConnection -ConnectionName $connectionName) -eq $true)
+    {
+    \tClose-SqlConnection -ConnectionName $connectionName
+    }
+}"
+    },
+    "Parameters": [
+        {
+            "Id": "987155d9-f852-415d-b89d-cd74618d14bb",
+            "Name": "createMySQLServerName",
+            "Label": "Server",
+            "HelpText": "Hostname (or IP) of the MySQL database server.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "aff09ee3-b7c4-4a88-a4e3-70ad0eee04e9",
+            "Name": "createUsername",
+            "Label": "Username",
+            "HelpText": "Username to use for the connection",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "a08b0359-560f-49cb-bc71-d759d49a06fc",
+            "Name": "createUserPassword",
+            "Label": "Password",
+            "HelpText": "Password for the user account",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Sensitive"
+            }
+        },
+        {
+            "Id": "e17c8ac9-6b4a-4321-975b-452e2015bc4a",
+            "Name": "createDatabaseName",
+            "Label": "Database Name",
+            "HelpText": "Name of the database to create",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "a1d735f0-3ec2-45a1-af43-d0af7bf13f68",
+            "Name": "createPort",
+            "Label": "Port",
+            "HelpText": "Port for the database instance.",
+            "DefaultValue": "3306",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "ddd1ca9c-04fe-4a43-84f7-dc8d52adb063",
+            "Name": "createUseSSL",
+            "Label": "Use SSL",
+            "HelpText": "Check this box to force the use of SSL.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Checkbox"
+            }
+        },
+        {
+            "Id": "4090f423-b47f-4bac-ab38-ab45c92e0ab5",
+            "Name": "mySqlAuthenticationMethod",
+            "Label": "MySQL Authentication Method",
+            "HelpText": "Authentication method used to connect with MySQL. Options include standard Username/Password, Windows Authentication, [AWS IAM Authentication](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.html), [Azure Managed Identity](https://docs.microsoft.com/en-us/azure/mysql/single-server/how-to-connect-with-managed-identity), and [Google Cloud IAM for Cloud SQL ](https://cloud.google.com/sql/docs/mysql/iam-overview)",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Select",
+                "Octopus.SelectOptions": "awsiam|AWS IAM
+usernamepassword|Username/password
+windowsauthentication|Windows Authentication
+azuremanagedidentity|Azure Managed Identity
+gcpserviceaccount|GCP IAM"
+            }
+        },
+        {
+          "Id": "273612dc-5c75-4591-9da9-dc8e40b7bf39",
+          "Name": "mysqlAdditionalParameters",
+          "Label": "Additional connection string parameters",
+          "HelpText": "A comma-delimited list of additional parameters to add to the connection string.  ex `AllowPublicKeyRetrieval=True`",
+          "DefaultValue": "",
+          "DisplaySettings": {
+            "Octopus.ControlType": "SingleLineText"
+          }
+        }
+    ],
+    "StepPackageId": "Octopus.Script",
+    "LastModifiedBy": "twerthi",
+    "$Meta": {
+      "ExportedAt": "2024-03-20T19:31:22.096Z",
+      "OctopusVersion": "2024.2.2075",
+      "Type": "ActionTemplate"
+    },
+    "Category": "mysql"
+}

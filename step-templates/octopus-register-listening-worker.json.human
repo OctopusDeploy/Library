@@ -1,0 +1,243 @@
+{
+    "Id": "e83b3265-64f9-4870-8802-54884c43eaf0",
+    "Name": "Register Listening Worker with Octopus",
+    "Description": "Step template to Register an Listening Worker with Octopus Deploy using the API.  Useful for when you need to wait to install additional software and a restart when spinning up a new worker.",
+    "ActionType": "Octopus.Script",
+    "Version": 1,
+    "Author": "octobob",
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.RunOnServer": "true",
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$OctopusAPIKey = $OctopusParameters[\"RegisterListeningWorker.Octopus.Api.Key\"]
+$RegistrationName = $OctopusParameters[\"RegisterListeningWorker.Machine.Name\"]
+$RegistrationAddress = $OctopusParameters[\"RegisterListeningWorker.Machine.Address\"]
+$OctopusUrl = $OctopusParameters[\"RegisterListeningWorker.Octopus.Base.Url\"]
+$WorkerPools = $OctopusParameters[\"RegisterListeningWorker.WorkerPool.List\"]
+$SpaceId = $OctopusParameters[\"Octopus.Space.Id\"]
+$MachinePolicyIdOrName = $OctopusParameters[\"RegisterListeningWorker.MachinePolicy.IdOrName\"]
+$PortNumber = $OctopusParameters[\"RegisterListeningWorker.Machine.Port\"]
+$OverwriteExisting = $OctopusParameters[\"RegisterListeningWorker.Overwrite.Existing\"]
+$OverwriteExisting = $OverwriteExisting -eq \"True\"
+
+
+Write-Host \"Machine Name: $RegistrationName\"
+Write-Host \"Machine Address: $RegistrationAddress\"
+Write-Host \"Machine Port: $PortNumber\"
+Write-Host \"Octopus Url: $OctopusUrl\"
+Write-Host \"Worker Pools: $WorkerPools\"
+Write-Host \"Environments: $Environments\"
+Write-Host \"Machine Policy Name or Id: $MachinePolicyIdOrName\"
+Write-Host \"Overwrite Existing: $OverwriteExisting\"
+
+$header = New-Object \"System.Collections.Generic.Dictionary[[String],[String]]\"
+$header.Add(\"X-Octopus-ApiKey\", $OctopusAPIKey)
+
+$baseApiUrl = \"$OctopusUrl/api\"
+$baseApiInformation = Invoke-RestMethod $baseApiUrl -Headers $header
+if ((Get-Member -InputObject $baseApiInformation.Links -Name \"Spaces\" -MemberType Properties) -ne $null)
+{  \t
+\t$baseApiUrl = \"$baseApiUrl/$SpaceId\"    
+}
+
+Write-Host \"Base API Url: $baseApiUrl\"
+
+$existingMachineResultsUrl = \"$baseApiUrl/workers?partialName=$RegistrationName&skip=0&take=1000\"
+Write-Host \"Attempting to find existing machine with similar name at $existingMachineResultsUrl\"
+$existingMachineResponse = Invoke-RestMethod $existingMachineResultsUrl -Headers $header
+Write-Host $existingMachineResponse
+
+$machineFound = $false
+foreach ($item in $existingMachineResponse.Items)
+{
+\tif ($item.Name -eq $RegistrationName)
+    {
+    \t$machineFound = $true
+        if ($OverwriteExisting)
+        {
+        \t$machineId = $item.Id 
+        }
+        break
+    }
+}
+
+if ($machineFound -and $OverwriteExisting -eq $false)
+{
+\tWrite-Highlight \"Machine already exists, skipping registration\"
+    Exit 0
+}
+
+$workerPoolList = $WorkerPools -split \",\"
+$workerPoolIdList = @()
+Write-Host \"Getting the ids for all environments specified\"
+foreach($workerPool in $workerPoolList)
+{
+\tWrite-Host \"Getting the id for the worker pool $workerPool\"
+    
+    if ($workerPool.StartsWith(\"WorkerPools-\") -eq $true)
+    {
+    \tWrite-Host \"The worker pool is already an id, using that instead of looking it up\"
+    \t$workerPoolIdList += $workerPool
+    }
+    else
+    {
+    \t$workerPoolEscaped = $workerPool.Replace(\" \", \"%20\")
+        $workerPoolUrl = \"$baseApiUrl/workerpools?skip=0&take=1000&partialName=$workerPoolEscaped\"
+        $workerPoolResponse = Invoke-RestMethod $workerPoolUrl -Headers $header 
+
+        $workerPoolId = $workerPoolResponse.Items[0].Id
+        Write-Host \"The id for worker pool $workerPool is $workerPoolId\"
+        $workerPoolIdList += $workerPoolId
+    }       
+}
+
+$machinePolicyId = $machinePolicyIdOrName
+if ($machinePolicyIdOrName.StartsWith(\"MachinePolicies-\") -eq $false)
+{
+\tWrite-Host \"The machine policy specified $machinePolicyIdOrName appears to be a name\"
+\t$machinePolicyNameEscaped = $machinePolicyIdOrName.Replace(\" \", \"%20\")
+\t$machinePolicyResponse = Invoke-RestMethod \"$baseApiUrl/machinepolicies?partialName=$machinePolicyNameEscaped\" -Headers $header
+        
+    $machinePolicyId = $machinePolicyResponse.Items[0].Id
+    Write-Host \"The machine policy id is $machinePolicyId\"
+}
+
+$discoverUrl = \"$baseApiUrl/machines/discover?host=$RegistrationAddress&port=$PortNumber&type=TentaclePassive\"
+Write-Host \"Discovering the machine $discoverUrl\"
+$discoverResponse = Invoke-RestMethod $discoverUrl -Headers $header 
+Write-Host \"ProjectResponse: $discoverResponse\"
+
+$machineThumbprint = $discoverResponse.EndPoint.Thumbprint
+Write-Host \"Thumbprint = $machineThumbprint\"
+
+$rawRequest = @{
+  Id = $machineId;
+  MachinePolicyId = $MachinePolicyId;
+  Name = $RegistrationName;
+  IsDisabled = $false;
+  HealthStatus = \"Unknown\";
+  HasLatestCalamari = $true;
+  StatusSummary = $null;
+  IsInProcess = $true;
+  Links = $null;
+  WorkerPoolIds = $workerPoolIdList;
+  Endpoint = @{
+    Id = $null;
+    CommunicationStyle = \"TentaclePassive\";
+    Links = $null;
+    Uri = \"https://$RegistrationAddress`:$PortNumber\";
+    Thumbprint = \"$machineThumbprint\";
+    ProxyId = $null
+  }
+}
+
+$jsonRequest = $rawRequest | ConvertTo-Json -Depth 10
+
+Write-Host \"Sending in the request $jsonRequest\"
+
+$machineUrl = \"$baseApiUrl/workers\"
+$method = \"POST\"
+if ($OverwriteExisting -and $machineId -ne $null)
+{
+\t$machineUrl = \"$machineUrl/$machineId\" 
+  \t$method = \"PUT\"
+}
+
+Write-Host \"Posting to url $machineUrl\"
+$machineResponse = Invoke-RestMethod $machineUrl -Headers $header -Method $method -Body $jsonRequest
+
+Write-Host \"Create workers's response: $machineResponse\""
+    },
+    "Parameters": [
+      {
+        "Id": "e98dc4e2-0766-4d2d-a753-eafe294fdeea",
+        "Name": "RegisterListeningWorker.Octopus.Base.Url",
+        "Label": "Octopus Base Url",
+        "HelpText": "The base url of your Octopus Deploy instance.  Example: https://samples.octopus.app",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "cb3cdd41-3d1f-49c6-820e-acfa24bf5a88",
+        "Name": "RegisterListeningWorker.Octopus.Api.Key",
+        "Label": "Octopus Api Key",
+        "HelpText": "The API key of a user in Octopus Deploy who has permissions to register the cluster.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Sensitive"
+        }
+      },
+      {
+        "Id": "ca9d9733-2032-466b-9e80-2aa6abd3c977",
+        "Name": "RegisterListeningWorker.Machine.Name",
+        "Label": "Machine Name",
+        "HelpText": "The name of the machine to register with Octopus Deploy.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "1d3d8695-27a3-4d3e-9457-6b483253a609",
+        "Name": "RegisterListeningWorker.Machine.Address",
+        "Label": "Machine Address",
+        "HelpText": "The machine address (IP Address or Domain Name) to connect to",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "ea762a1e-07ee-4eec-af7a-b6e29bf274d8",
+        "Name": "RegisterListeningWorker.Machine.Port",
+        "Label": "Port Number",
+        "HelpText": "The port the tentacle is listening on",
+        "DefaultValue": "10933",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "fa4bd89d-bb86-4d3f-87ff-17125cd88f24",
+        "Name": "RegisterListeningWorker.WorkerPool.List",
+        "Label": "Worker Pool CSV List",
+        "HelpText": "Comma separated list of Worker Pools to assign the worker to in Octopus Deploy.  This can be the worker pool name or the id.",
+        "DefaultValue": "",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "5ef91f37-b13b-413d-955c-872c7f274c7e",
+        "Name": "RegisterListeningWorker.MachinePolicy.IdOrName",
+        "Label": "Machine Policy Id Or Name",
+        "HelpText": "Enter in the name or the Id of the Machine Policy in Octopus Deploy for the AKS Cluster.",
+        "DefaultValue": "Default Machine Policy",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "d456924c-3720-4893-9a40-36bb1c00b331",
+        "Name": "RegisterListeningWorker.Overwrite.Existing",
+        "Label": "Overwrite Existing Registration",
+        "HelpText": "Indicates if the existing worker should be overwritten",
+        "DefaultValue": "False",
+        "DisplaySettings": {
+          "Octopus.ControlType": "Checkbox"
+        }
+      }
+    ],
+    "LastModifiedBy": "octobob",
+    "$Meta": {
+      "ExportedAt": "2020-04-13T15:37:29.866Z",
+      "OctopusVersion": "2020.1.10",
+      "Type": "ActionTemplate"
+    },
+    "Category": "octopus"
+  }

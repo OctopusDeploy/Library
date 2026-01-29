@@ -1,0 +1,141 @@
+{
+  "Id": "4e870b0d-0715-4b98-9fa3-48500f6a42e4",
+  "Name": "Solarwinds - Manage",
+  "Description": "Start monitoring for a Solarwinds node, application or both",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}
+
+$solarwindsHost =  $OctopusParameters['Host']
+$node =  $OctopusParameters['NodeId']
+$application =  $OctopusParameters['ApplicationId']
+$username =  $OctopusParameters['Username']
+$password =  $OctopusParameters['Password']
+
+Write-Host \"Starting Solarwinds monitoring for node \" + $node
+
+if ($node -ne \"\")
+{
+    $success = $false
+    try
+    {
+        $body = \"[\"\"$node\"\"]\"
+        $header = @{}
+        $header.Add(\"Authorization\", \"Basic \"+[System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($username+\":\"+$password)))
+        $uri = \"https://\" + $solarwindsHost + \":17778/SolarWinds/InformationService/v3/Json/Invoke/Orion.Nodes/Remanage\"
+
+        Write-Host \"Sending request $body to $uri\"
+
+        $response = Invoke-WebRequest -Uri $uri -Method Post -Body $body -Headers $header -ContentType \"application/json\" -UseBasicParsing
+
+        if ($response.StatusCode -eq 200)
+        {
+            $success = $true
+        }
+    }
+    catch
+    {
+        Write-Host \"Something went wrong:\"
+        Write-Host $_.Exception
+    }
+
+    if (!$success)
+    {
+        throw \"Remanaging node failed.\"
+    }
+
+    Write-Host \"Remanaged node $node.\"
+}
+
+if ($application -ne \"\")
+{
+    $success = $false
+    try
+    {
+        $body = \"[\"\"$application\"\"]\"
+        $header = @{}
+        $header.Add(\"Authorization\", \"Basic \"+[System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($username+\":\"+$password)))
+        $uri = \"https://\" + $solarwindsHost + \":17778/SolarWinds/InformationService/v3/Json/Invoke/Orion.APM.Application/Remanage\"
+
+        Write-Host \"Sending request $body to $uri\"
+
+        $response = Invoke-WebRequest -Uri $uri -Method Post -Body $body -Headers $header -ContentType \"application/json\" -UseBasicParsing
+
+        if ($response.StatusCode -eq 200)
+        {
+            $success = $true
+        }
+    }
+    catch
+    {
+        Write-Host \"Something went wrong:\"
+        Write-Host $_.Exception
+    }
+
+    if (!$success)
+    {
+        throw \"Remanaging application failed.\"
+    }
+
+    Write-Host \"Remanaged application $application.\"
+}",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Host",
+      "Label": "Host",
+      "HelpText": "IP or DNS of the Solarwinds monitoring server",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "NodeId",
+      "Label": "Node ID",
+      "HelpText": "Solarwinds ID of machine to be unmonitored. Starts with 'N:'.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ApplicationId",
+      "Label": "Application ID",
+      "HelpText": "Solarwinds ID of application to be unmonitored. Starts with 'AA:'.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Username",
+      "Label": "Username",
+      "HelpText": "Username for the Solarwinds console user",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Password",
+      "Label": "Password",
+      "HelpText": "Password for the Solarwinds console user",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T16:50:00.000+00:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2014-05-16T10:22:27.031+00:00",
+    "OctopusVersion": "2.4.5.46",
+    "Type": "ActionTemplate"
+  },
+  "Category": "solarwinds"
+}

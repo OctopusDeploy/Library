@@ -1,0 +1,162 @@
+{
+  "Id": "9aa25d78-a90a-425e-a25d-b1e9f1bf08be",
+  "Name": "Testery - Create Test Run",
+  "Description": "Run tests in the Testery platform. For more information, visit https://testery.io/.",
+  "ActionType": "Octopus.Script",
+  "Version": 25,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "try {$pipCmd = get-command pip} catch {}
+if (!($pipCmd)) {
+\tFail-Step \"This step template requires Python 3.6 or greater and pip to be installed. Python is available at https://www.python.org/downloads/\"
+}
+
+pip install testery --upgrade --disable-pip-version-check --no-warn-script-location -qqq
+
+$TesteryCommand = \"testery create-test-run --token `\"${TesteryToken}`\" --project `\"${TesteryProjectName}`\" --environment `\"${TesteryEnvironment}`\"\"
+
+if (\"${TesteryIncludeTags}\" -eq \"\") {
+\t$TesteryCommand = $TesteryCommand + \" --include-all-tags\"
+} else {
+\t$TesteryCommand = $TesteryCommand + \" --include-tags `\"${TesteryIncludeTags}`\"\"
+}
+
+if (\"${TesteryLatestDeploy}\" -eq \"True\") {
+\t$TesteryCommand = $TesteryCommand + \" --latest-deploy\"
+}
+
+if (\"${TesteryGitReference}\" -ne \"\") {
+\t$TesteryCommand = $TesteryCommand + \" --git-ref `\"${TesteryGitReference}`\"\"
+}
+
+if (\"${TesteryBuildId}\" -ne \"\") {
+\t$TesteryCommand = $TesteryCommand + \" --build-id `\"${TesteryBuildId}`\"\"
+}
+
+if (\"${TesteryWaitForResults}\" -eq \"True\") {
+\t$TesteryCommand = $TesteryCommand + \" --wait-for-results\"
+}
+
+if (\"${TesteryFailOnFailure}\" -eq \"True\") {
+\t$TesteryCommand = $TesteryCommand + \" --fail-on-failure\"
+}
+
+
+echo $TesteryCommand
+Invoke-Expression $TesteryCommand"
+  },
+  "Parameters": [
+    {
+      "Id": "db36b837-9fe6-480f-b4f1-05cfc68bd08b",
+      "Name": "TesteryToken",
+      "Label": "Testery Token",
+      "HelpText": "Your Testery API token (found in Testery -> Settings -> Integrations -> Show API Token)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "54de434f-0fa8-4351-b59c-a790845a0f14",
+      "Name": "TesteryProjectName",
+      "Label": "Testery Project Name",
+      "HelpText": "The project name for this build.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "352f0cf8-da46-4651-b7d0-3c5413d7f3e0",
+      "Name": "TesteryEnvironment",
+      "Label": "Testery Environment",
+      "HelpText": "The environment (defined in Testery) where the tests should be run. It can be convenient to have these line up with tenant names.",
+      "DefaultValue": "#{Octopus.Deployment.Tenant.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9a9d2a9f-cd24-40a2-96b7-c6f42e489e7e",
+      "Name": "TesteryIncludeTags",
+      "Label": "Testery Include Tags",
+      "HelpText": "Comma separated list of tags for tests that should be included in the test run.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b9d78e94-20fb-4fa5-9a9a-34cf173c8911",
+      "Name": "TesteryBuildId",
+      "Label": "Build ID",
+      "HelpText": "The build id of the project being tested, typically coming from your CI/CD. If uploading test artifacts to Testery, this build id must match.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "96cec59e-cf55-4867-87ec-bb4af80a86e3",
+      "Name": "TesteryGitReference",
+      "Label": "Git Refererence",
+      "HelpText": "This is the git reference to the tests you want to run. This value can be extracted from the packages when build info is reported to Octopus.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c8af7536-23d8-44c1-82e0-13325d9b3d06",
+      "Name": "TesteryLatestDeploy",
+      "Label": "Latest Deploy",
+      "HelpText": "When set, Testery will run the latest version of the tests that has been deployed using the Create Deploy command. Optionally use this instead of Git Ref.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "7ad3f9db-398a-470e-861a-1c93e4f4ea46",
+      "Name": "TesteryFailOnFailure",
+      "Label": "Fail on Failure",
+      "HelpText": "When set, this step will fail if there are any failing tests.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "59391562-5601-4c8b-a117-1fc29d71d91d",
+      "Name": "TesteryWaitForResults",
+      "Label": "Wait for Results",
+      "HelpText": "When set, this step will wait for the test run to be complete before continuing.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "ae843e0f-a189-411e-94e8-cc8d92c7373a",
+      "Name": "TesteryApiUrl",
+      "Label": "Testery API URL",
+      "HelpText": "Override the default API URL for development and testing purposes. Most users of this step template will not need to modify this parameter.",
+      "DefaultValue": "https://api.testery.io/api",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2022-02-14T18:39:12.429Z",
+    "OctopusVersion": "2022.1.890",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedOn": "2022-02-14T18:39:12.429+00:00",
+  "LastModifiedBy": "harbertc",
+  "Category": "testery"
+}
