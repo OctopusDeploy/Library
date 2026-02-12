@@ -1,0 +1,124 @@
+{
+  "Id": "7517e099-cb94-4254-bdc7-4446b897f7b4",
+  "Name": "Azure - Deploy Azure App using config-zip",
+  "Description": "Deploy an Azure App Service (Web App or Function App) using the `config-zip` option.  This template is compatible with deploying to Azure App Services that are on the `Flexible Consumption Plan`.",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "783596ea-9a68-49c8-9cb8-ad1265893840",
+      "Name": "Template.Package",
+      "PackageId": "",
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "Template.Package"
+      }
+    }
+  ],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Azure.AccountId": "#{Template.Azure.Account}",
+    "Octopus.Action.EnabledFeatures": "Octopus.Features.JsonConfigurationVariables,Octopus.Features.SubstituteInFiles",
+    "Octopus.Action.Package.JsonConfigurationVariablesTargets": "#{Template.Replace.StructuredConfigurationVariables.Pattern}",
+    "Octopus.Action.SubstituteInFiles.TargetFiles": "#{Template.Replace.VariablesInFiles.Pattern}",
+    "Octopus.Action.Script.ScriptBody": "Write-Host \"Determining Operating System...\"\n# Check to see if $IsWindows is available\nif ($null -eq $IsWindows)\n{\n    switch ([System.Environment]::OSVersion.Platform)\n    {\n    \t\"Win32NT\"\n        {\n        \t# Set variable\n            $IsWindows = $true\n            $IsLinux = $false\n        }\n        \"Unix\"\n        {\n        \t$IsWindows = $false\n            $IsLinux = $true\n        }\n    }\n}\n\nif ($IsWindows)\n{\n\tWrite-Host \"Detected OS is Windows\"\n    $ProgressPreference = 'SilentlyContinue'\n}\nelse\n{\n\tWrite-Host \"Detected OS is Linux\"\n}\n\n# Fix ANSI Color on PWSH Core issues when displaying objects\nif ($PSEdition -eq \"Core\") {\n    $PSStyle.OutputRendering = \"PlainText\"\n}\n\n# Get working variables\n$packageExtractedPath = $OctopusParameters['Octopus.Action.Package[Template.Package].ExtractedPath']\n$originalPath = $OctopusParameters['Octopus.Action.Package[Template.Package].OriginalPath']\n$packageId = $OctopusParameters['Octopus.Action.Package[Template.Package].PackageId']\n$packageVersion = $OctopusParameters['Octopus.Action.Package[Template.Package].PackageVersion']\n$azureResourceGroupName = $OctopusParameters['Template.Azure.ResourceGroup.Name']\n$azureServiceName = $OctopusParameters['Template.Azure.Service.Name']\n$azureServiceType = $OctopusParameters['Template.Azure.Service.Type']\n$slotName = $OctopusParameters['Template.Slot.Name']\n\n# Check for Windows\nif ($isWindows)\n{\n  ###########\n  # Okay, I know this looks really weird, but during development and testing, I found that the method used in the else statement did something weird to the archive where\n  # the deployment would fail, claiming the .azurfunctions folder is missing when it is clearly there only on Windows.  Grabbing the original file and only updating the changed files\n  # from the variable replacement operations and uploading the updated file seems to work\n  ###########\n  # Grab the original archive file\n  Copy-Item -Path $originalPath -Destination \"$PWD/$($packageId).$($packageVersion).zip\"\n\n  # Update the original archive with the items from the repackaged one so it includes any replacement\n  Compress-Archive -Path \"$packageExtractedPath/*\" -DestinationPath \"$PWD/$($packageId).$($packageVersion).zip\"  -Update\n}\nelse\n{\n  # Repackage the files\n  Get-ChildItem -Path $packageExtractedPath -Force | Compress-Archive -DestinationPath \"$PWD/$($packageId).$($packageVersion).zip\"\n}\n\n$archiveFile = Get-ChildItem -Path \"$PWD/$($packageId).$($packageVersion).zip\"\n\n# Create argument array\n$commandArguments = @()\n\n# Deploy the service\nswitch ($azureServiceType)\n{\n  \"functionapp\"\n  {\n    # Append functionapp specific arguments\n    $commandArguments += @(\"functionapp\")\n    break\n  }\n  \"webapp\"\n  {\n    $commandArguments += @(\"webapp\")\n    break\n  }\n}\n\n# Add additional arguments\n$commandArguments += @(\"deployment\", \"source\", \"config-zip\", \"--src\", \"$($archiveFile.FullName)\", \"--resource-group\", \"$azureResourceGroupName\", \"--name\", \"$azureServiceName\")\n\n# Check to see if they're using slots\nif (![string]::IsNullOrWhitespace($slotName))\n{\n  $commandArguments += @(\"--slot\", \"$slotName\")\n}\n\n# Execute command\nWrite-Host \"Executing: az $commandArguments\"\n\n\n\n# Redirection of stderr to stdout is done different on Windows versus Linux\nif ($IsWindows) {\n    $commandArguments += @(\"2>&1\")\n    # Execute Liquibase\n    az $commandArguments\n}\n\nif ($IsLinux) {\n    # Execute Liquibase\n    az $commandArguments 2>&1\n}\n\n# Check exit code\nif ($lastExitCode -ne 0) {\n    # Fail the step\n    Write-Error \"Deployment failed!\"\n}\n\n\n#az $commandArguments"
+  },
+  "Parameters": [
+    {
+      "Id": "40555b1e-248d-458b-b33d-9cfb6a115998",
+      "Name": "Template.Azure.Account",
+      "Label": "Azure Account",
+      "HelpText": "Choose the Azure account to use when executing this template.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "b0a08a4c-b887-4170-ba5b-d4ac9d41b650",
+      "Name": "Template.Azure.ResourceGroup.Name",
+      "Label": "Azure Resource Group Name",
+      "HelpText": "The name of the Azure Resource Group to deploy the App Service to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d3b07e0e-bc9a-4484-9022-6bd256138d21",
+      "Name": "Template.Azure.Service.Name",
+      "Label": "Azure App Service Name",
+      "HelpText": "The name of the Azure App Service (web app or function app) to deploy.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a82571c5-ab29-438d-81d1-a0b88638b5d7",
+      "Name": "Template.Azure.Service.Type",
+      "Label": "Azure App Service Type",
+      "HelpText": "Select the type of App Service you want to deploy.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "functionapp|Function App\nwebapp|Web App"
+      }
+    },
+    {
+      "Id": "a9c66943-b6ff-4a4f-a01f-d0336eb7283d",
+      "Name": "Template.Azure.Slot.Name",
+      "Label": "Slot Name",
+      "HelpText": "(Optional) Name of the slot to deploy to.  Leave blank if you're not using slot capabilities.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "817164f5-15d4-4813-aceb-b9cc619bec6c",
+      "Name": "Template.Package",
+      "Label": "App Service Package",
+      "HelpText": "The package to deploy.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "b36e78de-622f-4c5b-9f33-dc770fa14e74",
+      "Name": "Template.Replace.VariablesInFiles.Pattern",
+      "Label": "Variable replacement in files pattern",
+      "HelpText": "This template has the feature of [Substitute Variables in Templates](https://octopus.com/docs/projects/steps/configuration-features/substitute-variables-in-templates) enabled, giving you the ability to replace Octopus Variable place holders in files.  You can specify more than one file or pattern, newline separated.",
+      "DefaultValue": "#{Octopus.Action.Package[Template.Package].ExtractedPath}/*.json",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "a42d44b3-c824-41d4-a18e-43cf3a55b458",
+      "Name": "Template.Replace.StructuredConfigurationVariables.Pattern",
+      "Label": "Structured configuration variable replacement",
+      "HelpText": "This template has the [Structured Configuration Variables](https://octopus.com/docs/projects/steps/configuration-features/structured-configuration-variables-feature) feature enabled giving you the ability to replace existing values within files.  You can specify more than one file or pattern, newline separated.",
+      "DefaultValue": "#{Octopus.Action.Package[Template.Package].ExtractedPath}/*.json",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AzurePowerShell",
+  "$Meta": {
+    "ExportedAt": "2026-02-07T00:07:05.054Z",
+    "OctopusVersion": "2025.4.10395",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "azure"
+}
