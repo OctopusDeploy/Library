@@ -1,32 +1,23 @@
 {
-  "Id": "9c85f96e-09d3-4814-948a-aef8708740b5",
+  "Id": "8a3cf065-d5b5-4f9e-b916-73aac4ce95f6",
   "Name": "Testery - Report Deployment",
-  "Description": "Reports a deployment to Testery, enabling you to do post-deployment validation and testing. See https://testery.io for more info.",
+  "Description": "Report a deployment to a Testery project",
   "ActionType": "Octopus.Script",
-  "Version": 4,
+  "Version": 5,
   "CommunityActionTemplateId": null,
   "Packages": [],
+  "GitDependencies": [],
   "Properties": {
     "Octopus.Action.RunOnServer": "true",
     "Octopus.Action.Script.ScriptSource": "Inline",
-    "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "try {$pipCmd = get-command pip} catch {}\nif (!($pipCmd)) {\n\tFail-Step \"This step template requires Python 3.6 or greater and pip to be installed. Python is available at https://www.python.org/downloads/\"\n}\n\npip -q install testery --upgrade\n\nwrite-output \"Fail on failure: ${TesteryFailOnFailure}\"\n\n\nif (${TesteryFailOnFailure}) {\n  write-output \"Fail on failure option selected.\"\n  $failOnFailureSwitch=\"--fail-on-failure\"\n} else {\n  write-output \"Fail on failure option not selected.\"\n  $failOnFailureSwitch=\"\"\n}\n\nif (${TesteryWaitForResults}) {\n  $waitForResultsSwitch=\"--wait-for-results\"\n} else {\n  $waitForResultsSwitch=\"\"\n}\n\necho \"Reporting deployment info to Testery...\"\ntestery create-deploy --commit \"${TesteryGitReference}\" --token \"${TesteryToken}\" --project \"${TesteryProjectName}\" --environment \"${TesteryEnvironment}\" --build-id \"${TesteryBuildId}\" \"${failOnFailureSwitch}\" \"${waitForResultsSwitch}\"\n"
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "set -e\n\nTOKEN=$(get_octopusvariable \"TesteryToken\")\nPROJECT_KEY=$(get_octopusvariable \"TesteryProjectKey\")\nENVIRONMENT_KEY=$(get_octopusvariable \"TesteryEnvironmentKey\")\nBUILD_ID=$(get_octopusvariable \"TesteryBuildId\")\nOUTPUT=$(get_octopusvariable \"TesteryOutput\")\nGIT_REF=$(get_octopusvariable \"TesteryGitCommit?\")\nGIT_BRANCH=$(get_octopusvariable \"TesteryGitBranch?\")\nGIT_OWNER=$(get_octopusvariable \"TesteryGitOwner?\")\nGIT_PROVIDER=$(get_octopusvariable \"TesteryGitProvider?\")\nWAIT_FOR_RESULTS=$(get_octopusvariable \"TesteryWaitForResults?\")\nFAIL_ON_FAILURE=$(get_octopusvariable \"TesteryFailOnFailure?\")\nSKIP_VSC_UPDATE=$(get_octopusvariable \"TesterySkipVCSUpdates?\")\nSTATUS_NAME=$(get_octopusvariable \"TesteryStatusName?\")\n\nif [ \"$GIT_PROVIDER\" = \"None\" ] ; then\n    GIT_PROVIDER=\nfi\n\nexport PATH=\"$HOME/.local/bin:$PATH\"\npip install --user testery --upgrade\n\ntestery create-test-run --token $TOKEN \\\n  --project-key $PROJECT_KEY \\\n  --environment-key $ENVIRONMENT_KEY \\\n  --build-id $BUILD_ID \\\n  --output $OUTPUT \\\n  ${GIT_REF:+ --git-ref \"$GIT_REF\"} \\\n  ${GIT_BRANCH:+ --git-branch \"$GIT_BRANCH\"} \\\n  ${GIT_OWNER:+ --git-owner \"$GIT_OWNER\"} \\\n  ${GIT_PROVIDER:+ --git-provider \"$GIT_PROVIDER\"} \\\n  ${STATUS_NAME:+ --status-name \"$STATUS_NAME\"} \\\n  ${WAIT_FOR_RESULTS:+ --wait-for-results} \\\n  ${FAIL_ON_FAILURE:+ --fail-on-failure} \\\n  ${SKIP_VSC_UPDATE:+ --skip-vcs-updates}"
   },
   "Parameters": [
     {
-      "Id": "f96b7529-7ced-4265-8176-972ec30b9bba",
-      "Name": "TesteryGitReference",
-      "Label": "Testery Git Reference",
-      "HelpText": "The git hash of the commit for the version of the tests to be run.",
-      "DefaultValue": "",
-      "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
-      }
-    },
-    {
       "Id": "f01f917a-b2c8-4038-be1c-b2355639f57e",
       "Name": "TesteryToken",
-      "Label": "Testery Token",
+      "Label": "Token",
       "HelpText": "Your Testery API token (found in Testery -> Settings -> Integrations -> Show API Token)",
       "DefaultValue": "",
       "DisplaySettings": {
@@ -35,9 +26,9 @@
     },
     {
       "Id": "4873b6f2-694a-463f-928a-9845b044bc8b",
-      "Name": "TesteryProjectName",
-      "Label": "Testery Project Name",
-      "HelpText": "The name of the test project in the Testery platform.",
+      "Name": "TesteryProjectKey",
+      "Label": "Project Key",
+      "HelpText": "The key of the test project in the Testery platform.",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -45,9 +36,9 @@
     },
     {
       "Id": "811352ba-a3e4-4092-99c2-b48499b9a880",
-      "Name": "TesteryEnvironment",
-      "Label": "Testery Environment",
-      "HelpText": "The name of the environment defined in Testery where you want the tests to run. It may be useful to set this to Octopus.Deployment.Tenant.Name.",
+      "Name": "TesteryEnvironmentKey",
+      "Label": "Environment Key",
+      "HelpText": "The key of the environment defined in Testery where you want the tests to run.",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -56,7 +47,7 @@
     {
       "Id": "7a6aa01f-13a1-4fa7-a681-7f0acda63932",
       "Name": "TesteryBuildId",
-      "Label": "Testery Build Id",
+      "Label": "Build Id",
       "HelpText": "The build ID from your CI/CD. If you have uploaded any test artifacts from your CI/CD, this build id should match the build id used when uploading artifacts.",
       "DefaultValue": "",
       "DisplaySettings": {
@@ -64,9 +55,20 @@
       }
     },
     {
+      "Id": "bf135a1b-d58f-4e6b-ab9c-fe03b52ed09d",
+      "Name": "TesteryOutput",
+      "Label": "Output",
+      "HelpText": "The format for outputting results.",
+      "DefaultValue": "pretty",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "json|Json\npretty|Pretty\nteamcity|TeamCity"
+      }
+    },
+    {
       "Id": "09ed4f34-d381-4f85-8869-c52264694b7c",
-      "Name": "TesteryFailOnFailure",
-      "Label": "Testery Fail On Failure",
+      "Name": "TesteryFailOnFailure?",
+      "Label": "Fail On Failure?",
       "HelpText": "When checked, the Octopus deployment will fail if any of the test runs associated with the deployment fail. When unchecked, the Octopus deployment will continue even if there are test failures.",
       "DefaultValue": "",
       "DisplaySettings": {
@@ -75,20 +77,92 @@
     },
     {
       "Id": "2266652a-258d-447f-aebf-14e9575d6b9d",
-      "Name": "TesteryWaitForResults",
-      "Label": "Testery Wait For Results",
+      "Name": "TesteryWaitForResults?",
+      "Label": "Wait For Results?",
       "HelpText": "When checked, Octopus Deploy will wait for the any test runs associated with the deployment to complete before proceeding. This is useful for making sure deployments don't run on environments/tenants with an active test run.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "f96b7529-7ced-4265-8176-972ec30b9bba",
+      "Name": "TesteryGitProvider?",
+      "Label": "Git Provider?",
+      "HelpText": "The Git provider used for the repository that is being deployed.",
+      "DefaultValue": "None",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "None|None\nGitHub|GitHub\nBitBucket|BitBucket\nGitLab|GitLab"
+      }
+    },
+    {
+      "Id": "ce589aa1-4747-4b51-87fb-5734ab676dd5",
+      "Name": "TesteryGitCommit?",
+      "Label": "Git Commit?",
+      "HelpText": "The Git commit that was deployed.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4a30530e-3a71-4a22-af35-57219da67cdf",
+      "Name": "TesteryGitOwner?",
+      "Label": "Git Owner?",
+      "HelpText": "The organization owner in Git for the repository that is being deployed.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "59f6ad53-a42d-4e0e-96e4-aa422889cdbf",
+      "Name": "TesteryGitRepo?",
+      "Label": "Git Repo?",
+      "HelpText": "The repository name that is being deployed.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ecd2de3e-bed5-4028-8fbe-b71f16e68ac4",
+      "Name": "TesteryGitBranch?",
+      "Label": "Git Branch?",
+      "HelpText": "The Git branch the deploy came from.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e24fd5af-d8d3-4cec-8e33-f3ff3b043e14",
+      "Name": "TesteryStatusName?",
+      "Label": "Status Name?",
+      "HelpText": "The name you want to use on the Git status, as plain text.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7c73a878-0033-43d0-b5e6-cab98b0fb549",
+      "Name": "TesterySkipVCSUpdates?",
+      "Label": "SkipVCSUpdates?",
+      "HelpText": "Check this if you do not want to submit status updates to Version Control.",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
       }
     }
   ],
+  "StepPackageId": "Octopus.Script",
   "$Meta": {
-    "ExportedAt": "2020-10-29T16:37:27.511Z",
-    "OctopusVersion": "2020.5.0-rc0003",
+    "ExportedAt": "2026-02-13T21:28:53.679Z",
+    "OctopusVersion": "2026.1.7285",
     "Type": "ActionTemplate"
   },
-  "LastModifiedBy": "bobjwalker",
+  "LastModifiedBy": "wgunn-testery",
   "Category": "testery"
 }

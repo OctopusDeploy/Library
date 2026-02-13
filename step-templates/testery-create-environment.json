@@ -1,0 +1,95 @@
+{
+  "Id": "b8e9e58d-f37f-48a5-a946-6da1a40742fa",
+  "Name": "Testery - Create Environment",
+  "Description": "Create an environment in your Testery account",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "set -e\n\nTOKEN=$(get_octopusvariable \"TesteryToken\")\nPIPELINE_STAGE=$(get_octopusvariable \"TesteryPipelineStage?\")\nVARIABLES=$(get_octopusvariable \"TesteryVariables?\")\nNAME=$(get_octopusvariable \"TesteryName\")\nKEY=$(get_octopusvariable \"TesteryKey\")\nMAX_PARALLEL=$(get_octopusvariable \"TesteryMaximumParallelTestRuns\")\nFAIL_IF_EXIST=$(get_octopusvariable \"TesteryExistsExitCode\")\nif [ \"$FAIL_IF_EXIST\" = \"True\" ] ; then\n    EXIST_EXIT=1\nelse\n    EXIST_EXIT=0\nfi\nVAR_ARGS=()\nif [[ -n \"$VARIABLES\" ]]; then\n  mapfile -t VAR_LINES <<< \"$VARIABLES\"\n  for line in \"${VAR_LINES[@]}\"; do\n    [[ -z \"$line\" ]] && continue\n    VAR_ARGS+=(\"--variable\" \"$line\")\n  done\nfi\n\nAPI_URL=\"https://api.testery.io/api/environments\"\nHTTP_RESPONSE=$(curl -s -w \"\\n%{http_code}\" \\\n    -H \"Authorization: Bearer $TOKEN\" \\\n    -H \"Content-Type: application/json\" \\\n    \"$API_URL\")\n\nHTTP_BODY=$(echo \"$HTTP_RESPONSE\" | sed '$d')\nHTTP_STATUS=$(echo \"$HTTP_RESPONSE\" | tail -n1)\n\n# Check if the request was successful\nif [ \"$HTTP_STATUS\" -ne 200 ]; then\n    echo \"Error querying API:\"\n    echo \"Status Code: $HTTP_STATUS\"\n    echo \"Response: $HTTP_BODY\"\n    exit 1\nfi\n\nexport PATH=\"$HOME/.local/bin:$PATH\"\n\n# Check if an environment with the key exists using jq\nENVIRONMENT_EXISTS=$(echo \"$HTTP_BODY\" | jq -r --arg KEY \"$KEY\" '.[] | select(.key == $KEY) | .key')\n\nif [ -n \"$ENVIRONMENT_EXISTS\" ]; then\n    echo \"Environment with key already exists.\"\n    exit $EXIST_EXIT\nelse\n  pip install --user testery --upgrade\n\n  testery create-environment --token $TOKEN \\\n    --name $NAME \\\n    --key $KEY \\\n    --maximum-parallel-test-runs $MAX_PARALLEL \\\n    ${PIPELINE_STAGE:+ --pipeline-stage \"$PIPELINE_STAGE\"} \\\n    ${VAR_ARGS:+ \"${VAR_ARGS[@]}\"}\nfi\n"
+  },
+  "Parameters": [
+    {
+      "Id": "24613821-17c6-4648-b262-66d42c302e0f",
+      "Name": "TesteryToken",
+      "Label": "Token",
+      "HelpText": "API token for your account. Found under Settings > Integrations",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "54552cae-ed27-4b1a-a2df-85fd0a6b9018",
+      "Name": "TesteryName",
+      "Label": "Name",
+      "HelpText": "The display name for the environment",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1ba0af3c-9af0-46cd-896e-c42d0844fb25",
+      "Name": "TesteryKey",
+      "Label": "Key",
+      "HelpText": "The unique identifier for the environment",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "051c9281-2cd6-404c-980d-05d1b608bbd2",
+      "Name": "TesteryMaximumParallelTestRuns",
+      "Label": "Maximum Parallel Test Run",
+      "HelpText": "The maximum number of test runs that can run in parallel on this environment.\nDefault is 0 (no limit).",
+      "DefaultValue": "0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9cef03c4-ab66-498a-89f7-22552be12568",
+      "Name": "TesteryPipelineStage?",
+      "Label": "Pipeline Stage?",
+      "HelpText": "The name of a pipeline stage to associate this environment to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "78d55e55-d4d8-432e-a4f1-09c7fbe62576",
+      "Name": "TesteryVariables?",
+      "Label": "Variables?",
+      "HelpText": "Add variable to the environment. Specified as \"KEY=VALUE\". To encrypt value, pass in \"secure:KEY=VALUE\", Multiple variables can be provided. Put each variable on a separate line.\n\nExample:\n```\nFOO=BAR\nsecure:HELLO=WORLD\n```",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "a49dddf4-5af9-44ae-b682-9ab11e41d506",
+      "Name": "TesteryExistsExitCode",
+      "Label": "Fail if already exists?",
+      "HelpText": "Mark if you want the step to fail if the environment already exists",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2026-02-13T21:32:11.229Z",
+    "OctopusVersion": "2026.1.7285",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "wgunn-testery",
+  "Category": "testery"
+}
