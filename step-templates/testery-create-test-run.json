@@ -1,125 +1,297 @@
 {
   "Id": "9aa25d78-a90a-425e-a25d-b1e9f1bf08be",
   "Name": "Testery - Create Test Run",
-  "Description": "Run tests in the Testery platform. For more information, visit https://testery.io/.",
+  "Description": "Create and start a test run in your Testery account. For more information, visit https://testery.io/.",
   "ActionType": "Octopus.Script",
-  "Version": 25,
+  "Version": 26,
   "CommunityActionTemplateId": null,
   "Packages": [],
+  "GitDependencies": [],
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
-    "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "try {$pipCmd = get-command pip} catch {}\nif (!($pipCmd)) {\n\tFail-Step \"This step template requires Python 3.6 or greater and pip to be installed. Python is available at https://www.python.org/downloads/\"\n}\n\npip install testery --upgrade --disable-pip-version-check --no-warn-script-location -qqq\n\n$TesteryCommand = \"testery create-test-run --token `\"${TesteryToken}`\" --project `\"${TesteryProjectName}`\" --environment `\"${TesteryEnvironment}`\"\"\n\nif (\"${TesteryIncludeTags}\" -eq \"\") {\n\t$TesteryCommand = $TesteryCommand + \" --include-all-tags\"\n} else {\n\t$TesteryCommand = $TesteryCommand + \" --include-tags `\"${TesteryIncludeTags}`\"\"\n}\n\nif (\"${TesteryLatestDeploy}\" -eq \"True\") {\n\t$TesteryCommand = $TesteryCommand + \" --latest-deploy\"\n}\n\nif (\"${TesteryGitReference}\" -ne \"\") {\n\t$TesteryCommand = $TesteryCommand + \" --git-ref `\"${TesteryGitReference}`\"\"\n}\n\nif (\"${TesteryBuildId}\" -ne \"\") {\n\t$TesteryCommand = $TesteryCommand + \" --build-id `\"${TesteryBuildId}`\"\"\n}\n\nif (\"${TesteryWaitForResults}\" -eq \"True\") {\n\t$TesteryCommand = $TesteryCommand + \" --wait-for-results\"\n}\n\nif (\"${TesteryFailOnFailure}\" -eq \"True\") {\n\t$TesteryCommand = $TesteryCommand + \" --fail-on-failure\"\n}\n\n\necho $TesteryCommand\nInvoke-Expression $TesteryCommand"
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "set -e\n\nTOKEN=$(get_octopusvariable \"TesteryToken\")\nPROJECT_KEY=$(get_octopusvariable \"TesteryProjectKey\")\nENVIRONMENT_KEY=$(get_octopusvariable \"TesteryEnvironmentKey\")\nGIT_REF=$(get_octopusvariable \"TesteryGitRef?\")\nGIT_BRANCH=$(get_octopusvariable \"TesteryGitBranch?\")\nTEST_NAME=$(get_octopusvariable \"TesteryTestName?\")\nWAIT_FOR_RESULTS=$(get_octopusvariable \"TesteryWaitForResults?\")\nTEST_SUITE=$(get_octopusvariable \"TesteryTestSuite?\")\nLATEST_DEPLOY=$(get_octopusvariable \"TesteryLatestDeploy?\")\nINCLUDED_TAGS=$(get_octopusvariable \"TesteryIncludedTags?\")\nEXCLUDED_TAGS=$(get_octopusvariable \"TesteryExcludedTags?\")\nCOPIES=$(get_octopusvariable \"TesteryCopies?\")\nBUILD_ID=$(get_octopusvariable \"TesteryBuildId?\")\nOUTPUT=$(get_octopusvariable \"TesteryOutput\")\nVARIABLES=$(get_octopusvariable \"TesteryVariables?\")\nINCLUDE_ALL_TAGS=$(get_octopusvariable \"TesteryIncludeAllTags?\")\nPARALLELIZATION=$(get_octopusvariable \"TesteryParallelizationType?\")\nFAIL_ON_FAILURE=$(get_octopusvariable \"TesteryFailOnFailure?\")\nRUN_TIMEOUT=$(get_octopusvariable \"TesteryRunTimeout?\")\nTEST_TIMEOUT=$(get_octopusvariable \"TesteryTestTimeout?\")\nRUNNER_COUNT=$(get_octopusvariable \"TesteryRunnerCount?\")\nTEST_FILTER=$(get_octopusvariable \"TesteryTestFilterRegex?\")\nSTATUS_NAME=$(get_octopusvariable \"TesteryStatusName?\")\nPLAYWRIGHT_PROJECT=$(get_octopusvariable \"TesteryPlaywrightProject?\")\nSKIP_VSC_UPDATE=$(get_octopusvariable \"TesterySkipVCSUpdates?\")\nDEPLOY_ID=$(get_octopusvariable \"TesteryDeployId?\")\nAPPLY_TEST_SELECT=$(get_octopusvariable \"TesteryApplyTestSelectionRules?\")\n\nif [ \"$WAIT_FOR_RESULTS\" = \"False\" ] ; then\n    WAIT_FOR_RESULTS=\nfi\n\nif [ \"$PARALLELIZATION\" = \"default\" ] ; then\n    PARALLELIZATION=\nfi\n\nif [ \"$FAIL_ON_FAILURE\" = \"False\" ] ; then\n    FAIL_ON_FAILURE=\nfi\n\nif [ \"$APPLY_TEST_SELECT\" = \"False\" ] ; then\n    APPLY_TEST_SELECT=\nfi\n\nif [ \"$SKIP_VSC_UPDATE\" = \"False\" ] ; then\n    SKIP_VSC_UPDATE=\nfi\n\nif [ \"$INCLUDE_ALL_TAGS\" = \"False\" ] ; then\n    INCLUDE_ALL_TAGS=\nfi\n\nif [ \"$LATEST_DEPLOY\" = \"False\" ] ; then\n    LATEST_DEPLOY=\nfi\n\nif [[ -n \"$INCLUDED_TAGS\" ]]; then\n  INCLUDED_TAGS=$(echo \"$INCLUDED_TAGS\" | tr '\\n' ',' | sed 's/,$//')\nfi\n\nif [[ -n \"$EXCLUDED_TAGS\" ]]; then\n  EXCLUDED_TAGS=$(echo \"$EXCLUDED_TAGS\" | tr '\\n' ',' | sed 's/,$//')\nfi\n\nVAR_ARGS=()\nif [[ -n \"$VARIABLES\" ]]; then\n  mapfile -t VAR_LINES <<< \"$VARIABLES\"\n  for line in \"${VAR_LINES[@]}\"; do\n    [[ -z \"$line\" ]] && continue\n    VAR_ARGS+=(\"--variable\" \"$line\")\n  done\nfi\n\nexport PATH=\"$HOME/.local/bin:$PATH\"\npip install --user testery --upgrade\n\n\ntestery create-test-run --token $TOKEN \\\n  --project-key $PROJECT_KEY \\\n  --environment-key $ENVIRONMENT_KEY \\\n  --output $OUTPUT \\\n  ${GIT_REF:+ --git-ref \"$GIT_REF\"} \\\n  ${GIT_BRANCH:+ --git-branch \"$GIT_BRANCH\"} \\\n  ${TEST_NAME:+ --test-name \"$TEST_NAME\"} \\\n  ${WAIT_FOR_RESULTS:+ --wait-for-results} \\\n  ${TEST_SUITE:+ --test-suite \"$TEST_SUITE\"} \\\n  ${LATEST_DEPLOY:+ --latest-deploy } \\\n  ${COPIES:+ --copies \"$COPIES\"} \\\n  ${BUILD_ID:+ --build-id \"$BUILD_ID\"} \\\n  ${FAIL_ON_FAILURE:+ --fail-on-failure} \\\n  ${INCLUDE_ALL_TAGS:+ --include-all-tags} \\\n  ${PARALLELIZATION:+ \"${PARALLELIZATION}\"} \\\n  ${RUN_TIMEOUT:+ --timeout-minutes \"$RUN_TIMEOUT\"} \\\n  ${TEST_TIMEOUT:+ --test-timeout-seconds \"$TEST_TIMEOUT\"} \\\n  ${RUNNER_COUNT:+ --runner-count \"$RUNNER_COUNT\"} \\\n  ${VAR_ARGS:+ \"${VAR_ARGS[@]}\"} \\\n  ${TEST_FILTER:+ --test-filter-regex \"$TEST_FILTER\"} \\\n  ${STATUS_NAME:+ --status-name \"$STATUS_NAME\"} \\\n  ${PLAYWRIGHT_PROJECT:+ --playwright-project \"$PLAYWRIGHT_PROJECT\"} \\\n  ${SKIP_VSC_UPDATE:+ --skip-vcs-updates} \\\n  ${DEPLOY_ID:+ --deploy-id \"$DEPLOY_ID\"} \\\n  ${APPLY_TEST_SELECT:+ --apply-test-selection-rules} \\\n  ${INCLUDED_TAGS:+ --include-tags \"$INCLUDED_TAGS\"} \\\n  ${EXCLUDED_TAGS:+ --exclude-tags \"$EXCLUDED_TAGS\"}\n"
   },
   "Parameters": [
     {
-      "Id": "db36b837-9fe6-480f-b4f1-05cfc68bd08b",
+      "Id": "96919d91-f313-48b5-bc31-a00245548909",
       "Name": "TesteryToken",
-      "Label": "Testery Token",
-      "HelpText": "Your Testery API token (found in Testery -> Settings -> Integrations -> Show API Token)",
+      "Label": "Token",
+      "HelpText": "API token for your account. Found under Settings > Integrations",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "Sensitive"
       }
     },
     {
-      "Id": "54de434f-0fa8-4351-b59c-a790845a0f14",
-      "Name": "TesteryProjectName",
-      "Label": "Testery Project Name",
-      "HelpText": "The project name for this build.",
+      "Id": "ad6b34cf-5bca-466e-a8eb-3a42b0da05b2",
+      "Name": "TesteryProjectKey",
+      "Label": "Project Key",
+      "HelpText": "The project key",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
     },
     {
-      "Id": "352f0cf8-da46-4651-b7d0-3c5413d7f3e0",
-      "Name": "TesteryEnvironment",
-      "Label": "Testery Environment",
-      "HelpText": "The environment (defined in Testery) where the tests should be run. It can be convenient to have these line up with tenant names.",
-      "DefaultValue": "#{Octopus.Deployment.Tenant.Name}",
-      "DisplaySettings": {
-        "Octopus.ControlType": "SingleLineText"
-      }
-    },
-    {
-      "Id": "9a9d2a9f-cd24-40a2-96b7-c6f42e489e7e",
-      "Name": "TesteryIncludeTags",
-      "Label": "Testery Include Tags",
-      "HelpText": "Comma separated list of tags for tests that should be included in the test run.",
+      "Id": "45766978-4187-4c85-8946-11b6b7e6b07c",
+      "Name": "TesteryEnvironmentKey",
+      "Label": "Environment Key",
+      "HelpText": "The environment in the Testery account to run the tests against",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
     },
     {
-      "Id": "b9d78e94-20fb-4fa5-9a9a-34cf173c8911",
-      "Name": "TesteryBuildId",
-      "Label": "Build ID",
-      "HelpText": "The build id of the project being tested, typically coming from your CI/CD. If uploading test artifacts to Testery, this build id must match.",
+      "Id": "55a412b7-8dcc-4940-893a-1eae13594862",
+      "Name": "TesteryOutput",
+      "Label": "Output",
+      "HelpText": "The format for outputting results",
+      "DefaultValue": "pretty",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "json|Json\npretty|Pretty\nteamcity|TeamCity"
+      }
+    },
+    {
+      "Id": "6f960189-b17e-459b-aa3d-3b910d81a3f3",
+      "Name": "TesteryGitRef?",
+      "Label": "Git Ref?",
+      "HelpText": "The git commit has of the version of tests being built",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
     },
     {
-      "Id": "96cec59e-cf55-4867-87ec-bb4af80a86e3",
-      "Name": "TesteryGitReference",
-      "Label": "Git Refererence",
-      "HelpText": "This is the git reference to the tests you want to run. This value can be extracted from the packages when build info is reported to Octopus.",
+      "Id": "4507052e-ce4b-4f58-bfee-11aae4f75a6e",
+      "Name": "TesteryGitBranch?",
+      "Label": "Git Branch?",
+      "HelpText": "The git branch whose code will be used for the run ",
       "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
       }
     },
     {
-      "Id": "c8af7536-23d8-44c1-82e0-13325d9b3d06",
-      "Name": "TesteryLatestDeploy",
-      "Label": "Latest Deploy",
-      "HelpText": "When set, Testery will run the latest version of the tests that has been deployed using the Create Deploy command. Optionally use this instead of Git Ref.",
+      "Id": "b77834af-3940-440d-b1d3-7ab5c55878e3",
+      "Name": "TesteryTestSuite?",
+      "Label": "Test Suite?",
+      "HelpText": "Name of the test suite under the project to use for the run",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d91a9249-4cf5-46b9-94d9-e99fa5ab354d",
+      "Name": "TesteryWaitForResults?",
+      "Label": "Wait for results?",
+      "HelpText": "If set, the step will poll until the test run is complete",
       "DefaultValue": "False",
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
       }
     },
     {
-      "Id": "7ad3f9db-398a-470e-861a-1c93e4f4ea46",
-      "Name": "TesteryFailOnFailure",
-      "Label": "Fail on Failure",
-      "HelpText": "When set, this step will fail if there are any failing tests.",
-      "DefaultValue": "True",
+      "Id": "cbe2bcb9-a6c7-4022-92c8-b10f1d08d0a3",
+      "Name": "TesteryFailOnFailure?",
+      "Label": "FailOnFailure?",
+      "HelpText": "When set, the Testery command will return exit code 1 if there are test failures",
+      "DefaultValue": "False",
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
       }
     },
     {
-      "Id": "59391562-5601-4c8b-a117-1fc29d71d91d",
-      "Name": "TesteryWaitForResults",
-      "Label": "Wait for Results",
-      "HelpText": "When set, this step will wait for the test run to be complete before continuing.",
-      "DefaultValue": "True",
+      "Id": "a98c1790-6c41-43b5-9f40-bf49591404ca",
+      "Name": "TesteryLatestDeploy?",
+      "Label": "Latest Deploy?",
+      "HelpText": "When set, Testery will run the latest version of the tests deployed to the specified environment",
+      "DefaultValue": "False",
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
       }
     },
     {
-      "Id": "ae843e0f-a189-411e-94e8-cc8d92c7373a",
-      "Name": "TesteryApiUrl",
-      "Label": "Testery API URL",
-      "HelpText": "Override the default API URL for development and testing purposes. Most users of this step template will not need to modify this parameter.",
-      "DefaultValue": "https://api.testery.io/api",
+      "Id": "8fdb6676-2f00-45eb-af90-21d9a17bba10",
+      "Name": "TesteryIncludedTags?",
+      "Label": "Included Tags?",
+      "HelpText": "List of tags that should be used in the run filter. Use one tag per line.\nExample:\n\n```txt\nSmoke\nProd\n```\n",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "f8e8e729-8d7b-488c-9175-024887c60be0",
+      "Name": "TesteryExcludedTags?",
+      "Label": "Excluded Tags?",
+      "HelpText": "List of tags that should be excluded from the test run. Use one tag per line.\nExample:\n\n```txt\nBug\nFlaky\n```",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "8eabb4da-eda9-449e-934a-8b6019ac7ae5",
+      "Name": "TesteryTestFilterRegex?",
+      "Label": "Test Filter Regex?",
+      "HelpText": "A regular expression to be used for filtering tests",
+      "DefaultValue": "",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "45cd34de-8971-4d80-817d-5b4121845b68",
+      "Name": "TesteryCopies?",
+      "Label": "Copies?",
+      "HelpText": "The number of copies of the tests to submit",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ad3062f0-bbd8-433d-ad98-e6d59823732f",
+      "Name": "TesteryBuildId?",
+      "Label": "Build Id?",
+      "HelpText": "A unique identifier for a build in your system",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0f5a064d-2b8c-40f6-a823-8cb4fb086dd0",
+      "Name": "TesteryParallelizationType?",
+      "Label": "ParallelizationType?",
+      "HelpText": "Parallelization method to use to run the tests. File/feature or test/scenario. If not set, will use the project or suite setting.",
+      "DefaultValue": "default",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "default|Default\n--parallelize-by-file|By File or Feature\n--parallelize-by-test|Test or Scenario"
+      }
+    },
+    {
+      "Id": "7d009132-31b6-4cd3-b1a9-856468ce27a7",
+      "Name": "TesteryRunTimeout?",
+      "Label": "Test Run Timeout?",
+      "HelpText": "The maximum number of minutes this test run can take before it is killed automatically. Falls back to project or suite setting if not set.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9d608b96-d759-4278-aead-15af3d3c3cb2",
+      "Name": "TesteryTestTimeout?",
+      "Label": "TestTimeout?",
+      "HelpText": "The maximum number of seconds a test can take before it is stopped automatically. Falls back to project or suite setting if not set.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "162e2831-b657-494e-9168-c97c4bb24b35",
+      "Name": "TesteryRunnerCount?",
+      "Label": "Runner Count?",
+      "HelpText": "Specify number of parallel runners to use in for this test run",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "35004742-451e-4244-965a-a7acfeaa5b11",
+      "Name": "TesteryVariables?",
+      "Label": "Variables?",
+      "HelpText": "Add variable to the test run. Specified as \"KEY=VALUE\". To encrypt value, pass in \"secure:KEY=VALUE\", Multiple variables can be provided. Put each variable on a separate line.\n\nExample:\n```\nFOO=BAR\nsecure:HELLO=WORLD\n```",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "0a9019a4-9831-409c-a3f1-f7007100550a",
+      "Name": "TesteryTestName?",
+      "Label": "Test Name?",
+      "HelpText": "The name you want to use on the Git status for checks",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d0d5d56a-1445-4b44-b6c8-2435ef49494d",
+      "Name": "TesteryStatusName?",
+      "Label": "Status Name?",
+      "HelpText": "The custom name you want to use on the Git status, as plain text. This will overwrite the --test-name flag. The environment name will not be appended to this value.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "91165572-a950-4066-b4ae-525d26cbe71e",
+      "Name": "TesterySkipVCSUpdates?",
+      "Label": "Skip VCS Updates?",
+      "HelpText": "Pass this flag if you do not want to submit status updates to Version Control",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "ab2a6a27-13d0-4a8b-8691-558b24ef41cf",
+      "Name": "TesteryPlaywrightProject?",
+      "Label": "Playwright Project?",
+      "HelpText": "The Playwright project to run. If not specified, all projects in your Playwright config will be run. If the --test-suite parameter is used, the project to run will be selected by the Test Suite and this value will not be used.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "27b08f43-f904-43d2-98e0-50928a6594c7",
+      "Name": "TesteryDeployId?",
+      "Label": "Deploy Id?",
+      "HelpText": "The ID of the deploy to tie to this test run",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "93cdcb1f-dccc-4601-9eba-157d030cf866",
+      "Name": "TesteryIncludeAllTags?",
+      "Label": "IncludeAllTags?",
+      "HelpText": "When set, overrides the testery.yml config and runs all available tags",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "8aba3885-9522-438e-91f9-e77525521f88",
+      "Name": "TesteryApplyTestSelectionRules?",
+      "Label": "Apply Test Selection Rules?",
+      "HelpText": "Use testery.yml file to select which tests to run",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
       }
     }
   ],
   "StepPackageId": "Octopus.Script",
   "$Meta": {
-    "ExportedAt": "2022-02-14T18:39:12.429Z",
-    "OctopusVersion": "2022.1.890",
+    "ExportedAt": "2026-02-13T21:10:21.323Z",
+    "OctopusVersion": "2026.1.7285",
     "Type": "ActionTemplate"
   },
-  "LastModifiedOn": "2022-02-14T18:39:12.429+00:00",
-  "LastModifiedBy": "harbertc",
+  "LastModifiedBy": "wgunn-testery",
   "Category": "testery"
 }
