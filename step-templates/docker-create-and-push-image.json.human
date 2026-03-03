@@ -1,0 +1,116 @@
+{
+  "Id": "3ff1e0ae-0336-41e3-905a-a1f10f4bb1cf",
+  "Name": "Docker - Create and Push Image",
+  "Description": "Creates and pushes an Docker Image.
+
+- Requires the Docker infrastructure.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# Get the parameters.\r
+$appLocation = $OctopusParameters['ApplicationLocation']\r
+$dockerFile = $OctopusParameters['DockerFile']\r
+$imageName = $OctopusParameters['ImageName']\r
+$tag = $OctopusParameters['ImageTag']\r
+$dockerUsername = $OctopusParameters['DockerUsername']\r
+$dockerPassword = $OctopusParameters['DockerPassword']\r
+\r
+# Check the parameters.\r
+if (-NOT $dockerUsername) { throw \"You must enter a value for 'Username'.\" }\r
+if (-NOT $dockerPassword) { throw \"You must enter a value for 'Password'.\" }\r
+if (-NOT $imageName) { throw \"You must enter a value for 'Image Name'.\" }\r
+if (-NOT $appLocation) { throw \"You must enter a value for 'Application Location'.\" }\r
+\r
+# If the Dockerfile parameter is not empty, save it to the file.\r
+if ($dockerFile) \r
+{\r
+    Write-Output 'Saving the Dockerfile'\r
+    $path = Join-Path $appLocation 'Dockerfile'\r
+    Set-Content -Path $path -Value $dockerFile -Force\r
+}\r
+\r
+# If the tag parameter is empty, set it as latest.\r
+if (-NOT $tag) \r
+{\r
+    $tag = 'latest'\r
+}\r
+\r
+# Prepare the final image name with the tag.\r
+$imageName += ':' + $tag\r
+\r
+# Create the docker image\r
+Write-Output 'Building the Docker Image'\r
+docker build -t $imageName $appLocation\r
+\r
+# Upload to DockerHub\r
+Write-Output 'Pushing the Docker Image to DockerHub'\r
+docker login -u $dockerUsername -p $dockerPassword\r
+docker push $imageName",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "DockerUsername",
+      "Label": "Docker Username",
+      "HelpText": "The username used to login to DockerHub",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DockerPassword",
+      "Label": "Docker Password",
+      "HelpText": "The password used to login to DockerHub",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Name": "ApplicationLocation",
+      "Label": "Application Location",
+      "HelpText": "The application location, used to build the Docker image",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "DockerFile",
+      "Label": "Dockerfile",
+      "HelpText": "The Dockerfile definition. If the Dockerfile is part of the package leave it blank",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Name": "ImageName",
+      "Label": "Image Name",
+      "HelpText": "The image name in DockerHub",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ImageTag",
+      "Label": "Image Tag",
+      "HelpText": "The image tag. Leave it blank for 'latest'",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2017-02-03T10:49:13.997Z",
+  "LastModifiedBy": "joaoasrosa",
+  "$Meta": {
+    "ExportedAt": "2017-02-03T10:49:13.997Z",
+    "OctopusVersion": "3.3.27",
+    "Type": "ActionTemplate"
+  },
+  "Category": "docker"
+}

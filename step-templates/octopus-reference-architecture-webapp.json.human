@@ -1,0 +1,4674 @@
+{
+  "Id": "614ec627-22a1-442a-b6a1-d51ae7009999",
+  "Name": "Octopus - Web App Reference Architecture",
+  "Description": "This step populates an Octopus space with the environments, feeds, accounts, lifecycles, projects, and runbooks required to deploy a sample application to an Azure Web App. These resources combine to form a reference architecture teams can use to bootstrap an Octopus space with best practices and example projects. It is recommended that you run this step with the octopuslabs/terraform-workertools container image.
+
+That this step assumes it is run on a cloud Octopus instance, or the default worker runs Linux, has Docker installed, and has PowerShell Core installed.
+
+The step will not update existing projects, environments etc. If you wish to recreate these resource with the latest configuration, for example if this step is updated and you wish to see the latest settings, you must manually delete or rename the resources to be recreated.",
+  "ActionType": "Octopus.TerraformApply",
+  "Version": 4,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.GoogleCloud.UseVMServiceAccount": "True",
+    "Octopus.Action.GoogleCloud.ImpersonateServiceAccount": "False",
+    "Octopus.Action.Terraform.GoogleCloudAccount": "False",
+    "Octopus.Action.Terraform.AzureAccount": "False",
+    "Octopus.Action.Terraform.ManagedAccount": "None",
+    "Octopus.Action.Terraform.AllowPluginDownloads": "True",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Terraform.RunAutomaticFileSubstitution": "True",
+    "Octopus.Action.Terraform.PlanJsonOutput": "False",
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Terraform.Template": "#region Provider
+terraform {
+  required_providers {
+    octopusdeploy = {
+      source = \"OctopusDeployLabs/octopusdeploy\"
+      version = \"0.21.1\"
+    }
+  }
+}
+
+variable \"octopus_server\" {
+  type        = string
+  nullable    = false
+  sensitive   = false
+  description = \"The URL of the Octopus server e.g. https://myinstance.octopus.app.\"
+  default     = \"#{Octopus.Web.ServerUri}\"
+}
+
+variable \"octopus_apikey\" {
+  type        = string
+  nullable    = false
+  sensitive   = true
+  description = \"The API key used to access the Octopus server. See https://octopus.com/docs/octopus-rest-api/how-to-create-an-api-key for details on creating an API key.\"
+}
+
+variable \"octopus_space_id\" {
+  type        = string
+  nullable    = false
+  sensitive   = false
+  description = \"The ID of the Octopus space to populate.\"
+  default     = \"#{Octopus.Space.Id}\"
+}
+
+provider \"octopusdeploy\" {
+  address  = var.octopus_server
+  api_key  = var.octopus_apikey
+  space_id = var.octopus_space_id
+}
+#endregion
+#region Locals
+locals {
+  /*
+    You will need to edit:
+    * smoke_test_properties - depending on the step type, custom properties will need to be defined
+    * smoke_test_script - replace REPLACE THIS WITH CODE TO RETURN THE PUBLIC HOSTNAME with the appropriate logic
+    * cloud_account - this will need to be created in most cases
+    * security_scan_docker_script - the reference to the docker image deployed in earlier steps needs to be updated from #{Octopus.Action[Deploy Container].Package[web].PackageId}
+    * octopusdeploy_deployment_process - each of the sample application deployment processes (there are 3 defined in this template) needs to have the actual deployment step added
+  */
+
+  project_template_project_name             = \"Docker Project Templates\"
+  project_group_name                        = \"Azure Web App\"
+  infrastructure_project_name               = \"_ Azure Web App Infrastructure\"
+  infrastructure_project_description        = \"Runbooks to create and manage Azure Web Apps\"
+  infrastructure_runbook_name               = \"Create Web App\"
+  infrastructure_runbook_description        = \"Creates an Azure web app and the associated Octopus target\"
+  feedback_link                             = \"https://oc.to/CfiezA\"
+  octopub_frontend_project_name             = \"Azure WebApp Octopub Frontend\"
+  octopub_frontend_project_description      = \"Deploys the Octopub Frontend app to an Azure Web App target\"
+  octopub_products_project_name             = \"Azure WebApp Octopub Products\"
+  octopub_products_project_description      = \"Deploys the Octopub Products app to an Azure Web App target\"
+  octopub_audits_project_name               = \"Azure WebApp Octopub Audits\"
+  octopub_audits_project_description        = \"Deploys the Octopub Audits app to an Azure Web App target\"
+  octopub_orchestration_project_name        = \"_ Deploy Azure Web App Octopub Stack\"
+  octopub_orchestration_project_description = \"Deploys the full Octopub application stack\"
+  frontend_health_check                     = \"/index.html\"
+  products_health_check                     = \"/health/products\"
+  audits_health_check                       = \"/health/audits\"
+  target_role                               = \"Web App Reference Architecture\"
+  unique_prefix                             = \"#{Octopus.Web.ServerUri | Replace \\\"^https?://\\\" \\\"\\\" | Replace \\\"[^A-Za-z0-9]\\\" \\\"-\\\"}\"
+
+  // Use the example below for any accounts that might be included in this reference architecture
+  cloud_account = length(data.octopusdeploy_accounts.account.accounts) == 0 ? octopusdeploy_azure_service_principal.account[0].id : data.octopusdeploy_accounts.account.accounts[0].id
+
+  development_environment_id         = length(data.octopusdeploy_environments.environment_development.environments) == 0 ? octopusdeploy_environment.environment_development[0].id : data.octopusdeploy_environments.environment_development.environments[0].id
+  test_environment_id                = length(data.octopusdeploy_environments.environment_test.environments) == 0 ? octopusdeploy_environment.environment_test[0].id : data.octopusdeploy_environments.environment_test.environments[0].id
+  production_environment_id          = length(data.octopusdeploy_environments.environment_production.environments) == 0 ? octopusdeploy_environment.environment_production[0].id : data.octopusdeploy_environments.environment_production.environments[0].id
+  sync_environment_id                = length(data.octopusdeploy_environments.environment_sync.environments) == 0 ? octopusdeploy_environment.environment_sync[0].id : data.octopusdeploy_environments.environment_sync.environments[0].id
+  security_environment_id            = length(data.octopusdeploy_environments.environment_security.environments) == 0 ? octopusdeploy_environment.environment_security[0].id : data.octopusdeploy_environments.environment_security.environments[0].id
+  this_instance_library_variable_set = length(data.octopusdeploy_library_variable_sets.this_instance.library_variable_sets) == 0 ? octopusdeploy_library_variable_set.this_instance[0].id : data.octopusdeploy_library_variable_sets.this_instance.library_variable_sets[0].id
+  github_library_variable_set        = length(data.octopusdeploy_library_variable_sets.github.library_variable_sets) == 0 ? octopusdeploy_library_variable_set.github[0].id : data.octopusdeploy_library_variable_sets.github.library_variable_sets[0].id
+  docker_library_variable_set        = length(data.octopusdeploy_library_variable_sets.docker.library_variable_sets) == 0 ? octopusdeploy_library_variable_set.docker[0].id : data.octopusdeploy_library_variable_sets.docker.library_variable_sets[0].id
+  docker_hub_feed_id                 = length(data.octopusdeploy_feeds.dockerhub.feeds) == 0 ? octopusdeploy_docker_container_registry.docker_hub[0].id : data.octopusdeploy_feeds.dockerhub.feeds[0].id
+  github_feed_id                     = length(data.octopusdeploy_feeds.github_feed.feeds) == 0 ? octopusdeploy_github_repository_feed.github_feed[0].id : data.octopusdeploy_feeds.github_feed.feeds[0].id
+  worker_pool_id                     = length(data.octopusdeploy_worker_pools.workerpool_hosted_ubuntu.worker_pools) == 0 ? \"\" : data.octopusdeploy_worker_pools.workerpool_hosted_ubuntu.worker_pools[0].id
+  devops_lifecycle_id                = length(data.octopusdeploy_lifecycles.devsecops.lifecycles) == 0 ? octopusdeploy_lifecycle.lifecycle_devsecops[0].id : data.octopusdeploy_lifecycles.devsecops.lifecycles[0].id
+  project_group_id                   = length(data.octopusdeploy_project_groups.ra.project_groups) == 0 ? octopusdeploy_project_group.project_group_ra[0].id : data.octopusdeploy_project_groups.ra.project_groups[0].id
+  project_templates_project_group_id = length(data.octopusdeploy_project_groups.project_templates.project_groups) == 0 ? octopusdeploy_project_group.project_group_project_templates[0].id : data.octopusdeploy_project_groups.project_templates.project_groups[0].id
+  application_lifecycle_id           = length(data.octopusdeploy_lifecycles.application.lifecycles) == 0 ? octopusdeploy_lifecycle.lifecycle_application[0].id : data.octopusdeploy_lifecycles.application.lifecycles[0].id
+  smoke_test_container_image         = \"octopuslabs/azure-workertools\"
+  smoke_test_action_type             = \"Octopus.AzurePowerShell\"
+  smoke_test_properties              = {
+    \"Octopus.Action.RunOnServer\"         = \"true\"
+    \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+    \"Octopus.Action.Script.Syntax\"       = \"Bash\"
+    \"Octopus.Action.Script.ScriptBody\"   = local.smoke_test_script
+    \"OctopusUseBundledTooling\" : \"False\"
+    \"Octopus.Action.Azure.AccountId\" : local.cloud_account
+  }
+  link_highlight_container_image = \"octopuslabs/azure-workertools\"
+  link_highlight_action_type     = \"Octopus.AzurePowerShell\"
+  link_highlight_properties      = {
+    \"Octopus.Action.RunOnServer\"         = \"true\"
+    \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+    \"Octopus.Action.Script.Syntax\"       = \"Bash\"
+    \"Octopus.Action.Script.ScriptBody\"   = local.link_highlight_script
+    \"OctopusUseBundledTooling\" : \"False\"
+    \"Octopus.Action.Azure.AccountId\" : local.cloud_account
+  }
+
+  link_highlight_script = <<-EOT
+  write_highlight \"[https://#{Octopus.Action.Azure.WebAppName}.azurewebsites.net#{App.HealthCheck}](https://#{Octopus.Action.Azure.WebAppName}.azurewebsites.net#{App.HealthCheck})\"
+  EOT
+
+  feedback_script             = <<-EOT
+  Write-Highlight \"Please share your feedback on this step in our [GitHub discussion](${local.feedback_link}).\"
+  EOT
+  smoke_test_script           = <<-EOT
+  for i in {1..30}
+  do
+    HOSTNAME=#{Octopus.Action.Azure.WebAppName}.azurewebsites.net
+      if [[ -n \"$${HOSTNAME}\" ]]
+      then
+        break
+      fi
+      echo \"Waiting for ingress hostname\"
+      sleep 10
+  done
+
+
+  # Load balancers can take a minute or so before their DNS is propagated.
+  # A status code of 000 means curl could not resolve the DNS name, so we wait for a bit until DNS is updated.
+  echo \"Testing https://$${HOSTNAME}#{App.HealthCheck}\"
+  echo \"Waiting for DNS to propagate. This can take a while for a new load balancer.\"
+  for i in {1..30}
+  do
+    CODE=$(curl -o /dev/null -s -w \"%%{http_code}\
+\" https://$${HOSTNAME}#{App.HealthCheck})
+    if [[ \"$${CODE}\" == \"200\" ]]
+    then
+      break
+    fi
+    echo \"Waiting for DNS name to be resolvable and for service to respond\"
+    sleep 10
+  done
+
+  echo \"response code: $${CODE}\"
+  if [[ \"$${CODE}\" == \"200\" ]]
+  then
+      echo \"success\"
+      exit 0
+  else
+      echo \"error\"
+      exit 1
+  fi
+  EOT
+  security_scan_docker_script = <<-EOT
+  echo \"Pulling Trivy Docker Image\"
+  echo \"##octopus[stdout-verbose]\"
+  docker pull aquasec/trivy
+  echo \"##octopus[stdout-default]\"
+
+  echo \"Installing umoci\"
+  echo \"##octopus[stdout-verbose]\"
+  # Install umoci
+  if ! which umoci
+  then
+    curl -o umoci -L https://github.com/opencontainers/umoci/releases/latest/download/umoci.amd64 2>&1
+    chmod +x umoci
+  fi
+  echo \"##octopus[stdout-default]\"
+
+  DOCKERIMAGE=#{Octopus.Action[Deploy Container].Package.PackageId}
+  DOCKERTAG=#{Octopus.Action[Deploy Container].Package.PackageVersion}
+
+  echo \"Extracting Application Docker Image\"
+  echo \"##octopus[stdout-verbose]\"
+  # Download and extract the docker image
+  # https://manpages.ubuntu.com/manpages/jammy/man1/umoci-raw-unpack.1.html
+  docker pull quay.io/skopeo/stable:latest 2>&1
+  docker run -v $(pwd):/output quay.io/skopeo/stable:latest copy docker://$${DOCKERIMAGE}:$${DOCKERTAG} oci:/output/image:latest 2>&1
+  ./umoci unpack --image image --rootless bundle 2>&1
+  echo \"##octopus[stdout-default]\"
+
+  TIMESTAMP=$(date +%s%3N)
+  SUCCESS=0
+  for x in $(find . -name bom.json -type f -print); do
+      echo \"Scanning $${x}\"
+
+      # Delete any existing report file
+      if [[ -f \"$PWD/depscan-bom.json\" ]]; then
+        rm \"$PWD/depscan-bom.json\"
+      fi
+
+      # Generate the report, capturing the output, and ensuring $? is set to the exit code
+      OUTPUT=$(bash -c \"docker run --rm -v \\\"$PWD:/app\\\" aquasec/trivy sbom \\\"/app/$${x}\\\"; exit \\$?\" 2>&1)
+
+      # Success is set to 1 if the exit code is not zero
+      if [[ $? -ne 0 ]]; then
+          SUCCESS=1
+      fi
+
+      # Print the output stripped of ANSI colour codes
+      echo -e \"$${OUTPUT}\" | sed 's/\\x1b\\[[0-9;]*m//g'
+  done
+
+  set_octopusvariable \"VerificationResult\" $SUCCESS
+
+  if [[ $SUCCESS -ne 0 ]]; then
+    >&2 echo \"Critical vulnerabilities were detected\"
+  fi
+
+  exit 0
+  EOT
+}
+#endregion
+#region Environments
+data \"octopusdeploy_environments\" \"environment_development\" {
+  ids          = null
+  partial_name = \"Development\"
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_environment\" \"environment_development\" {
+  count                        = length(data.octopusdeploy_environments.environment_development.environments) == 0 ? 1 : 0
+  name                         = \"Development\"
+  description                  = \"\"
+  allow_dynamic_infrastructure = true
+  use_guided_failure           = true
+  sort_order                   = 10
+
+  jira_extension_settings {
+    environment_type = \"development\"
+  }
+
+  jira_service_management_extension_settings {
+    is_enabled = false
+  }
+
+  servicenow_extension_settings {
+    is_enabled = false
+  }
+}
+
+data \"octopusdeploy_environments\" \"environment_test\" {
+  ids          = null
+  partial_name = \"Test\"
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_environment\" \"environment_test\" {
+  count                        = length(data.octopusdeploy_environments.environment_test.environments) == 0 ? 1 : 0
+  name                         = \"Test\"
+  description                  = \"\"
+  allow_dynamic_infrastructure = true
+  use_guided_failure           = true
+  sort_order                   = 11
+
+  jira_extension_settings {
+    environment_type = \"testing\"
+  }
+
+  jira_service_management_extension_settings {
+    is_enabled = false
+  }
+
+  servicenow_extension_settings {
+    is_enabled = false
+  }
+}
+
+data \"octopusdeploy_environments\" \"environment_production\" {
+  ids          = null
+  partial_name = \"Production\"
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_environment\" \"environment_production\" {
+  count                        = length(data.octopusdeploy_environments.environment_production.environments) == 0 ? 1 : 0
+  name                         = \"Production\"
+  description                  = \"\"
+  allow_dynamic_infrastructure = true
+  use_guided_failure           = true
+  sort_order                   = 12
+
+  jira_extension_settings {
+    environment_type = \"production\"
+  }
+
+  jira_service_management_extension_settings {
+    is_enabled = false
+  }
+
+  servicenow_extension_settings {
+    is_enabled = false
+  }
+}
+
+data \"octopusdeploy_environments\" \"environment_security\" {
+  ids          = null
+  partial_name = \"Security\"
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_environment\" \"environment_security\" {
+  count                        = length(data.octopusdeploy_environments.environment_security.environments) == 0 ? 1 : 0
+  name                         = \"Security\"
+  description                  = \"\"
+  allow_dynamic_infrastructure = true
+  use_guided_failure           = false
+  sort_order                   = 14
+
+  jira_extension_settings {
+    environment_type = \"production\"
+  }
+
+  jira_service_management_extension_settings {
+    is_enabled = false
+  }
+
+  servicenow_extension_settings {
+    is_enabled = false
+  }
+}
+
+data \"octopusdeploy_environments\" \"environment_sync\" {
+  ids          = null
+  partial_name = \"Sync\"
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_environment\" \"environment_sync\" {
+  count                        = length(data.octopusdeploy_environments.environment_sync.environments) == 0 ? 1 : 0
+  name                         = \"Sync\"
+  description                  = \"\"
+  allow_dynamic_infrastructure = true
+  use_guided_failure           = false
+  sort_order                   = 15
+
+  jira_extension_settings {
+    environment_type = \"development\"
+  }
+
+  jira_service_management_extension_settings {
+    is_enabled = false
+  }
+
+  servicenow_extension_settings {
+    is_enabled = false
+  }
+}
+
+data \"octopusdeploy_lifecycles\" \"devsecops\" {
+  ids          = []
+  partial_name = \"DevSecOps\"
+  skip         = 0
+  take         = 1
+}
+
+data \"octopusdeploy_lifecycles\" \"application\" {
+  ids          = []
+  partial_name = \"Application\"
+  skip         = 0
+  take         = 1
+}
+
+data \"octopusdeploy_lifecycles\" \"sync\" {
+  ids          = []
+  partial_name = \"Sync\"
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_lifecycle\" \"sync\" {
+  count       = length(data.octopusdeploy_lifecycles.sync.lifecycles) == 0 ? 1 : 0
+  name        = \"Sync\"
+  description = \"\"
+
+  phase {
+    automatic_deployment_targets = []
+    optional_deployment_targets  = [
+      local.sync_environment_id
+    ]
+    name                                  = \"Sync\"
+    is_optional_phase                     = false
+    minimum_environments_before_promotion = 0
+  }
+
+  release_retention_policy {
+    quantity_to_keep    = 3
+    should_keep_forever = false
+    unit                = \"Days\"
+  }
+
+  tentacle_retention_policy {
+    quantity_to_keep    = 3
+    should_keep_forever = false
+    unit                = \"Days\"
+  }
+}
+
+resource \"octopusdeploy_lifecycle\" \"lifecycle_devsecops\" {
+  count       = length(data.octopusdeploy_lifecycles.devsecops.lifecycles) == 0 ? 1 : 0
+  name        = \"DevSecOps\"
+  description = \"\"
+
+  phase {
+    automatic_deployment_targets = []
+    optional_deployment_targets  = [
+      local.development_environment_id
+    ]
+    name                                  = \"Development\"
+    is_optional_phase                     = false
+    minimum_environments_before_promotion = 0
+  }
+  phase {
+    automatic_deployment_targets = []
+    optional_deployment_targets  = [
+      local.test_environment_id
+    ]
+    name                                  = \"Test\"
+    is_optional_phase                     = false
+    minimum_environments_before_promotion = 0
+  }
+  phase {
+    automatic_deployment_targets = []
+    optional_deployment_targets  = [
+      local.production_environment_id
+    ]
+    name                                  = \"Production\"
+    is_optional_phase                     = false
+    minimum_environments_before_promotion = 0
+  }
+  phase {
+    automatic_deployment_targets = [
+      local.security_environment_id
+    ]
+    optional_deployment_targets           = []
+    name                                  = \"Security\"
+    is_optional_phase                     = false
+    minimum_environments_before_promotion = 0
+  }
+
+  release_retention_policy {
+    quantity_to_keep    = 3
+    should_keep_forever = false
+    unit                = \"Days\"
+  }
+
+  tentacle_retention_policy {
+    quantity_to_keep    = 3
+    should_keep_forever = false
+    unit                = \"Days\"
+  }
+}
+
+resource \"octopusdeploy_lifecycle\" \"lifecycle_application\" {
+  count       = length(data.octopusdeploy_lifecycles.application.lifecycles) == 0 ? 1 : 0
+  name        = \"Application\"
+  description = \"\"
+
+  phase {
+    automatic_deployment_targets = []
+    optional_deployment_targets  = [
+      local.development_environment_id
+    ]
+    name                                  = \"Development\"
+    is_optional_phase                     = false
+    minimum_environments_before_promotion = 0
+  }
+  phase {
+    automatic_deployment_targets = []
+    optional_deployment_targets  = [
+      local.test_environment_id
+    ]
+    name                                  = \"Test\"
+    is_optional_phase                     = false
+    minimum_environments_before_promotion = 0
+  }
+  phase {
+    automatic_deployment_targets = []
+    optional_deployment_targets  = [
+      local.production_environment_id
+    ]
+    name                                  = \"Production\"
+    is_optional_phase                     = false
+    minimum_environments_before_promotion = 0
+  }
+
+  release_retention_policy {
+    quantity_to_keep    = 3
+    should_keep_forever = false
+    unit                = \"Days\"
+  }
+
+  tentacle_retention_policy {
+    quantity_to_keep    = 3
+    should_keep_forever = false
+    unit                = \"Days\"
+  }
+}
+#endregion
+#region Feeds
+
+data \"octopusdeploy_feeds\" \"project\" {
+  feed_type = \"OctopusProject\"
+  ids       = []
+  skip      = 0
+  take      = 1
+}
+
+data \"octopusdeploy_feeds\" \"bitnami\" {
+  feed_type    = \"Helm\"
+  ids          = []
+  partial_name = \"Bitnami\"
+  skip         = 0
+  take         = 1
+}
+
+
+resource \"octopusdeploy_helm_feed\" \"feed_helm\" {
+  count                                = length(data.octopusdeploy_feeds.bitnami.feeds) == 0 ? 1 : 0
+  name                                 = \"Bitnami\"
+  feed_uri                             = \"https://repo.vmware.com/bitnami-files/\"
+  package_acquisition_location_options = [\"ExecutionTarget\", \"NotAcquired\"]
+}
+
+data \"octopusdeploy_feeds\" \"dockerhub\" {
+  feed_type    = \"Docker\"
+  ids          = []
+  partial_name = \"Docker Hub\"
+  skip         = 0
+  take         = 1
+}
+
+variable \"feed_docker_hub_username\" {
+  type        = string
+  nullable    = false
+  sensitive   = true
+  description = \"The username used by the feed Docker Hub\"
+}
+
+variable \"feed_docker_hub_password\" {
+  type        = string
+  nullable    = false
+  sensitive   = true
+  description = \"The password used by the feed Docker Hub\"
+}
+
+resource \"octopusdeploy_docker_container_registry\" \"docker_hub\" {
+  count                                = length(data.octopusdeploy_feeds.dockerhub.feeds) == 0 ? 1 : 0
+  name                                 = \"Docker Hub\"
+  password                             = var.feed_docker_hub_password
+  username                             = var.feed_docker_hub_username
+  api_version                          = \"v1\"
+  feed_uri                             = \"https://index.docker.io\"
+  package_acquisition_location_options = [\"ExecutionTarget\", \"NotAcquired\"]
+}
+
+data \"octopusdeploy_feeds\" \"sales_maven_feed\" {
+  feed_type    = \"Maven\"
+  ids          = []
+  partial_name = \"Sales Maven Feed\"
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_maven_feed\" \"feed_sales_maven_feed\" {
+  count                                = length(data.octopusdeploy_feeds.sales_maven_feed.feeds) == 0 ? 1 : 0
+  name                                 = \"Sales Maven Feed\"
+  feed_uri                             = \"https://octopus-sales-public-maven-repo.s3.ap-southeast-2.amazonaws.com/snapshot\"
+  package_acquisition_location_options = [\"Server\", \"ExecutionTarget\"]
+  download_attempts                    = 3
+  download_retry_backoff_seconds       = 20
+}
+
+data \"octopusdeploy_feeds\" \"github_feed\" {
+  feed_type    = \"GitHub\"
+  ids          = []
+  partial_name = \"Github Releases\"
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_github_repository_feed\" \"github_feed\" {
+  count                          = length(data.octopusdeploy_feeds.github_feed.feeds) == 0 ? 1 : 0
+  download_attempts              = 1
+  download_retry_backoff_seconds = 30
+  feed_uri                       = \"https://api.github.com\"
+  name                           = \"Github Releases\"
+}
+#endregion
+#region Library Variable Sets
+data \"octopusdeploy_library_variable_sets\" \"this_instance\" {
+  partial_name = \"This Instance\"
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_library_variable_set\" \"this_instance\" {
+  count       = length(data.octopusdeploy_library_variable_sets.this_instance.library_variable_sets) == 0 ? 1 : 0
+  name        = \"This Instance\"
+  description = \"Credentials used to interact with this Octopus instance\"
+}
+
+resource \"octopusdeploy_variable\" \"octopus_admin_api_key\" {
+  count           = length(data.octopusdeploy_library_variable_sets.this_instance.library_variable_sets) == 0 ? 1 : 0
+  name            = \"Octopus.ApiKey\"
+  type            = \"Sensitive\"
+  description     = \"Octopus API Key\"
+  is_sensitive    = true
+  is_editable     = true
+  owner_id        = octopusdeploy_library_variable_set.this_instance[0].id
+  sensitive_value = var.octopus_apikey
+}
+
+data \"octopusdeploy_library_variable_sets\" \"github\" {
+  partial_name = \"GitHub\"
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_library_variable_set\" \"github\" {
+  count       = length(data.octopusdeploy_library_variable_sets.github.library_variable_sets) == 0 ? 1 : 0
+  name        = \"GitHub\"
+  description = \"Credentials used to interact with GitHub\"
+}
+
+variable \"github_access_token\" {
+  type        = string
+  nullable    = false
+  sensitive   = true
+  description = \"The GitHub access token\"
+}
+
+resource \"octopusdeploy_variable\" \"github_access_token\" {
+  count           = length(data.octopusdeploy_library_variable_sets.github.library_variable_sets) == 0 ? 1 : 0
+  name            = \"Git.Credentials.Password\"
+  type            = \"Sensitive\"
+  description     = \"The GitHub access token\"
+  is_sensitive    = true
+  is_editable     = true
+  owner_id        = octopusdeploy_library_variable_set.github[0].id
+  sensitive_value = var.github_access_token
+}
+
+data \"octopusdeploy_library_variable_sets\" \"docker\" {
+  partial_name = \"Docker\"
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_library_variable_set\" \"docker\" {
+  count       = length(data.octopusdeploy_library_variable_sets.docker.library_variable_sets) == 0 ? 1 : 0
+  name        = \"Docker\"
+  description = \"Credentials used to interact with Docker\"
+}
+
+resource \"octopusdeploy_variable\" \"docker_username\" {
+  count        = length(data.octopusdeploy_library_variable_sets.docker.library_variable_sets) == 0 ? 1 : 0
+  name         = \"Docker.Credentials.Username\"
+  type         = \"String\"
+  description  = \"The docker username\"
+  is_sensitive = false
+  is_editable  = true
+  owner_id     = octopusdeploy_library_variable_set.docker[0].id
+  value        = var.feed_docker_hub_username
+}
+
+resource \"octopusdeploy_variable\" \"docker_password\" {
+  count           = length(data.octopusdeploy_library_variable_sets.docker.library_variable_sets) == 0 ? 1 : 0
+  name            = \"Docker.Credentials.Password\"
+  type            = \"Sensitive\"
+  description     = \"The docker password\"
+  is_sensitive    = true
+  is_editable     = true
+  owner_id        = octopusdeploy_library_variable_set.docker[0].id
+  sensitive_value = var.feed_docker_hub_password
+}
+#endregion
+#region Accounts
+
+data \"octopusdeploy_accounts\" \"account\" {
+  account_type = \"AzureServicePrincipal\"
+  partial_name = \"Azure\"
+  skip         = 0
+  take         = 1
+}
+
+variable \"azure_account_application_id\" {
+  type        = string
+  nullable    = false
+  sensitive   = false
+  description = \"The Azure account application ID\"
+}
+
+variable \"azure_account_subscription_id\" {
+  type        = string
+  nullable    = false
+  sensitive   = false
+  description = \"The Azure account subscription ID\"
+}
+
+variable \"azure_account_tenant_id\" {
+  type        = string
+  nullable    = false
+  sensitive   = false
+  description = \"The Azure account tenant ID\"
+}
+
+variable \"azure_account_password\" {
+  type        = string
+  nullable    = false
+  sensitive   = true
+  description = \"The Azure account password\"
+}
+
+resource \"octopusdeploy_azure_service_principal\" \"account\" {
+  count                             = length(data.octopusdeploy_accounts.account.accounts) == 0 ? 1 : 0
+  description                       = \"Azure Account\"
+  name                              = \"Azure\"
+  environments                      = []
+  tenants                           = []
+  tenanted_deployment_participation = \"Untenanted\"
+  application_id                    = var.azure_account_application_id
+  password                          = var.azure_account_password
+  subscription_id                   = var.azure_account_subscription_id
+  tenant_id                         = var.azure_account_tenant_id
+}
+
+#endregion
+#region Worker Pools
+
+data \"octopusdeploy_worker_pools\" \"workerpool_hosted_ubuntu\" {
+  partial_name = \"Hosted Ubuntu\"
+  ids          = null
+  skip         = 0
+  take         = 1
+}
+#endregion
+#region Project Groups
+data \"octopusdeploy_project_groups\" \"ra\" {
+  ids          = []
+  partial_name = local.project_group_name
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_project_group\" \"project_group_ra\" {
+  count       = length(data.octopusdeploy_project_groups.ra.project_groups) == 0 ? 1 : 0
+  name        = local.project_group_name
+  description = \"${local.project_group_name} projects.\"
+}
+
+data \"octopusdeploy_project_groups\" \"project_templates\" {
+  ids          = []
+  partial_name = \"Project Templates\"
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_project_group\" \"project_group_project_templates\" {
+  count       = length(data.octopusdeploy_project_groups.project_templates.project_groups) == 0 ? 1 : 0
+  name        = \"Project Templates\"
+  description = \"Sample code project generators\"
+}
+#endregion
+
+#region Projects
+
+#region Infrastructure Project
+variable \"infrastructure_project_name\" {
+  type    = string
+  default = \"\"
+}
+
+
+data \"octopusdeploy_projects\" \"infrastructure\" {
+  partial_name = var.infrastructure_project_name == \"\" ? local.infrastructure_project_name : var.infrastructure_project_name
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_variable\" \"azure_account\" {
+  count       = length(data.octopusdeploy_projects.infrastructure.projects) == 0 ? 1 : 0
+  name        = \"Azure.Account\"
+  type        = \"AzureAccount\"
+  description = \"The Azure account used to create the web app infrastructure\"
+  value       = local.cloud_account
+  owner_id    = octopusdeploy_project.infrastructure[0].id
+}
+
+resource \"octopusdeploy_project\" \"infrastructure\" {
+  count                                = length(data.octopusdeploy_projects.infrastructure.projects) == 0 ? 1 : 0
+  name                                 = var.infrastructure_project_name == \"\" ? local.infrastructure_project_name : var.infrastructure_project_name
+  auto_create_release                  = false
+  default_guided_failure_mode          = \"EnvironmentDefault\"
+  default_to_skip_if_already_installed = false
+  discrete_channel_release             = false
+  is_disabled                          = false
+  is_version_controlled                = true
+  lifecycle_id                         = local.devops_lifecycle_id
+  project_group_id                     = local.project_group_id
+  included_library_variable_sets       = []
+  tenanted_deployment_participation    = \"Untenanted\"
+
+  connectivity_policy {
+    allow_deployments_to_no_targets = true
+    exclude_unhealthy_targets       = false
+    skip_machine_behavior           = \"None\"
+  }
+
+  versioning_strategy {
+    template = \"#{Octopus.Version.LastMajor}.#{Octopus.Version.LastMinor}.#{Octopus.Version.NextPatch}\"
+  }
+
+  lifecycle {
+    ignore_changes = [connectivity_policy]
+  }
+  description = local.infrastructure_project_description
+}
+
+resource \"octopusdeploy_runbook\" \"runbook_create_infrastructure\" {
+  count             = length(data.octopusdeploy_projects.infrastructure.projects) == 0 ? 1 : 0
+  name              = local.infrastructure_runbook_name
+  project_id        = octopusdeploy_project.infrastructure[0].id
+  environment_scope = \"Specified\"
+  environments      = [
+    local.development_environment_id,
+    local.test_environment_id,
+    local.production_environment_id,
+  ]
+  force_package_download      = false
+  default_guided_failure_mode = \"EnvironmentDefault\"
+  description                 = local.infrastructure_runbook_description
+  multi_tenancy_mode          = \"Untenanted\"
+
+  retention_policy {
+    quantity_to_keep    = 100
+    should_keep_forever = false
+  }
+
+  connectivity_policy {
+    allow_deployments_to_no_targets = true
+    exclude_unhealthy_targets       = false
+    skip_machine_behavior           = \"None\"
+  }
+}
+
+resource \"octopusdeploy_runbook_process\" \"runbook_process_runbook_create_infrastructure\" {
+  count      = length(data.octopusdeploy_projects.infrastructure.projects) == 0 ? 1 : 0
+  runbook_id = octopusdeploy_runbook.runbook_create_infrastructure[0].id
+
+  step {
+    condition           = \"Success\"
+    name                = \"Generate Variables\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Generate Variables\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = \"${data.octopusdeploy_worker_pools.workerpool_hosted_ubuntu.worker_pools[0].id}\"
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"         = \"true\"
+        \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+        \"Octopus.Action.Script.Syntax\"       = \"PowerShell\"
+        \"Octopus.Action.Script.ScriptBody\"   = \"Set-OctopusVariable -name \\\"OctopusEnvironmentName\\\" -value $OctopusParameters[\\\"Octopus.Environment.Name\\\"]\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+
+  step {
+    condition           = \"Success\"
+    name                = \"Create Resource Group If Not Exists (AZ Module)\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.AzurePowerShell\"
+      name                               = \"Create Resource Group If Not Exists (AZ Module)\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.Script.ScriptSource\"              = \"Inline\"
+        \"CreateResourceGroup.ResourceGroup.Location.Abbr\" = \"australiasoutheast\"
+        \"Octopus.Action.Script.ScriptBody\"                = \"$resourceGroupName = $OctopusParameters[\\\"CreateResourceGroup.ResourceGroup.Name\\\"]\
+$resourceGroupLocationAbbr = $OctopusParameters[\\\"CreateResourceGroup.ResourceGroup.Location.Abbr\\\"]\
+\
+$existingResourceGroups = (az group list --query \\\"[?location=='$resourceGroupLocationAbbr']\\\") | ConvertFrom-JSON\
+\
+$createResourceGroup = $true\
+foreach ($resourceGroupFound in $existingResourceGroups)\
+{\\t\
+\\tWrite-Host \\\"Checking if current resource group $($resourceGroupFound.name) matches $resourceGroupName\\\"\
+    if ($resourceGroupFound.name -eq $resourceGroupName)\
+    {\
+    \\t$createResourceGroup = $false\
+    \\tWrite-Highlight \\\"Resource group already exists, skipping creation\\\"\
+    \\tbreak\
+    }\
+}\
+\
+if ($createResourceGroup)\
+{\
+\\tWrite-Host \\\"Creating the $resourceGroupName because it was not found in $resourceGroupLocationAbbr\\\"\
+\\taz group create -l $resourceGroupLocationAbbr -n $resourceGroupName\
+}\"
+        \"Octopus.Action.RunOnServer\"                      = \"true\"
+        \"Octopus.Action.Script.Syntax\"                    = \"PowerShell\"
+        \"Octopus.Action.Azure.AccountId\"                  = \"#{CreateResourceGroup.Azure.Account}\"
+        \"CreateResourceGroup.Azure.Account\"               = \"Azure.Account\"
+        \"CreateResourceGroup.ResourceGroup.Name\"          = \"octopub-#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName | ToLower}\"
+        \"OctopusUseBundledTooling\"                        = \"False\"
+      }
+
+      container {
+        feed_id = local.docker_hub_feed_id
+        image   = \"octopuslabs/azure-workertools\"
+      }
+
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+  step {
+    condition           = \"Success\"
+    name                = \"Create App Service Plan\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.AzureResourceGroup\"
+      name                               = \"Create App Service Plan\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.Azure.ResourceGroupDeploymentMode\"     = \"Incremental\"
+        \"Octopus.Action.Azure.TemplateSource\"                  = \"Inline\"
+        \"Octopus.Action.Azure.ResourceGroupTemplateParameters\" = jsonencode({
+          \"environment\" = {
+            \"value\" = \"#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName | ToLower}\"
+          }
+          \"projectName\" = {
+            \"value\" = \"octopub\"
+          }
+          \"appServiceSku\" = {
+            \"value\" = \"B2\"
+          }
+        })
+        \"Octopus.Action.Azure.ResourceGroupTemplate\" = jsonencode({
+          \"parameters\" = {
+            \"environment\" = {
+              \"type\" = \"string\"
+            }
+            \"projectName\" = {
+              \"type\" = \"string\"
+            }
+            \"appServiceSku\" = {
+              \"type\"         = \"string\"
+              \"defaultValue\" = \"B2\"
+              \"metadata\"     = {
+                \"description\" = \"The SKU of App Service Plan\"
+              }
+            }
+          }
+          \"variables\" = {
+            \"appServicePlanName\" = \"[concat(parameters('projectName'), '-', parameters('environment'),'-hosting')]\"
+          }
+          \"resources\" = [
+            {
+              \"kind\"       = \"linux\"
+              \"location\"   = \"[resourceGroup().location]\"
+              \"properties\" = {
+                \"reserved\" = \"true\"
+              }
+              \"dependsOn\" = []
+              \"sku\"       = {
+                \"name\" = \"[parameters('appServiceSku')]\"
+              }
+              \"apiVersion\" = \"2017-08-01\"
+              \"type\"       = \"Microsoft.Web/serverfarms\"
+              \"name\"       = \"[variables('appServicePlanName')]\"
+              \"comments\"   = \"This app service plan is used for the web app and slots.\"
+            },
+          ]
+          \"outputs\" = {
+            \"appServicePlan\" = {
+              \"type\"  = \"string\"
+              \"value\" = \"[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]\"
+            }
+          }
+          \"$schema\"        = \"https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#\"
+          \"contentVersion\" = \"1.0.0.0\"
+        })
+        \"Octopus.Action.Azure.AccountId\"         = local.cloud_account
+        \"Octopus.Action.Azure.ResourceGroupName\" = \"octopub-#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName | ToLower}\"
+        \"Octopus.Action.RunOnServer\"             = \"true\"
+        \"OctopusUseBundledTooling\"               = \"False\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+  step {
+    condition           = \"Success\"
+    name                = \"Create Frontend Web App Service\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.AzureResourceGroup\"
+      name                               = \"Create Frontend Web App Service\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.Azure.ResourceGroupTemplateParameters\" = jsonencode({
+          \"environment\" = {
+            \"value\" = \"#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName | ToLower}\"
+          }
+          \"projectName\" = {
+            \"value\" = \"octopubfrontend\"
+          }
+          \"uniquePrefix\" = {
+            \"value\" = local.unique_prefix
+          }
+          \"appServicePlanId\" = {
+            \"value\" = \"#{Octopus.Action[Create App Service Plan].Output.AzureRmOutputs[appServicePlan]}\"
+          }
+          \"dockerImageName\" = {
+            \"value\" = \"nginx:latest\"
+          }
+          \"resourceTags\" = {
+            \"value\" = {
+              \"octopus-environment\" = \"#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName}\"
+              \"octopus-role\"        = \"${local.target_role} Frontend\"
+              \"octopus-space\"       = \"#{Octopus.Space.Name}\"
+              \"octopus-project\"     = \"Azure WebApp Octopub Frontend\"
+            }
+          }
+        })
+        \"Octopus.Action.Azure.ResourceGroupTemplate\" = jsonencode({
+          \"resources\" = [
+            {
+              \"apiVersion\" = \"2016-08-01\"
+              \"name\"       = \"[variables('webAppPortalName')]\"
+              \"kind\"       = \"app,linux,container\"
+              \"location\"   = \"[resourceGroup().location]\"
+              \"tags\"       = \"[parameters('resourceTags')]\"
+              \"dependsOn\"  = []
+              \"properties\" = {
+                \"name\"       = \"[variables('webAppPortalName')]\"
+                \"siteConfig\" = {
+                  \"linuxFxVersion\" = \"[concat('DOCKER|', parameters('dockerImageName'))]\"
+                  \"alwaysOn\"       = \"true\"
+                }
+                \"serverFarmId\" = \"[parameters('appServicePlanId')]\"
+              }
+              \"type\" = \"Microsoft.Web/sites\"
+            },
+          ]
+          \"$schema\"        = \"https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#\"
+          \"contentVersion\" = \"1.0.0.0\"
+          \"parameters\"     = {
+            \"environment\" = {
+              \"type\" = \"string\"
+            }
+            \"projectName\" = {
+              \"type\" = \"string\"
+            }
+            \"uniquePrefix\" = {
+              \"defaultValue\" = local.unique_prefix
+              \"type\"         = \"string\"
+            }
+            \"appServicePlanId\" = {
+              \"type\"         = \"string\"
+              \"defaultValue\" = \"#{Octopus.Action[Create App Service Plan].Output.AzureRmOutputs[appServicePlan]}\"
+            }
+            \"dockerImageName\" = {
+              \"type\"         = \"string\"
+              \"defaultValue\" = \"nginx:latest\"
+            }
+            \"resourceTags\" = {
+              \"type\"         = \"object\"
+              \"defaultValue\" = {
+                \"octopus-environment\" = \"#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName}\"
+                \"octopus-role\"        = \"${local.target_role} Frontend\"
+                \"octopus-space\"       = \"#{Octopus.Space.Name}\"
+                \"octopus-project\"     = \"\"
+              }
+            }
+          }
+          \"variables\" = {
+            \"webAppPortalName\" = \"[concat(parameters('uniquePrefix'), '-', parameters('projectName'), '-', parameters('environment'), '-webapp')]\"
+          }
+        })
+        \"Octopus.Action.Azure.AccountId\"                   = local.cloud_account
+        \"Octopus.Action.Azure.ResourceGroupName\"           = \"octopub-#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName | ToLower}\"
+        \"Octopus.Action.RunOnServer\"                       = \"true\"
+        \"OctopusUseBundledTooling\"                         = \"False\"
+        \"Octopus.Action.Azure.ResourceGroupDeploymentMode\" = \"Incremental\"
+        \"Octopus.Action.Azure.TemplateSource\"              = \"Inline\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+
+  step {
+    condition           = \"Success\"
+    name                = \"Create Products Microservice App Service\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.AzureResourceGroup\"
+      name                               = \"Create Products Microservice App Service\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.Azure.ResourceGroupTemplateParameters\" = jsonencode({
+          \"environment\" = {
+            \"value\" = \"#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName | ToLower}\"
+          }
+          \"projectName\" = {
+            \"value\" = \"octopubproducts\"
+          }
+          \"uniquePrefix\" = {
+            \"value\" = local.unique_prefix
+          }
+          \"appServicePlanId\" = {
+            \"value\" = \"#{Octopus.Action[Create App Service Plan].Output.AzureRmOutputs[appServicePlan]}\"
+          }
+          \"dockerImageName\" = {
+            \"value\" = \"nginx:latest\"
+          }
+          \"resourceTags\" = {
+            \"value\" = {
+              \"octopus-environment\" = \"#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName}\"
+              \"octopus-role\"        = \"${local.target_role} Products\"
+              \"octopus-space\"       = \"#{Octopus.Space.Name}\"
+              \"octopus-project\"     = \"Azure WebApp Octopub Products\"
+            }
+          }
+        })
+        \"Octopus.Action.Azure.ResourceGroupTemplate\" = jsonencode({
+          \"resources\" = [
+            {
+              \"apiVersion\" = \"2016-08-01\"
+              \"name\"       = \"[variables('webAppPortalName')]\"
+              \"kind\"       = \"app,linux,container\"
+              \"location\"   = \"[resourceGroup().location]\"
+              \"tags\"       = \"[parameters('resourceTags')]\"
+              \"dependsOn\"  = []
+              \"properties\" = {
+                \"name\"       = \"[variables('webAppPortalName')]\"
+                \"siteConfig\" = {
+                  \"linuxFxVersion\" = \"[concat('DOCKER|', parameters('dockerImageName'))]\"
+                  \"alwaysOn\"       = \"true\"
+                }
+                \"serverFarmId\" = \"[parameters('appServicePlanId')]\"
+              }
+              \"type\" = \"Microsoft.Web/sites\"
+            },
+          ]
+          \"$schema\"        = \"https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#\"
+          \"contentVersion\" = \"1.0.0.0\"
+          \"parameters\"     = {
+            \"environment\" = {
+              \"type\" = \"string\"
+            }
+            \"projectName\" = {
+              \"type\" = \"string\"
+            }
+            \"uniquePrefix\" = {
+              \"defaultValue\" = local.unique_prefix
+              \"type\"         = \"string\"
+            }
+            \"appServicePlanId\" = {
+              \"type\"         = \"string\"
+              \"defaultValue\" = \"#{Octopus.Action[Create App Service Plan].Output.AzureRmOutputs[appServicePlan]}\"
+            }
+            \"dockerImageName\" = {
+              \"type\"         = \"string\"
+              \"defaultValue\" = \"nginx:latest\"
+            }
+            \"resourceTags\" = {
+              \"type\"         = \"object\"
+              \"defaultValue\" = {
+                \"octopus-environment\" = \"#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName}\"
+                \"octopus-role\"        = \"${local.target_role} Products\"
+                \"octopus-space\"       = \"#{Octopus.Space.Name}\"
+                \"octopus-project\"     = \"\"
+              }
+            }
+          }
+          \"variables\" = {
+            \"webAppPortalName\" = \"[concat(parameters('uniquePrefix'), '-', parameters('projectName'), '-', parameters('environment'), '-webapp')]\"
+          }
+        })
+        \"Octopus.Action.Azure.AccountId\"                   = local.cloud_account
+        \"Octopus.Action.Azure.ResourceGroupName\"           = \"octopub-#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName | ToLower}\"
+        \"Octopus.Action.RunOnServer\"                       = \"true\"
+        \"OctopusUseBundledTooling\"                         = \"False\"
+        \"Octopus.Action.Azure.ResourceGroupDeploymentMode\" = \"Incremental\"
+        \"Octopus.Action.Azure.TemplateSource\"              = \"Inline\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+
+  step {
+    condition           = \"Success\"
+    name                = \"Create Audits Microservice App Service\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.AzureResourceGroup\"
+      name                               = \"Create Audits Microservice App Service\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.Azure.ResourceGroupTemplateParameters\" = jsonencode({
+          \"environment\" = {
+            \"value\" = \"#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName | ToLower}\"
+          }
+          \"projectName\" = {
+            \"value\" = \"octopubaudits\"
+          }
+          \"uniquePrefix\" = {
+            \"value\" = local.unique_prefix
+          }
+          \"appServicePlanId\" = {
+            \"value\" = \"#{Octopus.Action[Create App Service Plan].Output.AzureRmOutputs[appServicePlan]}\"
+          }
+          \"dockerImageName\" = {
+            \"value\" = \"nginx:latest\"
+          }
+          \"resourceTags\" = {
+            \"value\" = {
+              \"octopus-environment\" = \"#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName}\"
+              \"octopus-role\"        = \"${local.target_role} Audits\"
+              \"octopus-space\"       = \"#{Octopus.Space.Name}\"
+              \"octopus-project\"     = \"Azure WebApp Octopub Audits\"
+            }
+          }
+        })
+        \"Octopus.Action.Azure.ResourceGroupTemplate\" = jsonencode({
+          \"resources\" = [
+            {
+              \"apiVersion\" = \"2016-08-01\"
+              \"name\"       = \"[variables('webAppPortalName')]\"
+              \"kind\"       = \"app,linux,container\"
+              \"location\"   = \"[resourceGroup().location]\"
+              \"tags\"       = \"[parameters('resourceTags')]\"
+              \"dependsOn\"  = []
+              \"properties\" = {
+                \"name\"       = \"[variables('webAppPortalName')]\"
+                \"siteConfig\" = {
+                  \"linuxFxVersion\" = \"[concat('DOCKER|', parameters('dockerImageName'))]\"
+                  \"alwaysOn\"       = \"true\"
+                }
+                \"serverFarmId\" = \"[parameters('appServicePlanId')]\"
+              }
+              \"type\" = \"Microsoft.Web/sites\"
+            },
+          ]
+          \"$schema\"        = \"https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#\"
+          \"contentVersion\" = \"1.0.0.0\"
+          \"parameters\"     = {
+            \"environment\" = {
+              \"type\" = \"string\"
+            }
+            \"projectName\" = {
+              \"type\" = \"string\"
+            }
+            \"uniquePrefix\" = {
+              \"defaultValue\" = local.unique_prefix
+              \"type\"         = \"string\"
+            }
+            \"appServicePlanId\" = {
+              \"type\"         = \"string\"
+              \"defaultValue\" = \"#{Octopus.Action[Create App Service Plan].Output.AzureRmOutputs[appServicePlan]}\"
+            }
+            \"dockerImageName\" = {
+              \"type\"         = \"string\"
+              \"defaultValue\" = \"nginx:latest\"
+            }
+            \"resourceTags\" = {
+              \"type\"         = \"object\"
+              \"defaultValue\" = {
+                \"octopus-environment\" = \"#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName}\"
+                \"octopus-role\"        = \"${local.target_role} Audits\"
+                \"octopus-space\"       = \"#{Octopus.Space.Name}\"
+                \"octopus-project\"     = \"\"
+              }
+            }
+          }
+          \"variables\" = {
+            \"webAppPortalName\" = \"[concat(parameters('uniquePrefix'), '-', parameters('projectName'), '-', parameters('environment'), '-webapp')]\"
+          }
+        })
+        \"Octopus.Action.Azure.AccountId\"                   = local.cloud_account
+        \"Octopus.Action.Azure.ResourceGroupName\"           = \"octopub-#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName | ToLower}\"
+        \"Octopus.Action.RunOnServer\"                       = \"true\"
+        \"OctopusUseBundledTooling\"                         = \"False\"
+        \"Octopus.Action.Azure.ResourceGroupDeploymentMode\" = \"Incremental\"
+        \"Octopus.Action.Azure.TemplateSource\"              = \"Inline\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+
+  step {
+    condition           = \"Always\"
+    name                = \"Feedback\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Feedback\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"         = \"true\"
+        \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+        \"Octopus.Action.Script.Syntax\"       = \"PowerShell\"
+        \"Octopus.Action.Script.ScriptBody\"   = local.feedback_script
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+}
+#endregion
+
+#region Octopub Frontend Project
+variable \"frontend_project_name\" {
+  type    = string
+  default = \"\"
+}
+
+data \"octopusdeploy_projects\" \"frontend\" {
+  partial_name = var.frontend_project_name == \"\" ? local.octopub_frontend_project_name : var.frontend_project_name
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_variable\" \"frontend_health_check\" {
+  count        = length(data.octopusdeploy_projects.frontend.projects) == 0 ? 1 : 0
+  owner_id     = octopusdeploy_project.frontend[0].id
+  value        = local.frontend_health_check
+  name         = \"App.HealthCheck\"
+  type         = \"String\"
+  description  = \"The path to perform a health check on.\"
+  is_sensitive = false
+  depends_on   = []
+}
+
+resource \"octopusdeploy_variable\" \"azure_webapp_octopub_frontend_octopus_azure_account\" {
+  count        = length(data.octopusdeploy_projects.frontend.projects) == 0 ? 1 : 0
+  owner_id     = octopusdeploy_project.frontend[0].id
+  value        = local.cloud_account
+  name         = \"Octopus.Azure.Account\"
+  type         = \"AzureAccount\"
+  description  = \"\"
+  is_sensitive = false
+}
+
+resource \"octopusdeploy_project\" \"frontend\" {
+  count                                = length(data.octopusdeploy_projects.frontend.projects) == 0 ? 1 : 0
+  name                                 = var.frontend_project_name == \"\" ? local.octopub_frontend_project_name : var.frontend_project_name
+  auto_create_release                  = false
+  default_guided_failure_mode          = \"EnvironmentDefault\"
+  default_to_skip_if_already_installed = false
+  discrete_channel_release             = false
+  is_disabled                          = false
+  is_version_controlled                = true
+  lifecycle_id                         = local.devops_lifecycle_id
+  project_group_id                     = local.project_group_id
+  included_library_variable_sets       = []
+  tenanted_deployment_participation    = \"Untenanted\"
+
+  connectivity_policy {
+    allow_deployments_to_no_targets = true
+    exclude_unhealthy_targets       = false
+    skip_machine_behavior           = \"None\"
+  }
+
+  versioning_strategy {
+    template = \"#{Octopus.Version.LastMajor}.#{Octopus.Version.LastMinor}.#{Octopus.Version.NextPatch}\"
+  }
+
+  lifecycle {
+    ignore_changes = [connectivity_policy]
+  }
+  description = local.octopub_frontend_project_description
+}
+
+resource \"octopusdeploy_deployment_process\" \"frontend\" {
+  count      = length(data.octopusdeploy_projects.frontend.projects) == 0 ? 1 : 0
+  project_id = octopusdeploy_project.frontend[0].id
+
+  step {
+    condition           = \"Success\"
+    name                = \"Generate Variables\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Generate Variables\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = \"${data.octopusdeploy_worker_pools.workerpool_hosted_ubuntu.worker_pools[0].id}\"
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"         = \"true\"
+        \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+        \"Octopus.Action.Script.Syntax\"       = \"PowerShell\"
+        \"Octopus.Action.Script.ScriptBody\"   = \"Set-OctopusVariable -name \\\"OctopusEnvironmentName\\\" -value $OctopusParameters[\\\"Octopus.Environment.Name\\\"]\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+
+  // The deployment step goes here.
+  // Call the step \"Deploy Container\"
+
+  step {
+    condition           = \"Success\"
+    name                = \"Deploy Container\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.AzureAppService\"
+      name                               = \"Deploy Container\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"                = \"true\"
+        \"OctopusUseBundledTooling\"                  = \"False\"
+        \"Octopus.Action.Azure.DeploymentType\"       = \"Container\"
+        \"Octopus.Action.Package.DownloadOnTentacle\" = \"False\"
+        \"Octopus.Action.Azure.AppSettings\"          = jsonencode([
+          {
+            \"name\"        = \"UDL_SETVALUE_1\"
+            \"value\"       = \"[/usr/share/nginx/html/config.json][productEndpoint]https://${local.unique_prefix}-octopubproducts-#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName | ToLower}-webapp.azurewebsites.net/api/products\"
+            \"slotSetting\" = \"false\"
+          },
+          {
+            \"name\"        = \"UDL_SETVALUE_2\"
+            \"value\"       = \"[/usr/share/nginx/html/config.json][productHealthEndpoint]https://${local.unique_prefix}-octopubproducts-#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName | ToLower}-webapp.azurewebsites.net/health/products\"
+            \"slotSetting\" = \"false\"
+          },
+          {
+            \"name\"        = \"UDL_SETVALUE_3\"
+            \"value\"       = \"[/usr/share/nginx/html/config.json][auditEndpoint]https://${local.unique_prefix}-octopubaudits-#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName | ToLower}-webapp.azurewebsites.net/api/audits\"
+            \"slotSetting\" = \"false\"
+          },
+          {
+            \"name\"        = \"UDL_SETVALUE_4\"
+            \"value\"       = \"[/usr/share/nginx/html/config.json][auditHealthEndpoint]https://${local.unique_prefix}-octopubaudits-#{Octopus.Action[Generate Variables].Output.OctopusEnvironmentName | ToLower}-webapp.azurewebsites.net/health/audits\"
+            \"slotSetting\" = \"false\"
+          }
+        ])
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+
+      primary_package {
+        package_id           = \"octopussamples/octopub-frontend\"
+        acquisition_location = \"NotAcquired\"
+        feed_id              = local.docker_hub_feed_id
+        properties           = { SelectionMode = \"immediate\" }
+      }
+
+      features = []
+    }
+
+    properties   = {}
+    target_roles = [\"${local.target_role} Frontend\"]
+  }
+
+  step {
+    condition           = \"Success\"
+    name                = \"Service Link\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type = local.link_highlight_action_type
+      properties  = local.link_highlight_properties
+      container {
+        feed_id = local.docker_hub_feed_id
+        image   = local.link_highlight_container_image
+      }
+      name                               = \"Service Link\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      environments                       = []
+      excluded_environments              = []
+      channels                           = []
+      tenant_tags                        = []
+      features                           = []
+    }
+
+    properties   = {}
+    target_roles = [\"${local.target_role} Frontend\"]
+  }
+
+  step {
+    condition           = \"Success\"
+    name                = \"Smoke Test\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = local.smoke_test_action_type
+      name                               = \"Smoke Test\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = local.smoke_test_properties
+      container {
+        feed_id = local.docker_hub_feed_id
+        image   = local.smoke_test_container_image
+      }
+      environments = [
+        local.development_environment_id,
+        local.test_environment_id,
+        local.production_environment_id,
+      ]
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = [\"${local.target_role} Frontend\"]
+  }
+
+  step {
+    condition           = \"Success\"
+    name                = \"Security Scan\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Security Scan\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"         = \"true\"
+        \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+        \"Octopus.Action.Script.Syntax\"       = \"Bash\"
+        \"Octopus.Action.Script.ScriptBody\"   = local.security_scan_docker_script
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+
+  step {
+    condition           = \"Always\"
+    name                = \"Feedback\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Feedback\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"         = \"true\"
+        \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+        \"Octopus.Action.Script.Syntax\"       = \"PowerShell\"
+        \"Octopus.Action.Script.ScriptBody\"   = local.feedback_script
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+}
+
+#endregion
+
+#region Octopub Products Project
+variable \"products_project_name\" {
+  type    = string
+  default = \"\"
+}
+
+
+data \"octopusdeploy_projects\" \"products\" {
+  partial_name = var.products_project_name == \"\" ? local.octopub_products_project_name : var.products_project_name
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_variable\" \"azure_webapp_octopub_products_octopus_azure_account\" {
+  count        = length(data.octopusdeploy_projects.products.projects) == 0 ? 1 : 0
+  owner_id     = octopusdeploy_project.products[0].id
+  value        = local.cloud_account
+  name         = \"Octopus.Azure.Account\"
+  type         = \"AzureAccount\"
+  description  = \"\"
+  is_sensitive = false
+}
+
+resource \"octopusdeploy_variable\" \"products_health_check\" {
+  count        = length(data.octopusdeploy_projects.products.projects) == 0 ? 1 : 0
+  owner_id     = octopusdeploy_project.products[0].id
+  value        = local.products_health_check
+  name         = \"App.HealthCheck\"
+  type         = \"String\"
+  description  = \"The path to perform a health check on.\"
+  is_sensitive = false
+  depends_on   = []
+}
+
+resource \"octopusdeploy_project\" \"products\" {
+  count                                = length(data.octopusdeploy_projects.products.projects) == 0 ? 1 : 0
+  name                                 = var.products_project_name == \"\" ? local.octopub_products_project_name : var.products_project_name
+  auto_create_release                  = false
+  default_guided_failure_mode          = \"EnvironmentDefault\"
+  default_to_skip_if_already_installed = false
+  discrete_channel_release             = false
+  is_disabled                          = false
+  is_version_controlled                = true
+  lifecycle_id                         = local.devops_lifecycle_id
+  project_group_id                     = local.project_group_id
+  included_library_variable_sets       = []
+  tenanted_deployment_participation    = \"Untenanted\"
+
+  connectivity_policy {
+    allow_deployments_to_no_targets = true
+    exclude_unhealthy_targets       = false
+    skip_machine_behavior           = \"None\"
+  }
+
+  versioning_strategy {
+    template = \"#{Octopus.Version.LastMajor}.#{Octopus.Version.LastMinor}.#{Octopus.Version.NextPatch}\"
+  }
+
+  lifecycle {
+    ignore_changes = [connectivity_policy]
+  }
+  description = local.octopub_products_project_description
+}
+
+resource \"octopusdeploy_deployment_process\" \"products\" {
+  count      = length(data.octopusdeploy_projects.products.projects) == 0 ? 1 : 0
+  project_id = octopusdeploy_project.products[0].id
+
+  step {
+    condition           = \"Success\"
+    name                = \"Generate Variables\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Generate Variables\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = \"${data.octopusdeploy_worker_pools.workerpool_hosted_ubuntu.worker_pools[0].id}\"
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"         = \"true\"
+        \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+        \"Octopus.Action.Script.Syntax\"       = \"PowerShell\"
+        \"Octopus.Action.Script.ScriptBody\"   = \"Set-OctopusVariable -name \\\"OctopusEnvironmentName\\\" -value $OctopusParameters[\\\"Octopus.Environment.Name\\\"]\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+
+  // The deployment step goes here.
+  // Call the step \"Deploy Container\"
+
+  step {
+    condition           = \"Success\"
+    name                = \"Deploy Container\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.AzureAppService\"
+      name                               = \"Deploy Container\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"                = \"true\"
+        \"OctopusUseBundledTooling\"                  = \"False\"
+        \"Octopus.Action.Azure.DeploymentType\"       = \"Container\"
+        \"Octopus.Action.Package.DownloadOnTentacle\" = \"False\"
+        \"Octopus.Action.Azure.AppSettings\"          = jsonencode([
+          {
+            \"name\"        = \"WEBSITES_PORT\"
+            \"value\"       = \"8083\"
+            \"slotSetting\" = \"false\"
+          }
+        ])
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+
+      primary_package {
+        package_id           = \"octopussamples/octopub-products-microservice\"
+        acquisition_location = \"NotAcquired\"
+        feed_id              = local.docker_hub_feed_id
+        properties           = { SelectionMode = \"immediate\" }
+      }
+
+      features = []
+    }
+
+    properties   = {}
+    target_roles = [\"${local.target_role} Products\"]
+  }
+
+  step {
+    condition           = \"Success\"
+    name                = \"Service Link\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type = local.link_highlight_action_type
+      properties  = local.link_highlight_properties
+      container {
+        feed_id = local.docker_hub_feed_id
+        image   = local.link_highlight_container_image
+      }
+      name                               = \"Service Link\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      environments                       = []
+      excluded_environments              = []
+      channels                           = []
+      tenant_tags                        = []
+      features                           = []
+    }
+
+    properties   = {}
+    target_roles = [\"${local.target_role} Products\"]
+  }
+
+  step {
+    condition           = \"Success\"
+    name                = \"Smoke Test\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = local.smoke_test_action_type
+      name                               = \"Smoke Test\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = local.smoke_test_properties
+      container {
+        feed_id = local.docker_hub_feed_id
+        image   = local.smoke_test_container_image
+      }
+      environments = [
+        local.development_environment_id,
+        local.test_environment_id,
+        local.production_environment_id,
+      ]
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = [\"${local.target_role} Products\"]
+  }
+
+  step {
+    condition           = \"Success\"
+    name                = \"Security Scan\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Security Scan\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"         = \"true\"
+        \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+        \"Octopus.Action.Script.Syntax\"       = \"Bash\"
+        \"Octopus.Action.Script.ScriptBody\"   = local.security_scan_docker_script
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+
+  step {
+    condition           = \"Always\"
+    name                = \"Feedback\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Feedback\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"         = \"true\"
+        \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+        \"Octopus.Action.Script.Syntax\"       = \"PowerShell\"
+        \"Octopus.Action.Script.ScriptBody\"   = local.feedback_script
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+}
+#endregion
+
+#region Octopub Audits Project
+variable \"audits_project_name\" {
+  type    = string
+  default = \"\"
+}
+
+data \"octopusdeploy_projects\" \"audits\" {
+  partial_name = var.audits_project_name == \"\" ? local.octopub_audits_project_name : var.audits_project_name
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_variable\" \"azure_webapp_octopub_audits_octopus_azure_account\" {
+  count        = length(data.octopusdeploy_projects.audits.projects) == 0 ? 1 : 0
+  owner_id     = octopusdeploy_project.audits[0].id
+  value        = local.cloud_account
+  name         = \"Octopus.Azure.Account\"
+  type         = \"AzureAccount\"
+  description  = \"\"
+  is_sensitive = false
+}
+
+resource \"octopusdeploy_variable\" \"audits_healthcheck\" {
+  count        = length(data.octopusdeploy_projects.audits.projects) == 0 ? 1 : 0
+  owner_id     = octopusdeploy_project.audits[0].id
+  value        = local.audits_health_check
+  name         = \"App.HealthCheck\"
+  type         = \"String\"
+  description  = \"The path to perform a health check on.\"
+  is_sensitive = false
+  depends_on   = []
+}
+
+resource \"octopusdeploy_project\" \"audits\" {
+  count                                = length(data.octopusdeploy_projects.audits.projects) == 0 ? 1 : 0
+  name                                 = var.audits_project_name == \"\" ? local.octopub_audits_project_name : var.audits_project_name
+  auto_create_release                  = false
+  default_guided_failure_mode          = \"EnvironmentDefault\"
+  default_to_skip_if_already_installed = false
+  discrete_channel_release             = false
+  is_disabled                          = false
+  is_version_controlled                = true
+  lifecycle_id                         = local.devops_lifecycle_id
+  project_group_id                     = local.project_group_id
+  included_library_variable_sets       = []
+  tenanted_deployment_participation    = \"Untenanted\"
+
+  connectivity_policy {
+    allow_deployments_to_no_targets = true
+    exclude_unhealthy_targets       = false
+    skip_machine_behavior           = \"None\"
+  }
+
+  versioning_strategy {
+    template = \"#{Octopus.Version.LastMajor}.#{Octopus.Version.LastMinor}.#{Octopus.Version.NextPatch}\"
+  }
+
+  lifecycle {
+    ignore_changes = [connectivity_policy]
+  }
+  description = local.octopub_audits_project_description
+}
+
+resource \"octopusdeploy_deployment_process\" \"audits\" {
+  count      = length(data.octopusdeploy_projects.audits.projects) == 0 ? 1 : 0
+  project_id = octopusdeploy_project.audits[0].id
+
+
+  step {
+    condition           = \"Success\"
+    name                = \"Generate Variables\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Generate Variables\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = \"${data.octopusdeploy_worker_pools.workerpool_hosted_ubuntu.worker_pools[0].id}\"
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"         = \"true\"
+        \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+        \"Octopus.Action.Script.Syntax\"       = \"PowerShell\"
+        \"Octopus.Action.Script.ScriptBody\"   = \"Set-OctopusVariable -name \\\"OctopusEnvironmentName\\\" -value $OctopusParameters[\\\"Octopus.Environment.Name\\\"]\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+
+  // The deployment step goes here.
+  // Call the step \"Deploy Container\"
+
+  step {
+    condition           = \"Success\"
+    name                = \"Deploy Container\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.AzureAppService\"
+      name                               = \"Deploy Container\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"                = \"true\"
+        \"OctopusUseBundledTooling\"                  = \"False\"
+        \"Octopus.Action.Azure.DeploymentType\"       = \"Container\"
+        \"Octopus.Action.Package.DownloadOnTentacle\" = \"False\"
+        \"Octopus.Action.Azure.AppSettings\"          = jsonencode([
+          {
+            \"name\"        = \"WEBSITES_PORT\"
+            \"value\"       = \"10000\"
+            \"slotSetting\" = \"false\"
+          },
+          {
+            \"name\"        = \"MIGRATE_AT_START\"
+            \"value\"       = \"true\"
+            \"slotSetting\" = \"false\"
+          },
+        ])
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+
+      primary_package {
+        package_id           = \"octopussamples/octopub-audit-microservice\"
+        acquisition_location = \"NotAcquired\"
+        feed_id              = local.docker_hub_feed_id
+        properties           = { SelectionMode = \"immediate\" }
+      }
+
+      features = []
+    }
+
+    properties   = {}
+    target_roles = [\"${local.target_role} Audits\"]
+  }
+
+  step {
+    condition           = \"Success\"
+    name                = \"Service Link\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type = local.link_highlight_action_type
+      properties  = local.link_highlight_properties
+      container {
+        feed_id = local.docker_hub_feed_id
+        image   = local.link_highlight_container_image
+      }
+      name                               = \"Service Link\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      environments                       = []
+      excluded_environments              = []
+      channels                           = []
+      tenant_tags                        = []
+      features                           = []
+    }
+
+    properties   = {}
+    target_roles = [\"${local.target_role} Audits\"]
+  }
+
+  step {
+    condition           = \"Success\"
+    name                = \"Smoke Test\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = local.smoke_test_action_type
+      properties                         = local.smoke_test_properties
+      name                               = \"Smoke Test\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      container {
+        feed_id = local.docker_hub_feed_id
+        image   = local.smoke_test_container_image
+      }
+      environments = [
+        local.development_environment_id,
+        local.test_environment_id,
+        local.production_environment_id,
+      ]
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = [\"${local.target_role} Audits\"]
+  }
+
+  step {
+    condition           = \"Success\"
+    name                = \"Security Scan\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Security Scan\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"         = \"true\"
+        \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+        \"Octopus.Action.Script.Syntax\"       = \"Bash\"
+        \"Octopus.Action.Script.ScriptBody\"   = local.security_scan_docker_script
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+
+  step {
+    condition           = \"Always\"
+    name                = \"Feedback\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Feedback\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"         = \"true\"
+        \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+        \"Octopus.Action.Script.Syntax\"       = \"PowerShell\"
+        \"Octopus.Action.Script.ScriptBody\"   = local.feedback_script
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+}
+#endregion
+
+#region Octopub Orchestration Project
+data \"octopusdeploy_projects\" \"orchestration\" {
+  partial_name = local.octopub_orchestration_project_name
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_project\" \"orchestration\" {
+  count                                = length(data.octopusdeploy_projects.orchestration.projects) == 0 ? 1 : 0
+  name                                 = local.octopub_orchestration_project_name
+  auto_create_release                  = false
+  default_guided_failure_mode          = \"EnvironmentDefault\"
+  default_to_skip_if_already_installed = false
+  discrete_channel_release             = false
+  is_disabled                          = false
+  is_version_controlled                = false
+  lifecycle_id                         = local.devops_lifecycle_id
+  project_group_id                     = local.project_group_id
+  included_library_variable_sets       = []
+  tenanted_deployment_participation    = \"Untenanted\"
+
+  connectivity_policy {
+    allow_deployments_to_no_targets = true
+    exclude_unhealthy_targets       = false
+    skip_machine_behavior           = \"None\"
+  }
+
+  versioning_strategy {
+    template = \"#{Octopus.Version.LastMajor}.#{Octopus.Version.LastMinor}.#{Octopus.Version.NextPatch}\"
+  }
+
+  lifecycle {
+    ignore_changes = []
+  }
+  description = local.octopub_products_project_description
+}
+
+resource \"octopusdeploy_deployment_process\" \"orchestration\" {
+  project_id = octopusdeploy_project.orchestration[0].id
+  count      = length(data.octopusdeploy_projects.orchestration.projects) == 0 ? 1 : 0
+
+  step {
+    condition           = \"Success\"
+    name                = \"Deploy Frontend\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.DeployRelease\"
+      name                               = \"Deploy Frontend\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = \"\"
+      properties                         = {
+        \"Octopus.Action.Package.DownloadOnTentacle\"        = \"NotAcquired\"
+        \"Octopus.Action.RunOnServer\"                       = \"True\"
+        \"Octopus.Action.DeployRelease.DeploymentCondition\" = \"Always\"
+        \"Octopus.Action.DeployRelease.ProjectId\"           = length(data.octopusdeploy_projects.frontend.projects) == 0 ? octopusdeploy_project.frontend[0].id : data.octopusdeploy_projects.frontend.projects[0].id
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+
+      primary_package {
+        package_id           = length(data.octopusdeploy_projects.frontend.projects) == 0 ? octopusdeploy_project.frontend[0].id : data.octopusdeploy_projects.frontend.projects[0].id
+        acquisition_location = \"NotAcquired\"
+        feed_id              = data.octopusdeploy_feeds.project.feeds[0].id
+        properties           = {}
+      }
+
+      features = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+  step {
+    condition           = \"Success\"
+    name                = \"Deploy Products\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.DeployRelease\"
+      name                               = \"Deploy Products\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = \"\"
+      properties                         = {
+        \"Octopus.Action.DeployRelease.ProjectId\"           = length(data.octopusdeploy_projects.products.projects) == 0 ? octopusdeploy_project.products[0].id : data.octopusdeploy_projects.products.projects[0].id
+        \"Octopus.Action.Package.DownloadOnTentacle\"        = \"NotAcquired\"
+        \"Octopus.Action.RunOnServer\"                       = \"True\"
+        \"Octopus.Action.DeployRelease.DeploymentCondition\" = \"Always\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+
+      primary_package {
+        package_id           = length(data.octopusdeploy_projects.products.projects) == 0 ? octopusdeploy_project.products[0].id : data.octopusdeploy_projects.products.projects[0].id
+        acquisition_location = \"NotAcquired\"
+        feed_id              = data.octopusdeploy_feeds.project.feeds[0].id
+        properties           = {}
+      }
+
+      features = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+  step {
+    condition           = \"Success\"
+    name                = \"Deploy Audits\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.DeployRelease\"
+      name                               = \"Deploy Audits\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = \"\"
+      properties                         = {
+        \"Octopus.Action.RunOnServer\"                       = \"True\"
+        \"Octopus.Action.DeployRelease.DeploymentCondition\" = \"Always\"
+        \"Octopus.Action.DeployRelease.ProjectId\"           = length(data.octopusdeploy_projects.audits.projects) == 0 ? octopusdeploy_project.audits[0].id : data.octopusdeploy_projects.audits.projects[0].id
+        \"Octopus.Action.Package.DownloadOnTentacle\"        = \"NotAcquired\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+
+      primary_package {
+        package_id           = length(data.octopusdeploy_projects.audits.projects) == 0 ? octopusdeploy_project.audits[0].id : data.octopusdeploy_projects.audits.projects[0].id
+        acquisition_location = \"NotAcquired\"
+        feed_id              = data.octopusdeploy_feeds.project.feeds[0].id
+        properties           = {}
+      }
+
+      features = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+  step {
+    condition           = \"Always\"
+    name                = \"Feedback\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Feedback\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.Script.ScriptBody\"   = local.feedback_script
+        \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+        \"Octopus.Action.Script.Syntax\"       = \"PowerShell\"
+        \"Octopus.Action.RunOnServer\"         = \"true\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+}
+#endregion
+
+#region Project Templates
+variable \"project_template_project_name\" {
+  type    = string
+  default = \"\"
+}
+
+data \"octopusdeploy_projects\" \"docker_project_template\" {
+  partial_name = var.project_template_project_name == \"\" ? local.project_template_project_name : var.project_template_project_name
+  skip         = 0
+  take         = 1
+}
+
+resource \"octopusdeploy_variable\" \"docker_project_template_git_organization\" {
+  count        = length(data.octopusdeploy_projects.docker_project_template.projects) == 0 ? 1 : 0
+  owner_id     = octopusdeploy_project.docker_project_template[0].id
+  value        = \"\"
+  name         = \"Git.Url.Organization\"
+  type         = \"String\"
+  description  = \"The GitHub organization to create the repo in.\"
+  is_sensitive = false
+
+  prompt {
+    description = \"The Github organization where the repo will be created. This is the `owner` part of the URL `https://github.com/owner/myrepo`.\"
+    label       = \"Github Organization\"
+    is_required = true
+    display_settings {
+      control_type = \"SingleLineText\"
+    }
+  }
+
+  scope {
+    actions      = []
+    channels     = []
+    environments = [local.sync_environment_id]
+    machines     = []
+    roles        = null
+    tenant_tags  = null
+  }
+}
+
+resource \"octopusdeploy_variable\" \"docker_project_template_git_repo\" {
+  count        = length(data.octopusdeploy_projects.docker_project_template.projects) == 0 ? 1 : 0
+  owner_id     = octopusdeploy_project.docker_project_template[0].id
+  value        = \"\"
+  name         = \"Git.Url.Repo\"
+  type         = \"String\"
+  description  = \"The GitHub repo to create.\"
+  is_sensitive = false
+
+  prompt {
+    description = \"The Github repo to be created. This is the `myrepo` part of the URL `https://github.com/owner/myrepo`.\"
+    label       = \"Github Repo\"
+    is_required = true
+    display_settings {
+      control_type = \"SingleLineText\"
+    }
+  }
+
+  scope {
+    actions      = []
+    channels     = []
+    environments = [local.sync_environment_id]
+    machines     = []
+    roles        = null
+    tenant_tags  = null
+  }
+}
+
+resource \"octopusdeploy_variable\" \"docker_project_template_image_name\" {
+  count        = length(data.octopusdeploy_projects.docker_project_template.projects) == 0 ? 1 : 0
+  owner_id     = octopusdeploy_project.docker_project_template[0].id
+  value        = \"\"
+  name         = \"Application.Docker.Image\"
+  type         = \"String\"
+  description  = \"The Docker image to create containing the new application.\"
+  is_sensitive = false
+
+  prompt {
+    description = \"The Docker image to create containing the new application.\"
+    label       = \"Docker Image\"
+    is_required = true
+    display_settings {
+      control_type = \"SingleLineText\"
+    }
+  }
+
+  scope {
+    actions      = []
+    channels     = []
+    environments = [local.sync_environment_id]
+    machines     = []
+    roles        = null
+    tenant_tags  = null
+  }
+}
+
+resource \"octopusdeploy_variable\" \"docker_project_template_octopus_project\" {
+  count        = length(data.octopusdeploy_projects.docker_project_template.projects) == 0 ? 1 : 0
+  owner_id     = octopusdeploy_project.docker_project_template[0].id
+  value        = \"\"
+  name         = \"Application.Octopus.Project\"
+  type         = \"String\"
+  description  = \"The Octopus project to associate with the new application.\"
+  is_sensitive = false
+
+  prompt {
+    description = \"The Octopus project to associate with the new application. A release is created in this project when the image is successfully built.\"
+    label       = \"Octopus Project\"
+    is_required = true
+    display_settings {
+      control_type = \"SingleLineText\"
+    }
+  }
+
+  scope {
+    actions      = []
+    channels     = []
+    environments = [local.sync_environment_id]
+    machines     = []
+    roles        = null
+    tenant_tags  = null
+  }
+}
+
+resource \"octopusdeploy_project\" \"docker_project_template\" {
+  count                                = length(data.octopusdeploy_projects.docker_project_template.projects) == 0 ? 1 : 0
+  name                                 = var.project_template_project_name == \"\" ? local.project_template_project_name : var.project_template_project_name
+  auto_create_release                  = false
+  default_guided_failure_mode          = \"Off\"
+  default_to_skip_if_already_installed = false
+  discrete_channel_release             = false
+  is_disabled                          = false
+  is_version_controlled                = false
+  lifecycle_id                         = local.application_lifecycle_id
+  project_group_id                     = local.project_templates_project_group_id
+  included_library_variable_sets       = [
+    local.this_instance_library_variable_set, local.github_library_variable_set, local.docker_library_variable_set
+  ]
+  tenanted_deployment_participation = \"Untenanted\"
+
+  connectivity_policy {
+    allow_deployments_to_no_targets = true
+    exclude_unhealthy_targets       = false
+    skip_machine_behavior           = \"None\"
+  }
+
+  versioning_strategy {
+    template = \"#{Octopus.Version.LastMajor}.#{Octopus.Version.LastMinor}.#{Octopus.Version.NextPatch}\"
+  }
+
+  lifecycle {
+    ignore_changes = []
+  }
+  description = <<EOT
+Creates Project Templates.
+EOT
+}
+
+resource \"octopusdeploy_runbook\" \"docker_project_template_create_nodejs_template\" {
+  count                       = length(data.octopusdeploy_projects.docker_project_template.projects) == 0 ? 1 : 0
+  name                        = \"\uD83D\uDCD7 Create Template Github Node.js Project\"
+  project_id                  = octopusdeploy_project.docker_project_template[0].id
+  environment_scope           = \"Specified\"
+  environments                = [local.sync_environment_id]
+  force_package_download      = false
+  default_guided_failure_mode = \"EnvironmentDefault\"
+  description                 = \"This runbook populates a GitHub repo with a sample Node.js project and GitHub Actions Workflow that builds a Docker image, pushes it to DockerHub, and triggers the deployment of the associated Octopus project in the Development environment. \
+\
+**Action**: Creates a new GitHub repo (if it doesn't exist) and populates it with the output of a Yeoman generator.\
+\
+\
+**Affects**: This will overwrite files in the target Git repo. Changes can be reverted with git.\"
+  multi_tenancy_mode          = \"Untenanted\"
+
+  retention_policy {
+    quantity_to_keep    = 100
+    should_keep_forever = false
+  }
+
+  connectivity_policy {
+    allow_deployments_to_no_targets = true
+    exclude_unhealthy_targets       = false
+    skip_machine_behavior           = \"None\"
+  }
+}
+
+resource \"octopusdeploy_runbook_process\" \"docker_project_template_create_nodejs_template\" {
+  runbook_id = octopusdeploy_runbook.docker_project_template_create_nodejs_template[0].id
+  count      = length(data.octopusdeploy_projects.docker_project_template.projects) == 0 ? 1 : 0
+
+  step {
+    condition           = \"Success\"
+    name                = \"Get Variables\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Get Variables\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.Script.ScriptBody\"   = \"# This is a workaround to the issue where octostache templates in the Terraform\
+# project are replaced during deployment, when we actually want some variables\
+# at run time.\
+\
+Set-OctopusVariable -name \\\"Project.Name\\\" -value $OctopusParameters[\\\"Octopus.Project.Name\\\"]\
+Set-OctopusVariable -name \\\"Web.ServerUri\\\" -value $OctopusParameters[\\\"Octopus.Web.ServerUri\\\"]\
+Set-OctopusVariable -name \\\"Space.Id\\\" -value $OctopusParameters[\\\"Octopus.Space.Id\\\"]\
+Set-OctopusVariable -name \\\"Space.Name\\\" -value $OctopusParameters[\\\"Octopus.Space.Name\\\"]\"
+        \"Octopus.Action.RunOnServer\"         = \"true\"
+        \"Octopus.Action.Script.ScriptSource\" = \"Inline\"
+        \"Octopus.Action.Script.Syntax\"       = \"PowerShell\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+  step {
+    condition           = \"Success\"
+    name                = \"Create Repo\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Create Repo\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"CreateGithubRepo.Git.Url.Organization\"        = \"#{Git.Url.Organization}\"
+        \"Octopus.Action.Script.Syntax\"                 = \"Python\"
+        \"Octopus.Action.RunOnServer\"                   = \"true\"
+        \"CreateGithubRepo.Git.Url.NewRepoNamePrefix\"   = \"\"
+        \"CreateGithubRepo.Git.Credentials.AccessToken\" = \"#{Git.Credentials.Password}\"
+        \"Octopus.Action.Script.ScriptBody\"             = \"# This script forks a GitHub repo. It creates a token from a GitHub App installation to avoid\
+# having to use a regular user account.\
+import subprocess\
+import sys\
+\
+# Install our own dependencies\
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'jwt', '--disable-pip-version-check'])\
+\
+import json\
+import subprocess\
+import sys\
+import os\
+import urllib.request\
+import base64\
+import re\
+import jwt\
+import time\
+import argparse\
+import platform\
+from urllib.request import urlretrieve\
+\
+# If this script is not being run as part of an Octopus step, setting variables is a noop\
+if 'set_octopusvariable' not in globals():\
+    def set_octopusvariable(variable, value):\
+        pass\
+\
+# If this script is not being run as part of an Octopus step, return variables from environment variables.\
+# Periods are replaced with underscores, and the variable name is converted to uppercase\
+if \\\"get_octopusvariable\\\" not in globals():\
+    def get_octopusvariable(variable):\
+        return os.environ[re.sub('\\\\\\\\.', '_', variable.upper())]\
+\
+# If this script is not being run as part of an Octopus step, print directly to std out.\
+if 'printverbose' not in globals():\
+    def printverbose(msg):\
+        print(msg)\
+\
+\
+def printverbose_noansi(output):\
+    \\\"\\\"\\\"\
+    Strip ANSI color codes and print the output as verbose\
+    :param output: The output to print\
+    \\\"\\\"\\\"\
+    output_no_ansi = re.sub(r'\\\\x1b\\\\[[0-9;]*m', '', output)\
+    printverbose(output_no_ansi)\
+\
+\
+def get_octopusvariable_quiet(variable):\
+    \\\"\\\"\\\"\
+    Gets an octopus variable, or an empty string if it does not exist.\
+    :param variable: The variable name\
+    :return: The variable value, or an empty string if the variable does not exist\
+    \\\"\\\"\\\"\
+    try:\
+        return get_octopusvariable(variable)\
+    except:\
+        return ''\
+\
+\
+def execute(args, cwd=None, env=None, print_args=None, print_output=printverbose_noansi, raise_on_non_zero=False,\
+            append_to_path=None):\
+    \\\"\\\"\\\"\
+        The execute method provides the ability to execute external processes while capturing and returning the\
+        output to std err and std out and exit code.\
+    \\\"\\\"\\\"\
+\
+    my_env = os.environ.copy() if env is None else env\
+\
+    if append_to_path is not None:\
+        my_env[\\\"PATH\\\"] = append_to_path + os.pathsep + my_env['PATH']\
+\
+    process = subprocess.Popen(args,\
+                               stdout=subprocess.PIPE,\
+                               stderr=subprocess.PIPE,\
+                               stdin=open(os.devnull),\
+                               text=True,\
+                               cwd=cwd,\
+                               env=my_env)\
+    stdout, stderr = process.communicate()\
+    retcode = process.returncode\
+\
+    if not retcode == 0 and raise_on_non_zero:\
+        raise Exception('command returned exit code ' + retcode)\
+\
+    if print_args is not None:\
+        print_output(' '.join(args))\
+\
+    if print_output is not None:\
+        print_output(stdout)\
+        print_output(stderr)\
+\
+    return stdout, stderr, retcode\
+\
+\
+def init_argparse():\
+    parser = argparse.ArgumentParser(\
+        usage='%(prog)s [OPTION]',\
+        description='Create a GitHub repo'\
+    )\
+    parser.add_argument('--new-repo-name', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGithubRepo.Git.Url.NewRepoName') or get_octopusvariable_quiet(\
+                            'Git.Url.NewRepoName') or get_octopusvariable_quiet('Octopus.Project.Name'))\
+    parser.add_argument('--new-repo-name-prefix', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGithubRepo.Git.Url.NewRepoNamePrefix') or get_octopusvariable_quiet(\
+                            'Git.Url.NewRepoNamePrefix'))\
+    parser.add_argument('--git-organization', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGithubRepo.Git.Url.Organization') or get_octopusvariable_quiet(\
+                            'Git.Url.Organization'))\
+    parser.add_argument('--github-app-id', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGithubRepo.GitHub.App.Id') or get_octopusvariable_quiet('GitHub.App.Id'))\
+    parser.add_argument('--github-app-installation-id', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGithubRepo.GitHub.App.InstallationId') or get_octopusvariable_quiet(\
+                            'GitHub.App.InstallationId'))\
+    parser.add_argument('--github-app-private-key', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGithubRepo.GitHub.App.PrivateKey') or get_octopusvariable_quiet(\
+                            'GitHub.App.PrivateKey'))\
+    parser.add_argument('--github-access-token', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGithubRepo.Git.Credentials.AccessToken') or get_octopusvariable_quiet(\
+                            'Git.Credentials.AccessToken'),\
+                        help='The git password')\
+\
+    return parser.parse_known_args()\
+\
+\
+def generate_github_token(github_app_id, github_app_private_key, github_app_installation_id):\
+    # Generate the tokens used by git and the GitHub API\
+    app_id = github_app_id\
+    signing_key = jwt.jwk_from_pem(github_app_private_key.encode('utf-8'))\
+\
+    payload = {\
+        # Issued at time\
+        'iat': int(time.time()),\
+        # JWT expiration time (10 minutes maximum)\
+        'exp': int(time.time()) + 600,\
+        # GitHub App's identifier\
+        'iss': app_id\
+    }\
+\
+    # Create JWT\
+    jwt_instance = jwt.JWT()\
+    encoded_jwt = jwt_instance.encode(payload, signing_key, alg='RS256')\
+\
+    # Create access token\
+    url = 'https://api.github.com/app/installations/' + github_app_installation_id + '/access_tokens'\
+    headers = {\
+        'Authorization': 'Bearer ' + encoded_jwt,\
+        'Accept': 'application/vnd.github+json',\
+        'X-GitHub-Api-Version': '2022-11-28'\
+    }\
+    request = urllib.request.Request(url, headers=headers, method='POST')\
+    response = urllib.request.urlopen(request)\
+    response_json = json.loads(response.read().decode())\
+    return response_json['token']\
+\
+\
+def generate_auth_header(token):\
+    auth = base64.b64encode(('x-access-token:' + token).encode('ascii'))\
+    return 'Basic ' + auth.decode('ascii')\
+\
+\
+def verify_new_repo(token, cac_org, new_repo):\
+    # Attempt to view the new repo\
+    try:\
+        url = 'https://api.github.com/repos/' + cac_org + '/' + new_repo\
+        headers = {\
+            'Accept': 'application/vnd.github+json',\
+            'Authorization': 'Bearer ' + token,\
+            'X-GitHub-Api-Version': '2022-11-28'\
+        }\
+        request = urllib.request.Request(url, headers=headers)\
+        urllib.request.urlopen(request)\
+        return True\
+    except:\
+        return False\
+\
+\
+def create_new_repo(token, cac_org, new_repo):\
+    # If we could not view the repo, assume it needs to be created.\
+    # https://docs.github.com/en/rest/repos/repos?apiVersion=2022-11-28#create-an-organization-repository\
+    # Note you have to use the token rather than the JWT:\
+    # https://stackoverflow.com/questions/39600396/bad-credentails-for-jwt-for-github-integrations-api\
+\
+    headers = {\
+        'Authorization': 'token ' + token,\
+        'Content-Type': 'application/json',\
+        'Accept': 'application/vnd.github+json',\
+        'X-GitHub-Api-Version': '2022-11-28',\
+    }\
+\
+    try:\
+        # First try to create an organization repo:\
+        # https://docs.github.com/en/free-pro-team@latest/rest/repos/repos#create-an-organization-repository\
+        url = 'https://api.github.com/orgs/' + cac_org + '/repos'\
+        body = {'name': new_repo}\
+        request = urllib.request.Request(url, headers=headers, data=json.dumps(body).encode('utf-8'))\
+        urllib.request.urlopen(request)\
+    except urllib.error.URLError as ex:\
+        # Then fall back to creating a repo for the user:\
+        # https://docs.github.com/en/free-pro-team@latest/rest/repos/repos?apiVersion=2022-11-28#create-a-repository-for-the-authenticated-user\
+        if ex.code == 404:\
+            url = 'https://api.github.com/user/repos'\
+            body = {'name': new_repo}\
+            request = urllib.request.Request(url, headers=headers, data=json.dumps(body).encode('utf-8'))\
+            urllib.request.urlopen(request)\
+        else:\
+            raise ValueError(\\\"Failed to create thew new repository. This could indicate bad credentials.\\\") from ex\
+\
+\
+def is_windows():\
+    return platform.system() == 'Windows'\
+\
+\
+parser, _ = init_argparse()\
+\
+if not parser.github_access_token.strip() and not (\
+        parser.github_app_id.strip() and parser.github_app_private_key.strip() and parser.github_app_installation_id.strip()):\
+    print(\\\"You must supply the GitHub token, or the GitHub App ID and private key and installation ID\\\")\
+    sys.exit(1)\
+\
+if not parser.new_repo_name.strip():\
+    print(\\\"You must define the new repo name\\\")\
+    sys.exit(1)\
+\
+# The access token is generated from a github app or supplied directly as an access token\
+token = generate_github_token(parser.github_app_id, parser.github_app_private_key, parser.github_app_installation_id) \\\\\
+    if not parser.github_access_token.strip() else parser.github_access_token.strip()\
+\
+cac_org = parser.git_organization.strip()\
+new_repo_custom_prefix = re.sub('[^a-zA-Z0-9-]', '_', parser.new_repo_name_prefix.strip())\
+project_repo_sanitized = re.sub('[^a-zA-Z0-9-]', '_', parser.new_repo_name.strip())\
+\
+# The prefix is optional\
+new_repo_prefix_with_separator = new_repo_custom_prefix + '_' if new_repo_custom_prefix else ''\
+\
+# The new repo name is the prefix + the name of thew new project\
+new_repo = new_repo_prefix_with_separator + project_repo_sanitized\
+\
+# This is the value of the forked git repo\
+set_octopusvariable('NewRepoUrl', 'https://github.com/' + cac_org + '/' + new_repo)\
+set_octopusvariable('NewRepo', new_repo)\
+\
+if not verify_new_repo(token, cac_org, new_repo):\
+    create_new_repo(token, cac_org, new_repo)\
+    print(\
+        'New repo was created at https://github.com/' + cac_org + '/' + new_repo)\
+else:\
+    print('Repo at https://github.com/' + cac_org + '/' + new_repo + ' already exists and has not been modified')\
+\
+print('New repo URL is defined in the output variable \\\"NewRepoUrl\\\": #{Octopus.Action[' +\
+      get_octopusvariable_quiet('Octopus.Step.Name') + '].Output.NewRepoUrl}')\
+print('New repo name is defined in the output variable \\\"NewRepo\\\": #{Octopus.Action[' +\
+      get_octopusvariable_quiet('Octopus.Step.Name') + '].Output.NewRepo}')\
+\"
+        \"CreateGithubRepo.Git.Url.NewRepoName\"         = \"#{Git.Url.Repo}\"
+        \"Octopus.Action.Script.ScriptSource\"           = \"Inline\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+  step {
+    condition           = \"Success\"
+    name                = \"Create Octopus API Key Secret\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Create Octopus API Key Secret\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"Octopus.Action.Script.Syntax\"                = \"Python\"
+        \"CreateGitHubSecret.Git.Credentials.Password\" = \"#{Git.Credentials.Password}\"
+        \"CreateGitHubSecret.GitHub.Secret.Value\"      = \"#{Octopus.ApiKey}\"
+        \"CreateGitHubSecret.Git.Url.Repo\"             = \"#{Octopus.Action[Create Repo].Output.NewRepo}\"
+        \"Octopus.Action.RunOnServer\"                  = \"true\"
+        \"Octopus.Action.Script.ScriptSource\"          = \"Inline\"
+        \"CreateGitHubSecret.GitHub.Secret.Name\"       = \"OCTOPUS_API_TOKEN\"
+        \"CreateGitHubSecret.Git.Url.Organization\"     = \"#{Git.Url.Organization}\"
+        \"Octopus.Action.Script.ScriptBody\"            = \"# https://gist.github.com/comdotlinux/9a53bb00767a16d6646464c4b8249094\
+\
+# This script forks a GitHub repo. It creates a token from a GitHub App installation to avoid\
+# having to use a regular user account.\
+import subprocess\
+import sys\
+\
+# Install our own dependencies\
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'jwt', '--disable-pip-version-check'])\
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pynacl', '--disable-pip-version-check'])\
+\
+import requests\
+import json\
+import subprocess\
+import sys\
+import os\
+import urllib.request\
+import base64\
+import re\
+import jwt\
+import time\
+import argparse\
+import urllib3\
+from base64 import b64encode\
+from typing import TypedDict\
+from nacl import public, encoding\
+\
+# Disable insecure http request warnings\
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\
+\
+# If this script is not being run as part of an Octopus step, setting variables is a noop\
+if 'set_octopusvariable' not in globals():\
+    def set_octopusvariable(variable, value):\
+        pass\
+\
+# If this script is not being run as part of an Octopus step, return variables from environment variables.\
+# Periods are replaced with underscores, and the variable name is converted to uppercase\
+if \\\"get_octopusvariable\\\" not in globals():\
+    def get_octopusvariable(variable):\
+        return os.environ[re.sub('\\\\\\\\.', '_', variable.upper())]\
+\
+# If this script is not being run as part of an Octopus step, print directly to std out.\
+if 'printverbose' not in globals():\
+    def printverbose(msg):\
+        print(msg)\
+\
+\
+def printverbose_noansi(output):\
+    \\\"\\\"\\\"\
+    Strip ANSI color codes and print the output as verbose\
+    :param output: The output to print\
+    \\\"\\\"\\\"\
+    output_no_ansi = re.sub(r'\\\\x1b\\\\[[0-9;]*m', '', output)\
+    printverbose(output_no_ansi)\
+\
+\
+def get_octopusvariable_quiet(variable):\
+    \\\"\\\"\\\"\
+    Gets an octopus variable, or an empty string if it does not exist.\
+    :param variable: The variable name\
+    :return: The variable value, or an empty string if the variable does not exist\
+    \\\"\\\"\\\"\
+    try:\
+        return get_octopusvariable(variable)\
+    except:\
+        return ''\
+\
+\
+def execute(args, cwd=None, env=None, print_args=None, print_output=printverbose_noansi, raise_on_non_zero=False,\
+            append_to_path=None):\
+    \\\"\\\"\\\"\
+        The execute method provides the ability to execute external processes while capturing and returning the\
+        output to std err and std out and exit code.\
+    \\\"\\\"\\\"\
+\
+    my_env = os.environ.copy() if env is None else env\
+\
+    if append_to_path is not None:\
+        my_env[\\\"PATH\\\"] = append_to_path + os.pathsep + my_env['PATH']\
+\
+    process = subprocess.Popen(args,\
+                               stdout=subprocess.PIPE,\
+                               stderr=subprocess.PIPE,\
+                               stdin=open(os.devnull),\
+                               text=True,\
+                               cwd=cwd,\
+                               env=my_env)\
+    stdout, stderr = process.communicate()\
+    retcode = process.returncode\
+\
+    if not retcode == 0 and raise_on_non_zero:\
+        raise Exception('command returned exit code ' + retcode)\
+\
+    if print_args is not None:\
+        print_output(' '.join(args))\
+\
+    if print_output is not None:\
+        print_output(stdout)\
+        print_output(stderr)\
+\
+    return stdout, stderr, retcode\
+\
+\
+def init_argparse():\
+    parser = argparse.ArgumentParser(\
+        usage='%(prog)s [OPTION]',\
+        description='Fork a GitHub repo'\
+    )\
+\
+    parser.add_argument('--secret-name', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.Secret.Name') or get_octopusvariable_quiet(\
+                            'GitHub.Secret.Name'))\
+    parser.add_argument('--secret-value', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.Secret.Value') or get_octopusvariable_quiet(\
+                            'GitHub.Secret.Value'))\
+\
+    parser.add_argument('--repo', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.Git.Url.Repo') or get_octopusvariable_quiet(\
+                            'Git.Url.Repo') or get_octopusvariable_quiet('Octopus.Project.Name'))\
+    parser.add_argument('--git-organization', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.Git.Url.Organization') or get_octopusvariable_quiet(\
+                            'Git.Url.Organization'))\
+    parser.add_argument('--github-app-id', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.App.Id') or get_octopusvariable_quiet('GitHub.App.Id'))\
+    parser.add_argument('--github-app-installation-id', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.App.InstallationId') or get_octopusvariable_quiet(\
+                            'GitHub.App.InstallationId'))\
+    parser.add_argument('--github-app-private-key', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.App.PrivateKey') or get_octopusvariable_quiet(\
+                            'GitHub.App.PrivateKey'))\
+    parser.add_argument('--git-password', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.Git.Credentials.Password') or get_octopusvariable_quiet(\
+                            'Git.Credentials.Password'),\
+                        help='The git password. This takes precedence over the --github-app-id,  --github-app-installation-id, and --github-app-private-key')\
+\
+    return parser.parse_known_args()\
+\
+\
+def generate_github_token(github_app_id, github_app_private_key, github_app_installation_id):\
+    # Generate the tokens used by git and the GitHub API\
+    app_id = github_app_id\
+    signing_key = jwt.jwk_from_pem(github_app_private_key.encode('utf-8'))\
+\
+    payload = {\
+        # Issued at time\
+        'iat': int(time.time()),\
+        # JWT expiration time (10 minutes maximum)\
+        'exp': int(time.time()) + 600,\
+        # GitHub App's identifier\
+        'iss': app_id\
+    }\
+\
+    # Create JWT\
+    jwt_instance = jwt.JWT()\
+    encoded_jwt = jwt_instance.encode(payload, signing_key, alg='RS256')\
+\
+    # Create access token\
+    url = 'https://api.github.com/app/installations/' + github_app_installation_id + '/access_tokens'\
+    headers = {\
+        'Authorization': 'Bearer ' + encoded_jwt,\
+        'Accept': 'application/vnd.github+json',\
+        'X-GitHub-Api-Version': '2022-11-28'\
+    }\
+    request = urllib.request.Request(url, headers=headers, method='POST')\
+    response = urllib.request.urlopen(request)\
+    response_json = json.loads(response.read().decode())\
+    return response_json['token']\
+\
+\
+def generate_auth_header(token):\
+    auth = base64.b64encode(('x-access-token:' + token).encode('ascii'))\
+    return 'Basic ' + auth.decode('ascii')\
+\
+\
+def verify_new_repo(token, cac_org, new_repo):\
+    # Attempt to view the new repo\
+    try:\
+        url = 'https://api.github.com/repos/' + cac_org + '/' + new_repo\
+        headers = {\
+            'Accept': 'application/vnd.github+json',\
+            'Authorization': 'Bearer ' + token,\
+            'X-GitHub-Api-Version': '2022-11-28'\
+        }\
+        request = urllib.request.Request(url, headers=headers)\
+        urllib.request.urlopen(request)\
+        return True\
+    except:\
+        return False\
+\
+\
+def encrypt(public_key_for_repo: str, secret_value_input: str) -> str:\
+    \\\"\\\"\\\"Encrypt a Unicode string using the public key.\\\"\\\"\\\"\
+    sealed_box = public.SealedBox(public.PublicKey(public_key_for_repo.encode(\\\"utf-8\\\"), encoding.Base64Encoder()))\
+    encrypted = sealed_box.encrypt(secret_value_input.encode(\\\"utf-8\\\"))\
+    return b64encode(encrypted).decode(\\\"utf-8\\\")\
+\
+\
+def get_public_key(gh_base_url: str, gh_owner: str, gh_repo: str, gh_auth_token: str) -> (str, str):\
+    public_key_endpoint: str = f\\\"{gh_base_url}/{gh_owner}/{gh_repo}/actions/secrets/public-key\\\"\
+    headers: TypedDict[str, str] = {\\\"Authorization\\\": f\\\"Bearer {gh_auth_token}\\\"}\
+    response = requests.get(url=public_key_endpoint, headers=headers)\
+    if response.status_code != 200:\
+        raise IOError(\
+            f\\\"Could not get public key for repository {gh_owner}/{gh_repo}. The Response code was {response.status_code}\\\")\
+\
+    public_key_json = response.json()\
+    return public_key_json['key_id'], public_key_json['key']\
+\
+\
+def set_secret(gh_base_url: str, gh_owner: str, gh_repo: str, gh_auth_token: str, public_key_id: str, secret_key: str,\
+               encrypted_secret_value: str):\
+    secret_creation_url = f\\\"{gh_base_url}/{gh_owner}/{gh_repo}/actions/secrets/{secret_key}\\\"\
+    secret_creation_body = {\\\"key_id\\\": public_key_id, \\\"encrypted_value\\\": encrypted_secret_value}\
+    headers: TypedDict[str, str] = {\\\"Authorization\\\": f\\\"Bearer {gh_auth_token}\\\", \\\"Content-Type\\\": \\\"application/json\\\"}\
+\
+    secret_creation_response = requests.put(url=secret_creation_url, json=secret_creation_body, headers=headers)\
+    if secret_creation_response.status_code == 201 or secret_creation_response.status_code == 204:\
+        print(\\\"--Secret Created / Updated!--\\\")\
+    else:\
+        print(f\\\"-- Error creating / updating github secret, the reason was : {secret_creation_response.reason}\\\")\
+\
+\
+parser, _ = init_argparse()\
+\
+if not parser.git_password.strip() and not (\
+        parser.github_app_id.strip() and parser.github_app_private_key.strip() and parser.github_app_installation_id.strip()):\
+    print(\\\"You must supply the GitHub token, or the GitHub App ID and private key and installation ID\\\")\
+    sys.exit(1)\
+\
+if not parser.git_organization.strip():\
+    print(\\\"You must define the organization\\\")\
+    sys.exit(1)\
+\
+if not parser.repo.strip():\
+    print(\\\"You must define the repo name\\\")\
+    sys.exit(1)\
+\
+token = generate_github_token(parser.github_app_id, parser.github_app_private_key,\
+                              parser.github_app_installation_id) if len(\
+    parser.git_password.strip()) == 0 else parser.git_password.strip()\
+\
+if not parser.git_password.strip() and not (\
+        parser.github_app_id.strip() and parser.github_app_private_key.strip() and parser.github_app_installation_id.strip()):\
+    print(\\\"You must supply the GitHub token, or the GitHub App ID and private key and installation ID\\\")\
+    sys.exit(1)\
+\
+if not parser.git_organization.strip():\
+    print(\\\"You must define the organization\\\")\
+    sys.exit(1)\
+\
+if not parser.repo.strip():\
+    print(\\\"You must define the repo name\\\")\
+    sys.exit(1)\
+\
+if not parser.secret_name.strip():\
+    print(\\\"You must define the secret name\\\")\
+    sys.exit(1)\
+    \
+if not verify_new_repo(token, parser.git_organization, parser.repo):\
+    print(\\\"Could not find the repo\\\")\
+    sys.exit(1)\
+\
+key_id, public_key = get_public_key('https://api.github.com/repos', parser.git_organization, parser.repo,\
+                                    token)\
+encrypted_secret: str = encrypt(public_key_for_repo=public_key, secret_value_input=parser.secret_value)\
+set_secret(gh_base_url='https://api.github.com/repos', gh_owner=parser.git_organization, gh_repo=parser.repo,\
+           gh_auth_token=token, public_key_id=key_id, secret_key=parser.secret_name,\
+           encrypted_secret_value=encrypted_secret)\
+\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+  step {
+    condition           = \"Success\"
+    name                = \"Create Docker Hub Password Secret\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Create Docker Hub Password Secret\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"CreateGitHubSecret.Git.Credentials.Password\" = \"#{Git.Credentials.Password}\"
+        \"CreateGitHubSecret.GitHub.Secret.Name\"       = \"DOCKERHUB_TOKEN\"
+        \"Octopus.Action.Script.Syntax\"                = \"Python\"
+        \"CreateGitHubSecret.GitHub.Secret.Value\"      = \"#{Docker.Credentials.Password}\"
+        \"CreateGitHubSecret.Git.Url.Organization\"     = \"#{Git.Url.Organization}\"
+        \"Octopus.Action.Script.ScriptSource\"          = \"Inline\"
+        \"Octopus.Action.RunOnServer\"                  = \"true\"
+        \"CreateGitHubSecret.Git.Url.Repo\"             = \"#{Octopus.Action[Create Repo].Output.NewRepo}\"
+        \"Octopus.Action.Script.ScriptBody\"            = \"# https://gist.github.com/comdotlinux/9a53bb00767a16d6646464c4b8249094\
+\
+# This script forks a GitHub repo. It creates a token from a GitHub App installation to avoid\
+# having to use a regular user account.\
+import subprocess\
+import sys\
+\
+# Install our own dependencies\
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'jwt', '--disable-pip-version-check'])\
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pynacl', '--disable-pip-version-check'])\
+\
+import requests\
+import json\
+import subprocess\
+import sys\
+import os\
+import urllib.request\
+import base64\
+import re\
+import jwt\
+import time\
+import argparse\
+import urllib3\
+from base64 import b64encode\
+from typing import TypedDict\
+from nacl import public, encoding\
+\
+# Disable insecure http request warnings\
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\
+\
+# If this script is not being run as part of an Octopus step, setting variables is a noop\
+if 'set_octopusvariable' not in globals():\
+    def set_octopusvariable(variable, value):\
+        pass\
+\
+# If this script is not being run as part of an Octopus step, return variables from environment variables.\
+# Periods are replaced with underscores, and the variable name is converted to uppercase\
+if \\\"get_octopusvariable\\\" not in globals():\
+    def get_octopusvariable(variable):\
+        return os.environ[re.sub('\\\\\\\\.', '_', variable.upper())]\
+\
+# If this script is not being run as part of an Octopus step, print directly to std out.\
+if 'printverbose' not in globals():\
+    def printverbose(msg):\
+        print(msg)\
+\
+\
+def printverbose_noansi(output):\
+    \\\"\\\"\\\"\
+    Strip ANSI color codes and print the output as verbose\
+    :param output: The output to print\
+    \\\"\\\"\\\"\
+    output_no_ansi = re.sub(r'\\\\x1b\\\\[[0-9;]*m', '', output)\
+    printverbose(output_no_ansi)\
+\
+\
+def get_octopusvariable_quiet(variable):\
+    \\\"\\\"\\\"\
+    Gets an octopus variable, or an empty string if it does not exist.\
+    :param variable: The variable name\
+    :return: The variable value, or an empty string if the variable does not exist\
+    \\\"\\\"\\\"\
+    try:\
+        return get_octopusvariable(variable)\
+    except:\
+        return ''\
+\
+\
+def execute(args, cwd=None, env=None, print_args=None, print_output=printverbose_noansi, raise_on_non_zero=False,\
+            append_to_path=None):\
+    \\\"\\\"\\\"\
+        The execute method provides the ability to execute external processes while capturing and returning the\
+        output to std err and std out and exit code.\
+    \\\"\\\"\\\"\
+\
+    my_env = os.environ.copy() if env is None else env\
+\
+    if append_to_path is not None:\
+        my_env[\\\"PATH\\\"] = append_to_path + os.pathsep + my_env['PATH']\
+\
+    process = subprocess.Popen(args,\
+                               stdout=subprocess.PIPE,\
+                               stderr=subprocess.PIPE,\
+                               stdin=open(os.devnull),\
+                               text=True,\
+                               cwd=cwd,\
+                               env=my_env)\
+    stdout, stderr = process.communicate()\
+    retcode = process.returncode\
+\
+    if not retcode == 0 and raise_on_non_zero:\
+        raise Exception('command returned exit code ' + retcode)\
+\
+    if print_args is not None:\
+        print_output(' '.join(args))\
+\
+    if print_output is not None:\
+        print_output(stdout)\
+        print_output(stderr)\
+\
+    return stdout, stderr, retcode\
+\
+\
+def init_argparse():\
+    parser = argparse.ArgumentParser(\
+        usage='%(prog)s [OPTION]',\
+        description='Fork a GitHub repo'\
+    )\
+\
+    parser.add_argument('--secret-name', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.Secret.Name') or get_octopusvariable_quiet(\
+                            'GitHub.Secret.Name'))\
+    parser.add_argument('--secret-value', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.Secret.Value') or get_octopusvariable_quiet(\
+                            'GitHub.Secret.Value'))\
+\
+    parser.add_argument('--repo', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.Git.Url.Repo') or get_octopusvariable_quiet(\
+                            'Git.Url.Repo') or get_octopusvariable_quiet('Octopus.Project.Name'))\
+    parser.add_argument('--git-organization', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.Git.Url.Organization') or get_octopusvariable_quiet(\
+                            'Git.Url.Organization'))\
+    parser.add_argument('--github-app-id', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.App.Id') or get_octopusvariable_quiet('GitHub.App.Id'))\
+    parser.add_argument('--github-app-installation-id', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.App.InstallationId') or get_octopusvariable_quiet(\
+                            'GitHub.App.InstallationId'))\
+    parser.add_argument('--github-app-private-key', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.App.PrivateKey') or get_octopusvariable_quiet(\
+                            'GitHub.App.PrivateKey'))\
+    parser.add_argument('--git-password', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.Git.Credentials.Password') or get_octopusvariable_quiet(\
+                            'Git.Credentials.Password'),\
+                        help='The git password. This takes precedence over the --github-app-id,  --github-app-installation-id, and --github-app-private-key')\
+\
+    return parser.parse_known_args()\
+\
+\
+def generate_github_token(github_app_id, github_app_private_key, github_app_installation_id):\
+    # Generate the tokens used by git and the GitHub API\
+    app_id = github_app_id\
+    signing_key = jwt.jwk_from_pem(github_app_private_key.encode('utf-8'))\
+\
+    payload = {\
+        # Issued at time\
+        'iat': int(time.time()),\
+        # JWT expiration time (10 minutes maximum)\
+        'exp': int(time.time()) + 600,\
+        # GitHub App's identifier\
+        'iss': app_id\
+    }\
+\
+    # Create JWT\
+    jwt_instance = jwt.JWT()\
+    encoded_jwt = jwt_instance.encode(payload, signing_key, alg='RS256')\
+\
+    # Create access token\
+    url = 'https://api.github.com/app/installations/' + github_app_installation_id + '/access_tokens'\
+    headers = {\
+        'Authorization': 'Bearer ' + encoded_jwt,\
+        'Accept': 'application/vnd.github+json',\
+        'X-GitHub-Api-Version': '2022-11-28'\
+    }\
+    request = urllib.request.Request(url, headers=headers, method='POST')\
+    response = urllib.request.urlopen(request)\
+    response_json = json.loads(response.read().decode())\
+    return response_json['token']\
+\
+\
+def generate_auth_header(token):\
+    auth = base64.b64encode(('x-access-token:' + token).encode('ascii'))\
+    return 'Basic ' + auth.decode('ascii')\
+\
+\
+def verify_new_repo(token, cac_org, new_repo):\
+    # Attempt to view the new repo\
+    try:\
+        url = 'https://api.github.com/repos/' + cac_org + '/' + new_repo\
+        headers = {\
+            'Accept': 'application/vnd.github+json',\
+            'Authorization': 'Bearer ' + token,\
+            'X-GitHub-Api-Version': '2022-11-28'\
+        }\
+        request = urllib.request.Request(url, headers=headers)\
+        urllib.request.urlopen(request)\
+        return True\
+    except:\
+        return False\
+\
+\
+def encrypt(public_key_for_repo: str, secret_value_input: str) -> str:\
+    \\\"\\\"\\\"Encrypt a Unicode string using the public key.\\\"\\\"\\\"\
+    sealed_box = public.SealedBox(public.PublicKey(public_key_for_repo.encode(\\\"utf-8\\\"), encoding.Base64Encoder()))\
+    encrypted = sealed_box.encrypt(secret_value_input.encode(\\\"utf-8\\\"))\
+    return b64encode(encrypted).decode(\\\"utf-8\\\")\
+\
+\
+def get_public_key(gh_base_url: str, gh_owner: str, gh_repo: str, gh_auth_token: str) -> (str, str):\
+    public_key_endpoint: str = f\\\"{gh_base_url}/{gh_owner}/{gh_repo}/actions/secrets/public-key\\\"\
+    headers: TypedDict[str, str] = {\\\"Authorization\\\": f\\\"Bearer {gh_auth_token}\\\"}\
+    response = requests.get(url=public_key_endpoint, headers=headers)\
+    if response.status_code != 200:\
+        raise IOError(\
+            f\\\"Could not get public key for repository {gh_owner}/{gh_repo}. The Response code was {response.status_code}\\\")\
+\
+    public_key_json = response.json()\
+    return public_key_json['key_id'], public_key_json['key']\
+\
+\
+def set_secret(gh_base_url: str, gh_owner: str, gh_repo: str, gh_auth_token: str, public_key_id: str, secret_key: str,\
+               encrypted_secret_value: str):\
+    secret_creation_url = f\\\"{gh_base_url}/{gh_owner}/{gh_repo}/actions/secrets/{secret_key}\\\"\
+    secret_creation_body = {\\\"key_id\\\": public_key_id, \\\"encrypted_value\\\": encrypted_secret_value}\
+    headers: TypedDict[str, str] = {\\\"Authorization\\\": f\\\"Bearer {gh_auth_token}\\\", \\\"Content-Type\\\": \\\"application/json\\\"}\
+\
+    secret_creation_response = requests.put(url=secret_creation_url, json=secret_creation_body, headers=headers)\
+    if secret_creation_response.status_code == 201 or secret_creation_response.status_code == 204:\
+        print(\\\"--Secret Created / Updated!--\\\")\
+    else:\
+        print(f\\\"-- Error creating / updating github secret, the reason was : {secret_creation_response.reason}\\\")\
+\
+\
+parser, _ = init_argparse()\
+\
+if not parser.git_password.strip() and not (\
+        parser.github_app_id.strip() and parser.github_app_private_key.strip() and parser.github_app_installation_id.strip()):\
+    print(\\\"You must supply the GitHub token, or the GitHub App ID and private key and installation ID\\\")\
+    sys.exit(1)\
+\
+if not parser.git_organization.strip():\
+    print(\\\"You must define the organization\\\")\
+    sys.exit(1)\
+\
+if not parser.repo.strip():\
+    print(\\\"You must define the repo name\\\")\
+    sys.exit(1)\
+\
+token = generate_github_token(parser.github_app_id, parser.github_app_private_key,\
+                              parser.github_app_installation_id) if len(\
+    parser.git_password.strip()) == 0 else parser.git_password.strip()\
+\
+if not parser.git_password.strip() and not (\
+        parser.github_app_id.strip() and parser.github_app_private_key.strip() and parser.github_app_installation_id.strip()):\
+    print(\\\"You must supply the GitHub token, or the GitHub App ID and private key and installation ID\\\")\
+    sys.exit(1)\
+\
+if not parser.git_organization.strip():\
+    print(\\\"You must define the organization\\\")\
+    sys.exit(1)\
+\
+if not parser.repo.strip():\
+    print(\\\"You must define the repo name\\\")\
+    sys.exit(1)\
+\
+if not parser.secret_name.strip():\
+    print(\\\"You must define the secret name\\\")\
+    sys.exit(1)\
+    \
+if not verify_new_repo(token, parser.git_organization, parser.repo):\
+    print(\\\"Could not find the repo\\\")\
+    sys.exit(1)\
+\
+key_id, public_key = get_public_key('https://api.github.com/repos', parser.git_organization, parser.repo,\
+                                    token)\
+encrypted_secret: str = encrypt(public_key_for_repo=public_key, secret_value_input=parser.secret_value)\
+set_secret(gh_base_url='https://api.github.com/repos', gh_owner=parser.git_organization, gh_repo=parser.repo,\
+           gh_auth_token=token, public_key_id=key_id, secret_key=parser.secret_name,\
+           encrypted_secret_value=encrypted_secret)\
+\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+  step {
+    condition           = \"Success\"
+    name                = \"Create Docker Hub Password Username\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Create Docker Hub Password Username\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = false
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"CreateGitHubSecret.Git.Credentials.Password\" = \"#{Git.Credentials.Password}\"
+        \"Octopus.Action.RunOnServer\"                  = \"true\"
+        \"CreateGitHubSecret.GitHub.Secret.Value\"      = \"#{Docker.Credentials.Username}\"
+        \"CreateGitHubSecret.Git.Url.Repo\"             = \"#{Octopus.Action[Create Repo].Output.NewRepo}\"
+        \"Octopus.Action.Script.ScriptSource\"          = \"Inline\"
+        \"Octopus.Action.Script.ScriptBody\"            = \"# https://gist.github.com/comdotlinux/9a53bb00767a16d6646464c4b8249094\
+\
+# This script forks a GitHub repo. It creates a token from a GitHub App installation to avoid\
+# having to use a regular user account.\
+import subprocess\
+import sys\
+\
+# Install our own dependencies\
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'jwt', '--disable-pip-version-check'])\
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pynacl', '--disable-pip-version-check'])\
+\
+import requests\
+import json\
+import subprocess\
+import sys\
+import os\
+import urllib.request\
+import base64\
+import re\
+import jwt\
+import time\
+import argparse\
+import urllib3\
+from base64 import b64encode\
+from typing import TypedDict\
+from nacl import public, encoding\
+\
+# Disable insecure http request warnings\
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\
+\
+# If this script is not being run as part of an Octopus step, setting variables is a noop\
+if 'set_octopusvariable' not in globals():\
+    def set_octopusvariable(variable, value):\
+        pass\
+\
+# If this script is not being run as part of an Octopus step, return variables from environment variables.\
+# Periods are replaced with underscores, and the variable name is converted to uppercase\
+if \\\"get_octopusvariable\\\" not in globals():\
+    def get_octopusvariable(variable):\
+        return os.environ[re.sub('\\\\\\\\.', '_', variable.upper())]\
+\
+# If this script is not being run as part of an Octopus step, print directly to std out.\
+if 'printverbose' not in globals():\
+    def printverbose(msg):\
+        print(msg)\
+\
+\
+def printverbose_noansi(output):\
+    \\\"\\\"\\\"\
+    Strip ANSI color codes and print the output as verbose\
+    :param output: The output to print\
+    \\\"\\\"\\\"\
+    output_no_ansi = re.sub(r'\\\\x1b\\\\[[0-9;]*m', '', output)\
+    printverbose(output_no_ansi)\
+\
+\
+def get_octopusvariable_quiet(variable):\
+    \\\"\\\"\\\"\
+    Gets an octopus variable, or an empty string if it does not exist.\
+    :param variable: The variable name\
+    :return: The variable value, or an empty string if the variable does not exist\
+    \\\"\\\"\\\"\
+    try:\
+        return get_octopusvariable(variable)\
+    except:\
+        return ''\
+\
+\
+def execute(args, cwd=None, env=None, print_args=None, print_output=printverbose_noansi, raise_on_non_zero=False,\
+            append_to_path=None):\
+    \\\"\\\"\\\"\
+        The execute method provides the ability to execute external processes while capturing and returning the\
+        output to std err and std out and exit code.\
+    \\\"\\\"\\\"\
+\
+    my_env = os.environ.copy() if env is None else env\
+\
+    if append_to_path is not None:\
+        my_env[\\\"PATH\\\"] = append_to_path + os.pathsep + my_env['PATH']\
+\
+    process = subprocess.Popen(args,\
+                               stdout=subprocess.PIPE,\
+                               stderr=subprocess.PIPE,\
+                               stdin=open(os.devnull),\
+                               text=True,\
+                               cwd=cwd,\
+                               env=my_env)\
+    stdout, stderr = process.communicate()\
+    retcode = process.returncode\
+\
+    if not retcode == 0 and raise_on_non_zero:\
+        raise Exception('command returned exit code ' + retcode)\
+\
+    if print_args is not None:\
+        print_output(' '.join(args))\
+\
+    if print_output is not None:\
+        print_output(stdout)\
+        print_output(stderr)\
+\
+    return stdout, stderr, retcode\
+\
+\
+def init_argparse():\
+    parser = argparse.ArgumentParser(\
+        usage='%(prog)s [OPTION]',\
+        description='Fork a GitHub repo'\
+    )\
+\
+    parser.add_argument('--secret-name', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.Secret.Name') or get_octopusvariable_quiet(\
+                            'GitHub.Secret.Name'))\
+    parser.add_argument('--secret-value', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.Secret.Value') or get_octopusvariable_quiet(\
+                            'GitHub.Secret.Value'))\
+\
+    parser.add_argument('--repo', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.Git.Url.Repo') or get_octopusvariable_quiet(\
+                            'Git.Url.Repo') or get_octopusvariable_quiet('Octopus.Project.Name'))\
+    parser.add_argument('--git-organization', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.Git.Url.Organization') or get_octopusvariable_quiet(\
+                            'Git.Url.Organization'))\
+    parser.add_argument('--github-app-id', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.App.Id') or get_octopusvariable_quiet('GitHub.App.Id'))\
+    parser.add_argument('--github-app-installation-id', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.App.InstallationId') or get_octopusvariable_quiet(\
+                            'GitHub.App.InstallationId'))\
+    parser.add_argument('--github-app-private-key', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.GitHub.App.PrivateKey') or get_octopusvariable_quiet(\
+                            'GitHub.App.PrivateKey'))\
+    parser.add_argument('--git-password', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'CreateGitHubSecret.Git.Credentials.Password') or get_octopusvariable_quiet(\
+                            'Git.Credentials.Password'),\
+                        help='The git password. This takes precedence over the --github-app-id,  --github-app-installation-id, and --github-app-private-key')\
+\
+    return parser.parse_known_args()\
+\
+\
+def generate_github_token(github_app_id, github_app_private_key, github_app_installation_id):\
+    # Generate the tokens used by git and the GitHub API\
+    app_id = github_app_id\
+    signing_key = jwt.jwk_from_pem(github_app_private_key.encode('utf-8'))\
+\
+    payload = {\
+        # Issued at time\
+        'iat': int(time.time()),\
+        # JWT expiration time (10 minutes maximum)\
+        'exp': int(time.time()) + 600,\
+        # GitHub App's identifier\
+        'iss': app_id\
+    }\
+\
+    # Create JWT\
+    jwt_instance = jwt.JWT()\
+    encoded_jwt = jwt_instance.encode(payload, signing_key, alg='RS256')\
+\
+    # Create access token\
+    url = 'https://api.github.com/app/installations/' + github_app_installation_id + '/access_tokens'\
+    headers = {\
+        'Authorization': 'Bearer ' + encoded_jwt,\
+        'Accept': 'application/vnd.github+json',\
+        'X-GitHub-Api-Version': '2022-11-28'\
+    }\
+    request = urllib.request.Request(url, headers=headers, method='POST')\
+    response = urllib.request.urlopen(request)\
+    response_json = json.loads(response.read().decode())\
+    return response_json['token']\
+\
+\
+def generate_auth_header(token):\
+    auth = base64.b64encode(('x-access-token:' + token).encode('ascii'))\
+    return 'Basic ' + auth.decode('ascii')\
+\
+\
+def verify_new_repo(token, cac_org, new_repo):\
+    # Attempt to view the new repo\
+    try:\
+        url = 'https://api.github.com/repos/' + cac_org + '/' + new_repo\
+        headers = {\
+            'Accept': 'application/vnd.github+json',\
+            'Authorization': 'Bearer ' + token,\
+            'X-GitHub-Api-Version': '2022-11-28'\
+        }\
+        request = urllib.request.Request(url, headers=headers)\
+        urllib.request.urlopen(request)\
+        return True\
+    except:\
+        return False\
+\
+\
+def encrypt(public_key_for_repo: str, secret_value_input: str) -> str:\
+    \\\"\\\"\\\"Encrypt a Unicode string using the public key.\\\"\\\"\\\"\
+    sealed_box = public.SealedBox(public.PublicKey(public_key_for_repo.encode(\\\"utf-8\\\"), encoding.Base64Encoder()))\
+    encrypted = sealed_box.encrypt(secret_value_input.encode(\\\"utf-8\\\"))\
+    return b64encode(encrypted).decode(\\\"utf-8\\\")\
+\
+\
+def get_public_key(gh_base_url: str, gh_owner: str, gh_repo: str, gh_auth_token: str) -> (str, str):\
+    public_key_endpoint: str = f\\\"{gh_base_url}/{gh_owner}/{gh_repo}/actions/secrets/public-key\\\"\
+    headers: TypedDict[str, str] = {\\\"Authorization\\\": f\\\"Bearer {gh_auth_token}\\\"}\
+    response = requests.get(url=public_key_endpoint, headers=headers)\
+    if response.status_code != 200:\
+        raise IOError(\
+            f\\\"Could not get public key for repository {gh_owner}/{gh_repo}. The Response code was {response.status_code}\\\")\
+\
+    public_key_json = response.json()\
+    return public_key_json['key_id'], public_key_json['key']\
+\
+\
+def set_secret(gh_base_url: str, gh_owner: str, gh_repo: str, gh_auth_token: str, public_key_id: str, secret_key: str,\
+               encrypted_secret_value: str):\
+    secret_creation_url = f\\\"{gh_base_url}/{gh_owner}/{gh_repo}/actions/secrets/{secret_key}\\\"\
+    secret_creation_body = {\\\"key_id\\\": public_key_id, \\\"encrypted_value\\\": encrypted_secret_value}\
+    headers: TypedDict[str, str] = {\\\"Authorization\\\": f\\\"Bearer {gh_auth_token}\\\", \\\"Content-Type\\\": \\\"application/json\\\"}\
+\
+    secret_creation_response = requests.put(url=secret_creation_url, json=secret_creation_body, headers=headers)\
+    if secret_creation_response.status_code == 201 or secret_creation_response.status_code == 204:\
+        print(\\\"--Secret Created / Updated!--\\\")\
+    else:\
+        print(f\\\"-- Error creating / updating github secret, the reason was : {secret_creation_response.reason}\\\")\
+\
+\
+parser, _ = init_argparse()\
+\
+if not parser.git_password.strip() and not (\
+        parser.github_app_id.strip() and parser.github_app_private_key.strip() and parser.github_app_installation_id.strip()):\
+    print(\\\"You must supply the GitHub token, or the GitHub App ID and private key and installation ID\\\")\
+    sys.exit(1)\
+\
+if not parser.git_organization.strip():\
+    print(\\\"You must define the organization\\\")\
+    sys.exit(1)\
+\
+if not parser.repo.strip():\
+    print(\\\"You must define the repo name\\\")\
+    sys.exit(1)\
+\
+token = generate_github_token(parser.github_app_id, parser.github_app_private_key,\
+                              parser.github_app_installation_id) if len(\
+    parser.git_password.strip()) == 0 else parser.git_password.strip()\
+\
+if not parser.git_password.strip() and not (\
+        parser.github_app_id.strip() and parser.github_app_private_key.strip() and parser.github_app_installation_id.strip()):\
+    print(\\\"You must supply the GitHub token, or the GitHub App ID and private key and installation ID\\\")\
+    sys.exit(1)\
+\
+if not parser.git_organization.strip():\
+    print(\\\"You must define the organization\\\")\
+    sys.exit(1)\
+\
+if not parser.repo.strip():\
+    print(\\\"You must define the repo name\\\")\
+    sys.exit(1)\
+\
+if not parser.secret_name.strip():\
+    print(\\\"You must define the secret name\\\")\
+    sys.exit(1)\
+    \
+if not verify_new_repo(token, parser.git_organization, parser.repo):\
+    print(\\\"Could not find the repo\\\")\
+    sys.exit(1)\
+\
+key_id, public_key = get_public_key('https://api.github.com/repos', parser.git_organization, parser.repo,\
+                                    token)\
+encrypted_secret: str = encrypt(public_key_for_repo=public_key, secret_value_input=parser.secret_value)\
+set_secret(gh_base_url='https://api.github.com/repos', gh_owner=parser.git_organization, gh_repo=parser.repo,\
+           gh_auth_token=token, public_key_id=key_id, secret_key=parser.secret_name,\
+           encrypted_secret_value=encrypted_secret)\
+\"
+        \"CreateGitHubSecret.Git.Url.Organization\"     = \"#{Git.Url.Organization}\"
+        \"CreateGitHubSecret.GitHub.Secret.Name\"       = \"DOCKERHUB_USERNAME\"
+        \"Octopus.Action.Script.Syntax\"                = \"Python\"
+      }
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+      features              = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+  step {
+    condition           = \"Success\"
+    name                = \"Generate and Push\"
+    package_requirement = \"LetOctopusDecide\"
+    start_trigger       = \"StartAfterPrevious\"
+
+    action {
+      action_type                        = \"Octopus.Script\"
+      name                               = \"Generate and Push\"
+      condition                          = \"Success\"
+      run_on_server                      = true
+      is_disabled                        = false
+      can_be_used_for_project_versioning = true
+      is_required                        = false
+      worker_pool_id                     = local.worker_pool_id
+      properties                         = {
+        \"PopulateGithubRepo.Yeoman.Generator.SubGenerator\" = \"nodejs-docker-webapp\"
+        \"PopulateGithubRepo.Yeoman.Generator.Arguments\"    = \"--octopusUrl #{Octopus.Action[Get Variables].Output.Web.ServerUri} --octopusSpace \\\"#{Octopus.Action[Get Variables].Output.Space.Name}\\\" --octopusApi #{Octopus.ApiKey} --octopusProject \\\"#{Application.Octopus.Project}\\\" --dockerImage #{Application.Docker.Image}\"
+        \"PopulateGithubRepo.Yeoman.Generator.Name\"         = \"octopus-reference-architecture-apps\"
+        \"Octopus.Action.Script.Syntax\"                     = \"Python\"
+        \"Octopus.Action.Script.ScriptSource\"               = \"Inline\"
+        \"Octopus.Action.Script.ScriptBody\"                 = \"# This script forks a GitHub repo. It creates a token from a GitHub App installation to avoid\
+# having to use a regular user account.\
+import subprocess\
+import sys\
+\
+# Install our own dependencies\
+env_vars = os.environ.copy()\
+env_vars['PIP_ROOT_USER_ACTION'] = 'ignore'\
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'jwt', '--disable-pip-version-check'], env=env_vars)\
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'requests', '--disable-pip-version-check'], env=env_vars)\
+subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'anyascii', '--disable-pip-version-check'], env=env_vars)\
+\
+import requests\
+import json\
+import subprocess\
+import sys\
+import os\
+import urllib.request\
+import base64\
+import re\
+import jwt\
+import time\
+import argparse\
+import platform\
+import zipfile\
+import lzma\
+import tarfile\
+import shutil\
+import urllib3\
+from shlex import split\
+from anyascii import anyascii\
+\
+# Disable insecure http request warnings\
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\
+\
+# If this script is not being run as part of an Octopus step, setting variables is a noop\
+if 'set_octopusvariable' not in globals():\
+    def set_octopusvariable(variable, value):\
+        pass\
+\
+# If this script is not being run as part of an Octopus step, return variables from environment variables.\
+# Periods are replaced with underscores, and the variable name is converted to uppercase\
+if \\\"get_octopusvariable\\\" not in globals():\
+    def get_octopusvariable(variable):\
+        return os.environ[re.sub('\\\\\\\\.', '_', variable.upper())]\
+\
+# If this script is not being run as part of an Octopus step, print directly to std out.\
+if 'printverbose' not in globals():\
+    def printverbose(msg):\
+        print(msg)\
+\
+\
+def printverbose_noansi(output):\
+    \\\"\\\"\\\"\
+    Strip ANSI color codes and print the output as verbose\
+    :param output: The output to print\
+    \\\"\\\"\\\"\
+    output_no_ansi = re.sub(r'\\\\x1b\\\\[[0-9;]*m', '', output)\
+    printverbose(output_no_ansi)\
+\
+\
+def get_octopusvariable_quiet(variable):\
+    \\\"\\\"\\\"\
+    Gets an octopus variable, or an empty string if it does not exist.\
+    :param variable: The variable name\
+    :return: The variable value, or an empty string if the variable does not exist\
+    \\\"\\\"\\\"\
+    try:\
+        return get_octopusvariable(variable)\
+    except Exception as inst:\
+        return ''\
+\
+\
+def execute(args, cwd=None, env=None, print_args=None, print_output=printverbose_noansi, raise_on_non_zero=False,\
+            append_to_path=None):\
+    \\\"\\\"\\\"\
+        The execute method provides the ability to execute external processes while capturing and returning the\
+        output to std err and std out and exit code.\
+    \\\"\\\"\\\"\
+\
+    my_env = os.environ.copy() if env is None else env\
+\
+    if append_to_path is not None:\
+        my_env[\\\"PATH\\\"] = append_to_path + os.pathsep + my_env['PATH']\
+\
+    process = subprocess.Popen(args,\
+                               stdout=subprocess.PIPE,\
+                               stderr=subprocess.PIPE,\
+                               stdin=open(os.devnull),\
+                               text=True,\
+                               cwd=cwd,\
+                               env=my_env)\
+    stdout, stderr = process.communicate()\
+    retcode = process.returncode\
+\
+    if not retcode == 0 and raise_on_non_zero:\
+        raise Exception('command returned exit code ' + retcode)\
+\
+    if print_args is not None:\
+        print_output(' '.join(args))\
+\
+    if print_output is not None:\
+        print_output(stdout)\
+        print_output(stderr)\
+\
+    return stdout, stderr, retcode\
+\
+\
+def init_argparse():\
+    parser = argparse.ArgumentParser(\
+        usage='%(prog)s [OPTION]',\
+        description='Fork a GitHub repo'\
+    )\
+    parser.add_argument('--generator', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'PopulateGithubRepo.Yeoman.Generator.Name') or get_octopusvariable_quiet(\
+                            'Yeoman.Generator.Name'))\
+    parser.add_argument('--sub-generator', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'PopulateGithubRepo.Yeoman.Generator.SubGenerator') or get_octopusvariable_quiet(\
+                            'Yeoman.Generator.SubGenerator'))\
+    parser.add_argument('--generator-arguments', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'PopulateGithubRepo.Yeoman.Generator.Arguments') or get_octopusvariable_quiet(\
+                            'Yeoman.Generator.Arguments'),\
+                        help='The arguments to pas to yo. Pass all arguments as a single string. This string is then parsed as if it were yo arguments.')\
+    parser.add_argument('--repo', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'PopulateGithubRepo.Git.Url.Repo') or get_octopusvariable_quiet(\
+                            'Git.Url.Repo'))\
+    parser.add_argument('--git-organization', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'PopulateGithubRepo.Git.Url.Organization') or get_octopusvariable_quiet(\
+                            'Git.Url.Organization'))\
+    parser.add_argument('--github-app-id', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'PopulateGithubRepo.GitHub.App.Id') or get_octopusvariable_quiet('GitHub.App.Id'))\
+    parser.add_argument('--github-app-installation-id', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'PopulateGithubRepo.GitHub.App.InstallationId') or get_octopusvariable_quiet(\
+                            'GitHub.App.InstallationId'))\
+    parser.add_argument('--github-app-private-key', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'PopulateGithubRepo.GitHub.App.PrivateKey') or get_octopusvariable_quiet(\
+                            'GitHub.App.PrivateKey'))\
+    parser.add_argument('--git-password', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'PopulateGithubRepo.Git.Credentials.Password') or get_octopusvariable_quiet(\
+                            'Git.Credentials.Password'),\
+                        help='The git password. This takes precedence over the --github-app-id,  --github-app-installation-id, and --github-app-private-key')\
+    parser.add_argument('--git-username', action='store',\
+                        default=get_octopusvariable_quiet(\
+                            'PopulateGithubRepo.Git.Credentials.Username') or get_octopusvariable_quiet(\
+                            'Git.Credentials.Username'),\
+                        help='The git username. This will be used for both the git authentication and the username associated with any commits.')\
+\
+    return parser.parse_known_args()\
+\
+\
+def generate_github_token(github_app_id, github_app_private_key, github_app_installation_id):\
+    # Generate the tokens used by git and the GitHub API\
+    app_id = github_app_id\
+    signing_key = jwt.jwk_from_pem(github_app_private_key.encode('utf-8'))\
+\
+    payload = {\
+        # Issued at time\
+        'iat': int(time.time()),\
+        # JWT expiration time (10 minutes maximum)\
+        'exp': int(time.time()) + 600,\
+        # GitHub App's identifier\
+        'iss': app_id\
+    }\
+\
+    # Create JWT\
+    jwt_instance = jwt.JWT()\
+    encoded_jwt = jwt_instance.encode(payload, signing_key, alg='RS256')\
+\
+    # Create access token\
+    url = 'https://api.github.com/app/installations/' + github_app_installation_id + '/access_tokens'\
+    headers = {\
+        'Authorization': 'Bearer ' + encoded_jwt,\
+        'Accept': 'application/vnd.github+json',\
+        'X-GitHub-Api-Version': '2022-11-28'\
+    }\
+    request = urllib.request.Request(url, headers=headers, method='POST')\
+    response = urllib.request.urlopen(request)\
+    response_json = json.loads(response.read().decode())\
+    return response_json['token']\
+\
+\
+def generate_auth_header(token):\
+    auth = base64.b64encode(('x-access-token:' + token).encode('ascii'))\
+    return 'Basic ' + auth.decode('ascii')\
+\
+\
+def verify_new_repo(token, cac_org, new_repo):\
+    # Attempt to view the new repo\
+    try:\
+        url = 'https://api.github.com/repos/' + cac_org + '/' + new_repo\
+        headers = {\
+            'Accept': 'application/vnd.github+json',\
+            'Authorization': 'Bearer ' + token,\
+            'X-GitHub-Api-Version': '2022-11-28'\
+        }\
+        request = urllib.request.Request(url, headers=headers)\
+        urllib.request.urlopen(request)\
+        return True\
+    except Exception as inst:\
+        return False\
+\
+\
+def is_windows():\
+    return platform.system() == 'Windows'\
+\
+\
+def download_file(url, filename, verify_ssl=True):\
+    r = requests.get(url, verify=verify_ssl)\
+    with open(filename, 'wb') as file:\
+        file.write(r.content)\
+\
+\
+def ensure_git_exists():\
+    if is_windows():\
+        print(\\\"Checking git is installed\\\")\
+        try:\
+            stdout, _, exit_code = execute(['git', 'version'])\
+            printverbose(stdout)\
+            if not exit_code == 0:\
+                raise \\\"git not found\\\"\
+        except:\
+            print(\\\"Downloading git\\\")\
+            download_file('https://www.7-zip.org/a/7zr.exe', '7zr.exe')\
+            download_file(\
+                'https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.2/PortableGit-2.42.0.2-64-bit.7z.exe',\
+                'PortableGit.7z.exe')\
+            print(\\\"Installing git\\\")\
+            print(\\\"Consider installing git on the worker or using a standard worker-tools image\\\")\
+            execute(['7zr.exe', 'x', 'PortableGit.7z.exe', '-o' + os.path.join(os.getcwd(), 'git'), '-y'])\
+            return os.path.join(os.getcwd(), 'git', 'bin', 'git')\
+\
+    return 'git'\
+\
+\
+def install_npm_linux():\
+    print(\\\"Downloading node\\\")\
+    download_file(\
+        'https://nodejs.org/dist/v18.18.2/node-v18.18.2-linux-x64.tar.xz',\
+        'node.tar.xz')\
+    print(\\\"Installing node on Linux\\\")\
+    with lzma.open(\\\"node.tar.xz\\\", \\\"r\\\") as lzma_ref:\
+        with open(\\\"node.tar\\\", \\\"wb\\\") as fdst:\
+            shutil.copyfileobj(lzma_ref, fdst)\
+    with tarfile.open(\\\"node.tar\\\", \\\"r\\\") as tar_ref:\
+        tar_ref.extractall(os.getcwd())\
+\
+    try:\
+        _, _, exit_code = execute([os.getcwd() + '/node-v18.18.2-linux-x64/bin/npm', '--version'],\
+                                  append_to_path=os.getcwd() + '/node-v18.18.2-linux-x64/bin')\
+        if not exit_code == 0:\
+            raise Exception(\\\"Failed to run npm\\\")\
+    except Exception as ex:\
+        print('Failed to install npm ' + str(ex))\
+        sys.exit(1)\
+    return os.getcwd() + '/node-v18.18.2-linux-x64/bin/npm', os.getcwd() + '/node-v18.18.2-linux-x64/bin'\
+\
+\
+def install_npm_windows():\
+    print(\\\"Downloading node\\\")\
+    download_file('https://nodejs.org/dist/v18.18.2/node-v18.18.2-win-x64.zip', 'node.zip', False)\
+    print(\\\"Installing node on Windows\\\")\
+    with zipfile.ZipFile(\\\"node.zip\\\", \\\"r\\\") as zip_ref:\
+        zip_ref.extractall(os.getcwd())\
+    try:\
+        _, _, exit_code = execute([os.path.join(os.getcwd(), 'node-v18.18.2-win-x64', 'npm.cmd'), '--version'],\
+                                  append_to_path=os.path.join(os.getcwd(), 'node-v18.18.2-win-x64'))\
+        if not exit_code == 0:\
+            raise Exception(\\\"Failed to run npm\\\")\
+    except Exception as ex:\
+        print('Failed to install npm ' + str(ex))\
+        sys.exit(1)\
+\
+    return (os.path.join(os.getcwd(), 'node-v18.18.2-win-x64', 'npm.cmd'),\
+            os.path.join(os.getcwd(), 'node-v18.18.2-win-x64'))\
+\
+\
+def ensure_node_exists():\
+    try:\
+        print(\\\"Checking node is installed\\\")\
+        _, _, exit_code = execute(['npm', '--version'])\
+        if not exit_code == 0:\
+            raise Exception(\\\"npm not found\\\")\
+    except:\
+        if is_windows():\
+            return install_npm_windows()\
+        else:\
+            return install_npm_linux()\
+\
+    return 'npm', None\
+\
+\
+def ensure_yo_exists(npm_executable, npm_path):\
+    try:\
+        print(\\\"Checking Yeoman is installed\\\")\
+        _, _, exit_code = execute(['yo', '--version'])\
+        if not exit_code == 0:\
+            raise Exception(\\\"yo not found\\\")\
+    except:\
+        print('Installing Yeoman')\
+\
+        _, _, retcode = execute([npm_executable, 'install', '-g', 'yo'], append_to_path=npm_path)\
+\
+        if not retcode == 0:\
+            print(\\\"Failed to set install Yeoman. Check the verbose logs for details.\\\")\
+            sys.exit(1)\
+\
+        npm_bin, _, retcode = execute([npm_executable, 'config', 'get', 'prefix'], append_to_path=npm_path)\
+\
+        if not retcode == 0:\
+            print(\\\"Failed to set get the npm prefix directory. Check the verbose logs for details.\\\")\
+            sys.exit(1)\
+\
+        try:\
+            if is_windows():\
+                _, _, exit_code = execute([os.path.join(npm_bin.strip(), 'yo.cmd'), '--version'],\
+                                          append_to_path=npm_path)\
+            else:\
+                _, _, exit_code = execute([os.path.join(npm_bin.strip(), 'bin', 'yo'), '--version'],\
+                                          append_to_path=npm_path)\
+\
+            if not exit_code == 0:\
+                raise Exception(\\\"Failed to run yo\\\")\
+        except Exception as ex:\
+            print('Failed to install yo ' + str(ex))\
+            sys.exit(1)\
+\
+        # Windows and Linux save NPM binaries in different directories\
+        if is_windows():\
+            return os.path.join(npm_bin.strip(), 'yo.cmd')\
+\
+        return os.path.join(npm_bin.strip(), 'bin', 'yo')\
+\
+    return 'yo'\
+\
+\
+git_executable = ensure_git_exists()\
+npm_executable, npm_path = ensure_node_exists()\
+yo_executable = ensure_yo_exists(npm_executable, npm_path)\
+parser, _ = init_argparse()\
+\
+if not parser.git_password.strip() and not (\
+        parser.github_app_id.strip() and parser.github_app_private_key.strip() and parser.github_app_installation_id.strip()):\
+    print(\\\"You must supply the GitHub token, or the GitHub App ID and private key and installation ID\\\")\
+    sys.exit(1)\
+\
+if not parser.git_organization.strip():\
+    print(\\\"You must define the organization\\\")\
+    sys.exit(1)\
+\
+if not parser.repo.strip():\
+    print(\\\"You must define the repo name\\\")\
+    sys.exit(1)\
+\
+if not parser.generator.strip():\
+    print(\\\"You must define the Yeoman generator\\\")\
+    sys.exit(1)\
+\
+# Create a dir for the git clone\
+if os.path.exists('downstream'):\
+    shutil.rmtree('downstream')\
+\
+os.mkdir('downstream')\
+\
+# Create a dir for yeoman to use\
+if os.path.exists('downstream-yeoman'):\
+    shutil.rmtree('downstream-yeoman')\
+\
+os.mkdir('downstream-yeoman')\
+# Yeoman will use a less privileged user to write to this directory, so grant full access\
+if not is_windows():\
+    os.chmod('downstream-yeoman', 0o777)\
+\
+downstream_dir = os.path.join(os.getcwd(), 'downstream')\
+downstream_yeoman_dir = os.path.join(os.getcwd(), 'downstream-yeoman')\
+\
+# The access token is generated from a github app or supplied directly as an access token\
+token = generate_github_token(parser.github_app_id, parser.github_app_private_key,\
+                              parser.github_app_installation_id) if len(\
+    parser.git_password.strip()) == 0 else parser.git_password.strip()\
+\
+if not verify_new_repo(token, parser.git_organization, parser.repo):\
+    print('Repo at https://github.com/' + parser.git_organization + '/' + parser.repo + ' could not be accessed')\
+    sys.exit(1)\
+\
+# We need to disable the credentials helper prompt, which will pop open a GUI prompt that we can never close\
+if is_windows():\
+    _, _, retcode = execute([git_executable, 'config', '--system', 'credential.helper', 'manager'])\
+\
+    if not retcode == 0:\
+        print(\\\"Failed to set the credential.helper setting. Check the verbose logs for details.\\\")\
+        sys.exit(1)\
+\
+    _, _, retcode = execute([git_executable, 'config', '--system', 'credential.modalprompt', 'false'])\
+\
+    if not retcode == 0:\
+        print(\\\"Failed to srt the credential.modalprompt setting. Check the verbose logs for details.\\\")\
+        sys.exit(1)\
+\
+    # We need to disable the credentials helper prompt, which will pop open a GUI prompt that we can never close\
+    _, _, retcode = execute(\
+        [git_executable, 'config', '--system', 'credential.microsoft.visualstudio.com.interactive', 'never'])\
+\
+    if not retcode == 0:\
+        print(\
+            \\\"Failed to set the credential.microsoft.visualstudio.com.interactive setting. Check the verbose logs for details.\\\")\
+        sys.exit(1)\
+\
+_, _, retcode = execute([git_executable, 'config', '--global', 'user.email', 'octopus@octopus.com'])\
+\
+if not retcode == 0:\
+    print(\\\"Failed to set the user.email setting. Check the verbose logs for details.\\\")\
+    sys.exit(1)\
+\
+_, _, retcode = execute([git_executable, 'config', '--global', 'core.autocrlf', 'input'])\
+\
+if not retcode == 0:\
+    print(\\\"Failed to set the core.autocrlf setting. Check the verbose logs for details.\\\")\
+    sys.exit(1)\
+\
+username = parser.git_username if len(parser.git_username) != 0 else 'Octopus'\
+_, _, retcode = execute([git_executable, 'config', '--global', 'user.name', username])\
+\
+if not retcode == 0:\
+    print(\\\"Failed to set the git username. Check the verbose logs for details.\\\")\
+    sys.exit(1)\
+\
+_, _, retcode = execute([git_executable, 'config', '--global', 'credential.helper', 'cache'])\
+\
+if not retcode == 0:\
+    print(\\\"Failed to set the git credential helper. Check the verbose logs for details.\\\")\
+    sys.exit(1)\
+\
+print('Cloning repo')\
+\
+_, _, retcode = execute(\
+    [git_executable, 'clone',\
+     'https://' + username + ':' + token + '@github.com/' + parser.git_organization + '/' + parser.repo + '.git',\
+     'downstream'])\
+\
+if not retcode == 0:\
+    print(\\\"Failed to clone the git repo. Check the verbose logs for details.\\\")\
+    sys.exit(1)\
+\
+print('Configuring Yeoman Generator')\
+\
+_, _, retcode = execute([npm_executable, 'install'], cwd=os.path.join(os.getcwd(), 'YeomanGenerator'), append_to_path=npm_path)\
+\
+if not retcode == 0:\
+    print(\\\"Failed to install the generator dependencies. Check the verbose logs for details.\\\")\
+    sys.exit(1)\
+\
+_, _, retcode = execute([npm_executable, 'link'], cwd=os.path.join(os.getcwd(), 'YeomanGenerator'), append_to_path=npm_path)\
+\
+if not retcode == 0:\
+    print(\\\"Failed to link the npm module. Check the verbose logs for details.\\\")\
+    sys.exit(1)\
+\
+print('Running Yeoman Generator')\
+\
+# Treat the string of yo arguments as a raw input and parse it again. The resulting list of unknown arguments\
+# is then passed to yo. We have to convert the incoming values from utf to ascii when parsing a second time.\
+yo_args = split(anyascii(parser.generator_arguments))\
+\
+generator_name = parser.generator + ':' + parser.sub_generator if len(parser.sub_generator) != 0 else parser.generator\
+\
+yo_arguments = [yo_executable, generator_name, '--force', '--skip-install']\
+\
+# Yeoman has issues running as root, which it will often do in a container.\
+# So we run Yeoman in its own directory, and then copy the changes to the git directory.\
+_, _, retcode = execute(yo_arguments + yo_args, cwd=downstream_yeoman_dir, append_to_path=npm_path)\
+\
+if not retcode == 0:\
+    print(\\\"Failed to run Yeoman. Check the verbose logs for details.\\\")\
+    sys.exit(1)\
+\
+shutil.copytree(downstream_yeoman_dir, downstream_dir, dirs_exist_ok=True)\
+\
+print('Adding changes to git')\
+\
+_, _, retcode = execute([git_executable, 'add', '.'], cwd=downstream_dir)\
+\
+if not retcode == 0:\
+    print(\\\"Failed to add the git changes. Check the verbose logs for details.\\\")\
+    sys.exit(1)\
+\
+# Check for pending changes\
+_, _, retcode = execute([git_executable, 'diff-index', '--quiet', 'HEAD'], cwd=downstream_dir)\
+\
+if not retcode == 0:\
+    print('Committing changes to git')\
+    _, _, retcode = execute([git_executable, 'commit', '-m',\
+                             'Added files from Yeoman generator ' + parser.generator + ':' + parser.sub_generator],\
+                            cwd=downstream_dir)\
+\
+    if not retcode == 0:\
+        print(\\\"Failed to set commit the git changes. Check the verbose logs for details.\\\")\
+        sys.exit(1)\
+\
+    print('Pushing changes to git')\
+\
+    _, _, retcode = execute([git_executable, 'push', 'origin', 'main'], cwd=downstream_dir)\
+\
+    if not retcode == 0:\
+        print(\\\"Failed to push the git changes. Check the verbose logs for details.\\\")\
+        sys.exit(1)\
+\"
+        \"PopulateGithubRepo.Yeoman.Generator.Package\"      = jsonencode({
+          \"PackageId\" = \"OctopusSolutionsEngineering/ReferenceArchitectureAppGenerators\"
+          \"FeedId\"    = local.github_feed_id
+        })
+        \"Octopus.Action.RunOnServer\"                  = \"true\"
+        \"PopulateGithubRepo.Git.Url.Organization\"     = \"#{Git.Url.Organization}\"
+        \"PopulateGithubRepo.Git.Url.Repo\"             = \"#{Octopus.Action[Create Repo].Output.NewRepo}\"
+        \"PopulateGithubRepo.Git.Credentials.Password\" = \"#{Git.Credentials.Password}\"
+      }
+
+      container {
+        feed_id = local.docker_hub_feed_id
+        image   = \"octopussamples/node-workertools\"
+      }
+
+      environments          = []
+      excluded_environments = []
+      channels              = []
+      tenant_tags           = []
+
+      package {
+        name                      = \"YeomanGenerator\"
+        package_id                = \"OctopusSolutionsEngineering/ReferenceArchitectureAppGenerators\"
+        acquisition_location      = \"Server\"
+        extract_during_deployment = false
+        feed_id                   = local.github_feed_id
+        properties                = {
+          Extract       = \"True\", PackageParameterName = \"PopulateGithubRepo.Yeoman.Generator.Package\", Purpose = \"\",
+          SelectionMode = \"deferred\"
+        }
+      }
+      features = []
+    }
+
+    properties   = {}
+    target_roles = []
+  }
+}
+#endregion
+
+#endregion
+",
+    "Octopus.Action.Terraform.TemplateParameters": "{\"octopus_server\":\"#{ReferenceArchitecture.WebApp.Octopus.ServerUrl}\",\"octopus_apikey\":\"#{ReferenceArchitecture.WebApp.Octopus.ApiKey}\",\"octopus_space_id\":\"#{ReferenceArchitecture.WebApp.Octopus.SpaceId}\",\"feed_docker_hub_username\":\"#{ReferenceArchitecture.WebApp.Docker.Username}\",\"feed_docker_hub_password\":\"#{ReferenceArchitecture.WebApp.Docker.Password}\",\"github_access_token\":\"#{ReferenceArchitecture.WebApp.GitHub.AccessToken}\",\"azure_account_application_id\":\"#{ReferenceArchitecture.WebApp.Azure.ApplicationId}\",\"azure_account_subscription_id\":\"#{ReferenceArchitecture.WebApp.Azure.SubscriptionId}\",\"azure_account_tenant_id\":\"#{ReferenceArchitecture.WebApp.Azure.TenantId}\",\"azure_account_password\":\"#{ReferenceArchitecture.WebApp.Azure.AccountPassword}\"}",
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Terraform.AdditionalInitParams": "#{if ReferenceArchitecture.Terraform.InitArgs}#{ReferenceArchitecture.Terraform.InitArgs}#{/if}",
+    "Octopus.Action.Terraform.AdditionalActionParams": "#{if ReferenceArchitecture.Terraform.ApplyArgs}#{ReferenceArchitecture.Terraform.ApplyArgs}#{/if}"
+  },
+  "Parameters": [
+    {
+      "Id": "e8ed2805-bd27-470d-9580-c5486201e5e4",
+      "Name": "ReferenceArchitecture.WebApp.Azure.ApplicationId",
+      "Label": "Azure account application ID",
+      "HelpText": "This is the The Azure account application ID. Refer to the [Azure documentation](https://learn.microsoft.com/en-us/purview/create-service-principal-azure) for details on creating a service principal.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "857dd051-4f27-4533-b3c1-4f60e2da208a",
+      "Name": "ReferenceArchitecture.WebApp.Azure.SubscriptionId",
+      "Label": "Azure account subscription ID",
+      "HelpText": "This is the The Azure account subscription ID. Refer to the [Azure documentation](https://learn.microsoft.com/en-us/purview/create-service-principal-azure) for details on creating a service principal.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "99a7b543-4b0e-49d6-9e48-bc176e07e75e",
+      "Name": "ReferenceArchitecture.WebApp.Azure.TenantId",
+      "Label": "Azure account tenant ID",
+      "HelpText": "This is the The Azure account tenant ID. Refer to the [Azure documentation](https://learn.microsoft.com/en-us/purview/create-service-principal-azure) for details on creating a service principal.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6ea2138c-d67e-477b-975d-622a5f5e0f33",
+      "Name": "ReferenceArchitecture.WebApp.Azure.AccountPassword",
+      "Label": "Azure account password",
+      "HelpText": "This is the The Azure account password. Refer to the [Azure documentation](https://learn.microsoft.com/en-us/purview/create-service-principal-azure) for details on creating a service principal.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "47a001cc-f17b-4905-bd73-91363d7b5f83",
+      "Name": "ReferenceArchitecture.WebApp.Docker.Username",
+      "Label": "Docker Hub Username",
+      "HelpText": "The Docker Hub username. See the [Docker docs](https://docs.docker.com/docker-id/) for more information on creating a Docker Hub account.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d83f2e90-532a-4db0-97e9-f07e8167c3e7",
+      "Name": "ReferenceArchitecture.WebApp.Docker.Password",
+      "Label": "Docker Hub Password",
+      "HelpText": "The Docker Hub password. See the [Docker docs](https://docs.docker.com/docker-id/) for more information on creating a Docker Hub account.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "4d8e6395-e298-42f2-b2ca-cfdbcd65ae2b",
+      "Name": "ReferenceArchitecture.WebApp.GitHub.AccessToken",
+      "Label": "GitHub Access Token",
+      "HelpText": "The GitHub access token. Find more details in the [GitHub documentation](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
+
+
+This value is used when populating GitHub repos with template projects. It can be left blank if you do not use the `Create Template Github <platform> Project` runbooks.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "e088e550-e179-4998-be04-0b6653bd8371",
+      "Name": "ReferenceArchitecture.WebApp.Octopus.ApiKey",
+      "Label": "Octopus API Key",
+      "HelpText": "The Octopus API key. See the [Octopus docs](https://octopus.com/docs/octopus-rest-api/how-to-create-an-api-key) for more details on creating an API Key.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "5c5c947b-2d3a-4f1f-a85c-1fa6a3b61bac",
+      "Name": "ReferenceArchitecture.WebApp.Octopus.SpaceId",
+      "Label": "Octopus Space ID",
+      "HelpText": "The Octopus space ID.",
+      "DefaultValue": "#{Octopus.Space.Id}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4b8f62d1-1c12-4027-bc60-44029c7df0cc",
+      "Name": "ReferenceArchitecture.WebApp.Octopus.ServerUrl",
+      "Label": "Octopus Server URL",
+      "HelpText": "The Octopus server URL.",
+      "DefaultValue": "#{Octopus.Web.ServerUri}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ce1529b7-c366-4faa-a3bc-bade411237cc",
+      "Name": "ReferenceArchitecture.Terraform.ApplyArgs",
+      "Label": "Optional Terraform Apply Args",
+      "HelpText": "Optional arguments passed to the `terraform apply` command. See the [documentation](https://oc.to/wRvMoP) for details on any optional variables that can be defined here. Leave this field blank unless you have a specific reason to change it.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "14a42b42-2692-4850-943c-425d3036bf1c",
+      "Name": "ReferenceArchitecture.Terraform.InitArgs",
+      "Label": "Optional Terraform Init Args",
+      "HelpText": "Optional arguments passed to the `terraform init` command. See the [documentation](https://oc.to/wRvMoP) for details on any optional variables that can be defined here. Leave this field blank unless you have a specific reason to change it.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.TerraformApply",
+  "$Meta": {
+    "ExportedAt": "2023-11-12T23:48:11.062Z",
+    "OctopusVersion": "2024.1.1024",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "octopus"
+}

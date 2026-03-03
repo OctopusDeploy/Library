@@ -1,0 +1,122 @@
+{
+    "Id": "137d2be3-a329-4c65-bde9-0c062f056889",
+    "Name": "Register EPPlus DLL in the GAC",
+    "Description": "This script registers EPPlus dll to the GAC",
+    "ActionType": "Octopus.Script",
+    "Version": 2,
+    "CommunityActionTemplateId": null,
+    "Packages": [],
+    "Properties": {
+      "Octopus.Action.Script.ScriptSource": "Inline",
+      "Octopus.Action.Script.Syntax": "PowerShell",
+      "Octopus.Action.Script.ScriptBody": "[System.Reflection.Assembly]::Load(\"System.EnterpriseServices, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a\")
+
+function Expand-ZIPFile($file, $destination)
+{
+    $shell = new-object -com shell.application
+    $zip = $shell.NameSpace($file)
+    foreach($item in $zip.items())
+    {
+        $shell.Namespace($destination).copyhere($item)
+    }
+}
+
+$TempFolder = \"\\TempNupkg\"
+$ExpandedFolder = \"\\expanded\"
+
+$FileDestinationPath = $RegisteringDllFolderPath + \"\\\" + $DllName 
+$FileSourcePath = $RegisteringDllFolderPath + $TempFolder + $ExpandedFolder + $DllPathInExpanded + \"\\\" + $DllName
+
+$TempPath = $RegisteringDllFolderPath + $TempFolder
+$NupkgPath = $RegisteringDllFolderPath + $TempFolder + \"\\temp.zip\"
+$ExpandedTempPath = $RegisteringDllFolderPath + $TempFolder + $ExpandedFolder
+
+$DllUrl = \"https://www.nuget.org/api/v2/package/\"+ $PackageName +\"/\" + $PackageVersion
+
+if (!(Test-Path $ExpandedTempPath -PathType Container)) {
+    New-Item -ItemType Directory -Force -Path $ExpandedTempPath
+}
+
+Write-Host \"Allow SecurityProtocol TLS, TLS 1.1 and TLS 1.2 ...\"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+Write-Host \"Dowloading package ...\"
+Invoke-WebRequest -Uri $DllUrl -OutFile $NupkgPath
+
+Write-Host \"Expanding Archive ...\"
+Expand-ZIPFile –File $NupkgPath –Destination $ExpandedTempPath
+
+Write-Host \"Copying to destination folder ...\"
+Copy-Item $FileSourcePath -Destination $FileDestinationPath
+
+Remove-Item -Recurse -Force $TempPath
+Write-Host \"Deleteing temp folders ...\"
+
+Write-Host \"Library Found\"
+
+#Note that you should be running PowerShell as an Administrator
+Write-Host \"Installing to GAC ...\"
+$publish = New-Object System.EnterpriseServices.Internal.Publish
+$publish.GacInstall($fileDestinationPath)
+Write-Host \"Installed to GAC\""
+    },
+    "Parameters": [
+      {
+        "Id": "5ee60108-20e4-4010-95cc-c13eb40c618f",
+        "Name": "RegisteringDllFolderPath",
+        "Label": "Path of the registering dll",
+        "HelpText": null,
+        "DefaultValue": "C:\\dll",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "4817d840-5b87-4d8b-bdac-53711f093ae4",
+        "Name": "DllPathInExpanded",
+        "Label": "Regintering dll path inside NuGet archive",
+        "HelpText": null,
+        "DefaultValue": "\\lib\
+et40",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "c5e7cff7-e67d-48a4-adb6-6019d06ba249",
+        "Name": "DllName",
+        "Label": "Dll file name",
+        "HelpText": null,
+        "DefaultValue": "EPPlus.dll",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "c326490c-ea29-4b2b-99e7-37027233bd06",
+        "Name": "PackageName",
+        "Label": "NuGet gallery package name",
+        "HelpText": null,
+        "DefaultValue": "EPPlus",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      },
+      {
+        "Id": "ea04aa17-5fea-4e06-82e8-d344c797547c",
+        "Name": "PackageVersion",
+        "Label": "Registering dll version",
+        "HelpText": null,
+        "DefaultValue": "4.1.0.0",
+        "DisplaySettings": {
+          "Octopus.ControlType": "SingleLineText"
+        }
+      }
+    ],
+    "LastModifiedBy": "fabiozanella",
+    "$Meta": {
+        "ExportedAt": "2020-11-03T09:07:40.202Z",
+        "OctopusVersion": "2020.4.5",
+        "Type": "ActionTemplate"
+      },
+    "Category": "dll"    
+  }
