@@ -1,0 +1,65 @@
+{
+  "Id": "0abe1aab-b264-4f40-a534-d48082ef3ac3",
+  "Name": "Submit Argo Workflow",
+  "Description": "Submit an Argo Worflow from a WorkflowTemplate",
+  "ActionType": "Octopus.KubernetesRunScript",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "\n# Grab Variables\n\nexport wkf_name=$(get_octopusvariable 'ArgoWorkflowSubmit.Name')\nexport namespace=$(get_octopusvariable 'ArgoWorkflowSubmit.Namespace')\nexport parameter_array=$(get_octopusvariable \"ArgoWorkflowSubmit.Parameters\")\nexport options=$(get_octopusvariable 'ArgoWorkflowSubmit.Options')\n\n# Process optional parameters\nparameter_string=\"\"\nif [ -n \"$parameter_array\" ] ; then\n  parameter_string=$(echo \"$parameter_array\" | awk '{printf \"-p %s \", $0}' | sed 's/ $//')\n  echo \"Parameter string: $parameter_string\"\nelse\n  echo \"No parameters passed\"\nfi\n\n\nCMD=\"argo submit -n $namespace --from workflowtemplate/$wkf_name $parameter_string $options -o name\"\necho \"Workflow Submit command: $CMD\"\n\nNAME=$($CMD)\nargo logs --follow $NAME\n\nPHASE=$(argo get $NAME -o json | jq -r '.status.phase')\n\nif [[ \"$PHASE\" == \"Succeeded\" ]]; then\n  echo \"Workflow Succeeded.\"\n  exit 0\nelif [[ \"$PHASE\" == \"Failed\" ]] || [[ \"$PHASE\" == \"Error\" ]]; then\n  MESSAGE=$(argo get \"$NAME\" -o json | jq -r '.status.message')\n  echo \"Workflow Phase: $PHASE.\"\n  echo \"Message: $MESSAGE\"\n  exit 1\nelse\n  echo \"Workflow Phase: $PHASE (still running or unknown).\"\n  exit 2\nfi"
+  },
+  "Parameters": [
+    {
+      "Id": "0d55eec6-241c-4e0d-a7c3-ac468a73f1b4",
+      "Name": "ArgoWorkflowSubmit.Namespace",
+      "Label": "Namespace of the workflow template",
+      "HelpText": "The name of the namespace where the workflow template to submit is defined",
+      "DefaultValue": "argocd",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b5f33a16-d470-496e-9271-9f75741e3e70",
+      "Name": "ArgoWorkflowSubmit.Name",
+      "Label": "WorkflowTemplate Name",
+      "HelpText": "The name of the Workflow Trmplate to submit",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "073e6872-2f34-4ade-944a-953f451f1ef3",
+      "Name": "ArgoWorkflowSubmit.Parameters",
+      "Label": "Workflow parameters",
+      "HelpText": "An optional array of parameters to pass to the workflow. One name=value per line",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "0b91a1f6-7da7-40ba-b22c-d74ffd2bd8c4",
+      "Name": "ArgoWorkflowSubmit.Options",
+      "Label": "Additional Options",
+      "HelpText": "Additional Options  to pass to the \"Argo Submit\" command",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.KubernetesRunScript",
+  "$Meta": {
+    "ExportedAt": "2026-03-10T15:15:54.763Z",
+    "OctopusVersion": "2026.2.742",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "lrochette",
+  "Category": "argo"
+}
