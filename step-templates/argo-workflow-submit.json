@@ -1,16 +1,16 @@
 {
-  "Id": "0abe1aab-b264-4f40-a534-d48082ef3ac3",
+  "Id": "6210f1aa-fbf5-495e-a39c-13c662005f72",
   "Name": "Submit Argo Workflow",
   "Description": "Submit an Argo Worflow from a WorkflowTemplate",
   "ActionType": "Octopus.KubernetesRunScript",
-  "Version": 1,
+  "Version": 2,
   "CommunityActionTemplateId": null,
   "Packages": [],
   "GitDependencies": [],
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "Bash",
-    "Octopus.Action.Script.ScriptBody": "\n# Grab Variables\n\nexport wkf_name=$(get_octopusvariable 'ArgoWorkflowSubmit.Name')\nexport namespace=$(get_octopusvariable 'ArgoWorkflowSubmit.Namespace')\nexport parameter_array=$(get_octopusvariable \"ArgoWorkflowSubmit.Parameters\")\nexport options=$(get_octopusvariable 'ArgoWorkflowSubmit.Options')\n\n# Process optional parameters\nparameter_string=\"\"\nif [ -n \"$parameter_array\" ] ; then\n  parameter_string=$(echo \"$parameter_array\" | awk '{printf \"-p %s \", $0}' | sed 's/ $//')\n  echo \"Parameter string: $parameter_string\"\nelse\n  echo \"No parameters passed\"\nfi\n\n\nCMD=\"argo submit -n $namespace --from workflowtemplate/$wkf_name $parameter_string $options -o name\"\necho \"Workflow Submit command: $CMD\"\n\nNAME=$($CMD)\nargo logs --follow $NAME\n\nPHASE=$(argo get $NAME -o json | jq -r '.status.phase')\n\nif [[ \"$PHASE\" == \"Succeeded\" ]]; then\n  echo \"Workflow Succeeded.\"\n  exit 0\nelif [[ \"$PHASE\" == \"Failed\" ]] || [[ \"$PHASE\" == \"Error\" ]]; then\n  MESSAGE=$(argo get \"$NAME\" -o json | jq -r '.status.message')\n  echo \"Workflow Phase: $PHASE.\"\n  echo \"Message: $MESSAGE\"\n  exit 1\nelse\n  echo \"Workflow Phase: $PHASE (still running or unknown).\"\n  exit 2\nfi"
+    "Octopus.Action.Script.ScriptBody": "# Check for Argo\nif ! command -v argo -v >/dev/null 2>&1\nthen\n    echo \"argo executable could not be found. Please use a target or container including it like octopuslabs/argo-workflow-workertools.\"\n    exit 1\nfi\n\n# Grab Variables\nexport wkf_name=$(get_octopusvariable 'ArgoWorkflowSubmit.Name')\nexport namespace=$(get_octopusvariable 'ArgoWorkflowSubmit.Namespace')\nexport parameter_array=$(get_octopusvariable \"ArgoWorkflowSubmit.Parameters\")\nexport options=$(get_octopusvariable 'ArgoWorkflowSubmit.Options')\n\n# Check workflowTemplate name has been passed\nif [ -z \"$wkf_name\" ] ; then\n  echo \"WorkflowTemplate name is required\"\n  exit 1\nfi\n# Process optional parameters\nparameter_string=\"\"\nif [ -n \"$parameter_array\" ] ; then\n  parameter_string=$(echo \"$parameter_array\" | awk '{printf \"-p %s \", $0}' | sed 's/ $//')\n  echo \"Parameter string: $parameter_string\"\nelse\n  echo \"No parameters passed\"\nfi\n\n\nCMD=\"argo submit -n $namespace --from workflowtemplate/$wkf_name $parameter_string $options -o name\"\necho \"Workflow Submit command: $CMD\"\n\nNAME=$($CMD)\nargo logs --follow $NAME\n\nPHASE=$(argo get $NAME -o json | jq -r '.status.phase')\n\nif [[ \"$PHASE\" == \"Succeeded\" ]]; then\n  echo \"Workflow Succeeded.\"\n  exit 0\nelif [[ \"$PHASE\" == \"Failed\" ]] || [[ \"$PHASE\" == \"Error\" ]]; then\n  MESSAGE=$(argo get \"$NAME\" -o json | jq -r '.status.message')\n  echo \"Workflow Phase: $PHASE.\"\n  echo \"Message: $MESSAGE\"\n  exit 1\nelse\n  echo \"Workflow Phase: $PHASE (still running or unknown).\"\n  exit 2\nfi"
   },
   "Parameters": [
     {
@@ -56,8 +56,8 @@
   ],
   "StepPackageId": "Octopus.KubernetesRunScript",
   "$Meta": {
-    "ExportedAt": "2026-03-10T15:15:54.763Z",
-    "OctopusVersion": "2026.2.742",
+    "ExportedAt": "2026-03-13T16:49:32.867Z",
+    "OctopusVersion": "2026.2.999",
     "Type": "ActionTemplate"
   },
   "LastModifiedBy": "lrochette",
