@@ -1,6 +1,14 @@
 $ErrorActionPreference = "Stop";
 Set-StrictMode -Version "Latest";
 
+function Normalize-NewLines([string] $value) {
+    if ($null -eq $value) {
+        return $null;
+    }
+
+    return $value -replace "`r`n", "`n";
+}
+
 Describe "ConvertTo-OctopusDeploy" {
 
     It "InputObject is null" {
@@ -55,8 +63,8 @@ Describe "ConvertTo-OctopusDeploy" {
     It "InputObject is a populated array" {
         $input    = @( $null, 100, "my string" );
         $expected = "[`r`n  null,`r`n  100,`r`n  `"my string`"`r`n]";
-        ConvertTo-OctopusJson -InputObject $input `
-            | Should Be $expected;
+        Normalize-NewLines (ConvertTo-OctopusJson -InputObject $input) `
+            | Should Be (Normalize-NewLines $expected);
     }
 
     It "InputObject is an empty PSCustomObject" {
@@ -92,8 +100,9 @@ Describe "ConvertTo-OctopusDeploy" {
   }
 }
 "@
-        ConvertTo-OctopusJson -InputObject $input `
-            | Should Be $expected;
+        $expected = $expected.Trim()
+        Normalize-NewLines (ConvertTo-OctopusJson -InputObject $input) `
+            | Should Be (Normalize-NewLines $expected);
     }
 
     It "InputObject is an unhandled type" {

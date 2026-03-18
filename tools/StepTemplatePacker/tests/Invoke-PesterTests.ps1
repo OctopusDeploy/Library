@@ -1,18 +1,17 @@
+param(
+    [string] $Filter = "*"
+)
+
 $ErrorActionPreference = "Stop";
 Set-StrictMode -Version "Latest";
 
 $thisScript = $MyInvocation.MyCommand.Path;
 $thisFolder = [System.IO.Path]::GetDirectoryName($thisScript);
-
-$packagesFolder = $thisFolder;
-$packagesFolder = [System.IO.Path]::GetDirectoryName($packagesFolder);
-$packagesFolder = [System.IO.Path]::GetDirectoryName($packagesFolder);
-$packagesFolder = [System.IO.Path]::GetDirectoryName($packagesFolder);
-$packagesFolder = [System.IO.Path]::Combine($packagesFolder, "packages");
-
+$repoRoot = [System.IO.Path]::GetFullPath((Join-Path $thisFolder ".." ".." ".."));
 $packer = [System.IO.Path]::GetDirectoryName($thisFolder);
+$sharedRunner = Join-Path $repoRoot "tools" "Invoke-SharedPesterTests.ps1";
 
-Import-Module -Name $packer;
-Import-Module -Name ([System.IO.Path]::Combine($packagesFolder, "Pester.3.4.3\tools\Pester"));
-
-Invoke-Pester;
+& $sharedRunner `
+    -TestRoot $thisFolder `
+    -Filter $Filter `
+    -ImportModules @($packer);

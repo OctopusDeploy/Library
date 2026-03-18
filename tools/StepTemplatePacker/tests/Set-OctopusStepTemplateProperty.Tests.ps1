@@ -1,6 +1,14 @@
 $ErrorActionPreference = "Stop";
 Set-StrictMode -Version "Latest";
 
+function Normalize-NewLines([string] $value) {
+    if ($null -eq $value) {
+        return $null;
+    }
+
+    return $value -replace "`r`n", "`n";
+}
+
 Describe "Set-OctopusStepTemplateProperty" {
 
         It "Properties collection does not exist" {
@@ -9,8 +17,8 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            ConvertTo-OctopusJson -InputObject $stepJson `
-               | Should Be $expected;
+            Normalize-NewLines (ConvertTo-OctopusJson -InputObject $stepJson) `
+               | Should Be (Normalize-NewLines $expected);
         }
 
         It "No properties exist" {
@@ -19,8 +27,8 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            ConvertTo-OctopusJson -InputObject $stepJson `
-               | Should Be $expected;
+            Normalize-NewLines (ConvertTo-OctopusJson -InputObject $stepJson) `
+               | Should Be (Normalize-NewLines $expected);
         }
 
         It "Specified property does not exist" {
@@ -29,8 +37,8 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"otherProperty`": `"`",`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            ConvertTo-OctopusJson -InputObject $stepJson `
-               | Should Be $expected;
+            Normalize-NewLines (ConvertTo-OctopusJson -InputObject $stepJson) `
+               | Should Be (Normalize-NewLines $expected);
         }
 
         It "Property does not exist" {
@@ -39,8 +47,8 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            ConvertTo-OctopusJson -InputObject $stepJson `
-               | Should Be $expected;
+            Normalize-NewLines (ConvertTo-OctopusJson -InputObject $stepJson) `
+               | Should Be (Normalize-NewLines $expected);
         }
 
         It "Property exists with a null value" {
@@ -49,8 +57,8 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            ConvertTo-OctopusJson -InputObject $stepJson `
-               | Should Be $expected;
+            Normalize-NewLines (ConvertTo-OctopusJson -InputObject $stepJson) `
+               | Should Be (Normalize-NewLines $expected);
         }
 
         It "Property exists with an empty string value" {
@@ -59,8 +67,8 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            ConvertTo-OctopusJson -InputObject $stepJson `
-               | Should Be $expected;
+            Normalize-NewLines (ConvertTo-OctopusJson -InputObject $stepJson) `
+               | Should Be (Normalize-NewLines $expected);
         }
 
         It "Property exists with a string value" {
@@ -69,8 +77,8 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            ConvertTo-OctopusJson -InputObject $stepJson `
-               | Should Be $expected;
+            Normalize-NewLines (ConvertTo-OctopusJson -InputObject $stepJson) `
+               | Should Be (Normalize-NewLines $expected);
         }
 
 
