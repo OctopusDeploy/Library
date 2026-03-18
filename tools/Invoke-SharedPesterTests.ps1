@@ -15,15 +15,6 @@ $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $originalSystemRoot = $env:SystemRoot
 $originalTemp = $env:TEMP
 
-function Assert-PesterEnvironment {
-    if ($PSVersionTable.PSEdition -eq "Core" -and -not $IsWindows) {
-        $referenceAssembliesPath = Join-Path $PSHOME "ref"
-        if (-not (Test-Path -Path $referenceAssembliesPath)) {
-            throw "Pester 3.4.3 on macOS requires a compatible pwsh installation with reference assemblies under '$referenceAssembliesPath'. This runner is intentionally lean and does not patch Pester at runtime."
-        }
-    }
-}
-
 function Get-PesterModulePath {
     $packagesFolder = Join-Path $repoRoot "packages"
     $localPesterPaths = @(
@@ -48,24 +39,6 @@ function Get-PesterModulePath {
     }
 
     throw "Pester 3.4.3 was not found in the repository packages folder or installed modules."
-}
-
-function Import-Pester {
-    $pesterModulePath = Get-PesterModulePath
-    Import-Module -Name $pesterModulePath -RequiredVersion 3.4.3 -ErrorAction Stop
-}
-
-function Get-TestFiles {
-    $discoveredFiles = Get-ChildItem -Path $testRootPath -Filter "*.tests.ps1" -Recurse
-    if ([string]::IsNullOrWhiteSpace($Filter) -or $Filter -eq "*") {
-        return @($discoveredFiles)
-    }
-
-    return @(
-        $discoveredFiles | Where-Object {
-            $_.Name -like $Filter -or $_.FullName -like $Filter
-        }
-    )
 }
 
 function Invoke-SelectedTests {
@@ -103,14 +76,24 @@ try {
         & $BeforeRun
     }
 
-    $testFiles = @(Get-TestFiles)
+    $testFiles = @(Get-ChildItem -Path $testRootPath -Filter "*.tests.ps1" -Recurse)
+    if (-not [string]::IsNullOrWhiteSpace($Filter) -and $Filter -ne "*") {
+        $testFiles = @($testFiles | Where-Object { $_.Name -like $Filter -or $_.FullName -like $Filter })
+    }
+
     if ($testFiles.Count -eq 0) {
         Write-Host "No matching test files found under $testRootPath for filter '$Filter'."
         return
     }
 
-    Assert-PesterEnvironment
-    Import-Pester
+    if ($PSVersionTable.PSEdition -eq "Core" -and -not $IsWindows) {
+        $referenceAssembliesPath = Join-Path $PSHOME "ref"
+        if (-not (Test-Path -Path $referenceAssembliesPath)) {
+            throw "Pester 3.4.3 on macOS requires a compatible pwsh installation with reference assemblies under '$referenceAssembliesPath'. This runner is intentionally lean and does not patch Pester at runtime."
+        }
+    }
+
+    Import-Module -Name (Get-PesterModulePath) -RequiredVersion 3.4.3 -ErrorAction Stop
     Invoke-SelectedTests -TestFiles $testFiles
 } finally {
     $env:SystemRoot = $originalSystemRoot
