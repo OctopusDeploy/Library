@@ -1,12 +1,17 @@
 $ErrorActionPreference = "Stop";
 Set-StrictMode -Version "Latest";
 
-function Normalize-NewLines([string] $value) {
-    if ($null -eq $value) {
-        return $null;
-    }
+function Assert-JsonEquivalent {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $ActualJson,
+        [Parameter(Mandatory = $true)]
+        [string] $ExpectedJson
+    )
 
-    return $value -replace "`r`n", "`n";
+    $actualValue = ConvertFrom-Json -InputObject $ActualJson | ConvertTo-Json -Depth 10 -Compress
+    $expectedValue = ConvertFrom-Json -InputObject $ExpectedJson | ConvertTo-Json -Depth 10 -Compress
+    $actualValue | Should Be $expectedValue
 }
 
 Describe "ConvertTo-OctopusDeploy" {
@@ -63,8 +68,7 @@ Describe "ConvertTo-OctopusDeploy" {
     It "InputObject is a populated array" {
         $input    = @( $null, 100, "my string" );
         $expected = "[`r`n  null,`r`n  100,`r`n  `"my string`"`r`n]";
-        Normalize-NewLines (ConvertTo-OctopusJson -InputObject $input) `
-            | Should Be (Normalize-NewLines $expected);
+        Assert-JsonEquivalent -ActualJson (ConvertTo-OctopusJson -InputObject $input) -ExpectedJson $expected
     }
 
     It "InputObject is an empty PSCustomObject" {
@@ -101,8 +105,7 @@ Describe "ConvertTo-OctopusDeploy" {
 }
 "@
         $expected = $expected.Trim()
-        Normalize-NewLines (ConvertTo-OctopusJson -InputObject $input) `
-            | Should Be (Normalize-NewLines $expected);
+        Assert-JsonEquivalent -ActualJson (ConvertTo-OctopusJson -InputObject $input) -ExpectedJson $expected
     }
 
     It "InputObject is an unhandled type" {
