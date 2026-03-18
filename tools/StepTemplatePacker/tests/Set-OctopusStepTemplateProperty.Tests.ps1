@@ -1,18 +1,6 @@
 $ErrorActionPreference = "Stop";
 Set-StrictMode -Version "Latest";
-
-function Assert-JsonEquivalent {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string] $ActualJson,
-        [Parameter(Mandatory = $true)]
-        [string] $ExpectedJson
-    )
-
-    $actualValue = ConvertFrom-Json -InputObject $ActualJson | ConvertTo-Json -Depth 10 -Compress
-    $expectedValue = ConvertFrom-Json -InputObject $ExpectedJson | ConvertTo-Json -Depth 10 -Compress
-    $actualValue | Should Be $expectedValue
-}
+. (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "Test-JsonAssertions.ps1")
 
 Describe "Set-OctopusStepTemplateProperty" {
 
@@ -22,7 +10,7 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            Assert-JsonEquivalent -ActualJson (ConvertTo-OctopusJson -InputObject $stepJson) -ExpectedJson $expected
+            ConvertTo-OctopusJson -InputObject $stepJson | Should BeJsonEquivalent $expected
         }
 
         It "No properties exist" {
@@ -31,7 +19,7 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            Assert-JsonEquivalent -ActualJson (ConvertTo-OctopusJson -InputObject $stepJson) -ExpectedJson $expected
+            ConvertTo-OctopusJson -InputObject $stepJson | Should BeJsonEquivalent $expected
         }
 
         It "Specified property does not exist" {
@@ -40,7 +28,7 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"otherProperty`": `"`",`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            Assert-JsonEquivalent -ActualJson (ConvertTo-OctopusJson -InputObject $stepJson) -ExpectedJson $expected
+            ConvertTo-OctopusJson -InputObject $stepJson | Should BeJsonEquivalent $expected
         }
 
         It "Property does not exist" {
@@ -49,7 +37,7 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            Assert-JsonEquivalent -ActualJson (ConvertTo-OctopusJson -InputObject $stepJson) -ExpectedJson $expected
+            ConvertTo-OctopusJson -InputObject $stepJson | Should BeJsonEquivalent $expected
         }
 
         It "Property exists with a null value" {
@@ -58,7 +46,7 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            Assert-JsonEquivalent -ActualJson (ConvertTo-OctopusJson -InputObject $stepJson) -ExpectedJson $expected
+            ConvertTo-OctopusJson -InputObject $stepJson | Should BeJsonEquivalent $expected
         }
 
         It "Property exists with an empty string value" {
@@ -67,7 +55,7 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            Assert-JsonEquivalent -ActualJson (ConvertTo-OctopusJson -InputObject $stepJson) -ExpectedJson $expected
+            ConvertTo-OctopusJson -InputObject $stepJson | Should BeJsonEquivalent $expected
         }
 
         It "Property exists with a string value" {
@@ -76,7 +64,7 @@ Describe "Set-OctopusStepTemplateProperty" {
 	                                    -PropertyName "Octopus.Action.Script.Syntax" `
                                             -Value        "PowerShell";
             $expected = "{`r`n  `"Properties`": {`r`n    `"Octopus.Action.Script.Syntax`": `"PowerShell`"`r`n  }`r`n}";
-            Assert-JsonEquivalent -ActualJson (ConvertTo-OctopusJson -InputObject $stepJson) -ExpectedJson $expected
+            ConvertTo-OctopusJson -InputObject $stepJson | Should BeJsonEquivalent $expected
         }
 
 

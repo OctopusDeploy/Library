@@ -1,18 +1,6 @@
 $ErrorActionPreference = "Stop";
 Set-StrictMode -Version "Latest";
-
-function Assert-JsonEquivalent {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string] $ActualJson,
-        [Parameter(Mandatory = $true)]
-        [string] $ExpectedJson
-    )
-
-    $actualValue = ConvertFrom-Json -InputObject $ActualJson | ConvertTo-Json -Depth 10 -Compress
-    $expectedValue = ConvertFrom-Json -InputObject $ExpectedJson | ConvertTo-Json -Depth 10 -Compress
-    $actualValue | Should Be $expectedValue
-}
+. (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "Test-JsonAssertions.ps1")
 
 Describe "ConvertTo-OctopusDeploy" {
 
@@ -68,7 +56,7 @@ Describe "ConvertTo-OctopusDeploy" {
     It "InputObject is a populated array" {
         $input    = @( $null, 100, "my string" );
         $expected = "[`r`n  null,`r`n  100,`r`n  `"my string`"`r`n]";
-        Assert-JsonEquivalent -ActualJson (ConvertTo-OctopusJson -InputObject $input) -ExpectedJson $expected
+        ConvertTo-OctopusJson -InputObject $input | Should BeJsonEquivalent $expected
     }
 
     It "InputObject is an empty PSCustomObject" {
@@ -102,10 +90,10 @@ Describe "ConvertTo-OctopusDeploy" {
   "myPsObject": {
     "childProperty": "childValue"
   }
-}
+        }
 "@
         $expected = $expected.Trim()
-        Assert-JsonEquivalent -ActualJson (ConvertTo-OctopusJson -InputObject $input) -ExpectedJson $expected
+        ConvertTo-OctopusJson -InputObject $input | Should BeJsonEquivalent $expected
     }
 
     It "InputObject is an unhandled type" {
