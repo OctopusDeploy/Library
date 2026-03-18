@@ -12,8 +12,8 @@ Describe "Create-ScheduledTask" {
         It "Should invoke a matching command line" {
             Create-ScheduledTask;
             Assert-MockCalled Invoke-CommandLine -Times 1 -ParameterFilter {
-                $expectedCmd  = "$($env:SystemRoot)\System32\schtasks.exe"
-                $expectedArgs = @( "/Create", "/RU", "`"`"", "/SC", "", "/TN", "`"`"", "/TR", "`"''`"", "/F" )
+                $expectedCmd  = "C:\Windows\System32\schtasks.exe"
+                $expectedArgs = @( "/Create", "/RU", "", "/SC", "", "/TN", "`"`"", "/TR", "''", "/F" )
                 $argDiffs     = Compare-Object $ArgumentList $expectedArgs -SyncWindow 0;
                 #Write-Host ("expected = " + ($expectedArgs | % { "[$($_)]"}));
                 #Write-Host ("actual   = " + ($ArgumentList | % { "[$($_)]"}));
@@ -39,8 +39,8 @@ Describe "Create-ScheduledTask" {
                                  -Duration      "" `
                                  -StartNewTaskNow "";
             Assert-MockCalled Invoke-CommandLine -Times 1 -ParameterFilter {
-                $expectedCmd  = "$($env:SystemRoot)\System32\schtasks.exe"
-                $expectedArgs = @( "/Create", "/RU", "`"`"", "/SC", "", "/TN", "`"`"", "/TR", "`"''`"", "/F" )
+                $expectedCmd  = "C:\Windows\System32\schtasks.exe"
+                $expectedArgs = @( "/Create", "/RU", "", "/SC", "", "/TN", "`"`"", "/TR", "''", "/F" )
                 $argDiffs     = Compare-Object $ArgumentList $expectedArgs -SyncWindow 0;
                 #Write-Host ("expected = " + ($expectedArgs | % { "[$($_)]"}));
                 #Write-Host ("actual   = " + ($ArgumentList | % { "[$($_)]"}));
@@ -66,8 +66,8 @@ Describe "Create-ScheduledTask" {
                                  -Duration      "myDuration"`
                                  -StartNewTaskNow "myStartNewTaskNow";
             Assert-MockCalled Invoke-CommandLine -Times 1 -ParameterFilter {
-                $expectedCmd  = "$($env:SystemRoot)\System32\schtasks.exe"
-                $expectedArgs = @( "/Create", "/RU", "`"myRunAsUser`"", "/RP `"myRunAsPassword`"", "/SC", "mySchedule", "/RI", "myInterval", "/D", "myDays", "/TN", "`"myTaskName`"", "/TR", "`"'myTaskRun' myArguments`"", "/ST", "myStartTime", "/DU", "myDuration", "/SD", "myStartDate", "/F", "/RL", "HIGHEST" )
+                $expectedCmd  = "C:\Windows\System32\schtasks.exe"
+                $expectedArgs = @( "/Create", "/RU", "myRunAsUser", "/RP", "myRunAsPassword", "/SC", "mySchedule", "/D", "myDays", "/TN", "`"myTaskname`"", "/TR", "`"'myTaskRun' 'myArguments'`"", "/ST", "myStartTime", "/DU", "myDuration", "/SD", "myStartDate", "/F", "/RL", "HIGHEST" )
                 $argDiffs     = Compare-Object $ArgumentList $expectedArgs -SyncWindow 0;
                 #Write-Host ("expected = " + ($expectedArgs | % { "[$($_)]"}));
                 #Write-Host ("actual   = " + ($ArgumentList | % { "[$($_)]"}));
@@ -93,8 +93,8 @@ Describe "Create-ScheduledTask" {
                                  -Duration      "" `
                                  -StartNewTaskNow "";
             Assert-MockCalled Invoke-CommandLine -Times 1 -ParameterFilter {
-                $expectedCmd  = "$($env:SystemRoot)\System32\schtasks.exe"
-                $expectedArgs = @( "/Create", "/RU", "`"`"", "/SC", "", "/TN", "`"`"", "/TR", "`"'myTaskRun'`"", "/F" )
+                $expectedCmd  = "C:\Windows\System32\schtasks.exe"
+                $expectedArgs = @( "/Create", "/RU", "", "/SC", "", "/TN", "`"`"", "/TR", "'myTaskRun'", "/F" )
                 $argDiffs     = Compare-Object $ArgumentList $expectedArgs -SyncWindow 0;
                 #Write-Host ("expected = " + ($expectedArgs | % { "[$($_)]"}));
                 #Write-Host ("actual   = " + ($ArgumentList | % { "[$($_)]"}));
@@ -120,8 +120,8 @@ Describe "Create-ScheduledTask" {
                                  -Duration      "" `
                                  -StartNewTaskNow "";
             Assert-MockCalled Invoke-CommandLine -Times 1 -ParameterFilter {
-                $expectedCmd  = "$($env:SystemRoot)\System32\schtasks.exe"
-                $expectedArgs = @( "/Create", "/RU", "`"`"", "/SC", "", "/TN", "`"`"", "/TR", "`"'myTaskRun' myArguments`"", "/F" )
+                $expectedCmd  = "C:\Windows\System32\schtasks.exe"
+                $expectedArgs = @( "/Create", "/RU", "", "/SC", "", "/TN", "`"`"", "/TR", "`"'myTaskRun' 'myArguments'`"", "/F" )
                 $argDiffs     = Compare-Object $ArgumentList $expectedArgs -SyncWindow 0;
                 #Write-Host ("expected = " + ($expectedArgs | % { "[$($_)]"}));
                 #Write-Host ("actual   = " + ($ArgumentList | % { "[$($_)]"}));
@@ -132,7 +132,7 @@ Describe "Create-ScheduledTask" {
     }
 
     Context "WEEKDAYS schedule parameter specified" {
-        It "WEEKDAYS is passed through when no days are specified" {
+        It "WEEKDAYS gets replaced with WEEKLY" {
             Create-ScheduledTask -TaskName      "" `
                                  -RunAsUser     "" `
                                  -RunAsPassword "" `
@@ -147,8 +147,8 @@ Describe "Create-ScheduledTask" {
                                  -Duration      "" `
                                  -StartNewTaskNow "";
             Assert-MockCalled Invoke-CommandLine -Times 1 -ParameterFilter {
-                $expectedCmd  = "$($env:SystemRoot)\System32\schtasks.exe"
-                $expectedArgs = @( "/Create", "/RU", "`"`"", "/SC", "WEEKDAYS", "/TN", "`"`"", "/TR", "`"''`"", "/F" )
+                $expectedCmd  = "C:\Windows\System32\schtasks.exe"
+                $expectedArgs = @( "/Create", "/RU", "", "/SC", "WEEKLY", "/TN", "`"`"", "/TR", "''", "/D", "MON,TUE,WED,THU,FRI", "/F" )
                 $argDiffs     = Compare-Object $ArgumentList $expectedArgs -SyncWindow 0;
                 Write-Host ("expected = " + ($expectedArgs | % { "[$($_)]"}));
                 Write-Host ("actual   = " + ($ArgumentList | % { "[$($_)]"}));

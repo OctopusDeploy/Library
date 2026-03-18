@@ -14,4 +14,6 @@ $sharedRunner = Join-Path $repoRoot "tools" "Invoke-SharedPesterTests.ps1";
 & $sharedRunner `
     -TestRoot $thisFolder `
     -Filter $Filter `
-    -ImportModules @($packer);
+    -ImportModules @($packer) `
+    -PreferredPesterVersion "3.4.3" `
+    -SuiteName "StepTemplatePacker";

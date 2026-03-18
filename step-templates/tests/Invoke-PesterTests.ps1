@@ -45,4 +45,6 @@ function Unpack-Scripts-Under-Test {
   -TestRoot $thisFolder `
   -Filter $Filter `
   -BeforeRun ${function:Unpack-Scripts-Under-Test} `
-  -UsePassThruFailureCheck
+  -UsePassThruFailureCheck `
+  -PreferredPesterVersion "3.4.0" `
+  -SuiteName "step-templates"

@@ -4,7 +4,9 @@ param(
     [string] $Filter = "*",
     [scriptblock] $BeforeRun,
     [string[]] $ImportModules = @(),
-    [switch] $UsePassThruFailureCheck
+    [switch] $UsePassThruFailureCheck,
+    [string] $PreferredPesterVersion,
+    [string] $SuiteName = "tests"
 )
 
 $ErrorActionPreference = "Stop";
@@ -15,30 +17,58 @@ $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $originalSystemRoot = $env:SystemRoot
 $originalTemp = $env:TEMP
 
-function Get-PesterModulePath {
+function Get-PesterModuleSpec {
     $packagesFolder = Join-Path $repoRoot "packages"
-    $localPesterPaths = @(
-        (Join-Path $packagesFolder "Pester" "tools" "Pester"),
-        (Join-Path $packagesFolder "Pester.3.4.3" "tools" "Pester")
-    )
+    $attempts = @()
+    $localPesterPaths = @()
 
-    foreach ($localPesterPath in $localPesterPaths) {
+    if ($PreferredPesterVersion) {
+        $localPesterPaths += (Join-Path $packagesFolder ("Pester.{0}" -f $PreferredPesterVersion) "tools" "Pester")
+    }
+    $localPesterPaths += (Join-Path $packagesFolder "Pester" "tools" "Pester")
+
+    foreach ($localPesterPath in $localPesterPaths | Select-Object -Unique) {
+        $attempts += $localPesterPath
         if (Test-Path -Path $localPesterPath) {
             $localManifestPath = Join-Path $localPesterPath "Pester.psd1"
+            $modulePath = $localPesterPath
             if (Test-Path -Path $localManifestPath) {
-                return $localManifestPath
+                $modulePath = $localManifestPath
             }
 
-            return $localPesterPath
+            $module = Test-ModuleManifest -Path $modulePath -ErrorAction Stop
+            if ($module.Version.Major -eq 3 -and ((-not $PreferredPesterVersion) -or $module.Version -eq [version]$PreferredPesterVersion)) {
+                return [pscustomobject]@{
+                    ModulePath = $module.Path
+                    Version = $module.Version.ToString()
+                    Source = "repository packages"
+                }
+            }
         }
     }
 
-    $globalPester = Get-Module -ListAvailable Pester | Where-Object { $_.Version -eq [version]"3.4.3" } | Select-Object -First 1
-    if ($globalPester) {
-        return $globalPester.Path
+    $availablePesterModules = @(Get-Module -ListAvailable Pester | Sort-Object Version -Descending)
+    $globalPester = $null
+
+    if ($PreferredPesterVersion) {
+        $globalPester = $availablePesterModules | Where-Object { $_.Version -eq [version]$PreferredPesterVersion } | Select-Object -First 1
     }
 
-    throw "Pester 3.4.3 was not found in the repository packages folder or installed modules."
+    if (-not $globalPester) {
+        $globalPester = $availablePesterModules | Where-Object { $_.Version.Major -eq 3 } | Select-Object -First 1
+    }
+
+    if ($globalPester) {
+        return [pscustomobject]@{
+            ModulePath = $globalPester.Path
+            Version = $globalPester.Version.ToString()
+            Source = "installed modules"
+        }
+    }
+
+    $preferredVersionMessage = if ($PreferredPesterVersion) { "preferred version $PreferredPesterVersion" } else { "a Pester 3.x version" }
+    $attemptedPathsMessage = if ($attempts.Count -gt 0) { " Tried package paths: $($attempts -join ', ')." } else { "" }
+    throw "Pester $preferredVersionMessage for suite '$SuiteName' was not found in the repository packages folder or installed modules.$attemptedPathsMessage"
 }
 
 function Invoke-SelectedTests {
@@ -93,7 +123,9 @@ try {
         }
     }
 
-    Import-Module -Name (Get-PesterModulePath) -RequiredVersion 3.4.3 -ErrorAction Stop
+    $pesterModule = Get-PesterModuleSpec
+    Write-Host "Using Pester module version $($pesterModule.Version) from $($pesterModule.Source)."
+    Import-Module -Name $pesterModule.ModulePath -RequiredVersion $pesterModule.Version -ErrorAction Stop
     Invoke-SelectedTests -TestFiles $testFiles
 } finally {
     $env:SystemRoot = $originalSystemRoot
