@@ -18,6 +18,26 @@ Read our [contributing guidelines](https://github.com/OctopusDeploy/Library/blob
 Reviewing PRs
 -------------
 
+### Reviewing script changes
+
+Step template JSON files embed scripts as single-line escaped strings, making diffs hard to read. Use the `_diff.ps1` tool to extract old and new scripts into separate files you can compare in your diff tool:
+
+```powershell
+# Compare ScriptBody against previous commit
+.\tools\_diff.ps1 -SearchPattern "template-name"
+
+# Compare against a specific commit or branch
+.\tools\_diff.ps1 -SearchPattern "template-name" -CompareWith "master"
+```
+
+This outputs readable files to `diff-output/`:
+- `template-name.ScriptBody.old.ps1`
+- `template-name.ScriptBody.new.ps1`
+
+Also handles `PreDeploy`, `Deploy`, and `PostDeploy` custom scripts if present.
+
+### Checklist
+
 When reviewing a PR, keep the following things in mind:
 * `Id` should be a **GUID** that is not `00000000-0000-0000-0000-000000000000`
 * `Version` should be incremented, otherwise the integration with Octopus won't update the step template correctly
