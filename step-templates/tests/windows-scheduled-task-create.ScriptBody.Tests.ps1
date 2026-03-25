@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop";
 Set-StrictMode -Version "Latest";
 
-. "$PSScriptRoot\..\windows-scheduled-task-create.ScriptBody.ps1"
+. (Join-Path $PSScriptRoot ".." "windows-scheduled-task-create.ScriptBody.ps1")
 
 Describe "Create-ScheduledTask" {
 

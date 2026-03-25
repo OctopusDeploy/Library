@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop";
 Set-StrictMode -Version "Latest";
 
-. "$PSScriptRoot\..\sql-backup-database.ScriptBody.ps1"
+. (Join-Path $PSScriptRoot ".." "sql-backup-database.ScriptBody.ps1")
 
 function SetupTestEnvironment {
   param(
@@ -79,7 +79,7 @@ function SetupTestEnvironment {
 Describe "ApplyRetentionPolicy Tests" {
 
   BeforeAll {
-    $script:BackupDirectory = "C:\Backups"
+    $script:BackupDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "OctopusDeployLibrary-SqlBackupTests"
     $script:DatabaseName = "ExampleDB"
     $script:StartDate = Get-Date
     $script:timestampFormat = "yyyy-MM-dd-HHmmss"

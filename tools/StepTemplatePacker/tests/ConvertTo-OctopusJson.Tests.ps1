@@ -1,5 +1,6 @@
 $ErrorActionPreference = "Stop";
 Set-StrictMode -Version "Latest";
+. (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "Test-JsonAssertions.ps1")
 
 Describe "ConvertTo-OctopusDeploy" {
 
@@ -55,8 +56,7 @@ Describe "ConvertTo-OctopusDeploy" {
     It "InputObject is a populated array" {
         $input    = @( $null, 100, "my string" );
         $expected = "[`r`n  null,`r`n  100,`r`n  `"my string`"`r`n]";
-        ConvertTo-OctopusJson -InputObject $input `
-            | Should Be $expected;
+        ConvertTo-OctopusJson -InputObject $input | Should BeJsonEquivalent $expected
     }
 
     It "InputObject is an empty PSCustomObject" {
@@ -90,10 +90,10 @@ Describe "ConvertTo-OctopusDeploy" {
   "myPsObject": {
     "childProperty": "childValue"
   }
-}
+        }
 "@
-        ConvertTo-OctopusJson -InputObject $input `
-            | Should Be $expected;
+        $expected = $expected.Trim()
+        ConvertTo-OctopusJson -InputObject $input | Should BeJsonEquivalent $expected
     }
 
     It "InputObject is an unhandled type" {

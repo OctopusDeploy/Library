@@ -1,12 +1,18 @@
+param(
+    [string] $Filter = "*"
+)
+
 $ErrorActionPreference = "Stop";
 Set-StrictMode -Version "Latest";
 
 $thisScript = $MyInvocation.MyCommand.Path;
 $thisFolder = [System.IO.Path]::GetDirectoryName($thisScript);
 $rootFolder = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($thisFolder, "..", "..")); # Adjust to always point to the root
-$testFiles = Get-ChildItem -Path "$thisFolder" -Filter "*.tests.ps1" -Recurse
+$sharedRunner = Join-Path $rootFolder "tools" "Invoke-SharedPesterTests.ps1"
 
 function Unpack-Scripts-Under-Test {
+  $testFiles = Get-ChildItem -Path "$thisFolder" -Filter "*.tests.ps1" -Recurse
+
   foreach ($testFile in $testFiles) {
       $baseName = $testFile.BaseName -replace "\.ScriptBody.Tests$"
       $scriptFileName = "$baseName.ScriptBody.ps1"
@@ -35,28 +41,10 @@ function Unpack-Scripts-Under-Test {
   }
 }
 
-function Import-Pester {
-  # Attempt to use local Pester module, fallback to global if not found
-  try {
-      $packagesFolder = [System.IO.Path]::Combine($rootFolder, "packages")
-      $pester3Path = [System.IO.Path]::Combine($packagesFolder, "Pester\tools\Pester")
-      # Import the specific version of Pester 3.4.0
-      Import-Module -Name $pester3Path -RequiredVersion 3.4.0 -ErrorAction Stop
-  } catch {
-      Write-Host "Using globally installed Pester module version 3.4.0."
-      # Specify the exact version of Pester 3.x you have installed
-      Import-Module -Name Pester -RequiredVersion 3.4.0 -ErrorAction Stop
-  }
-}
-
-function Run-Tests {
-  # Find and run all Pester test files in the tests directory
-  foreach ($testFile in $testFiles) {
-      Write-Host "Running tests in: $($testFile.FullName)"
-      Invoke-Pester -Path $testFile.FullName
-  }
-}
-
-Import-Pester
-Unpack-Scripts-Under-Test
-Run-Tests
+& $sharedRunner `
+  -TestRoot $thisFolder `
+  -Filter $Filter `
+  -BeforeRun ${function:Unpack-Scripts-Under-Test} `
+  -UsePassThruFailureCheck `
+  -PreferredPesterVersion "3.4.0" `
+  -SuiteName "step-templates"
