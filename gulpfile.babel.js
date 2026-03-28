@@ -332,8 +332,7 @@ function provideMissingData() {
   return eventStream.map(function (file, cb) {
     var fileContent = file.contents.toString();
     var template = JSON.parse(fileContent);
-    var pathParts = file.path.split("\\");
-    var fileName = pathParts[pathParts.length - 1];
+    var fileName = path.basename(file.path);
     var templateName = fileName.replace(/\.json$/i, "");
     var expectedHistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/src/step-templates/" + templateName;
     var hasBrokenGeneratedHistoryUrl = template.HistoryUrl && (template.HistoryUrl.indexOf("/step-templates/") !== -1 || template.HistoryUrl.indexOf("/opt/") !== -1);
@@ -479,8 +478,13 @@ gulp.task(
       }
     );
 
+    function reloadServer(done) {
+      server.start.bind(server)();
+      done();
+    }
+
     gulp.watch(`${clientDir}/**/*.jade`, gulp.series("build:client"));
-    gulp.watch(`${clientDir}/**/*.jsx`, gulp.series("scripts", "copy:app"));
+    gulp.watch(`${clientDir}/**/*.jsx`, gulp.series("scripts", "copy:app", reloadServer));
     gulp.watch(`${clientDir}/content/styles/**/*.scss`, gulp.series("styles:client"));
     gulp.watch("step-templates/*.json", gulp.series("step-templates:data"));
     gulp.watch(`${sourceStepTemplatesDir}/**/*`).on("all", (eventName, changedPath) => {
