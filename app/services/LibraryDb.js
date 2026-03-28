@@ -1,12 +1,15 @@
 "use strict";
 
+import fs from "fs";
+import path from "path";
 import _ from "underscore";
 
-import StepTemplates from "./step-templates.json";
-
 class LibraryDb {
-  constructor() {
-    this._items = _.chain(StepTemplates.items)
+  loadTemplates() {
+    const templatePath = path.join(__dirname, "step-templates.json");
+    const stepTemplates = JSON.parse(fs.readFileSync(templatePath, "utf8"));
+
+    return _.chain(stepTemplates.items)
       .map(function (t) {
         if (t.Properties) {
           var script = t.Properties["Octopus.Action.Script.ScriptBody"];
@@ -41,16 +44,14 @@ class LibraryDb {
         return t.Name.toLowerCase();
       })
       .value();
-
-    this._all = _.indexBy(this._items, "Id");
   }
 
   list(cb) {
-    cb(null, this._items);
+    cb(null, this.loadTemplates());
   }
 
   get(id, cb) {
-    var item = this._all[id];
+    var item = _.indexBy(this.loadTemplates(), "Id")[id];
     cb(null, item);
   }
 }
