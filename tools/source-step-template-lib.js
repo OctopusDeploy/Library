@@ -76,6 +76,10 @@ function runPack(templateName) {
   runPowerShellScript(path.join(repoRoot, "tools", "_pack.ps1"), ["-SearchPattern", normalizeTemplateName(templateName)]);
 }
 
+function runPackAll() {
+  runPowerShellScript(path.join(repoRoot, "tools", "_pack.ps1"));
+}
+
 function listMigratedTemplates() {
   if (!isDirectory(sourceRoot)) {
     return [];
@@ -137,6 +141,12 @@ function cleanGeneratedSidecars(templateName) {
   }
 }
 
+function cleanGeneratedSidecarsForTemplates(templateNames) {
+  for (const templateName of templateNames) {
+    cleanGeneratedSidecars(templateName);
+  }
+}
+
 function materializeLegacyTemplate(templateName) {
   const normalizedName = normalizeTemplateName(templateName);
   const templateDirectory = getSourceTemplateDirectory(normalizedName);
@@ -163,6 +173,18 @@ function materializeLegacyTemplate(templateName) {
   return true;
 }
 
+function materializeLegacyTemplates(templateNames) {
+  const materializedTemplateNames = [];
+
+  for (const templateName of templateNames) {
+    if (materializeLegacyTemplate(templateName)) {
+      materializedTemplateNames.push(normalizeTemplateName(templateName));
+    }
+  }
+
+  return materializedTemplateNames;
+}
+
 function generateTemplate(templateName) {
   const normalizedName = normalizeTemplateName(templateName);
   const generated = materializeLegacyTemplate(normalizedName);
@@ -180,9 +202,18 @@ function generateTemplate(templateName) {
 }
 
 function generateAllMigratedTemplates() {
-  for (const templateName of listMigratedTemplates()) {
-    generateTemplate(templateName);
+  const templateNames = materializeLegacyTemplates(listMigratedTemplates());
+  if (templateNames.length === 0) {
+    return false;
   }
+
+  try {
+    runPackAll();
+  } finally {
+    cleanGeneratedSidecarsForTemplates(templateNames);
+  }
+
+  return true;
 }
 
 function inferTemplateNameFromSourcePath(changedPath) {
@@ -226,6 +257,7 @@ module.exports = {
   readJson,
   repoRoot,
   runPack,
+  runPackAll,
   scriptDefinitions,
   setPlaceholderValue,
   sourceRoot,

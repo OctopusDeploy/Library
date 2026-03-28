@@ -94,6 +94,7 @@ gulp.task("prepare:step-templates", (done) => {
   generateAllMigratedTemplates();
   done();
 });
+
 gulp.task("lint:step-templates", () => {
   return gulp
     .src("./step-templates/*.json")
@@ -103,25 +104,24 @@ gulp.task("lint:step-templates", () => {
     .pipe(jsonlint.reporter());
 });
 
-gulp.task(
-  "tests",
-  gulp.series("prepare:step-templates", "lint:step-templates", () => {
-    return (
-      gulp
-        .src("./spec/*-tests.js")
-        // gulp-jasmine works on filepaths so you can't have any plugins before it
-        .pipe(
-          jasmine({
-            includeStackTrace: false,
-            reporter: [new jasmineReporters.JUnitXmlReporter(), process.env.TEAMCITY_VERSION ? new jasmineReporters.TeamCityReporter() : new jasmineTerminalReporter()],
-          })
-        )
-        .on("error", function () {
-          process.exit(1);
+gulp.task("test:step-templates", () => {
+  return (
+    gulp
+      .src("./spec/*-tests.js")
+      // gulp-jasmine works on filepaths so you can't have any plugins before it
+      .pipe(
+        jasmine({
+          includeStackTrace: false,
+          reporter: [new jasmineReporters.JUnitXmlReporter(), process.env.TEAMCITY_VERSION ? new jasmineReporters.TeamCityReporter() : new jasmineTerminalReporter()],
         })
-    );
-  })
-);
+      )
+      .on("error", function () {
+        process.exit(1);
+      })
+  );
+});
+
+gulp.task("tests", gulp.series("prepare:step-templates", "lint:step-templates", "test:step-templates"));
 
 function humanize(categoryId) {
   switch (categoryId) {
@@ -357,7 +357,7 @@ gulp.task("step-templates:data", () => {
     .pipe(argv.production ? gulp.dest(`${publishDir}/app/services`) : gulp.dest(`${buildDir}/app/services`));
 });
 
-gulp.task("step-templates", gulp.series("tests", "step-templates:data"));
+gulp.task("step-templates", gulp.series("prepare:step-templates", "lint:step-templates", "test:step-templates", "step-templates:data"));
 
 gulp.task("styles:vendor", () => {
   return gulp.src(vendorStyles, { base: "node_modules/" }).pipe(argv.production ? gulp.dest(`${publishDir}/public/styles/vendor`) : gulp.dest(`${buildDir}/public/styles/vendor`));
