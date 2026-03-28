@@ -1,0 +1,273 @@
+{
+  "Id": "0dac2fe6-91d5-4c05-bdfb-1b97adf1e12e",
+  "Name": "Deploy Child Octopus Deploy Project",
+  "Description": "This step will find the latest release in a source environment matching your criteria and deploy it.  \n\nUse cases:\n- As a user, I want to create a single parent release `2020.2.1`.  When I promote the parent release I want the latest child releases matching `2020.2.1.*` to be promoted to the next environment.\n- As a user, I want the latest release in the dev environment to be promoted to the test environment.  Not the most recently created release, the most recent release deployed that environment.\n- As a user, when we are finished with our QA process, we want to automatically push the latest releases from QA to Staging without having to manually promote each release.\n- As a user, I'd like to set up a nightly build to promote the latest releases from Dev to QA\n- As a user, I'd like to be able to deploy a suite of applications to a tenant.  If the tenant isn't assigned to the project then skip over.\n- As a user, I'd like to see what releases would go to production and approve those releases without having to manually verify and approve each one.\n- As a user, I'd like to be able to target specific machines in my parent project and only have child projects deploy associated with those machines.\n- As a user, I'd like to be able to exclude specific machines in my parent project and only have child projects deploy to the remaining machines.\n- As a user, I'd like to have a single deployment target trigger on my parent project and when I scale up my servers deploy the appropriate child projects.\n- As a user, I'd like to be able to approve the deployments and then schedule them to be deployed at 7 PM\n- As a user, I'd like to be able to have one space for orchestration projects and another space for developers to work in.\n\nThis step template also allows you to skip deployments to the destination environment if it has already been deployed.",
+  "ActionType": "Octopus.Script",
+  "Version": 29,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1"
+  },
+  "Parameters": [
+    {
+      "Id": "311597af-b1d5-42c1-bb8b-88c20d322989",
+      "Name": "ChildProject.Web.ServerUrl",
+      "Label": "Octopus Base Url",
+      "HelpText": "**Required**\n\nThe base URL of your instance. For example `https://samples.octopus.app`.  Defaults to the system variable [Octopus.Web.ServerUri](https://octopus.com/docs/projects/variables/system-variables#Systemvariables-Server).",
+      "DefaultValue": "#{Octopus.Web.ServerUri}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f7357d18-33c3-4f1e-883d-613e13e098cd",
+      "Name": "ChildProject.Api.Key",
+      "Label": "Octopus API Key",
+      "HelpText": "*Required* \n\n\nThe API key of the user authorized to query and promote releases.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "e3337365-c83f-4f73-a7d0-c3f36469a70d",
+      "Name": "ChildProject.Space.Name",
+      "Label": "Child Project Space",
+      "HelpText": "*Required*\n\nThe name of the space the child project is located in.  Defaults to the current space name",
+      "DefaultValue": "#{Octopus.Space.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d9afe2db-720a-40d0-928e-6d1763286fc9",
+      "Name": "ChildProject.Project.Name",
+      "Label": "Child Project Name",
+      "HelpText": "*Required* \n\n\nThe name of the child project you wish to deploy.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "dfe2c259-11c4-491f-900a-db7c37d82836",
+      "Name": "ChildProject.Release.Number",
+      "Label": "Child Project Release Number",
+      "HelpText": "*Optional* \n\n\nThe release number to filter on.  This field accepts:\n- *No value (default)* - the most recent release for the channel in the calculated previous environment or specified previous environment\n- *Wild card* - Example: `2020.2.*` will find the most recent release with a major version of 2020 and a minor version of 2.  Please note the period is important, if you enter `2020.1*` you could end up with 2020.10 releases.\n- *Specific version* - Example: `2020.2.1.2` will deploy that specific version.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c64e9163-ce84-4f56-8509-af849262a9be",
+      "Name": "ChildProject.Release.NotFoundError",
+      "Label": "Child Project Release Not Found Error Handle",
+      "HelpText": "What this step should do when a matching release cannot be found.\n\n- `Error` - Stops the deployment when no matching release is found.  For example, you specified `2021.1.2.*`, but there is no release in the child project matching that pattern.  Or, matching releases have been found but they cannot be promoted to the destination environment.\n- `Warning` - Stops this step with a warning.  The rest of the deployment continues.\n- `Skip` - Stops this with no error or warning. Logs an information message.  The rest of the deployment continues.\n\nThe default is `Warning`.",
+      "DefaultValue": "Warning",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Error|Error\nWarning|Warning\nSkip|Skip"
+      }
+    },
+    {
+      "Id": "04b2e549-888f-4a10-811c-f325690b3a80",
+      "Name": "ChildProject.Destination.EnvironmentName",
+      "Label": "Destination Environment Name",
+      "HelpText": "*Required*\n\nThe name of the destination environment.  \n\nExamples: `Development`, `Test`, or `Production`\n\n\nThe parent project and child project do *NOT* have to have the same lifecycle.  The only requirement is all the previous phases' requirements in the child project must be met.  For example, if the child project's life cycle is Dev->Test->Staging->Prod and the parent project lifecycle is Staging->Prod and you wish to deploy to staging, then the child project's release must go through Dev and Test first.",
+      "DefaultValue": "#{Octopus.Environment.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e439fdb3-0697-4ea1-8b2c-8e343bfaa5af",
+      "Name": "ChildProject.SourceEnvironment.Name",
+      "Label": "Source Environment Name",
+      "HelpText": "*Optional* \n\n\nThe name of the source environment.  When blank the source environment will be calculated using the channel's lifecycle.  \n\n\nExamples: `Development`, `Test`, or `Production`\n\n\n**Please Note:** The most recently created release will be selected when the destination environment is the first phase of the child project's lifecycle.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "789a658e-ee7f-4bf2-aaa3-cf1a998adf57",
+      "Name": "ChildProject.Channel.Name",
+      "Label": "Child Project Channel",
+      "HelpText": "*Optional* \n\n\nThe name of the channel in the child project tied to the release you wish to deploy.  If left blank it will look at the project's default channel.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d462feb8-1911-401c-8329-b7c9775ac4fd",
+      "Name": "ChildProject.Tenant.Name",
+      "Label": "Tenant Name",
+      "HelpText": "*Optional*\n\nThe name of the tenant you wish to deploy.",
+      "DefaultValue": "#{Octopus.Deployment.Tenant.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4f9b232a-43ce-484c-9b30-0d3b195ddb15",
+      "Name": "ChildProject.Prompted.Variables",
+      "Label": "Child Project Prompted Variables",
+      "HelpText": "*Optional*\n\n\nValues for any prompted variables for the release. Each new line represents a new variable. This will only work with string variable types, text, and sensitive values.\n\n\nUse the format Name::Value \n\n\nFor example:\n\n\n```\nPromptedVariableName::My Super Awesome Value\nOtherPromptedVariable::Other Super Awesome Value\n```",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "3149fde0-05dc-4582-ac85-8539220fc09b",
+      "Name": "ChildProject.DeploymentMode.Value",
+      "Label": "Deployment Mode",
+      "HelpText": "**Required**\n\nIndicates if the step template will promote a release from one environment to another, or it will redeploy an existing release.  \n\nOptions:\n- `Promote`: the step template will promote the release from one environment to another\n- `Redeploy`: the step template will take whatever the last release deployed to the target environment and redeploy it.  Useful when you are rebuilding a server.\n- `AlwaysLatest`: the step template will find the latest release available to the target environment and deploy it, regardless if it has already been deployed or not.\n\nDefault is `Promote`\n",
+      "DefaultValue": "Promote",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Promote|Promote\nRedeploy|Redeploy\nAlwaysLatest|AlwaysLatest"
+      }
+    },
+    {
+      "Id": "f231c791-d431-493f-8802-64adcb6a6de1",
+      "Name": "ChildProject.RefreshVariableSnapShots.Option",
+      "Label": "Refresh Variables Snapshots",
+      "HelpText": "Allows you to choose if/when variable snapshots will be refreshed.\n\n- `Yes`: Variable snapshot is refreshed when a change is detected\n- `No`: Never refresh the variable snapshot\n\nDefault is `No`.  Recommend configuring a prompted variable to control this option at deployment time.  When What If is set to `Yes` this will report a change has been made, but the snapshot refresh will not run.\n",
+      "DefaultValue": "No",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "No|No\nYes|Yes"
+      }
+    },
+    {
+      "Id": "6b587acb-7278-45ea-bda5-3bd8f4ecc211",
+      "Name": "ChildProject.Target.MachineNames",
+      "Label": "Specific Deployment Target",
+      "HelpText": "**Optional**\n\nA comma-separated list of deployment targets names or ids you want to deploy to.  If using an id, it must start with `Machines-`.\n\nPlease note: this step template will filter out any targets your child project cannot deploy to.  If you provide a list of 5 machines and the child project can only deploy to 3 of them, then the child project will get 3 machines sent to it.\n\nThis will overwrite the machines sent in via a deployment target trigger.\n\nDefaults `N/A`.  If you do want to use this parameter the recommendation is to use prompted variables where you pass in specific machine names.",
+      "DefaultValue": "N/A",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "02805228-fde7-4c1d-853f-acad7e819ba3",
+      "Name": "ChildProject.Deployment.IgnoreSpecificMachineMismatch",
+      "Label": "Ignore specific machine mismatch",
+      "HelpText": "When the parent project is deploying to specific machines and the child project isn't associated with those machines the step will ignore it.  \n\nExamples:\n- A deployment target trigger fires for a newly created machine.  Only 1 out of 5 child projects deploy to that newly created machine's roles.\n- A redeployment needs to occur, but only for a specific machine.  Only 2 out of the 4 child projects deploy to that specific machine's roles.    \n\nIn both those examples, the default behavior of this step template is to skip those child projects not tied to the machine's roles.  When the child project is invoked, the specific matching machines will be sent to the child project.\n\nSet to `Yes` to ignore the difference.  Default is `No`.  Warning, setting to `Yes` could result in a failed deployment.",
+      "DefaultValue": "No",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "No|No\nYes|Yes"
+      }
+    },
+    {
+      "Id": "aefc5d01-907c-47f6-a1d6-efaf97eefb6c",
+      "Name": "ChildProject.ReleaseNotes.SaveAsArtifact",
+      "Label": "Save release notes as artifact",
+      "HelpText": "This step will pull the release notes (or build information) from the child project and will save it to the output variable `ReleaseNotes`.\n\nThis option allows you to save those release notes as an artifact.  The default is `No`.",
+      "DefaultValue": "No",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "No|No\nYes|Yes"
+      }
+    },
+    {
+      "Id": "563136dd-b848-49f8-b9ef-57acc879dbc2",
+      "Name": "ChildProject.WhatIf.Value",
+      "Label": "What If",
+      "HelpText": "By default, this step will trigger a deployment.\n\n\nSetting this value to Yes will perform all the work up to triggering the deployment.  This is useful for approval steps, you can run this step (or set of steps) to get the list of child releases to deploy, and then verify them via a manual intervention.\n\n\nWhen this is set to `Yes` it will set an output variable `ReleaseToPromote`.",
+      "DefaultValue": "No",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Yes|Yes\nNo|No"
+      }
+    },
+    {
+      "Id": "d1d42293-e6fc-425e-a81c-973cc81eaa1d",
+      "Name": "ChildProject.WaitForFinish.Value",
+      "Label": "Wait for finish",
+      "HelpText": "Set to `Yes` to avoid waiting for the deployment to finish.  Will only be used when *What If* is set to `No`.",
+      "DefaultValue": "Yes",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Yes|Yes\nNo|No"
+      }
+    },
+    {
+      "Id": "52a65ba4-4ded-4f55-82e0-dc5a8c71a2f8",
+      "Name": "ChildProject.EnableEnhancedLogging.Value",
+      "Label": "Enable Enhanced Logging",
+      "HelpText": "Set to `Yes` to retrieve output of the child release while waiting for the deployment to finish. Will only be used when *What If* is set to `No` and *Wait for finish* is set to `Yes`.",
+      "DefaultValue": "No",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Yes|Yes\nNo|No"
+      }
+    },
+    {
+      "Id": "fd04d6fc-cc78-4a4f-9373-e48c349c9b07",
+      "Name": "ChildProject.CancelDeployment.Seconds",
+      "Label": "Wait for Deployment",
+      "HelpText": "Amount of time, in seconds, to wait for the deployment to finish.  Default is 1800 seconds, or 30 minutes.",
+      "DefaultValue": "1800",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7c3e75d3-a91c-47a1-acaa-1c6ea9f0699d",
+      "Name": "ChildProject.Deployment.FutureTime",
+      "Label": "Scheduling",
+      "HelpText": "**Optional**\n\nSchedule the deployment for the future.  Please note, if this is set, the `Wait for Deployment` option is ignored.\n\nUses `DateTime.TryParse` to determine the value sent in.  Supported formats:\n\n- `7:00 PM` will deploy at 7:00 PM today\n- `21:00` will deploy at 21:00 hours or 9 PM today\n- `YYYY-MM-DD HH:mm:ss` or `2021-01-14 21:00:00` will deploy at 9 PM on the 14th of January, 2021\n- `YYYY/MM/DD HH:mm:ss` or `2021/03/20 22:00:00` will deploy at 10 PM on the 20th of March, 2021\n- `MM/DD/YYYY HH:mm:ss` or `06/25/2021 19:00:00` will deploy at 7 PM on the 25th of June, 2021\n- `DD MMM YYYY HH:mm:ss` or `01 Jan 2021 18:00:00` will deploy at 6 PM on the 1st of January, 2021\n\nUses the Octopus Server's Timezone.  The queue expiry time will be set to 1 hour from the supplied date.\n\nDefault is `N/A` or not applicable.  ",
+      "DefaultValue": "N/A",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5789f25c-6efb-4bbc-9236-2939faf7c553",
+      "Name": "ChildProject.ManualInterventions.UseApprovalsFromParent",
+      "Label": "Auto-Approve Child Project Manual Interventions",
+      "HelpText": "If the child project has manual interventions the step will look for manual interventions in the parent project.\n\nWhen a manual intervention in the parent project is found it will check that user's assigned teams.  If that user's assigned teams can approve the child project it will do so.\n\nPlease note, the user associated with the API key must be able to approve the child project manual interventions as well.  \n\nThe default is `Yes`, allow this to happen.  Set it to `No` to skip this functionality.",
+      "DefaultValue": "Yes",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "No|No\nYes|Yes"
+      }
+    },
+    {
+      "Id": "2a93a2e9-562f-4985-8933-acbf1b0e6df6",
+      "Name": "ChildProject.ManualIntervention.EnvironmentToUse",
+      "Label": "Approval Environment",
+      "HelpText": "*Optional*\n\nThe name of the environment you wish to pull the approvals from for the parent project.   It will look at all the deployments for the current release of the parent project and select the latest deployment to the specified environment.\n\nUsed when you are deploying to `Production` but want to pull the approvals from `Staging` or a `Prod Approval` environment.\n\nDefaults to the current environment name.",
+      "DefaultValue": "#{Octopus.Environment.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "11101484-c68a-4a8b-aa4d-3f0a31e36ae2",
+      "Name": "ChildProject.ManualIntervention.Tenant.Name",
+      "Label": "Approval Tenant",
+      "HelpText": "*Optional*\n\nThe name of the tenant you wish to pull the approvals from for the parent project.   It will look at all the deployments for the current release of the parent project and select the latest deployment to the specified environment.\n\nUsed when you are deploying to `Production` but want to pull the approvals from `Staging` or a `Prod Approval` environment.\n\nDefaults to the current tenant name.  Will be skipped when doing a non-tenanted deployment.",
+      "DefaultValue": "#{Octopus.Deployment.Tenant.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-11-17T03:06:39.6130000Z",
+    "OctopusVersion": "2023.2.13113",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "REOScotte",
+  "Category": "octopus"
+}

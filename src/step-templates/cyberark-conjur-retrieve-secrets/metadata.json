@@ -1,0 +1,94 @@
+{
+  "Id": "522c7010-7189-4b2e-a3c8-36cb1759422a",
+  "Name": "CyberArk Conjur - Retrieve Secrets",
+  "Description": "This step retrieves one or more secrets from [CyberArk Conjur](https://www.conjur.org/) and creates [sensitive output variables](https://octopus.com/docs/projects/variables/output-variables#sensitive-output-variables) for each value retrieved. These values can be used in other steps in your deployment or runbook process.\n\nThis step differs from the [CyberArk Conjur - Retrieve a Secret](https://library.octopus.com/step-templates/eafe9740-1008-4375-9e82-0d193109b669/actiontemplate-cyberark-conjur-retrieve-a-secret) step template as it offers the ability to retrieve multiple secrets (with optional version) and performs a batched call where possible - see below for further details.\n\n---\n\n**Retrieval Behavior:**\n\n- If any of the Conjur Variables have a version specified to retrieve, then the step template will retrieve **all** of the secrets individually using the [Conjur REST API - Secret Retrieve](https://docs.conjur.org/Latest/en/Content/Developer/Conjur_API_Retrieve_Secret.htm) endpoint.\n- If none of the Conjur Variables have a version specified (i.e. retrieve the latest version) then the step template will retrieve the secrets using the [Conjur REST API - Batch Retrieval](https://docs.conjur.org/Latest/en/Content/Developer/Conjur_API_Batch_Retrieve.htm) endpoint.\n\n*Hint:* If performance is important to you, don't include specific versions of Conjur Variables. It’s faster to fetch secrets in a batch than to fetch them one at a time.\n\n---\n\n**Required:** \n- PowerShell **5.1** or higher.\n- A set of credentials with permissions to retrieve secrets from CyberArk Conjur.\n- Access to the Conjur instance from the Worker or target where this step executes.\n\nNotes:\n\n- Tested on Conjur **v1.13.2** / API **v5.2.0**.\n- Tested on Octopus **2021.2**.\n- Tested on both Windows Server 2019 and Ubuntu 20.04.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1"
+  },
+  "Parameters": [
+    {
+      "Id": "66a70ea0-8d3a-4682-9575-c1dae8ad75e6",
+      "Name": "CyberArk.Conjur.RetrieveSecrets.Url",
+      "Label": "Conjur URL",
+      "HelpText": "The URL of the Conjur instance you are connecting to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8b77d118-197b-40be-9382-c8ee4d5aae1b",
+      "Name": "CyberArk.Conjur.TrustCertificate",
+      "Label": "Trust Server Certificate",
+      "HelpText": "Trust the server certificate when using an HTTPS connection and the caller cannot verify the Certificate Authority root.\n\nYou can use this option when using self-signed certificates.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "ceae6659-4643-490d-9d8d-f642c1c1b4a0",
+      "Name": "CyberArk.Conjur.RetrieveSecrets.Account",
+      "Label": "Conjur Account",
+      "HelpText": "The Conjur account. This is the Conjur appliance identifier provided during Conjur configuration.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0f501e04-207f-4a05-9d21-1e2462bf5b73",
+      "Name": "CyberArk.Conjur.RetrieveSecrets.Login",
+      "Label": "Conjur Login",
+      "HelpText": "The username (from the point of view of the authenticator) of the user or machine (host) requesting authentication. For a host, the id assigned when the host was created should be used, prepended with the literal `host/`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3985b74e-1ea8-4bda-affa-9e7b22056c58",
+      "Name": "CyberArk.Conjur.RetrieveSecrets.ApiKey",
+      "Label": "Conjur Api Key",
+      "HelpText": "The API Key corresponding to the user/host provided.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "eefe9594-7dd1-4fa4-9bb1-65ced026fdda",
+      "Name": "CyberArk.Conjur.RetrieveSecrets.SecretVariables",
+      "Label": "Conjur Secret Variable IDs",
+      "HelpText": "Specify the names of the secrets to be returned from Conjur, in the format:\n\n`VariableID Version | OutputVariableName` where:\n\n- `VariableID` is the Variable ID of the Conjur secret.\n- `Version` is the version of the secret to retrieve. *If this value isn't specified, the latest version will be retrieved*.\n- `OutputVariableName` is the _optional_ Octopus [output variable](https://octopus.com/docs/projects/variables/output-variables) name to store the secret's value in. *If this value isn't specified, an output name will be generated dynamically*.\n\n**Note:** Multiple Variable IDs can be retrieved by entering each one on a new line.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "462f3385-dccd-4ac1-a30b-b06029fbfc18",
+      "Name": "CyberArk.Conjur.RetrieveSecrets.PrintVariableNames",
+      "Label": "Print output variable names",
+      "HelpText": "Write out the Octopus [output variable](https://octopus.com/docs/projects/variables/output-variables) names to the task log. Default: `False`.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2024-12-12T01:15:33.8910000Z",
+    "OctopusVersion": "2025.1.2648",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "cyberark"
+}
