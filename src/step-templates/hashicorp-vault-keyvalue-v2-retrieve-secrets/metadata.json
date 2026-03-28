@@ -1,0 +1,126 @@
+{
+  "Id": "337f1b67-cdb0-4f33-9e08-6bf804f672d2",
+  "Name": "HashiCorp Vault - Key Value (v2) retrieve secrets",
+  "Description": "This step retrieves one or more secrets in a v2 Key/Value secrets engine stored within a HashiCorp Vault server.\n\nThis step template uses the [Rest API](https://www.vaultproject.io/api-docs/secret/kv/kv-v2), so no other dependencies are needed. \n\n---\n\n**Authentication Tokens**\n\nOctopus recommends using one of the pre-existing Vault step templates to obtain an auth token, such as:\n- The [AppRole Login](https://library.octopus.com/step-templates/e04a9cec-f04a-4da2-849b-1aed0fd408f0/actiontemplate-hashicorp-vault-approle-l) or \n- The most secure [AppRole Get Wrapped SecretID](https://library.octopus.com/step-templates/76827264-af27-46d0-913a-e093a4f0db48/actiontemplate-hashicorp-vault-approle-get-wrapped-secret-id) in conjunction with the [AppRole Unwrap SecretID and Login](https://library.octopus.com/step-templates/aa113393-e615-40ed-9c5a-f95f471d728f/actiontemplate-hashicorp-vault-approle-unwrap-secret-id-and-login) template.\n\n---\n**Secrets Path:**\n\nSpecify the full path to the secret(s) you want to retrieve. e.g.`/secret/config`.\n\nThis value should contain:\n- The location where the [secrets engine has been enabled](https://www.vaultproject.io/api-docs/secret/kv/kv-v2).\n- The path to the secret(s) you want to retrieve.\n\nFor example, if the secrets engine was enabled at `/my-secrets` and you wanted to retrieve the secret(s) from the path `/config`, then the value you would enter is:\n\n`/my-secrets/config`\n\n---\n\n**Retrieval methods:**\n\nThe step template operates in one of 2 retrieval modes that control how many Vault Key values are returned. The options are:\n- `Single vault key` - a single key is returned. If this option is selected, the path specified will be assumed to be an individual vault key. This performs the equivalent of a `vault kv get` command using the [Get](https://www.vaultproject.io/api-docs/secret/kv/kv-v1#read-secret) method.\n- `Multiple vault keys` - multiple keys can be returned. If this option is selected, the path specified will be assumed to be able to be enumerated. This performs the equivalent of a `vault kv list` command using the [List](https://www.vaultproject.io/api-docs/secret/kv/kv-v2#list-secrets) method.\n\nThe default is `Single vault key`.\n\n---\n\n**Optional field names:**\n\nChoose specific fields to be returned from the Vault key(s) found in the Key/value secrets engine, in the format `FieldName | OutputVariableName` where:\n\n- `FieldName` is the name of the field to retrieve from the key\n- `OutputVariableName` is the _optional_ Octopus [output variable](https://octopus.com/docs/projects/variables/output-variables) name to store the secret's value in.\n\nIf this parameter is not set, all fields found from secret keys will be returned.\n\n**Note:** Multiple fields can be retrieved by entering each one on a new line.\n\n---\n\n**Optional: Specific version of secret:**\n\n_Optional:_ The default behavior of this step is to retrieve the latest version of secrets.\n\nHowever, to retrieve a specific version of a secret:\n- Include the version of the secret you wish to retrieve. For example, if you want version 2 of all field values in a secret, enter `2`.\n\nNote: This parameter only works with the `Secrets Retrieval method` = `Single Vault key`.\n\nTo retrieve multiple vault keys with specific versions, use this step template in multiple steps.\n\n---\n\n**Sensitive output variables:**\n\nFor each vault key's field values, an Octopus [sensitive output variable](https://octopus.com/docs/projects/variables/output-variables#sensitive-output-variables) will be created for use in other steps.\n\n--- \n\n**Required:** \n- The Vault server must be [unsealed](https://www.vaultproject.io/docs/concepts/seal).\n- An authentication [token](https://www.vaultproject.io/docs/auth/token).\n\n*Optional*:\n- A Vault [namespace](https://www.vaultproject.io/docs/enterprise/namespaces) to use. Nested namespaces can also be supplied, e.g. `ns1/ns2`. **Note:** This field is only supported on [Vault Enterprise](https://www.hashicorp.com/products/vault).\n\nNotes:\n\n\n- Tested on Vault Server `1.11.3`.\n- Tested on both PowerShell Desktop and PowerShell Core.",
+  "ActionType": "Octopus.Script",
+  "Version": 9,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1"
+  },
+  "Parameters": [
+    {
+      "Id": "a38edf0b-0e90-4421-97d3-688391887f9c",
+      "Name": "Vault.Retrieve.KV.V2.Secrets.VaultAddress",
+      "Label": "Vault Server URL",
+      "HelpText": "The URL of the Vault instance you are connecting to. Port should be included (The default is `8200`). For example:\n\n\n`https://myvault.local:8200/`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0ab319fd-2d90-4f61-b529-cd682bc590a3",
+      "Name": "Vault.Retrieve.KV.V2.Secrets.ApiVersion",
+      "Label": "API version",
+      "HelpText": "All API routes are prefixed with a version e.g. `/v1/`.\n\nSee the [API documentation](https://www.vaultproject.io/api-docs) for further details.",
+      "DefaultValue": "v1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "v1|v1"
+      }
+    },
+    {
+      "Id": "25fec34d-3627-4240-9532-6caf4558ac39",
+      "Name": "Vault.Retrieve.KV.V2.Secrets.Namespace",
+      "Label": "Namespace (Optional)",
+      "HelpText": "The _optional_ [namespace](https://www.vaultproject.io/docs/enterprise/namespaces) to use. Nested namespaces can also be supplied, e.g. `ns1/ns2`.\n\n**Note:** This field is only supported on [Vault Enterprise](https://www.hashicorp.com/products/vault) .",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b4922053-38da-4092-ac45-fc1551c65254",
+      "Name": "Vault.Retrieve.KV.V2.Secrets.AuthToken",
+      "Label": "Auth Token",
+      "HelpText": "The [Auth Token](https://www.vaultproject.io/docs/auth/token) used to authenticate to retrieve secrets.\n\nOctopus recommends using one of the pre-existing Vault step templates to obtain an auth token, such as:\n- The [AppRole Login](https://library.octopus.com/step-templates/e04a9cec-f04a-4da2-849b-1aed0fd408f0/actiontemplate-hashicorp-vault-approle-l) or \n- The most secure [AppRole Get Wrapped SecretID](https://library.octopus.com/step-templates/76827264-af27-46d0-913a-e093a4f0db48/actiontemplate-hashicorp-vault-approle-get-wrapped-secret-id) in conjunction with the [AppRole Unwrap SecretID and Login](https://library.octopus.com/step-templates/aa113393-e615-40ed-9c5a-f95f471d728f/actiontemplate-hashicorp-vault-approle-unwrap-secret-id-and-login) template.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "5e62f123-d034-490b-a16f-c0ab7176974a",
+      "Name": "Vault.Retrieve.KV.V2.Secrets.SecretsPath",
+      "Label": "Secrets Path",
+      "HelpText": "The full path to the secret(s) you want to retrieve. e.g.`/secret/config`.\n\n**This value should contain:** \n- The location where the [secrets engine has been enabled](https://www.vaultproject.io/api-docs/secret/kv/kv-v2).\n- The path to the secret(s) you want to retrieve.\n\nFor example, if the secrets engine was enabled at `/my-secrets` and you wanted to retrieve the secret(s) from the path `/config` then the value you would enter is:\n\n`/my-secrets/config`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "01c2b07e-40e5-4251-b246-1be0a514a09c",
+      "Name": "Vault.Retrieve.KV.V2.Secrets.RetrievalMethod",
+      "Label": "Secrets retrieval method",
+      "HelpText": "This controls how many Vault Key values are returned. The options are:\n- A single key is returned. If this option is selected, the path specified will be assumed to be an individual vault key. This performs the equivalent of a `vault kv get` command using the [Get](https://www.vaultproject.io/api-docs/secret/kv/kv-v2#read-secret) method.\n- Multiple keys can be returned. If this option is selected, the path specified will be assumed to be able to be enumerated. This performs the equivalent of a `vault kv list` command using the [List](https://www.vaultproject.io/api-docs/secret/kv/kv-v2#list-secrets) method.\n\nThe default is `Single vault key`.",
+      "DefaultValue": "Get",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Get|Single vault key \nList|Multiple vault keys"
+      }
+    },
+    {
+      "Id": "f997fbcc-bfc3-4a38-9571-58957062873d",
+      "Name": "Vault.Retrieve.KV.V2.Secrets.RecursiveSearch",
+      "Label": "Recursive retrieval",
+      "HelpText": "If the path is being enumerated (indicated by `Secrets retrieval method = Multiple`), should any secrets included in sub-folders also be retrieved? The default is: `False`.\n\nNote: This value is ignored when `Secrets retrieval method = Single`.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "b9db3c54-f1f8-4241-b997-c6440c12489d",
+      "Name": "Vault.Retrieve.KV.V2.Secrets.SecretVersion",
+      "Label": "Secret Version",
+      "HelpText": "_Optional_ version specifier of a secret to retrieve. For example, if you wanted version 2 of all field values in a secret, enter the value `2`\n\nNote: This parameter only works with the `Secrets Retrieval method` = `Single Vault key`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b446cb03-d57a-4869-8b9e-a9c12ed5646a",
+      "Name": "Vault.Retrieve.KV.V2.Secrets.FieldValues",
+      "Label": "Field names",
+      "HelpText": "Choose specific fields to be returned from the Vault key(s) found in the Key/value secrets engine, in the format `FieldName | OutputVariableName` where:\n\n- `FieldName` is the name of the field to retrieve from the key\n- `OutputVariableName` is the _optional_ Octopus [output variable](https://octopus.com/docs/projects/variables/output-variables) name to store the secret's value in.\n\nIf this value is not present, any fields found within secrets from the specified path will be retrieved.\n\n**Note:** Multiple fields can be retrieved by entering each one on a new line.\n",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "52630c04-8fb3-4afb-a02e-ed7e2d20e34e",
+      "Name": "Vault.Retrieve.KV.V2.Secrets.PrintVariableNames",
+      "Label": "Print output variable names",
+      "HelpText": "Write out the Octopus [output variable](https://octopus.com/docs/projects/variables/output-variables) names to the task log. Default: `False`",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedAt": "2022-09-21T17:01:25.4050000Z",
+  "LastModifiedBy": "harrisonmeister",
+  "$Meta": {
+    "ExportedAt": "2022-09-21T17:01:25.4050000Z",
+    "OctopusVersion": "2022.4.2266",
+    "Type": "ActionTemplate"
+  },
+  "Category": "hashicorp-vault"
+}
