@@ -74,11 +74,13 @@ app.get("*", (req, res) => {
 
         LibraryActions.sendTemplates(data, () => {
           var libraryAppHtml = ReactDOMServer.renderToStaticMarkup(<RouterContext {...renderProps} />);
+          const browserSyncClientUrl = process.env.NODE_ENV === "development" ? `${req.protocol}://${req.hostname}:3000/browser-sync/browser-sync-client.js` : null;
           res.render("index", {
             siteKeywords: config.keywords.join(),
             siteDescription: config.description,
             reactOutput: libraryAppHtml,
             stepTemplates: JSON.stringify(data),
+            browserSyncClientUrl,
           });
         });
       });

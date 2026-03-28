@@ -467,7 +467,10 @@ gulp.task(
       gulp.series("step-templates:data")((error) => {
         if (error) {
           log.error(error);
+          return;
         }
+
+        reload();
       });
     });
 
