@@ -32,7 +32,7 @@ import eventStream from "event-stream";
 import fs from "fs";
 import jsonlint from "gulp-jsonlint";
 import path from "path";
-import { execFileSync } from "child_process";
+import { execFileSync, spawn } from "child_process";
 
 const sass = gulpSass(dartSass);
 const clientDir = "app";
@@ -64,6 +64,24 @@ function generateAllMigratedTemplates() {
 
 function generateFromChangedSourcePath(changedPath) {
   runStepTemplateGenerator(["changed-path", changedPath]);
+}
+
+function openBrowser(url) {
+  if (process.env.CI) {
+    return;
+  }
+
+  if (process.platform === "darwin") {
+    spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+    return;
+  }
+
+  if (process.platform === "win32") {
+    spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();
+    return;
+  }
+
+  spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
 }
 
 const vendorStyles = [
@@ -450,9 +468,16 @@ gulp.task(
     server.start();
     process.chdir(`../`);
 
-    browserSync.init(null, {
-      proxy: "http://localhost:9000",
-    });
+    browserSync.init(
+      null,
+      {
+        proxy: "http://localhost:9000",
+        open: false,
+      },
+      () => {
+        openBrowser("http://localhost:9000");
+      }
+    );
 
     gulp.watch(`${clientDir}/**/*.jade`, gulp.series("build:client"));
     gulp.watch(`${clientDir}/**/*.jsx`, gulp.series("scripts", "copy:app"));
