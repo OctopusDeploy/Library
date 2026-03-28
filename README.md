@@ -9,7 +9,7 @@ Organization
 * *Step templates* are authored under `/src/step-templates`
 * Generated compatibility JSON for the website and Octopus imports is written to `/step-templates`
 * The *library website* is largely under `/app`, with build artifacts at the root of the repository
-* The `/tools` folder contains the existing pack/unpack scripts plus migration and generation helpers
+* The `/tools` folder contains the existing pack/unpack scripts plus the source-first generation helpers
 
 Source Layout
 -------------
@@ -38,8 +38,6 @@ Reviewing PRs
 
 For migrated templates, review the files under `/src/step-templates/<template>/` directly. Script changes now appear as normal file diffs instead of escaped JSON string blobs.
 
-During the migration period, some templates may still exist only in legacy packed form under `/step-templates`. Dev/build tooling supports this mixed state, but all new authoring should move toward the source layout in `/src/step-templates`.
-
 ### Checklist
 
 When reviewing a PR, keep the following things in mind:
@@ -48,6 +46,7 @@ When reviewing a PR, keep the following things in mind:
 * Parameter names should not start with `$`
 * The `DefaultValue`s of `Parameter`s should be either a string or null.
 * `LastModifiedBy` field must be present, and (_optionally_) updated with the correct author
+* Generated JSON under `/step-templates` should not be hand-edited or committed
 * If a new `Category` has been created:
    * An image with the name `{categoryname}.png` must be present under the `src/step-templates/logos` folder
    * The `switch` in the `humanize` function in [`gulpfile.babel.js`](https://github.com/OctopusDeploy/Library/blob/master/gulpfile.babel.js#L92) must have a `case` statement corresponding to it
