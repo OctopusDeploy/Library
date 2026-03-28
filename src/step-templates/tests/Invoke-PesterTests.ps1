@@ -7,7 +7,8 @@ Set-StrictMode -Version "Latest";
 
 $thisScript = $MyInvocation.MyCommand.Path;
 $thisFolder = [System.IO.Path]::GetDirectoryName($thisScript);
-$rootFolder = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($thisFolder, "..", "..")); # Adjust to always point to the root
+$rootFolder = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($thisFolder, "..", "..", ".."));
+$sourceStepTemplatesFolder = [System.IO.Path]::Combine($rootFolder, "src", "step-templates");
 $sharedRunner = Join-Path $rootFolder "tools" "Invoke-SharedPesterTests.ps1"
 
 function Unpack-Scripts-Under-Test {
@@ -16,11 +17,12 @@ function Unpack-Scripts-Under-Test {
   foreach ($testFile in $testFiles) {
       $baseName = $testFile.BaseName -replace "\.ScriptBody.Tests$"
       $scriptFileName = "$baseName.ScriptBody.ps1"
-      $scriptFilePath = [System.IO.Path]::Combine($rootFolder, "step-templates", $scriptFileName)
+      $scriptFilePath = [System.IO.Path]::Combine($sourceStepTemplatesFolder, $baseName, "scriptbody.ps1")
 
-      # If the .ps1 file is missing, find the corresponding .json file and unpack it
+      # During migration some templates may still be legacy-only. Keep the old unpack flow
+      # available until the corresponding source folder exists.
       if (-not [System.IO.File]::Exists($scriptFilePath)) {
-          Write-Host "Unpacking script for $($testFile.Name) since $scriptFileName is missing..."
+          Write-Host "Unpacking legacy script for $($testFile.Name) since $scriptFileName is missing from src..."
 
           $jsonFileName = "$baseName.json"
           $jsonFilePath = [System.IO.Path]::Combine($rootFolder, "step-templates", $jsonFileName)
@@ -32,8 +34,13 @@ function Unpack-Scripts-Under-Test {
           $converter = [System.IO.Path]::Combine($rootFolder, "tools", "Converter.ps1")
           & $converter -operation unpack -searchpattern $baseName
 
+          $legacyScriptPath = [System.IO.Path]::Combine($rootFolder, "step-templates", $scriptFileName)
+          if ([System.IO.File]::Exists($legacyScriptPath)) {
+              continue
+          }
+
           if (-not [System.IO.File]::Exists($scriptFilePath)) {
-              throw "Failed to unpack $scriptFileName. Make sure the JSON template exists and the unpack operation succeeded."
+              throw "Failed to locate $scriptFileName in src or legacy unpack output. Make sure the JSON template exists and the unpack operation succeeded."
           }
       } else {
           Write-Host "Script $scriptFileName already exists, no need to unpack."
