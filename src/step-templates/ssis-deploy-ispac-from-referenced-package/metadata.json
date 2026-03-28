@@ -1,0 +1,215 @@
+{
+  "Id": "0c8167e9-49fe-4f2a-a007-df5ef2e63fac",
+  "Name": "Deploy ispac SSIS project from Referenced Package",
+  "Description": "This step template will deploy SSIS ispac projects to SQL Server Integration Services Catalog.  The template uses a referenced package and is Worker compatible.\n\nThis template will install the Nuget package provider if it is not present on the machine it is running on.",
+  "ActionType": "Octopus.Script",
+  "Version": 7,
+  "Author": "twerthi",
+  "Packages": [
+    {
+      "Id": "7a1f5eb6-0b6a-4319-a0e8-7b4d13ea609e",
+      "Name": "SSIS Package",
+      "PackageId": "#{ssisPackageId}",
+      "FeedId": "#{TemplatePackageFeedId}",
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True"
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Id": "97e5d9db-fd73-4620-84f7-91d6e31e0c4b",
+      "Name": "ServerName",
+      "Label": "Database server name (\\instance)",
+      "HelpText": "Name of the SQL Server you are deploying to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b5adc9a7-2bcb-45c8-9a64-02e0dc286981",
+      "Name": "sqlAccountUsername",
+      "Label": "SQL Authentication Username",
+      "HelpText": "(Optional) Username of the SQL Authentication account.  Use this approach when deploying to Azure Databases with SSIS configured.  If SQL Authentication Username and Password are blank, Integrated Authentication is used.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0646a66e-5ba5-4761-a388-8a8bc73492ec",
+      "Name": "sqlAccountPassword",
+      "Label": "SQL Authentication Password",
+      "HelpText": "(Optional) Password of the SQL Authentication account.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "46e7103c-2833-4bf0-9f98-b5d2a0bbcabf",
+      "Name": "EnableCLR",
+      "Label": "Enable SQL CLR",
+      "HelpText": "This will reconfigure SQL Server to enable the SQL CLR.  It is highly recommended that this be previously authorized by your Database Administrator.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "970702e3-e0bf-4ea7-b1ba-067128a3f8c3",
+      "Name": "CatalogName",
+      "Label": "Catalog name",
+      "HelpText": "Name of the catalog to create in Integration Services Catalogs on SQL Server.  When using the GUI, this value gets hardcoded to SSISDB and cannot be changed.  It is recommended that you do not change the default value.",
+      "DefaultValue": "SSISDB",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ccc0a5bf-467b-4695-bcef-912043e27d49",
+      "Name": "CatalogPwd",
+      "Label": "Catalog password",
+      "HelpText": "Password to the Integration Services Catalog.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "5c02a114-b06e-4547-bb0f-b2aba1869d8e",
+      "Name": "FolderName",
+      "Label": "Folder name",
+      "HelpText": "Name of the folder to use within the Integration Services Catalog",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "88ffb943-5525-4484-9963-0a34c89a7085",
+      "Name": "ProjectName",
+      "Label": "Project name",
+      "HelpText": "Name of the project within the folder of the Integration Services catalog",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b8c29eac-a60f-4b25-96b8-f3b2e3fd8806",
+      "Name": "UseEnvironment",
+      "Label": "Use environment",
+      "HelpText": "This will make a project reference to the defined environment.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "156a4b55-26e4-4c70-bf91-8729ca131c62",
+      "Name": "EnvironmentName",
+      "Label": "Environment name",
+      "HelpText": "Name of the environment to reference the project to. If the environment doesn't exist, it will create it.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0339168d-9a53-4d8a-97d9-7a76605bdc55",
+      "Name": "ReferenceProjectParametersToEnvironmentVairables",
+      "Label": "Reference project parameters to environment variables",
+      "HelpText": "Checking this box will make Project Parameters reference Environment Variables.  If the Environment Variable doesn't exist, it will create it.  This expects that an Octopus variable of the same name exists.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "5f6b7788-4957-451a-bec7-092e471291f2",
+      "Name": "ReferencePackageParametersToEnvironmentVairables",
+      "Label": "Reference package parameters to environment variables",
+      "HelpText": "Checking this box will make Package Parameters reference Environment Variables.  If the Environment Variable doesn't exist, it will create it.  This expects than an Octopus variable of the same name exists.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "cc4819a4-a6e4-4220-a581-0f2aed51f4a6",
+      "Name": "UseFullyQualifiedVariableNames",
+      "Label": "Use Fully Qualified Variable Names",
+      "HelpText": "When true the package variables names must be represented in `dtsx_name_without_extension.variable_name`",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "bb22984a-43ed-45c7-978d-72fddec96fe1",
+      "Name": "UseCustomFilter",
+      "Label": "Use Custom Filter for connection manager properties",
+      "HelpText": "Custom filter should contain the regular expression for ignoring properties when setting will occur during the auto-mapping",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "d9bba05b-d8a7-40b0-9893-4c878a264de6",
+      "Name": "CustomFilter",
+      "Label": "Custom Filter for connection manager properties",
+      "HelpText": "Regular expression for filtering out the connection manager properties during the auto-mapping process. This string is used when `UseCustomFilter` is set to true",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "77237f87-bc01-4541-b477-005f7416dce2",
+      "Name": "SyncEnvironment",
+      "Label": "Clean obsolete variables from environment",
+      "HelpText": "When `true` synchronizes the environment:\n- Removes obsolete variables\n- Removes renamed variables\n- Replaces values of valid variables (also when `false`)",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "34dcc677-6091-4e92-8b40-9ab09ed18fa3",
+      "Name": "ssisPackageId",
+      "Label": "Package Id",
+      "HelpText": "Id of the package to deploy, used to support deployment with Workers.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8338dc00-27ab-4c60-809a-2badd22250e9",
+      "Name": "TemplatePackageFeedId",
+      "Label": "Package Feed Id",
+      "HelpText": "ID of the package feed the referenced package resides in.",
+      "DefaultValue": "feeds-builtin",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T09:50:00.0000000-07:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2020-06-15T18:38:53.1700000Z",
+    "OctopusVersion": "2020.2.13",
+    "Type": "ActionTemplate"
+  },
+  "Category": "sql"
+}

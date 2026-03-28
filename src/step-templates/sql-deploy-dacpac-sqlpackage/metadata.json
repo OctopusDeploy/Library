@@ -1,0 +1,179 @@
+{
+  "Id": "c323cbcd-aab8-4229-b07c-e6c26f7e9a8a",
+  "Name": "SQL - Deploy DACPAC using SqlPackage",
+  "Description": "Calls SqlPackage commands such as:\n * [Deploy](https://learn.microsoft.com/en-us/sql/tools/sqlpackage/sqlpackage-publish?view=sql-server-ver16)\n * [Script](https://learn.microsoft.com/en-us/sql/tools/sqlpackage/sqlpackage-script?view=sql-server-ver16)\n * [DeployReport](https://learn.microsoft.com/en-us/sql/tools/sqlpackage/sqlpackage-deploy-drift-report?view=sql-server-ver16)\n\nAs SqlPackage is cross-platform, this template is both Windows and Linux* compatible.\n\nResults of `Deploy script` and `deploy report` options will upload to Octopus Deploy as an artifact. This allows you to put in place a manual intervention step if required. It is also useful for auditing purposes.\n\nSqlCmd variables are now supported.  To specify SqlCmd variables, create your Octopus variable with the following naming convention: SqlCmdVariable.<Variable name> (case insensitive) and then assign it a value.  Examples:\n* SqlCmdVariable.Variable1\n* my.sqlcmdvariable.variable2\n\nNOTE: \n - Requires version 2019.10 or above. \n - `TrustServerCertificate=true` is set by default\n - Requires PowerShell or *PowerShell Core",
+  "ActionType": "Octopus.Script",
+  "Version": 6,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "edff7d94-0feb-48a9-8185-48feb084a94f",
+      "Name": "DACPACPackage",
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "DACPACPackage"
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "false"
+  },
+  "Parameters": [
+    {
+      "Id": "f2fcbf76-89ad-4fa2-9be3-cd80de2e39a1",
+      "Name": "DACPACPackageName",
+      "Label": "DACPACPackageName",
+      "HelpText": "The name of the .dacpac file that contains the SSDT model.  Include the .dacpac extensions.  To use a specific folder, use the relative location ex: dacpac/mydacpac.dacpac",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0d21c2a7-3e6e-4411-81d7-0e5866faa8fd",
+      "Name": "DACPACPublishProfile",
+      "Label": "Publish profile file name",
+      "HelpText": "Searches the package for the specified file name.  To use a specific folder, use the relative location ex: publish/publish-profile.xml",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7b302914-8d6c-4df2-b392-e45a44e0147c",
+      "Name": "DACPACReport",
+      "Label": "Report",
+      "HelpText": "Whether a deployment report should be generated and loaded into OctopusDeploy as an artifact",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "aa612324-c2ea-4e86-921a-8ad7494df752",
+      "Name": "DACPACScript",
+      "Label": "Script",
+      "HelpText": "Whether a deploy script should be generated and loaded into OctopusDeploy as an artifact",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "94c4da0b-5c55-4d3d-ab0b-e175a767694f",
+      "Name": "DACPACDeploy",
+      "Label": "Deploy",
+      "HelpText": "Whether a deployment of the dacpac should occur",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "d2265a95-ee58-4430-8db0-c7bb03826de0",
+      "Name": "DACPACTargetServer",
+      "Label": "Target Servername",
+      "HelpText": "Name of the server to target this deployment against",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "74397a3b-b007-43cf-bc26-7a1fc2690e24",
+      "Name": "DACPACTargetDatabase",
+      "Label": "Target Database",
+      "HelpText": "Name of the database to target this deployment against",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e1710f37-5f38-4d77-8a05-5fbb6d79132e",
+      "Name": "DACPACAuthenticationType",
+      "Label": "Authentication type",
+      "HelpText": "Select the method to authenticate to the SQL Server.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "SqlAuthentication|SQL Authentication\nWindowsIntegrated|Windows Integrated\nAzureADManaged|Azure Active Directory Managed Identity\nAzureADPassword|Azure Active Directory Username/Password\nAzureADIntegrated|Azure Active Directory Integrated\nAzureADServicePrincipal|Azure Active Directory Service Principal"
+      }
+    },
+    {
+      "Id": "a51747d3-514d-4110-bf6b-e5f3932d4f22",
+      "Name": "DACPACSQLUsername",
+      "Label": "Username",
+      "HelpText": "User name to use to connect to the server if we are not using Integrated Security.\n\nIf using the Azure Active Directory Service Principal Authentication Type, use the Azure Account variable here. For example, if your Azure Account variable is called MyAccount, the value for this input would be `#{MyAccount.Client}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1afb7ff1-4447-425e-8625-33d76f32c321",
+      "Name": "DACPACSQLPassword",
+      "Label": "Password",
+      "HelpText": "Password to use to connect to the server if we are not using Integrated Security.\n\nIf using the Azure Active Directory Service Principal Authentication Type, use the Azure Account variable here. For example, if your Azure Account variable is called MyAccount, the value for this input would be `#{MyAccount.Password}`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "fa1d3a63-f2c0-4969-a4ac-d797df53bed1",
+      "Name": "DACPACPackage",
+      "Label": "DACPAC Package",
+      "HelpText": "The package containing the `.dacpac` file from the specified repository.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "2afcffb6-6c2c-4012-8ea8-80ce9f3f4a19",
+      "Name": "DACPACCommandTimeout",
+      "Label": "Command Timeout",
+      "HelpText": "Override the default command timeout for longer-running scripts.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "17444647-1f19-42e9-bde2-839601de5347",
+      "Name": "DACPACExeLocation",
+      "Label": "SqlPackage executable location",
+      "HelpText": "Location of the SqlPackage executable.  Leave blank to dynamically download.<br />\nExamples:<br />\nEmbedded within the package:`#{Octopus.Action.Package[DACPACPackage].ExtractedPath}/MySubFolder`<br />\nOn disk:`c:\\sqlpackage\\sqlpackage.exe` or `/etc/sqlpackage/sqlpackage`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "99d63959-edbb-4f06-a4be-15dd7cf24c35",
+      "Name": "DACPACAdditionalArguments",
+      "Label": "Additional arguments",
+      "HelpText": "A comma-delimited list of additional arguments to add to the SqlPackage command.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-06-01T22:27:25.5640000Z",
+    "OctopusVersion": "2023.1.10766",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "sql"
+}
