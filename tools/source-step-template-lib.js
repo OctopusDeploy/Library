@@ -61,10 +61,6 @@ function getLegacyJsonPath(templateName) {
   return path.join(legacyRoot, `${normalizeTemplateName(templateName)}.json`);
 }
 
-function getLegacyOrigPath(templateName) {
-  return path.join(legacyRoot, `${normalizeTemplateName(templateName)}.json.orig`);
-}
-
 function getPowerShellCommand() {
   return process.env.PWSH_PATH || "pwsh";
 }
@@ -80,10 +76,6 @@ function runPack(templateName) {
   runPowerShellScript(path.join(repoRoot, "tools", "_pack.ps1"), ["-SearchPattern", normalizeTemplateName(templateName)]);
 }
 
-function runUnpack(templateName) {
-  runPowerShellScript(path.join(repoRoot, "tools", "_unpack.ps1"), ["-SearchPattern", normalizeTemplateName(templateName), "-Force"]);
-}
-
 function listMigratedTemplates() {
   if (!isDirectory(sourceRoot)) {
     return [];
@@ -94,18 +86,6 @@ function listMigratedTemplates() {
     .filter((entry) => !["logos", "tests"].includes(entry))
     .filter((entry) => isDirectory(path.join(sourceRoot, entry)))
     .filter((entry) => fs.existsSync(path.join(sourceRoot, entry, "metadata.json")))
-    .sort();
-}
-
-function listLegacyTemplates() {
-  if (!isDirectory(legacyRoot)) {
-    return [];
-  }
-
-  return fs
-    .readdirSync(legacyRoot)
-    .filter((entry) => entry.endsWith(".json"))
-    .map((entry) => entry.replace(/\.json$/i, ""))
     .sort();
 }
 
@@ -230,83 +210,24 @@ function inferTemplateNameFromSourcePath(changedPath) {
   return { type: "template", templateName: firstSegment };
 }
 
-function updateMetadataWithPlaceholders(templateName) {
-  const metadataPath = getMetadataPath(templateName);
-  const templateDirectory = getSourceTemplateDirectory(templateName);
-  const metadata = readJson(metadataPath);
-  metadata.Properties = metadata.Properties || {};
-
-  for (const definition of scriptDefinitions) {
-    const sourceFileName = getScriptSourceFileName(templateDirectory, definition);
-    if (!sourceFileName) {
-      continue;
-    }
-
-    metadata.Properties[definition.propertyName] = setPlaceholderValue(sourceFileName);
-  }
-
-  writeJson(metadataPath, metadata);
-}
-
-function moveExtractedSidecarsIntoSource(templateName) {
-  const templateDirectory = getSourceTemplateDirectory(templateName);
-  ensureDirectory(templateDirectory);
-
-  for (const definition of scriptDefinitions) {
-    for (const suffix of definition.legacySuffixes) {
-      const legacyPath = path.join(legacyRoot, `${normalizeTemplateName(templateName)}${suffix}`);
-      if (!fs.existsSync(legacyPath)) {
-        continue;
-      }
-
-      const extension = path.extname(legacyPath);
-      const destinationPath = path.join(templateDirectory, `${definition.sourceBaseName}${extension}`);
-      fs.renameSync(legacyPath, destinationPath);
-    }
-  }
-}
-
-function compareGeneratedToOrig(templateName) {
-  const generatedPath = getLegacyJsonPath(templateName);
-  const originalPath = getLegacyOrigPath(templateName);
-  const generated = readJson(generatedPath);
-  const original = readJson(originalPath);
-
-  if (generated.$Meta && original.$Meta) {
-    if (Object.prototype.hasOwnProperty.call(generated.$Meta, "ExportedAt") && Object.prototype.hasOwnProperty.call(original.$Meta, "ExportedAt")) {
-      original.$Meta.ExportedAt = generated.$Meta.ExportedAt;
-    }
-  }
-
-  const normalizedGenerated = `${JSON.stringify(generated, null, 2)}\n`;
-  const normalizedOriginal = `${JSON.stringify(original, null, 2)}\n`;
-  return normalizedGenerated === normalizedOriginal;
-}
-
 module.exports = {
   cleanGeneratedSidecars,
-  compareGeneratedToOrig,
   ensureDirectory,
   generateAllMigratedTemplates,
   generateTemplate,
   getLegacyJsonPath,
-  getLegacyOrigPath,
   getMetadataPath,
   getSourceTemplateDirectory,
   inferTemplateNameFromSourcePath,
   legacyRoot,
-  listLegacyTemplates,
   listMigratedTemplates,
-  moveExtractedSidecarsIntoSource,
   normalizeTemplateName,
   placeholderPrefix,
   readJson,
   repoRoot,
   runPack,
-  runUnpack,
   scriptDefinitions,
   setPlaceholderValue,
   sourceRoot,
-  updateMetadataWithPlaceholders,
   writeJson,
 };

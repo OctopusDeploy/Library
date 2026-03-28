@@ -110,8 +110,7 @@ describe("step-templates", function () {
 
       var otherThings = results.filter(function (file) {
         var jsonFile = file.endsWith(".json");
-        var jsonOrigFile = file.endsWith(".json.orig");
-        return !jsonFile && !jsonOrigFile;
+        return !jsonFile;
       });
       expect(otherThings).toEqual([]);
       done();

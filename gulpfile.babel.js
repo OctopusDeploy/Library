@@ -316,9 +316,12 @@ function provideMissingData() {
     var template = JSON.parse(fileContent);
     var pathParts = file.path.split("\\");
     var fileName = pathParts[pathParts.length - 1];
+    var templateName = fileName.replace(/\.json$/i, "");
+    var expectedHistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/src/step-templates/" + templateName;
+    var hasBrokenGeneratedHistoryUrl = template.HistoryUrl && (template.HistoryUrl.indexOf("/step-templates/") !== -1 || template.HistoryUrl.indexOf("/opt/") !== -1);
 
-    if (!template.HistoryUrl) {
-      template.HistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/step-templates/" + fileName;
+    if (!template.HistoryUrl || hasBrokenGeneratedHistoryUrl) {
+      template.HistoryUrl = expectedHistoryUrl;
     }
 
     if (!template.Website) {

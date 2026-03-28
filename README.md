@@ -14,6 +14,17 @@ Organization
 Source Layout
 -------------
 
+> [!IMPORTANT]
+> With `PRXXX`, how step templates are handled in this repository changed.
+>
+> Previously, step templates lived under `/step-templates` as `.json` files with packed source scripts embedded in them. That packed format is the format Octopus Deploy needs to consume step templates, but it made PR review difficult. Helper scripts for pack, unpack, and diff were added to assist with review, but Git history and blame still made it hard to understand how a template had changed over time.
+>
+> Starting with `PRXXX`, step templates are stored as source files under `/src/step-templates`. Each step template is now a collection of:
+> - `metadata.json`, which was `git mv`'d from `/step-templates` to retain Git history
+> - one or more unrolled script files such as `scriptbody.ps1`, `scriptbody.sh`, `scriptbody.py`, `predeploy.ps1`, `deploy.ps1`, or `postdeploy.ps1`
+>
+> A build step generates the `/step-templates/*.json` files so they remain available for compatibility with the website and Octopus consumers.
+
 The source-of-truth format for templates lives under `/src/step-templates`:
 
 * `/src/step-templates/<template>/metadata.json`
@@ -26,6 +37,20 @@ The source-of-truth format for templates lives under `/src/step-templates`:
 
 `metadata.json` keeps the exported template metadata and uses placeholders for script-backed properties. The real script text lives in sibling files so normal GitHub diffs stay readable.
 
+Creating or updating a template
+-------------------------------
+
+To update an existing template, edit the files in `/src/step-templates/<template>/`.
+
+To add a new template:
+
+1. Create a new folder under `/src/step-templates/<template>/`
+2. Add a `metadata.json` file
+3. Add `scriptbody.ps1|sh|py` and any optional staged script files that the template needs
+4. Add a category logo to `/src/step-templates/logos` if you introduce a new category
+
+Generated files under `/step-templates` are compatibility output for the website and Octopus consumers. They should not be hand-edited or committed.
+
 Contributing step templates or to the website
 ---------------------------------------------
 
@@ -36,7 +61,7 @@ Reviewing PRs
 
 ### Reviewing script changes
 
-For migrated templates, review the files under `/src/step-templates/<template>/` directly. Script changes now appear as normal file diffs instead of escaped JSON string blobs.
+Review the files under `/src/step-templates/<template>/` directly.
 
 ### Checklist
 

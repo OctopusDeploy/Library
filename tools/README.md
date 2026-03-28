@@ -34,6 +34,7 @@ Retained legacy utilities
 
 These remain for compatibility and round-trip fidelity:
 
+* `_diff.ps1`
 * `_pack.ps1`
 * `_unpack.ps1`
 * `Converter.ps1`
