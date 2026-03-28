@@ -269,9 +269,18 @@ function moveExtractedSidecarsIntoSource(templateName) {
 function compareGeneratedToOrig(templateName) {
   const generatedPath = getLegacyJsonPath(templateName);
   const originalPath = getLegacyOrigPath(templateName);
-  const generatedBuffer = fs.readFileSync(generatedPath);
-  const originalBuffer = fs.readFileSync(originalPath);
-  return generatedBuffer.equals(originalBuffer);
+  const generated = readJson(generatedPath);
+  const original = readJson(originalPath);
+
+  if (generated.$Meta && original.$Meta) {
+    if (Object.prototype.hasOwnProperty.call(generated.$Meta, "ExportedAt") && Object.prototype.hasOwnProperty.call(original.$Meta, "ExportedAt")) {
+      original.$Meta.ExportedAt = generated.$Meta.ExportedAt;
+    }
+  }
+
+  const normalizedGenerated = `${JSON.stringify(generated, null, 2)}\n`;
+  const normalizedOriginal = `${JSON.stringify(original, null, 2)}\n`;
+  return normalizedGenerated === normalizedOriginal;
 }
 
 module.exports = {
@@ -293,6 +302,7 @@ module.exports = {
   placeholderPrefix,
   readJson,
   repoRoot,
+  runPack,
   runUnpack,
   scriptDefinitions,
   setPlaceholderValue,

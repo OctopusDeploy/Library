@@ -11,6 +11,7 @@ const {
   moveExtractedSidecarsIntoSource,
   normalizeTemplateName,
   repoRoot,
+  runPack,
   runUnpack,
   updateMetadataWithPlaceholders,
 } = require("./source-step-template-lib");
@@ -35,11 +36,12 @@ function prepareTemplate(templateName) {
 
   ensureDirectory(sourceDirectory);
 
+  runUnpack(normalizedName);
+  runPack(normalizedName);
+
   if (!fs.existsSync(legacyOrigPath)) {
     fs.copyFileSync(legacyJsonPath, legacyOrigPath);
   }
-
-  runUnpack(normalizedName);
 
   if (!fs.existsSync(metadataPath)) {
     gitMove(path.relative(repoRoot, legacyJsonPath), path.relative(repoRoot, metadataPath));

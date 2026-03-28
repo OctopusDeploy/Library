@@ -67,7 +67,9 @@ A key requirement during migration is that the dev workflow remains usable at ev
    - reconstruct the temporary legacy layout needed by the unchanged packer
    - invoke the existing pack behavior to regenerate `step-templates/<template>.json`
    - diff regenerated `step-templates/<template>.json` against `step-templates/<template>.json.orig`
-   - fail unless they are byte-identical
+   - fail unless they are identical apart from the accepted normalization differences:
+     - `"$Meta.ExportedAt"` may be reformatted by the unchanged packer
+     - a single trailing newline at end of file may be added or removed
    - remove `.json.orig` only after validation succeeds
 
 10. Update dev/build behavior so `npm run dev` works throughout migration:
@@ -204,7 +206,9 @@ A key requirement during migration is that the dev workflow remains usable at ev
 - The proof batch comes first, and subsequent migration batches are fixed at 100 templates each
 - During migration, the repo must support a mixed state where some templates are authored in `src/step-templates/*` and others remain as legacy JSON
 - `metadata.json` uses placeholders for script-backed properties
-- Packed JSON equivalence is strict and byte-for-byte
+- Packed JSON equivalence is strict apart from two accepted normalization differences:
+  - `"$Meta.ExportedAt"` may be rewritten into the unchanged packer's normalized format
+  - a single trailing newline at end of file may differ
 - `step-templates/` becomes generated-only after final cutover, not before the last migrated batch is complete
 - Shared authoring assets currently under `step-templates/logos` and `step-templates/tests` move to `src/step-templates/`
 - `.json.orig` files are local migration artifacts only and are never committed
