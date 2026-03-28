@@ -1,0 +1,140 @@
+# Running outside octopus
+param(
+    [string]$UserNames,
+    [string]$GroupNames
+) 
+
+$ErrorActionPreference = "Stop" 
+
+function Get-Param($Name, [switch]$Required, $Default) {
+    $result = $null
+
+    if ($OctopusParameters -ne $null) {
+        $result = $OctopusParameters[$Name]
+    }
+
+    if ($result -eq $null) {
+        $variable = Get-Variable $Name -EA SilentlyContinue   
+        if ($variable -ne $null) {
+            $result = $variable.Value
+        }
+    }
+
+    if ($result -eq $null) {
+        if ($Required) {
+            throw "Missing parameter value $Name"
+        } else {
+            $result = $Default
+        }
+    }
+
+    return $result
+}
+
+function IsValidUser ( $user ) {
+    
+    if($user.Guid -and ($user.SchemaClassName -eq "User")){
+        return $true
+    }
+    
+    Write-Host "ERROR - `"WinNT://$($user.Name)`" not found"
+    return $false
+}
+
+function IsValidGroup ( $group ) {
+    
+    if( $group.Guid -and ($group.SchemaClassName -eq "Group") ) {
+        Write-Host "the group $($group.Guid) was found" -ForegroundColor green
+        return $true
+    }
+
+    Write-Host "ERROR - `"WinNT://$($Env:COMPUTERNAME)/$($group.Name)`" not found" -ForegroundColor red
+    return $false
+}
+
+function IsUserInGroup($user, $groupName){
+
+    Write-Host "Checking to see if $($user.Name) is in $($group.Name)"
+
+    if(!(isValidGroup $group)){
+        throw "Could not find group $($group.Name)"
+    }
+
+    $members = @($group.psbase.Invoke("Members")) 
+    
+    Write-Host "There are $($members.Count) members in $($group.Name)"
+    
+    $isInGroup = ($members | foreach {$_.GetType().InvokeMember("Name", 'GetProperty', $null, $_, $null)}) -contains "$($user.Name)"
+        
+    if($isInGroup) {
+        Write-Host "User $($user.Name) is already a part of `"$($group.Name)`"" -ForegroundColor Yellow
+    } else {
+        Write-Host "User $($user.Name) is not a part of `"$($group.Name)`"" -ForegroundColor Green
+    }
+    
+    return $isInGroup
+}
+
+function FormatUserNameForQuery([string]$userName)
+{
+    return $userName.Trim().Replace("\", "/")
+}
+
+& {
+    param(
+        [string]$UserNames,
+        [string]$GroupNames
+    ) 
+
+    Write-Host "Windows - Add Users to Local Groups"
+    Write-Host "UserNames: $UserNames"
+    Write-Host "GroupNames: $GroupNames"
+
+    $UserNames.Split(";") | foreach {
+        
+        $userName = FormatUserNameForQuery $_
+        $user = [ADSI]"WinNT://$userName"
+        
+        $userDoesNotExist = !(IsValidUser $user)
+        
+        if( $userDoesNotExist )
+        {
+            throw "User $userName was not found"
+        }
+
+        Write-Host "Current user $userName"
+
+        $GroupNames.Split(";") | foreach {
+            
+            $groupName = $_.Trim()
+            $group = [ADSI]"WinNT://$Env:COMPUTERNAME/$groupName"
+           
+            $groupDoesNotExist = !(IsValidGroup $group)
+            
+            if($groupDoesNotExist)
+            {
+                throw "Group $groupName was not found"
+            }
+
+            Write-Host "Current group $groupName"
+
+            $isInGroup = IsUserInGroup $user $group
+
+            if( $isInGroup ) {
+                
+                Write-Host "Skipping..."
+                
+                continue
+            }
+
+            Write-Host "Adding $userName to $groupName" -ForegroundColor Cyan
+            
+            $group.psbase.Invoke("Add",$user.Path)
+
+            Write-Host "SUCCESS - added $userName to $groupName" -ForegroundColor Green
+        }
+    }
+
+ } `
+ (Get-Param 'UserNames' -Required) `
+ (Get-Param 'GroupNames' -Required)
