@@ -31,6 +31,8 @@ import jasmineTerminalReporter from "jasmine-terminal-reporter";
 import eventStream from "event-stream";
 import fs from "fs";
 import jsonlint from "gulp-jsonlint";
+import path from "path";
+import { execFileSync } from "child_process";
 
 const sass = gulpSass(dartSass);
 const clientDir = "app";
@@ -38,6 +40,7 @@ const serverDir = "server";
 
 const buildDir = "build";
 const publishDir = "dist";
+const sourceStepTemplatesDir = "src/step-templates";
 
 const $ = gulpLoadPlugins({
   rename: {
@@ -47,6 +50,21 @@ const $ = gulpLoadPlugins({
 
 const reload = browserSync.reload;
 const argv = yargs.argv;
+
+function runStepTemplateGenerator(args = []) {
+  execFileSync("node", [path.join("tools", "generate-step-templates.js"), ...args], {
+    cwd: process.cwd(),
+    stdio: "inherit",
+  });
+}
+
+function generateAllMigratedTemplates() {
+  runStepTemplateGenerator(["all"]);
+}
+
+function generateFromChangedSourcePath(changedPath) {
+  runStepTemplateGenerator(["changed-path", changedPath]);
+}
 
 const vendorStyles = [
   "node_modules/font-awesome/css/font-awesome.min.css",
@@ -72,6 +90,10 @@ function lint(files, options = {}) {
 
 gulp.task("lint:client", lint(`${clientDir}/**/*.jsx`));
 gulp.task("lint:server", lint(`./${serverDir}/server.js`));
+gulp.task("prepare:step-templates", (done) => {
+  generateAllMigratedTemplates();
+  done();
+});
 gulp.task("lint:step-templates", () => {
   return gulp
     .src("./step-templates/*.json")
@@ -83,7 +105,7 @@ gulp.task("lint:step-templates", () => {
 
 gulp.task(
   "tests",
-  gulp.series("lint:step-templates", () => {
+  gulp.series("prepare:step-templates", "lint:step-templates", () => {
     return (
       gulp
         .src("./spec/*-tests.js")
@@ -313,7 +335,7 @@ function provideMissingData() {
     template.Category = humanize(categoryId);
 
     if (!template.Logo) {
-      var logo = fs.readFileSync("./step-templates/logos/" + categoryId + ".png");
+      var logo = fs.readFileSync("./src/step-templates/logos/" + categoryId + ".png");
       template.Logo = Buffer.from(logo).toString("base64");
     }
 
@@ -323,17 +345,16 @@ function provideMissingData() {
   });
 }
 
-gulp.task(
-  "step-templates",
-  gulp.series("tests", () => {
-    return gulp
-      .src("./step-templates/*.json")
-      .pipe(provideMissingData())
-      .pipe(concat("step-templates.json", { newLine: "," }))
-      .pipe(insert.wrap('{"items": [', "]}"))
-      .pipe(argv.production ? gulp.dest(`${publishDir}/app/services`) : gulp.dest(`${buildDir}/app/services`));
-  })
-);
+gulp.task("step-templates:data", () => {
+  return gulp
+    .src("./step-templates/*.json")
+    .pipe(provideMissingData())
+    .pipe(concat("step-templates.json", { newLine: "," }))
+    .pipe(insert.wrap('{"items": [', "]}"))
+    .pipe(argv.production ? gulp.dest(`${publishDir}/app/services`) : gulp.dest(`${buildDir}/app/services`));
+});
+
+gulp.task("step-templates", gulp.series("tests", "step-templates:data"));
 
 gulp.task("styles:vendor", () => {
   return gulp.src(vendorStyles, { base: "node_modules/" }).pipe(argv.production ? gulp.dest(`${publishDir}/public/styles/vendor`) : gulp.dest(`${buildDir}/public/styles/vendor`));
@@ -433,7 +454,19 @@ gulp.task(
     gulp.watch(`${clientDir}/**/*.jade`, gulp.series("build:client"));
     gulp.watch(`${clientDir}/**/*.jsx`, gulp.series("scripts", "copy:app"));
     gulp.watch(`${clientDir}/content/styles/**/*.scss`, gulp.series("styles:client"));
-    gulp.watch("step-templates/*.json", gulp.series("step-templates"));
+    gulp.watch("step-templates/*.json", gulp.series("step-templates:data"));
+    gulp.watch(`${sourceStepTemplatesDir}/**/*`).on("all", (eventName, changedPath) => {
+      if (!changedPath) {
+        return;
+      }
+
+      generateFromChangedSourcePath(changedPath);
+      gulp.series("step-templates:data")((error) => {
+        if (error) {
+          log.error(error);
+        }
+      });
+    });
 
     gulp.watch(`${buildDir}/**/*.*`).on("change", reload);
   })
