@@ -1,0 +1,138 @@
+{
+  "Id": "e04c5cd8-0982-44b8-9cae-0a4b43676adc",
+  "Name": "Check VMSS Provision Status (Deployment Targets)",
+  "Description": "Use this step when leveraging Azure Virtual Machines Scale Sets (VMSS) with Octopus Deploy Deployment Targets.\n\n**Please run this on a worker or the Octopus Server.**\n\nThis step specifically targets Deployment Targets.  It will:\n- Pause a runbook run or deployment until the VMSS has been provisioned\n- Pause a runbook run or deployment until all the VMs in a VMss have been provisioned\n- Reconcile the list of VMs in the VMSS with the list of VMs in Octopus Deploy.  Any VMs in Octopus Deploy (based on role) not in the VMSS will be removed.\n- Set output variables of all the deployment targets found in the VMSS.\n\nThis step will set the following output variables:\n- `VMSSHasServersToDeployTo`: Indicates the VMSS has servers to deploy to.  \n- `VMSSDeploymentTargetIds`: A comma-separated list of deployment target Ids you can use in later steps.\n- `VMSSDeploymentTargetNames`: A comma-separated list of deployment target names you can use in later steps.\n\n**Please Note**: Setting the parameter `Exclude Pre-Existing Servers from Output` to `Yes` will remove any servers prior to a scale event from being returned in the output variables. \n\nThis step makes the following assumptions:\n- The name of the machine registration in Octopus matches the computer name.  Like matching is supported, for example, a match will be made in the case of Octopus has `p-app-server-01` and the computer name is `p-app-server-01.mydomain.com.`  \n- You have the Azure Az PowerShell modules pre-installed on a worker or your Octopus Server.\n- This step is running in the same space/environment/tenant (optional) as the deployment targets.",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 3,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Azure.AccountId": "#{VMSS.Azure.Account}",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1"
+  },
+  "Parameters": [
+    {
+      "Id": "9f9bc9fb-fa96-41ab-aa06-ad0dd68ff038",
+      "Name": "VMSS.ScaleSet.Name",
+      "Label": "VMSS Name",
+      "HelpText": "**Required**\n\nThe name of the Azure Virtual Machine Scale Set",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "32939873-a965-46ae-915f-f94d93f94c0b",
+      "Name": "VMSS.ResourceGroup.Name",
+      "Label": "VMSS Resource Group Name",
+      "HelpText": "**Required**\n\nThe name of the resource group where the VMSS is located.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "571df393-6353-4f12-96cd-c92f3a5e1452",
+      "Name": "VMSS.Azure.Account",
+      "Label": "Azure Account",
+      "HelpText": "**Required**\n\nThe Azure Account to use when querying the VMSS.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "b03d1bf3-76f8-4a3c-917a-60d5e19a15f4",
+      "Name": "VMSS.DeploymentTarget.Roles",
+      "Label": "Deployment Target Roles",
+      "HelpText": "**Required**\n\nA comma-separated list of deployment target roles to filter your deployment targets by.  These roles are how this step will determine which machines to reconcile.\n\nIf you supply multiple roles, for example `todo-web-server,todo-virtual-machine-scale-set` the deployment targets have to be assigned `todo-web-server` AND `todo-virtual-machine-scaleset` roles for the target to be considered.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "757ca61b-d15b-4dbb-911a-b3f4dc0258b5",
+      "Name": "VMSS.Octopus.Url",
+      "Label": "Octopus URL",
+      "HelpText": "**Required**\n\nThe URL of the Octopus Server to query against.  Example: `https://samples.octopus.app`.",
+      "DefaultValue": "#{Octopus.Web.ServerUri}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7b070182-e79b-48a0-966a-39d332802b60",
+      "Name": "VMSS.Octopus.ApiKey",
+      "Label": "Octopus API Key",
+      "HelpText": "**Required**\n\nAPI Key of a service account that has permissions to:\n- Query deployment targets, environments, and tenants. \n- Query events (audit history) \n- Delete deployment targets\n\nAssigning the service account to a team with `Project Viewer` and `Environment Manager` roles will work.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "6e0f8635-70ba-4b8a-b5b4-909dba3f9fd8",
+      "Name": "VMSS.Timeout.Value",
+      "Label": "Timeout (In Minutes)",
+      "HelpText": "**Required**\n\nHow long this step will wait (in minutes) for the VMSS and VMs in the VMSS to finish being created.",
+      "DefaultValue": "30",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0392f153-73b0-44d4-9181-4f366c9012f7",
+      "Name": "VMSS.Timeout.ErrorHandle",
+      "Label": "Timeout Error",
+      "HelpText": "**Required**\n\nWhat will happen when a timeout occurs.\n\n- `Proceed`: The script will reconcile the VMs it can and then finish.  No error thrown.  \n- `Error`: Will throw an error and it will stop the deployment from proceeding.\n\nThe default is `Proceed`",
+      "DefaultValue": "Proceed",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Proceed|Proceed\nError|Error"
+      }
+    },
+    {
+      "Id": "80ef4fb9-c773-4d0a-82af-efdfb302e58f",
+      "Name": "VMSS.Duplicate.TimeInMinutes",
+      "Label": "Duplicate Run Time Allowance (in Minutes)",
+      "HelpText": "**Required**\n\nThis step is designed to wait for VMSS to finish scaling out.  However, Octopus isn't aware of VMSS and may attempt to run the same deployment multiple times as new targets are \"discovered.\"\n\nTypically, when this happens, a deployment is queued within a few minutes of the previous one finishing.  When that happens this step will treat that as a duplicate run.  \n\nThis setting indicates the number of minutes that must pass before a duplicate run is found.  The default is `3` minutes.",
+      "DefaultValue": "3",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0eb3bed8-9259-440e-bff0-cb86af7da52e",
+      "Name": "VMSS.Duplicate.Handle",
+      "Label": "Duplicate Run Adjustment",
+      "HelpText": "**Required**\n\nWhat the step will do when a duplicate run is found.  The two options are:\n\n- `Cancel`: cancel the current runbook run or deployment.\n- `Proceed`: continue on with the current runbook run or deployment.\n\nThe default is `Proceed`.",
+      "DefaultValue": "Proceed",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Cancel|Cancel\nProceed|Proceed"
+      }
+    },
+    {
+      "Id": "adaf6a8c-453f-4b69-9ba6-f6a54b4f5bb9",
+      "Name": "VMSS.OldServers.ExcludeFromOutput",
+      "Label": "Exclude Pre-Existing Servers from Output",
+      "HelpText": "**Required**\n\nOld servers are any servers that existed prior to scaling out the VMSS.  \n\nIf this step is run in a deployment target trigger it will pull back all the machines in a scale set and return them in an output variable.  Depending on how you use that list, this could result in redeployment.\n\nYou can exclude pre-existing servers by setting this value to `Yes`.  The default is `No`.",
+      "DefaultValue": "No",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "No|No\nYes|Yes"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-07-26T19:15:02.7180000Z",
+    "OctopusVersion": "2021.2.6259",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "BobJWalker",
+  "Category": "azure"
+}

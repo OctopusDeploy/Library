@@ -1,0 +1,121 @@
+{
+  "Id": "7e818c42-8c59-4a14-b612-2b9cb69fcf4a",
+  "Name": "AWS - Configure Lambda API Gateway Integration",
+  "Description": "Configures an API v2 Gateway to connect to and invoke a Lambda Function.  That includes:\n\n- Integration on the API Gateway\n- Route on the API Gateway\n- Permission Policy on AWS Lambda (Aliases are supported)\n\n**Please Note:** Your AWS Lambda function **MUST** exist prior to running this step.\n\nThis step uses the following AWS CLI commands to create the integration and route.  You will be required to install the AWS CLI on your server/worker for this to work.  The AWS CLI is pre-installed on the [dynamic workers](https://octopus.com/docs/infrastructure/workers/dynamic-worker-pools) in Octopus Cloud as well as the provided docker containers for [Execution Containers](https://octopus.com/docs/deployment-process/execution-containers-for-workers).\n\nAPIGatewayV2 CLI Methods\n- [create-integration](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/create-integration.html)\n- [create-route](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/create-route.html)\n- [get-apis](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/get-apis.html)\n- [get-integrations](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/get-integrations.html)\n- [get-routes](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/get-routes.html)\n- [get-vpc-links](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/get-vpc-links.html)\n- [update-integration](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/apigatewayv2/update-integration.html)\n\nLambda CLI Methods\n- [add-permission](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/add-permission.html)\n- [get-policy](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/get-policy.html)\n- [remove-permission](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/lambda/remove-permission.html)\n\n\n## Output Variables\n\nThis step template sets the following output variables:\n\n- `ApiGatewayEndPoint`: The endpoint of the API Gateway\n- `ApiGatewayId`: The id of the API Gateway\n- `ApiGatewayArn`: The ARN of the API Gateway",
+  "ActionType": "Octopus.AwsRunScript",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "False",
+    "Octopus.Action.AwsAccount.Variable": "#{AWS.Api.Gateway.Account}",
+    "Octopus.Action.Aws.Region": "#{AWS.Api.Gateway.Region}",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1"
+  },
+  "Parameters": [
+    {
+      "Id": "6a63ef8c-5f0b-4501-beca-fc3839f7f5c9",
+      "Name": "AWS.Api.Gateway.Name",
+      "Label": "API Gateway Name",
+      "HelpText": "Required.\n\nThe name of the API gateway to create the integration and route.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0fb1f1fa-35f6-46b3-bf4a-527ddd98fb80",
+      "Name": "AWS.Api.Gateway.Account",
+      "Label": "AWS Account",
+      "HelpText": "Required.\n\nThe account used to update the API Gateway.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AmazonWebServicesAccount"
+      }
+    },
+    {
+      "Id": "a42498df-fadd-45d1-9271-78e80edb9623",
+      "Name": "AWS.Api.Gateway.Region",
+      "Label": "AWS Region",
+      "HelpText": "Required.\n\nThe region where the API gateway is in.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "us-east-2|US East (Ohio)\nus-east-1|US East (N. Virginia)\nus-west-1|US West (N. California)\nus-west-2|US West (Oregon)\naf-south-1|Africa (Cape Town)\nap-east-1|Asia Pacific (Hong Kong)\nap-south-1|Asia Pacific (Mumbai)\nap-northeast-3|Asia Pacific (Osaka-Local)\nap-northeast-2|Asia Pacific (Seoul)\nap-southeast-1|Asia Pacific (Singapore)\nap-southeast-2|Asia Pacific (Sydney)\nap-northeast-1|Asia Pacific (Tokyo)\nca-central-1|Canada (Central)\neu-central-1|Europe (Frankfurt)\neu-west-1|Europe (Ireland)\neu-west-2|Europe (London)\neu-south-1|Europe (Milan)\neu-west-3|Europe (Paris)\neu-north-1|Europe (Stockholm)\nme-south-1|Middle East (Bahrain)\nsa-east-1|South America (São Paulo)"
+      }
+    },
+    {
+      "Id": "bd681a63-f62c-4dcb-a401-ae43428075ed",
+      "Name": "AWS.Api.Gateway.Integration.Connection",
+      "Label": "VPC Connection",
+      "HelpText": "Optional.\n\nThe VPC connection you wish to use with this link.  Supports:\n\n- VPC Link Name - The name of the VPC link specified when it was created.\n- VPC Link Id - The 6-character alphanumeric key assigned by AWS to the VPC Link.\n\n**Please note**: Sending a value in will change the connection type from `INTERNET` to `VPC_LINK`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "607e787d-d0bd-47b9-984e-2195d58278ed",
+      "Name": "AWS.Api.Gateway.Route.Key",
+      "Label": "Route Key",
+      "HelpText": "Required.\n\nThe route key for the route.  Examples:\n\n- `$default`\n- `/signup`",
+      "DefaultValue": "$default",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f255a0c5-f2e6-4739-af59-a0329c6ddb14",
+      "Name": "AWS.Api.Gateway.Integration.HttpMethod",
+      "Label": "HTTP Method",
+      "HelpText": "Required.\n\nThe HTTP method of the route and integration you wish to create.",
+      "DefaultValue": "ANY",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "ANY|ANY\nPOST|POST\nPUT|PUT\nGET|GET\nDELETE|DELETE"
+      }
+    },
+    {
+      "Id": "6552c873-6576-4272-a724-a3b257b1b13e",
+      "Name": "AWS.Api.Gateway.Lambda.Arn",
+      "Label": "Lambda ARN",
+      "HelpText": "Required.\n\nThe ARN of the AWS Lambda to connect to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "261a89c2-dc9b-4608-8f76-fcb07385725c",
+      "Name": "AWS.Api.Gateway.Lambda.Alias",
+      "Label": "Lambda Alias",
+      "HelpText": "Required.\n\nThe alias in the lambda function to use when the API Gateway invokes the function.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4c281de7-1922-4d78-b16d-9c60cd2d2477",
+      "Name": "AWS.Api.Gateway.Integration.PayloadFormatVersion",
+      "Label": "Payload Format Version",
+      "HelpText": "Required.\n\nThe payload format version specifies the format of the data that API Gateway sends to a Lambda integration, and how API Gateway interprets the response from Lambda.",
+      "DefaultValue": "2.0",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "1.0|1.0\n2.0|2.0"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AwsRunScript",
+  "$Meta": {
+    "ExportedAt": "2022-10-04T18:34:13.2190000Z",
+    "OctopusVersion": "2022.3.10594",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "aws"
+}

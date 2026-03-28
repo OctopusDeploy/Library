@@ -1,0 +1,159 @@
+{
+  "Id": "43354ae1-c301-42f8-971d-6e659e4807b3",
+  "Name": "AWS Linux - Install Octopus Tentacle",
+  "Description": "This step template will install the latest tentacle on an AWS hosted, Linux virtual machine. This will also open the firewall for inbound traffic on port 10933 on the Security Group.\n<hr />\n*Note: Expects the AWS CLI and Powershell to be installed on the worker running this task*<br />\n*Note: Firewall ports will not be opened on the remote machine*</br>\n*Note: Target machines must be added to your AWS System Manager (SSM)*",
+  "ActionType": "Octopus.AwsRunScript",
+  "Version": 3,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Azure.AccountId": "#{awsInstallLinuxTentacle.AWSAccount}",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "False",
+    "Octopus.Action.AwsAccount.Variable": "#{awsInstallLinuxTentacle.AWSAccount}",
+    "Octopus.Action.Aws.Region": "#{awsInstallLinuxTentacle.awsRegion}"
+  },
+  "Parameters": [
+    {
+      "Id": "dea51842-271f-48fa-901e-243488049f97",
+      "Name": "awsInstallLinuxTentacle.AWSAccount",
+      "Label": "AWS Account",
+      "HelpText": "AWS account with permissions to the virtual machine in which to install the tentacle on",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AmazonWebServicesAccount"
+      }
+    },
+    {
+      "Id": "6a97548c-3b97-4a19-8b9a-45aa58ac62d9",
+      "Name": "awsInstallLinuxTentacle.awsRegion",
+      "Label": "AWS Region",
+      "HelpText": "The name of the aws region. I.E. `us-east-1`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d9efb017-65c0-4010-b09f-0a6a34fc009f",
+      "Name": "awsInstallLinuxTentacle.awsSGName",
+      "Label": "Security Group Name",
+      "HelpText": "The name of the AWS security group to create an exception in",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e4358aec-2798-412a-bcd2-1c7e41a0728d",
+      "Name": "awsInstallLinuxTentacle.awsVmInstanceId",
+      "Label": "VM Instance ID",
+      "HelpText": "The instance ID of the virtual machine to target when ",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8dbe0a29-4e0f-43f8-8ef2-ae23a2884e85",
+      "Name": "awsInstallLinuxTentacle.octoServerThumb",
+      "Label": "Server Thumbprint",
+      "HelpText": "The Thumbprint of the octopus server",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "a0859551-6c84-45d1-af2b-c57becb4e8ef",
+      "Name": "awsInstallLinuxTentacle.octoApiKey",
+      "Label": "Octo User API Key",
+      "HelpText": "The API key used to configure the tentacle.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "dd07815d-bfb7-43b9-90f8-21ec5a2d2953",
+      "Name": "awsInstallLinuxTentacle.octopusRoles",
+      "Label": "Roles",
+      "HelpText": "Roles to assign to this tentacle installation. <br />\n*Note: Each role should be on it's own line*",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "d3ffb38e-7fcf-4547-be9a-6cd8e46f8e5e",
+      "Name": "awsInstallLinuxTentacle.octopusEnvironments",
+      "Label": "Environments",
+      "HelpText": "Environments to assign this tentacle installation to.<br />\n*Note: Each environment should be on its own line*",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "15150827-7bd3-4146-a798-66344851f602",
+      "Name": "instrallTentacle.octoServerUrl",
+      "Label": "Octo Server Url",
+      "HelpText": "The server url to register the tentacle with.  Defaults to the base url",
+      "DefaultValue": "#{if Octopus.Web.ServerUri}#{Octopus.Web.ServerUri}#{else}#{Octopus.Web.BaseUrl}#{/if}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9bcd6bb5-2db3-453f-b4f6-6a78f3c39b59",
+      "Name": "awsInstallLinuxTentacle.tentacleType",
+      "Label": "Tentacle Type",
+      "HelpText": "Select between a listing or polling tentacle",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "TentaclePassive|Listening\nTentacleActive|Polling"
+      }
+    },
+    {
+      "Id": "6bb98570-fe3e-4ab7-adfb-79ef7ce5c2ce",
+      "Name": "awsInstallLinuxTentacle.tentacleHostName",
+      "Label": "Tentacle Host Name",
+      "HelpText": "The host name to register the listening tentacles with. Octopus deploy server uses this value to reach out to the vm.<br />\n*Note: Leave blank to automatically use assigned public IP address.*",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "386d9f39-9e90-4215-b739-53a1af5bd105",
+      "Name": "awsInstallLinuxTentacle.tentacleName",
+      "Label": "Tentacle Name",
+      "HelpText": "The name of the tentacle to use in the infrastructure area of octopus deploy.  Will use the host name if not provided",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "50621684-c2a5-47c0-9bfe-12f004022e60",
+      "Name": "awsInstallLinuxTentacle.portNumber",
+      "Label": "Port Number",
+      "HelpText": "Port number used when installing and registered tentacle.  This is also the port opened on the firewall",
+      "DefaultValue": "10933",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-08-23T12:40:10.9750000Z",
+    "OctopusVersion": "2021.1.7687",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "benjimac93",
+  "Category": "aws"
+}

@@ -1,0 +1,69 @@
+{
+  "Id": "5d5bd3ae-09a0-41ac-9a45-42a96ee6206a",
+  "Name": "AWS Secrets Manager - Retrieve Secrets",
+  "Description": "This step retrieves one or more secrets from AWS [Secrets Manager](https://aws.amazon.com/secrets-manager) and creates [sensitive output variables](https://octopus.com/docs/projects/variables/output-variables#sensitive-output-variables) for each value retrieved. The step supports creating a variable for each key-value in a secret that's retrieved, or you can specify individual keys. These values can be used in other steps in your deployment or runbook process.\n\n---\n\n**Specifying Secret names/keys to retrieve:**\n\nSpecify the names of the secrets to be returned from AWS Secrets Manager, in the format:\n\n`SecretName SecretVersionId SecretVersionStage | KeyNames | OutputVariableName` where:\n\n- `SecretName` is the name of the secret to retrieve. You can specify either the `Amazon Resource Name (ARN)` or the friendly name of the secret.\n- `SecretVersionId` is the unique identifier of the version of the secret that you want to retrieve. If this value isn't specified, the version with the `VersionStage` value as specified in `SecretVersionStage` will be retrieved.\n- `SecretVersionStage` specifies the secret version that you want to retrieve by the staging label attached to the version. *Staging labels are used to keep track of different versions during the rotation process*. If this value isn't specified, the version with the `VersionStage` value of `AWSCURRENT` will be retrieved.\n- `KeyNames` are the names of the keys stored in the secret that you wish to retrieve values for. Multiple fields can be retrieved separated by a space. Alternatively, you can specify all fields using the special keyword `all` or `*`.\n- `OutputVariableName` is the _optional_ Octopus [output variable](https://octopus.com/docs/projects/variables/output-variables) name to store the secret's value in. If multiple fields are specified the field name will be appended to this value. *If this value isn't specified, an output name will be generated dynamically*.\n\n**Examples:**\n\nGiven a secret named `OctoSamples-usercredentials`:\n\n1. `OctoSamples-usercredentials | Username | octousername`\n   \n   This would retrieve the secret and extract the value from the key-value named `Username` and save it into a sensitive output variable named `octousername`.\n\n2. `OctoSamples-usercredentials | Username Password | octocreds`\n   \n   This would retrieve the secret named `OctoSamples-usercredentials`, and then extract the values from the key-values named `Username` and `Password` and save them to two sensitive output variables named `octocreds.Username` and `octocreds.Password`.\n\n3. `OctoSamples-usercredentials | * | octocreds`\n   \n   This would retrieve the secret named `OctoSamples-usercredentials`, and then extract all key-values from the secret and save them to sensitive output variables *prefixed* with `octocreds`.\n\n4. `OctoSamples-usercredentials | all`\n   \n   This would retrieve the secret named `OctoSamples-usercredentials`, and then extract all key-values from the secret and save them to sensitive output variables *prefixed* with `OctoSamples-usercredentials`.\n\n---\n\n**AWS Dependencies:**\n\nThere are some dependencies/requirements for this step to work successfully.\n\n1. **CLI** - This step uses AWS tooling pre-installed on the target or worker. \n\n    Scripts executed in this step need to use the [AWS CLI](https://aws.amazon.com/cli/) to authenticate to AWS and perform other actions. If the CLI can't be found, the step will fail.\n\n2. **AWS Account** - An [AWS account](https://octopus.com/docs/infrastructure/accounts/aws) with permissions to retrieve secrets from AWS Secrets Manager is also required.\n\n---\n\n**Notes:** \n- Tested on Octopus **2021.2**.\n- Tested on both Windows Server 2019 and Ubuntu 20.04.\n\n",
+  "ActionType": "Octopus.AwsRunScript",
+  "Version": 4,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Aws.AssumeRole": "False",
+    "Octopus.Action.AwsAccount.UseInstanceRole": "False",
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1",
+    "Octopus.Action.AwsAccount.Variable": "#{AWS.SecretsManager.RetrieveSecrets.Account}",
+    "Octopus.Action.Aws.Region": "#{AWS.SecretsManager.RetrieveSecrets.Region}"
+  },
+  "Parameters": [
+    {
+      "Id": "8623cdbe-f962-4801-9470-5d14d1d7d5ed",
+      "Name": "AWS.SecretsManager.RetrieveSecrets.Account",
+      "Label": "AWS Account",
+      "HelpText": "An AWS account with permissions to access secrets from Secrets Manager.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AmazonWebServicesAccount"
+      }
+    },
+    {
+      "Id": "55a1d3e8-90c8-4c1a-a315-246fd8660e81",
+      "Name": "AWS.SecretsManager.RetrieveSecrets.Region",
+      "Label": "AWS Region",
+      "HelpText": "Specify the default region. View the [AWS Regions and Endpoints](https://docs.aws.amazon.com/general/latest/gr/rande.html#ec2_region) documentation for a current list of the available region codes.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e204a03d-80a6-437a-9a8b-8812c299741c",
+      "Name": "AWS.SecretsManager.RetrieveSecrets.SecretNames",
+      "Label": "Secret names to retrieve",
+      "HelpText": "Specify the names of the secrets to be returned from AWS Secrets Manager, in the format:\n\n`SecretName SecretVersionId SecretVersionStage | KeyNames | OutputVariableName` where:\n\n- `SecretName` is the name of the secret to retrieve. You can specify either the `Amazon Resource Name (ARN)` or the friendly name of the secret.\n- `SecretVersionId` is the unique identifier of the version of the secret that you want to retrieve. If this value isn't specified, the version with the `VersionStage` value as specified in `SecretVersionStage` will be retrieved.\n- `SecretVersionStage` specifies the secret version that you want to retrieve by the staging label attached to the version. *Staging labels are used to keep track of different versions during the rotation process*. If this value isn't specified, the version with the `VersionStage` value of `AWSCURRENT` will be retrieved.\n- `KeyNames` are the names of the keys stored in the secret that you wish to retrieve values for. Multiple fields can be retrieved separated by a space. Alternatively, you can specify all fields using the special keyword `all` or `*`. *See the step description for examples*.\n- `OutputVariableName` is the _optional_ Octopus [output variable](https://octopus.com/docs/projects/variables/output-variables) name to store the secret's value in. If multiple fields are specified the field name will be appended to this value. *If this value isn't specified, an output name will be generated dynamically*.\n\n**Note:** Multiple fields can be retrieved by entering each one on a new line.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "17ba53a4-bf94-498c-8905-0d37b86eaeea",
+      "Name": "AWS.SecretsManager.RetrieveSecrets.PrintVariableNames",
+      "Label": "Print output variable names",
+      "HelpText": "Write out the Octopus [output variable](https://octopus.com/docs/projects/variables/output-variables) names to the task log. Default: `False`.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AwsRunScript",
+  "$Meta": {
+    "ExportedAt": "2023-04-22T17:43:19.5800000Z",
+    "OctopusVersion": "2023.2.6614",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "harrisonmeister",
+  "Category": "aws"
+}
