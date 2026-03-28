@@ -1,0 +1,175 @@
+{
+  "Id": "e03c56a4-f660-48f6-9d09-df07e1ac90bd",
+  "Name": "Octopus - Serialize Space to Terraform",
+  "Description": "Serialize an Octopus space, excluding all projects, as a Terraform module and upload the resulting package to the Octopus built in feed.\n\nThis step is expected to be used in conjunction with the [Octopus - Serialize Project to Terraform](https://library.octopus.com/step-templates/e9526501-09d5-490f-ac3f-5079735fe041/actiontemplate-octopus-serialize-project-to-terraform) step. This step will serialize the global space resources, which typically do not change much, and have those resources recreated in a downstream space. The `Octopus - Serialize Project to Terraform` step then serializes a project, using `data` blocks to reference space level resources by name.",
+  "ActionType": "Octopus.Script",
+  "Version": 8,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.py",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Python"
+  },
+  "Parameters": [
+    {
+      "Id": "b9a96f7f-d8bc-408b-a614-5646bf44d092",
+      "Name": "SerializeSpace.ThisInstance.Terraform.Backend",
+      "Label": "Terraform Backend",
+      "HelpText": "The [backed](https://developer.hashicorp.com/terraform/language/settings/backends/configuration) to define in the Terraform module.",
+      "DefaultValue": "s3",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "941e2310-7ea0-4e76-a528-c65c9b68f8e7",
+      "Name": "SerializeSpace.ThisInstance.Server.Url",
+      "Label": "Octopus Server URL",
+      "HelpText": "The URL of the Octopus Server hosting the project to be serialized.",
+      "DefaultValue": "#{Octopus.Web.ServerUri}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6799b358-e3a5-4668-a12f-5e10e092c1c9",
+      "Name": "SerializeSpace.ThisInstance.Api.Key",
+      "Label": "Octopus API Key",
+      "HelpText": "The Octopus API Key",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "950d7bb5-c80b-42a8-84a5-a7012d0fe7ca",
+      "Name": "SerializeSpace.Exported.Space.Id",
+      "Label": "Octopus Space ID",
+      "HelpText": "The Space ID containing the project to be exported",
+      "DefaultValue": "#{Octopus.Space.Id}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "64acb2fe-b713-4f69-b08b-34546dd808cd",
+      "Name": "SerializeSpace.Octopus.UploadSpace.Id",
+      "Label": "Octopus Upload Space ID",
+      "HelpText": "The ID of the space to upload the Terraform package to. Leave this blank to upload to the space defined in the `Octopus Space ID` parameter.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e6b3d298-87e8-4965-966e-230537b4dd4c",
+      "Name": "SerializeSpace.Exported.Space.IgnoredLibraryVariableSet",
+      "Label": "Ignored Library Variables Sets",
+      "HelpText": "A comma separated list of library variables sets that will not be included in the Terraform module. These library variable sets are often those used by Runbooks that are not included in the module, and so do not need to be referenced.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b946a235-a1c1-4b04-83da-ecef622c018a",
+      "Name": "SerializeSpace.Exported.Space.IgnoredAllLibraryVariableSet",
+      "Label": "Ignore All Library Variable Sets",
+      "HelpText": "Check this option to ignore all library variable sets when serializing the Terraform module. This is useful when the downstream space already has library variable sets created.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "1208c54c-568a-4a48-9340-fbff710079b3",
+      "Name": "SerializeSpace.Exported.Space.IgnoredTenants",
+      "Label": "Ignored Tenants",
+      "HelpText": "A comma separated list of tenants that will not be included in the Terraform module. These tenants are often those used by Runbooks to identify managed spaces or instances, but which must not be recreated.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "9121bc1d-df00-4ec7-ae1c-751261d2438d",
+      "Name": "SerializeSpace.Exported.Space.IgnoredAccounts",
+      "Label": "Ignored Accounts",
+      "HelpText": "A comma separated list of accounts that will not be included in the Terraform module. These accounts are often those used by Runbooks that are not included in the module, and so do not need to be referenced.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c33810ae-0f53-421d-b11a-9161bfdd0df8",
+      "Name": "SerializeSpace.Exported.Space.IgnoreTargets",
+      "Label": "Ignore All Targets",
+      "HelpText": "Check this option to ignore the targets when serializing the Terraform module. This is useful when downstream spaces require their own unique targets to work correctly.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "a8e8163e-0981-4496-a844-b16281d8ce1c",
+      "Name": "SerializeSpace.Exported.Space.DummySecrets",
+      "Label": "Default Secrets to Dummy Values",
+      "HelpText": "This option sets the default value of all secrets, like account and feed passwords, to a dummy value. This allows the resources to be created and then updated at a later time with the correct values. Note the default values can be overridden if they are known.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "c068b289-5d29-4e90-b2ca-1098858044a2",
+      "Name": "SerializeSpace.Exported.Space.DefaultSecrets",
+      "Label": "Default Secrets to Default Values",
+      "HelpText": "This option sets the default value of all secrets, like account and feed passwords, to an Octostache template referencing the variable name. This allows the default value to be replaced by Octopus with the sensitive value during deployment.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "e7cbd75d-39f1-40ad-a41a-8eed8a65902c",
+      "Name": "SerializeSpace.Exported.Space.IgnoredTenantTags",
+      "Label": "Ignore Tenants with Tag",
+      "HelpText": "A comma separated list of tenant tags that identify tenants to exclude from the export. Typically tenants that represent internal teams or business units will have a tag like `TenantType/InternalCustomer` to distinguish them from other kinds of tenants.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f312be91-cc8f-49d6-afd7-fc6a6e38926c",
+      "Name": "SerializeSpace.Exported.Space.IncludeStepTemplates",
+      "Label": "Include Step Templates",
+      "HelpText": "Enable this option to export step templates.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "5944a2ce-e435-406b-a878-c499a6db4d6a",
+      "Name": "SerializeSpace.Exported.Space.OctopusManagedTerraformVars",
+      "Label": "Octopus Managed Terraform Vars",
+      "HelpText": "The optional name of an Octopus variable to use as the terraform.tfvars file.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2023-10-24T05:39:19.0040000Z",
+    "OctopusVersion": "2023.4.6612",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "octopus"
+}
