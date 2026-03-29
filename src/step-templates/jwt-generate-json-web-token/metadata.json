@@ -1,0 +1,135 @@
+{
+  "Id": "1ca0401c-dfca-420e-81ca-1f4b7cf02d2d",
+  "Name": "JWT - Generate JSON Web Token",
+  "Description": "Generates a [Json Web Token (JWT)](https://en.wikipedia.org/wiki/JSON_Web_Token) for use with applications that require a JWT token. The resulting JWT will be stored as a [sensitive output variable](https://octopus.com/docs/projects/variables/output-variables#sensitive-output-variables) called **JWT**.\n\nA private key needs to be provided that will sign the combined JWT header and payload.\n\nCurrently, the following three signing algorithms are supported:\n\n1. `RS256` - RSASSA-PKCS1-v1_5 using SHA-256\n2. `RS384` - RSASSA-PKCS1-v1_5 using SHA-384\n3. `RS512` - RSASSA-PKCS1-v1_5 using SHA-512\n\nThe default is `RS256`.\n\n**Notes:**\n- Tested on Windows and Linux (PowerShell Core)\n- Tested with Octopus **2020.1**",
+  "ActionType": "Octopus.Script",
+  "Version": 5,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1"
+  },
+  "Parameters": [
+    {
+      "Id": "71bacc82-21d7-4d08-a944-15dacd0a3405",
+      "Name": "Generate.JWT.PrivateKey",
+      "Label": "Private key used to sign the JWT",
+      "HelpText": "Provide the private key in PEM format to be used to sign the JWT.\n\nAccepted headers: \n\n- `----BEGIN RSA PRIVATE KEY-----`\n- `-----BEGIN PRIVATE KEY----`\n\n**Note:** It's recommended to use a sensitive variable to provide this value. If you instead enter the private key directly, the step template will attempt to detect this by replacing spaces with new lines ``n`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "84759ecc-a3f6-4822-a678-833269a8bf0d",
+      "Name": "Generate.JWT.Signing.Algorithm",
+      "Label": "JWT signing algorithm",
+      "HelpText": "The JWA [algorithm](https://datatracker.ietf.org/doc/html/rfc7518#section-3.1) to use when signing the JWT. The default is `RS256` (RSASSA-PKCS1-v1_5 using SHA-256).\n\nThis value is also used for the `alg` [algorithm header](https://datatracker.ietf.org/doc/html/rfc7515#section-4.1.1).",
+      "DefaultValue": "RS256",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "RS256|RS256: RSASSA-PKCS1-v1_5 using SHA-256\nRS384|RS384: RSASSA-PKCS1-v1_5 using SHA-384\nRS512|RS512: RSASSA-PKCS1-v1_5 using SHA-512"
+      }
+    },
+    {
+      "Id": "76d289c5-f6f9-4cfb-b876-13515745f03f",
+      "Name": "Generate.JWT.ExpiresAfterMinutes",
+      "Label": "JWT expiry time in minutes",
+      "HelpText": "The number of minutes after the JWT is created that it expires. This value is used for the `exp` [expiration time claim](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.4). The default is `20` minutes.",
+      "DefaultValue": "20",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "20d57320-15e4-4777-916b-8563192a326d",
+      "Name": "Generate.JWT.Issuer",
+      "Label": "JWT Issuer (optional)",
+      "HelpText": "*Optional* - The `iss` [isuer claim](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.1) identifies the principal that issued the JWT.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e7026958-60cb-4652-9fe0-2ef2965de951",
+      "Name": "Generate.JWT.Subject",
+      "Label": "JWT Subject (optional)",
+      "HelpText": "*Optional* subject (`sub`) of the JWT.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "12a68971-8e0b-4b90-9a27-4c81413d0fb7",
+      "Name": "Generate.JWT.Audience",
+      "Label": "Audience claims (optional)",
+      "HelpText": "*Optional* - The `aud` [audience claim](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.3) identifies the recipients that the JWT is intended for. This is typically the base address of the resource being accessed, such as `https://example-domain.com`\n\n*Note:* \n- For multiple audiences, enter each entry on a new line. \n- Any entries that are an empty string will be ignored.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "1bd2294c-64a3-4dad-bb9f-1a4cce5eaff5",
+      "Name": "Generate.JWT.Groups",
+      "Label": "Group claims (optional)",
+      "HelpText": "*Optional* - A `groups` [private claim](https://datatracker.ietf.org/doc/html/rfc7519#section-4.3) that identifies groups associated with this JWT. \n\n*Note:* \n- For multiple groups, enter each entry on a new line. \n- Any entries that are an empty string will be ignored.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "cdc3fe41-4669-48c8-8e65-1265faa79361",
+      "Name": "Generate.JWT.TTL",
+      "Label": "TTL claim (optional)",
+      "HelpText": "*Optional* - A `ttl` [private claim](https://datatracker.ietf.org/doc/html/rfc7519#section-4.3) that identifies the time-to-live for the JWT.\n\nThis value can be useful when authenticating with a Secrets Manager and the `ttl` value is mapped through to a resulting token used for authentication.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "51b2ec44-1a8d-43ce-8e06-4d0262eed45e",
+      "Name": "Generate.JWT.TTL.Max",
+      "Label": "Max TTL claim (optional)",
+      "HelpText": "*Optional* - A `max_ttl` [private claim](https://datatracker.ietf.org/doc/html/rfc7519#section-4.3) that identifies the time-to-live for the JWT.\n\nThis value can be useful when authenticating with a Secrets Manager and the `max_ttl` value is mapped through to a resulting token used for authentication.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "028ec077-a40f-4aa3-8099-2e873ab710a5",
+      "Name": "Generate.JWT.PrivateClaim.Name",
+      "Label": "Custom private claim name (optional)",
+      "HelpText": "*Optional* - The name of a custom [private claim](https://datatracker.ietf.org/doc/html/rfc7519#section-4.3) that can be included in this JWT. \n\n**Note:** \n\n- Don't include the value for the private claim. Set the value in the `Generate.JWT.PrivateClaim.Value` parameter instead.\n- If this value is null or an empty string, the private claim won't be added to the JWT payload.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "84a50912-284b-4c8a-bfee-87cd7cbc527e",
+      "Name": "Generate.JWT.PrivateClaim.Value",
+      "Label": "Custom private claim value (optional)",
+      "HelpText": "*Optional* - The value for the custom [private claim](https://datatracker.ietf.org/doc/html/rfc7519#section-4.3) as specified in the parameter `Generate.JWT.PrivateClaim.Name` to be included in this JWT.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedAt": "2021-08-09T11:51:09.7720000Z",
+  "LastModifiedBy": "harrisonmeister",
+  "$Meta": {
+    "ExportedAt": "2021-08-09T11:51:09.7720000Z",
+    "OctopusVersion": "2020.1.7316",
+    "Type": "ActionTemplate"
+  },
+  "Category": "jwt"
+}

@@ -1,0 +1,165 @@
+{
+  "Id": "dd4dfa66-e632-4c6a-bae6-156a7a105023",
+  "Name": "Venafi TPP - Create and Provision Certificate",
+  "Description": "This step template will authenticate against a Venafi TPP instance using an existing OAuth access token, and create a new certificate as well as optionally associate and push the new certificate to specified existing application(s). This is achieved using a combination of two functions from the VenafiPS PowerShell module:\n\n1. `New-TppCertificate` which is an alias of the [New-VdcCertificate](https://venafips.readthedocs.io/en/latest/functions/New-VdcCertificate/) function.\n2. `Add-TppCertificateAssociation` which is an alias of the [Add-VdcCertificateAssociation](https://venafips.readthedocs.io/en/latest/functions/Add-VdcCertificateAssociation/) function.\n\n---\n\n**Options:**\n\n- Provide a distinguished name (DN) path for the new certificate.\n- Provide a name for the new certificate.\n- Provide a common name (CN) for the new certificate.\n- *Optional* - Provide the distinguished name (DN) path to a certificate authority template to be used for the new certificate.\n- *Optional* - Choose from the following certificate types:\n  - `Code Signing`\n  - `Device`\n  - `Server`\n  - `User`\n- *Optional* - Choose from the following certificate management types:\n  - `Enrollment`\n  - `Provisioning`\n  - `Monitoring`\n  - `Unassigned`\n- *Optional* - Provide subject alternate names for the new certificate using the following acceptable SAN types: \n  - `OtherName`\n  - `Email`\n  - `DNS`\n  - `URI`\n  - `IPAdress`\n- *Optional* - Choose if you would like the step to wait for the certificate to finishing provisioning before moving on.\n- *Optional* - Choose the maximum time in seconds that you would like the step to wait for provisioning to finish.\n- *Optional* - Provide the application(s) path to associate the new certificate to.\n- *Optional* - Choose to push the new certificate to the specified application(s).\n- *Optional* - Choose to revoke the access token used on successful completion.\n\n---\n\n**Required:** \n- The `VenafiPS` PowerShell module installed on the deployment target or worker. If the module can't be found, the step will attempt to download a version from the [PowerShell gallery](https://www.powershellgallery.com/packages/VenafiPS).\n\nNotes:\n\n- Tested on Octopus `2021.2`.\n- Tested with VenafiPS `3.1.5`.\n- Tested with both Windows PowerShell and PowerShell Core on Linux.\n",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1"
+  },
+  "Parameters": [
+    {
+      "Id": "28b7cc35-41dc-4759-afc0-3ee8ded24a4b",
+      "Name": "Venafi.TPP.CreateCert.Server",
+      "Label": "Venafi TPP Server",
+      "HelpText": "*Required*: The URL of the Venafi TPP instance you want to create a certificate in.\n\nFor example : `https://mytppserver.example.com`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "58bf5279-d9a6-4129-81fc-9806a836e0a0",
+      "Name": "Venafi.TPP.CreateCert.AccessToken",
+      "Label": "Venafi TPP Access Token",
+      "HelpText": "*Required*: The access token to authenticate against the TPP instance.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "52140bce-2c49-46df-9858-145183a76614",
+      "Name": "Venafi.TPP.CreateCert.DNPath",
+      "Label": "Venafi TPP Certificate Path",
+      "HelpText": "*Required*: The Distinguished Name (DN) of the certificate you wish to create. This is the absolute path to the certificate in the TPP instance, separated by `\\`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "caf96139-f59d-4d79-b076-7cba155e5da6",
+      "Name": "Venafi.TPP.CreateCert.Name",
+      "Label": "Certificate Name",
+      "HelpText": "*Required*: Name of the certificate to be created.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2dcab218-b4e3-4076-a05d-6d4b649fda80",
+      "Name": "Venafi.TPP.CreateCert.SubjectCN",
+      "Label": "Certificate Subject Common Name",
+      "HelpText": "*Required*: Subject common name (CN) of the certificate to be created. ",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "040d9226-c782-47d6-b085-977f43b3f0cc",
+      "Name": "Venafi.TPP.CreateCert.CertificateAuthorityDN",
+      "Label": "Venafi TPP Certificate Authority Path (Optional)",
+      "HelpText": "*Optional*: The Distinguished Name (DN) of the certificate authority you wish to use. This is the absolute path to a certificate authority template in the TPP instance, separated by `\\`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c8863e1f-0e3b-49a4-aafc-d765b103c89a",
+      "Name": "Venafi.TPP.CreateCert.Type",
+      "Label": "Venafi TPP Certificate Type (Optional)",
+      "HelpText": "*Optional*: Type of certificate to be created. Valid options are:\n\n- `Code Signing`\n- `Device`\n- `Server` (**Default**)\n- `User`",
+      "DefaultValue": "Server",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Code Signing|Code Signing\nDevice|Device\nServer|Server\nUser|User"
+      }
+    },
+    {
+      "Id": "53b52bb0-64cf-4d11-bc66-f9e22b54c2a0",
+      "Name": "Venafi.TPP.CreateCert.ManagementType",
+      "Label": "Venafi TPP Certificate Management Type (Optional)",
+      "HelpText": "*Optional*: The level of management that Trust Protection Platform applies to the certificate. Valid options are:\n\n- `Enrollment`: (**Default**) Issue a new certificate, renewed certificate, or key generation request to a CA for enrollment. Do not automatically provision the certificate. \n- `Provisioning`: Issue a new certificate, renewed certificate, or key generation request to a CA for enrollment. Automatically install or provision the certificate.\n- `Monitoring`: Allow Trust Protection Platform to monitor the certificate for expiration and renewal.\n- `Unassigned`: Certificates are neither enrolled or monitored by Trust Protection Platform.",
+      "DefaultValue": "Enrollment",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Enrollment|Enrollment\nProvisioning|Provisioning\nMonitoring|Monitoring\nUnassigned|Unassigned"
+      }
+    },
+    {
+      "Id": "a3306c46-a69d-4bdf-816b-0bac12276b6c",
+      "Name": "Venafi.TPP.CreateCert.SubjectAltNames",
+      "Label": "Venafi TPP Certificate Subject Alternate Names (Optional)",
+      "HelpText": "*Optional*: A list of Subject Alternate Names. The value must be 1 or more lines with the SAN type and value. Each SAN type needs to be separated by a `;`. Acceptable SAN types are `OtherName`, `Email`, `DNS`, `URI`, and `IPAddress`. You can provide more than 1 of the same SAN type with multiple lines.\n\n**For example**: \n```md\nDNS=octopus.local.samples;Email=octopus@email.com\nDNS=octopus.samples;IPAddress=0.0.0.0\n```",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "3014d2f1-789c-4640-91e1-ee7ddb5661e7",
+      "Name": "Venafi.TPP.CreateCert.ProvisioningWait",
+      "Label": "Wait for certificate provisioning?",
+      "HelpText": "If the new certificate has a management type of `Provisioning` should the step wait for the provisioning to complete?",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "88386d92-8536-4be4-8a8f-2f5fd8d3242b",
+      "Name": "Venafi.TPP.CreateCert.ProvisioningTimeout",
+      "Label": "Max wait time for certificate provisioning.",
+      "HelpText": "The max about of time in seconds you want the step to wait for the certificate to be provisioned.",
+      "DefaultValue": "600",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e9e84efe-28e1-437c-9c79-845a59a7e89e",
+      "Name": "Venafi.TPP.CreateCert.ApplicationPath",
+      "Label": "Venafi TPP Application Path (Optional)",
+      "HelpText": "*Optional*: A comma separated list of application paths to associate with the new certificate. Each value in the list is the absolute path to an application in the TPP instance, separated by `\\`.\n\n",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3bfc02d2-4711-4a21-821d-9add5de603d7",
+      "Name": "Venafi.TPP.CreateCert.PushCertificate",
+      "Label": "Push certificate to associated application?",
+      "HelpText": "Push the newly created certificate to the applications",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "38eaa04c-6e4c-4d7d-b119-0631dfb7a490",
+      "Name": "Venafi.TPP.CreateCert.RevokeTokenOnCompletion",
+      "Label": "Revoke access token on completion?",
+      "HelpText": "Should the access token used be revoked once the step has been completed successfully? Default: `False`.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-08-23T21:42:40.3190000Z",
+    "OctopusVersion": "2021.1.7236",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "harrisonmeister",
+  "Category": "venafi"
+}

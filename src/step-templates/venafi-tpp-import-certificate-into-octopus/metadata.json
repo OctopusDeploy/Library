@@ -1,0 +1,175 @@
+{
+  "Id": "e10820c2-ae6d-4030-8a8a-b73ed60a81fc",
+  "Name": "Venafi TPP - Import Certificate into Octopus",
+  "Description": "This step template will authenticate against a Venafi TPP instance using an existing OAuth access token, export a certificate by its Distinguished Name (DN), and then import the certificate into the Octopus certificate store.\n\nThe export is achieved using the VenafiPS PowerShell module's [Export-VenafiCertificate](https://venafips.readthedocs.io/en/latest/functions/Export-VenafiCertificate/) function.\n\n---\n\n**Export options:**\n\n- Provide the distinguished name (DN) path to the certificate.\n- Choose from the following export formats:\n  - `Base64`\n  - `Base64 (PKCS #8)`\n  - `DER`\n  - `PKCS #12` \n- *Optional* - Include the full certificate chain in the export.\n- *Optional* - Friendly name (Label or alias) to use. Permitted with `Base64` and `PKCS #12` formats. \n- *Optional* - Include the private key in the export. Not supported with `DER` format.\n- *Optional* - Provide a password to be used for the exported private key.\n- *Optional* - Also store the export certificate response in `JSON` format in an [Octopus sensitive output variable](https://octopus.com/docs/projects/variables/output-variables#sensitive-output-variables). This output variable can then be used in additional deployment or runbook steps.\n- *Optional* - on successful completion, you can revoke the access token used.\n\n---\n\n**Octopus Import options:**\n\n- Octopus URL\n- Octopus API Key\n- Octopus Space name\n- Certificate name\n- *Optional* - replace the existing certificate if it already exists\n\n---\n\n**Required:** \n- The `VenafiPS` PowerShell module installed on the deployment target or worker. If the module can't be found, the step will attempt to download a version from the [PowerShell gallery](https://www.powershellgallery.com/packages/VenafiPS).\n- PowerShell `5` or greater.\n- Octopus API key with permission to save the certificate.\n\nNotes:\n\n- Tested on Octopus `2021.2`.\n- Tested with VenafiPS `3.1.5`.\n- Tested with both Windows PowerShell and PowerShell Core on Linux.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1"
+  },
+  "Parameters": [
+    {
+      "Id": "56ef4967-37f5-40a0-a66e-f3fa589b6467",
+      "Name": "Venafi.TPP.ImportCert.Server",
+      "Label": "Venafi TPP Server",
+      "HelpText": "*Required*: The URL of the Venafi TPP instance you want to export the certificate from.\n\nFor example: `https://mytppserver.example.com`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "49bcdbbb-3674-4901-8bf6-164e5e4bc395",
+      "Name": "Venafi.TPP.ImportCert.AccessToken",
+      "Label": "Venafi TPP Access Token",
+      "HelpText": "*Required*: The access token to authenticate against the TPP instance.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "e3156852-4ba9-4dc0-8d39-5a93c52b1910",
+      "Name": "Venafi.TPP.ImportCert.DNPath",
+      "Label": "Venafi TPP Certificate Path",
+      "HelpText": "*Required*: The Distinguished Name (DN) of the certificate you wish to export. This is the absolute path to the certificate in the TPP instance, separated by `\\`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4f9f4d4b-d686-4d00-aa93-af35b7df320b",
+      "Name": "Venafi.TPP.ImportCert.Format",
+      "Label": "Certificate Export Format",
+      "HelpText": "*Required*: The certificate export format. Valid options are:\n\n- `Base64`\n- `Base64 (PKCS #8)`\n- `DER`\n- `PKCS #12`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Base64|Base64\nBase64 (PKCS #8)|Base64 (PKCS #8)\nDER|DER\nPKCS #12|PKCS #12"
+      }
+    },
+    {
+      "Id": "309d30de-79b6-4461-8a54-1698aedd5822",
+      "Name": "Venafi.TPP.ImportCert.IncludeChain",
+      "Label": "Include certificate chain (Optional)",
+      "HelpText": "*Optional*: Include the certificate chain with the exported certificate. Not supported with `DER` format. Default: `False`.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "71fecac3-25c4-4161-9135-94815a485f03",
+      "Name": "Venafi.TPP.ImportCert.FriendlyName",
+      "Label": "Friendly Name (Optional)",
+      "HelpText": "*Optional*: Label or alias to use. Permitted with `Base64` and `PKCS #12` formats.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2aaedf1d-be93-4df4-856c-c69650db452a",
+      "Name": "Venafi.TPP.ImportCert.IncludePrivateKey",
+      "Label": "Include Private Key (Optional)",
+      "HelpText": "*Optional*: Include the private key in the certificate export. If this is selected, the `Venafi.TPP.Export.PrivateKeyPassword` must also be provided. Default: `False`.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "2d168360-bcbf-4bdc-833d-a9c182e98a47",
+      "Name": "Venafi.TPP.ImportCert.PrivateKeyPassword",
+      "Label": "Private Key password (Optional)",
+      "HelpText": "*Optional*: The password required to include the private key. Not supported with `DER` format.  You must adhere to the following rules: \n\n- Password is at least 12 characters. \n- Comprised of at least three of the following: \n  - Uppercase alphabetic letters \n  - Lowercase alphabetic letters \n  - Numeric characters \n  - Special characters",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "84f92dd5-064b-47e5-bb11-3dd0faacfeb4",
+      "Name": "Venafi.TPP.ImportCert.OutputVariableName",
+      "Label": "Certificate output variable name (Optional)",
+      "HelpText": "*Optional*: Create an output variable with the certificate details returned from the export call. The certificate details will be stored in `JSON` format.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "606acdfe-641a-47f2-a4ea-56559477ea0c",
+      "Name": "Venafi.TPP.ImportCert.RevokeTokenOnCompletion",
+      "Label": "Revoke access token on completion?",
+      "HelpText": "*Optional*: Should the access token used be revoked once the step has been completed successfully? Default: `False`.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "7813080c-d6d6-4bd1-8c38-d6d03921f541",
+      "Name": "Venafi.TPP.ImportCert.OctopusServerUri",
+      "Label": "Octopus Server Url",
+      "HelpText": "*Required*: Provide the base URL of your Octopus Server. There are two built-in Octopus variables you can use:\n\n- `#{if Octopus.Web.ServerUri}#{Octopus.Web.ServerUri}#{else}#{Octopus.Web.BaseUrl}#{/if}`\n- `Octopus.Web.ServerUri`\n\nSee our [system variables](https://octopus.com/docs/projects/variables/system-variables#Systemvariables-Server) page for further details.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5be3cf08-43ef-44a3-bd89-3ec3b4928b01",
+      "Name": "Venafi.TPP.ImportCert.OctopusApiKey",
+      "Label": "Octopus API Key",
+      "HelpText": "*Required*: Provide an Octopus API Key with appropriate permissions to save the certificate.\n",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "d901f398-a035-4ba6-a546-553360eed283",
+      "Name": "Venafi.TPP.ImportCert.OctopusSpaceName",
+      "Label": "Octopus Space Name",
+      "HelpText": "*Required*: Provide the Space name for the certificate to be saved in. The default is the current space the step is running within: `#{Octopus.Space.Name}`.",
+      "DefaultValue": "#{Octopus.Space.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "56f8e1a8-fb6c-4b91-a216-eadc2f5cd673",
+      "Name": "Venafi.TPP.ImportCert.OctopusCertificateName",
+      "Label": "Octopus Certificate Name",
+      "HelpText": "*Required*: A short, memorable, unique name for the imported certificate.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "3a85993f-8844-49aa-951a-804471f53b23",
+      "Name": "Venafi.TPP.ImportCert.OctopusReplaceExistingCertificate",
+      "Label": "Replace existing Octopus certificate?",
+      "HelpText": "*Optional*: If a certificate exists in Octopus with the same name as the one to be imported, should the one stored in Octopus be replaced? Default: `True`.\n\n**Note**: If multiple matches are found, the step template will not replace any, and will log a warning instead.\n\nSee [replacing certificates](https://octopus.com/docs/deployments/certificates/replace-certificate) for further information.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "LastModifiedAt": "2021-08-18T15:47:39.5570000Z",
+  "LastModifiedBy": "benjimac93",
+  "$Meta": {
+    "ExportedAt": "2021-08-23T12:40:10.9750000Z",
+    "OctopusVersion": "2021.1.7687",
+    "Type": "ActionTemplate"
+  },
+  "Category": "venafi"
+}

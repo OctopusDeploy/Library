@@ -1,0 +1,115 @@
+{
+  "Id": "c9d5c96f-f731-4e6c-b9b3-d93f84a9bb74",
+  "Name": "Re-prioritize Octopus Deploy Tasks",
+  "Description": "This step will allow you to re-prioritize tasks in the Octopus Deploy queue.  \n\nIt will check the task queue for pending tasks and if it finds a task that should be prioritized based on the matching criteria it will cancel any tasks before it to move it to the top of the queue.  \n\nThe matching logic supports:\n- Task Id - you provide a list of task ids and it will move those to the top of the queue\n- Space, Environment, Project, Tenant - you provide a list of spaces, environments, projects, or tenants and the step will find matching deployments or runbook runs and move them to the top of the queue.  \n\nHow it works:\n1) The step template pulls the list of unscheduled queued tasks (if you schedule a task to run at 7 PM it will exclude that from the check).\n2) Attempts to find matching tasks based on task id or space/environment/project/tenant criteria.\n3) If it finds one or more matching tasks it checks the position of those tasks in the queue.  Any tasks ahead of them are cancelled.\n4) if the step template cancels any deployments or runbook runs it will resubmit them using the same criteria as before (this moves them to the bottom of the queue).\n\n**Important** It will not cancel running tasks.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1"
+  },
+  "Parameters": [
+    {
+      "Id": "f7357d18-33c3-4f1e-883d-613e13e098cd",
+      "Name": "TaskPriority.Api.Key",
+      "Label": "Octopus API Key",
+      "HelpText": "*Required* \n\n\nThe API key of the user authorized to cancel tasks and resubmit them.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "82ef3721-aef1-4624-a306-9f20ad2ef64d",
+      "Name": "TaskPriority.Octopus.Url",
+      "Label": "Octopus URL",
+      "HelpText": "*Required*\n\nThe URL of the Octopus Deploy instance you wish to query.  \n\nPlease only pass in the base URL, eg `https://samples.octopus.app`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b2e14858-7309-46ab-b624-ec811ad95618",
+      "Name": "TaskPriority.TaskId.List",
+      "Label": "Task Id List",
+      "HelpText": "A comma-separated or new-line separated list of task ids to move to the top of the queue.\n\n**IMPORTANT** when this is provided all other matching logic is ignored, including the task type and the space list.\n",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "2434bd05-791b-45e9-9ffa-7fbde9524e5f",
+      "Name": "TaskPriority.Space.List",
+      "Label": "Space List",
+      "HelpText": "List of spaces to monitor.  Separate spaces by using a new line.\n\nWhen left empty this step will query all spaces.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "87a7ec4a-128b-4b74-8f6b-ea66c9261dec",
+      "Name": "TaskPriority.Environment.List",
+      "Label": "Environment List",
+      "HelpText": "List of environment names to monitor for.  Separate environment names by a new line.\n\nOptions:\n- `EnvironmentName` - looks for matching environment names in all spaces in the space list.\n- `EnvironmentName::SpaceName` - looks for the environment name in the specified space.  Use this when the same environment appears in multiple spaces and you want to filter to only apply to an item in a specific space.\n\nThe default `Production`.  \n\nWhen not specifying a value for the Task Id parameter; a entry must appear in the Environment List, Project List, OR Tenant List.  Otherwise, this step will not do anything.",
+      "DefaultValue": "Production",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "b94bd70b-6554-4ea5-86f1-fbfb1827dfc5",
+      "Name": "TaskPriority.Project.List",
+      "Label": "Project List",
+      "HelpText": "List of projects to monitor.  Separate project names by a new line.\n\nOptions:\n- `ProjectName` - looks for the specified project name in all spaces in the space list.\n- `ProjectName::SpaceName` - looks for that project in a specific space.  Use this when the same project appears in multiple spaces and you want to filter to only apply to an item in a specific space.\n\nWhen left empty it will not look for any projects.\n\nWhen not specifying a value for the Task Id parameter; a entry must appear in the Environment List, Project List, OR Tenant List.  Otherwise, this step will not do anything.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "0958b7b3-94b6-4a3e-b78c-f2436950728a",
+      "Name": "TaskPriority.Tenant.List",
+      "Label": "Tenant List",
+      "HelpText": "List of tenant names to monitor.  Separate tenant names by a new line.\n\nOptions:\n- `TenantName` - looks for the tenant name in any spaces in the space list\n- `TenantName::SpaceName` - looks for the tenant name in the specified space.  Use this when the same tenant appears in multiple spaces and you want to filter to only apply to an item in a specific space.\n\nWhen left empty it will not filter anything by the tenant.\n\nWhen not specifying a value for the Task Id parameter; a entry must appear in the Environment List, Project List, OR Tenant List.  Otherwise, this step will not do anything.\n",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "a6382a5c-df7f-4dee-bdc9-df89459e1d14",
+      "Name": "TaskPriority.Task.Match",
+      "Label": "Task Match",
+      "HelpText": "Indicates how the matching will occur.\n\nOptions:\n- `And` - means the deployment has to be for the Environment AND the project AND the tenant (when they are specified)\n- `Or` - means the deployment can be for Environment OR the project OR the tenant\n\nDefault is `Or`\n",
+      "DefaultValue": "Or",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Or|Or\nAnd|And"
+      }
+    },
+    {
+      "Id": "1e8d3fc8-36b5-4c84-bfe5-4bfc5b4f5869",
+      "Name": "TaskPriority.Task.Type",
+      "Label": "Task Type",
+      "HelpText": "The type of task to move to the top of the queue.\n\nOptions:\n- `Deploy` - monitors deployments only\n- `RunbookRun` - monitors runbook runs only\n- `Both` - monitors both deployments and runbooks\n\nDefaults to `Both`",
+      "DefaultValue": "Both",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Both|Both\nDeploy|Deploy\nRunbookRun|RunbookRun"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-02-22T15:40:24.6040000Z",
+    "OctopusVersion": "2021.1.0-ci1022",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "octobob",
+  "Category": "octopus"
+}

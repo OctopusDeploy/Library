@@ -1,0 +1,149 @@
+{
+  "Id": "67fcc93c-509c-4c13-bc24-645eff53c5c2",
+  "Name": "Azure Function - Set AppSettings from Azure AppConfig",
+  "Description": "This step retrieves one or more key/values from an Azure App Configuration store and adds them to an Azure App Function's AppSettings.\n\nYou can retrieve individual keys that match a specific name, and you can choose a custom setting name for each key.\n\nWildcard search is also supported using the `*` notation in the **Key Names** parameter. Note: Combining a wildcard search with custom setting names is not supported.\n\nYou can also combine retrieved values with additional parameters passed into the step using the `Additional AppSettings` parameter.\n\nAuthentication is performed using an Azure Service Principal.\n\n---\n\n**Required:** \n- An Azure account with permission to both retrieve values from the Azure App Config store and publish to the App Function.\n- The `az` CLI on the target or worker. If the CLI can't be found, the step will fail. \n\nNotes:\n\n- Tested on Octopus `2024.1` using az version `2.38.0`\n- Tested with both Windows PowerShell and PowerShell Core (on Linux).\n- Slot Settings are not currently supported.",
+  "ActionType": "Octopus.AzurePowerShell",
+  "Version": 3,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "OctopusUseBundledTooling": "False",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1",
+    "Octopus.Action.Azure.AccountId": "#{AzFunction.SetAppSettings.FromAzAppConfig.AzureAccount}"
+  },
+  "Parameters": [
+    {
+      "Id": "b4c7f413-9341-4602-b5f4-5d69365e6cff",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.AzureAccount",
+      "Label": "Azure Account",
+      "HelpText": "An Azure account with permission to both retrieve values from the Azure App Config store and publish to the App Function",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "AzureAccount"
+      }
+    },
+    {
+      "Id": "fcf6f1fd-1b3c-47d2-8037-802224c76452",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.ConfigStoreName",
+      "Label": "Config Store Name",
+      "HelpText": "The name of the Azure App Configuration store. Provide this or the **Config store endpoint**.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7d6b9332-9c13-42b1-83b5-a8e84fc593f0",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.ConfigStoreEndpoint",
+      "Label": "Config Store Endpoint",
+      "HelpText": "The endpoint for the Azure App Configuration Store. Provide this or the **Config store name**.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c25b6875-2007-4d55-97a1-7ec7b061b06b",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.RetrievalMethod",
+      "Label": "Retrieval Method",
+      "HelpText": "Choose how the step calls the az cli. Either:\n- `All`: Retrieve all configuration values in one call\n- `Individually`: Retrieve configuration values in multiple calls; one for each key specified in the **Key Names** parameter.\n\nDefault: `All`",
+      "DefaultValue": "all",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "all|All\nindividual|Individually"
+      }
+    },
+    {
+      "Id": "cf069635-3027-47a4-8965-d229c8e64afd",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.KeyNames",
+      "Label": "Key Names",
+      "HelpText": "Specify the names of the keys to be returned from Azure App Configuration in the format `KeyName | CustomSettingName` where:\n\n- `KeyName` is the key to retrieve. Wildcards are supported by adding `*` at the end of the key name.\n- `CustomSettingName` is the _optional_ name to set for the AppSetting value in the App Function. *If this value isn't specified, the original key will be used.*.\n\n**Note:** Multiple keys can be retrieved by entering each one on a new line. Note: Combining a wildcard search with custom setting names is not supported.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "13007305-0fa2-468c-b7de-3c5317bd8611",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.Labels",
+      "Label": "Labels",
+      "HelpText": "Labels are an attribute on keys. Provide one or more labels in the format `label1,label2` to retrieve only selected keys tagged with those labels.\n\n**Note:** You can include both label values *and* specify key names if you want.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a7e79ba3-5ea3-40ab-9759-aa281e3c02f9",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.SuppressWarnings",
+      "Label": "Suppress warnings",
+      "HelpText": "Suppress warnings from being written to the task log. For example, when a supplied key can't be found in the Azure App Configuration store.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "62d8f95f-8a57-4908-b789-c3ecabd7c6dd",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.TreatWarningsAsErrors",
+      "Label": "Treat Warnings as Errors",
+      "HelpText": "Treats warnings as errors. If enabled the **Suppress Warnings** parameter is ignored. ",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "c8c1c14d-a515-47e7-b117-6a69644b78af",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.FunctionName",
+      "Label": "Azure Function App Name",
+      "HelpText": "The name of the Azure App function.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "07fcb750-13a1-4272-b6b6-a5cdd120a15f",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.ResourceGroup",
+      "Label": "Resource Group",
+      "HelpText": "The name of the resource group where the Function App is located.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "fbd1b5bf-e1ce-415c-b7db-9c9d49e9f8e3",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.Slot",
+      "Label": "Slot",
+      "HelpText": "\nThe name of the slot. Defaults to the production slot if not specified.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "21e9c8b3-50ce-4006-83a7-86d7803c31ee",
+      "Name": "AzFunction.SetAppSettings.FromAzAppConfig.AdditionalSettingsValues",
+      "Label": "Additional AppSettings",
+      "HelpText": "Specify the name and values of any **additional** settings to be applied to the Azure App Function in the format `KEY | VALUE` where:\n\n- `KEY` is the name of the app setting to add\n- `VALUE` is the value to be used. [Octopus variables](https://octopus.com/docs/projects/variables) can be used here.\n\n\n**Note:** Multiple settings can be added by entering each one on a new line. As a result, values that span multiple lines will result in an error.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.AzurePowerShell",
+  "$Meta": {
+    "ExportedAt": "2023-11-30T16:25:08.8280000Z",
+    "OctopusVersion": "2024.1.2558",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedAt": "2023-11-30T16:25:08.8280000Z",
+  "LastModifiedBy": "harrisonmeister",
+  "Category": "azure"
+}

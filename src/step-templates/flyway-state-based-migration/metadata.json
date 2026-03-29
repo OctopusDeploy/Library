@@ -1,0 +1,192 @@
+{
+  "Id": "67a28755-049e-4cec-b45c-3e5047350d8d",
+  "Name": "Flyway State Based Migration",
+  "Description": "Step template to leverage Flyway to deploy migration scripts.  This is the latest and greatest Flyway step template that leverages all the newest features of both Flyway and Octopus Deploy.\n\n- You can include the flyway executables in your package, if you include the `flyway` (Linux) or `flyway.cmd` (Windows) in the root of the package this step template will automatically find them.\n- You can use this with an execution container, negating the need to include Flyway in the package. If Flyway isn't found in the package it will attempt to find `/flyway/flyway` (when using Linux containers) or `flyway` in the environment path and use that.\n- Support for Flyway State Based commands, including the `undo` command.\n- Support for flyway community, teams, enterprise, and pro editions.  \n\nPlease note this requires Octopus Deploy **2019.10.0** or newer along with PowerShell Core installed on the machines running this step.\nAWS EC2 IAM Authentication requires the AWS CLI to be installed.",
+  "ActionType": "Octopus.Script",
+  "Version": 2,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "0c0d333c-d794-4a16-a3a2-4bbba4550763",
+      "Name": "Flyway.Package.Value",
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "Flyway.Package.Value"
+      }
+    }
+  ],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1",
+    "Octopus.Action.PowerShell.Edition": "Core",
+    "Octopus.Action.EnabledFeatures": "Octopus.Features.SelectPowerShellEditionForWindows"
+  },
+  "Parameters": [
+    {
+      "Id": "5952088c-d399-4050-9474-d93aef737a8d",
+      "Name": "Flyway.Package.Value",
+      "Label": "Flyway Package",
+      "HelpText": "**Required**\n\nThe package containing the migration scripts you want Flyway to run.  Please refer to [documentation](https://flywaydb.org/documentation/concepts/migrations) for core concepts and naming conventions.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "1a2c32aa-5bf5-41ef-a916-4fa5c4039748",
+      "Name": "Flyway.Executable.Path",
+      "Label": "Flyway Executable Path",
+      "HelpText": "**Optional**\n\nThe path of the flyway executable.  It can either be a relative path or an absolute path.\n\nWhen not provided, this step template will test for the following.  The step template places precedence on the version of the flyway included in the package. If Flyway is NOT found in the package, it will attempt to see if it is installed on the server by checking common paths.\n\nRunning on `Linux`:\n- `.flyway`: the package being deployed includes flyway and is running on Linux\n- `/flyway/flyway`: The default path for the Linux execution container.\n\nRunning on Windows:\n- `\\.flyway.cmd`: the package being deployed includes flyway and is running on Windows\n- `flyway`: the package is in the path on the Windows VM or Windows Execution container.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ce396114-d0e6-433f-a160-6ea92b26b1b2",
+      "Name": "Flyway.Command.Value",
+      "Label": "Flyway Command",
+      "HelpText": "**Required**\n\nThe [flyway command](https://flywaydb.org/documentation/usage/commandline/) you wish to run.\n\n- `Check`: Produces a report of changes from the `schema model` against the target `environment`\n- `Deploy`: Executes the scripts generated to make the target database look like the model.\n- `Prepare`: Compares the schema model against the target database and generates scripts to make the database conform to the model.\n",
+      "DefaultValue": "prepare",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "check|Check\ndeploy|Deploy\nprepare|Prepare"
+      }
+    },
+    {
+      "Id": "b05cb50e-1e34-4c2d-bf3f-b7bbdc555f05",
+      "Name": "Flyway.Email.Address",
+      "Label": "Email address",
+      "HelpText": "The email address associated with the Personal Access Token (PAT).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "24c6fe79-6fbd-4f19-9f74-a36cda746ced",
+      "Name": "Flyway.PersonalAccessToken",
+      "Label": "Personal Access Token (PAT)",
+      "HelpText": "The Personal Access Token (PAT) to authenticate with for Enterprise features.  \n\nReplaces the License Key.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "522f4dc8-3a0a-486d-a9cd-9c2ef94d1a8e",
+      "Name": "Flyway.Target.Url",
+      "Label": "-Url",
+      "HelpText": "**Required**\n\nThe [URL](https://flywaydb.org/documentation/configuration/parameters/url) parameter used in Flyway.  This is the URL of the database to run the migration scripts on in the format specified in the default flyway.conf file.\n\nExamples:\n- SQL Server: `jdbc:sqlserver://host:port;databaseName=database`\n- Oracle: `jdbc:oracle:thin:@//host:port/service` or `jdbc:oracle:thin:@tns_entry`\n- MySQL: `jdbc:mysql://host:port/database`\n- PostgreSQL: `jdbc:postgresql://host:port/database`\n- SQLite: `jdbc:sqlite:database`\n\nPlease refer to [documentation](https://flywaydb.org/documentation/database/sqlserver) for further examples.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "349f8a5f-5a18-4d23-a717-1c74a03029eb",
+      "Name": "Flyway.Source.Schema.Model",
+      "Label": "Source Schema Model (optional).",
+      "HelpText": "Name of the source schema model used for the comparison operation.  Not all database technologies, such as MSSQL, use this option.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "195e2486-f286-4a72-a97a-f40b7a44a609",
+      "Name": "Flyway.Target.Schema",
+      "Label": "Target Schema (optional)",
+      "HelpText": "Name of the target schema to deploy to.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "16d4243a-28b0-4e8d-beec-854ca4c781b0",
+      "Name": "Flyway.Authentication.Method",
+      "Label": "Authentication Method",
+      "HelpText": "Method used to authenticate to the database server.",
+      "DefaultValue": "usernamepassword",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "awsiam|AWS EC2 IAM Role\nazuremanagedidentity|Azure Managed Identity\ngcpserviceaccount|GCP Service Account\nusernamepassword|Username\\Password\nwindowsauthentication|Windows Authentication"
+      }
+    },
+    {
+      "Id": "3f733c39-c99a-40d0-9dfd-e67d72c87883",
+      "Name": "Flyway.Database.User",
+      "Label": "-User",
+      "HelpText": "**Optional**\n\nThe [user](https://flywaydb.org/documentation/configuration/parameters/user) used to connect to the database.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7509e8ee-c781-4ca2-bbe4-6e5e348d3d44",
+      "Name": "Flyway.Database.User.Password",
+      "Label": "-Password",
+      "HelpText": "**Optional**\n\nThe [password](https://flywaydb.org/documentation/configuration/parameters/password) used to connect to the database.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "6d4946a4-0746-40e9-9b6e-c85c220c2dbe",
+      "Name": "Flyway.Command.Schemas",
+      "Label": "-Schemas",
+      "HelpText": "**Optional**\n\nComma-separated case-sensitive list of [schemas](https://flywaydb.org/documentation/configuration/parameters/schemas) managed by Flyway. \n\nExample: `schema1,schema2`\n\nFlyway will attempt to create these schemas if they do not already exist and will clean them in the order of this list. If Flyway created them, then the schemas themselves will be dropped when cleaning.\n\nThe first schema in the list will act as the default schema.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "12168dc6-261b-4853-89ea-ef4e36e17452",
+      "Name": "Flyway.Additional.Arguments",
+      "Label": "Additional arguments",
+      "HelpText": "Any additional arguments that need to be passed (ie `-table=\"MyTable\")",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "7c7a8183-963d-40e5-94e9-b7a6aa2217df",
+      "Name": "Flyway.Transaction",
+      "Label": "Execute in transaction?",
+      "HelpText": "Tick this box if you want the deployment to execute within a transaction.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "291b9675-e737-4dfe-98fc-bbf303a87653",
+      "Name": "Flyway.Generate.Undo",
+      "Label": "Generate Undo Script?",
+      "HelpText": "Tick this box if you want Flwyay to generate an `Undo` script.  `Undo` scripts will be created as an output variable for `Prepare` and attached as an Octopus Artifact for `Deploy`.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2026-01-20T22:39:29.5980000Z",
+    "OctopusVersion": "2025.4.10338",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "twerthi",
+  "Category": "flyway"
+}

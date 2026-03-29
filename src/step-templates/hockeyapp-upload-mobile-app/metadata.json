@@ -1,0 +1,157 @@
+{
+  "Id": "5667710e-60b8-4067-bfa5-87196faafdda",
+  "Name": "HockeyApp - Upload Mobile App",
+  "Description": "This script uploads a new version of an existing app package to the [HockeyApp](http://hockeyapp.net/features/) services.",
+  "ActionType": "Octopus.Script",
+  "Version": 20,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1",
+    "Octopus.Action.Script.Syntax": "PowerShell"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "HockeyAppApiToken",
+      "Label": "HockeyApp Api Token",
+      "HelpText": "HockeyApp requires an access token for their API as show in the [HockeyApp API Authentication Documentation](http://support.hockeyapp.net/kb/api/api-basics-and-authentication#authentication). Logged in users can generate tokens under [API Tokens](https://rink.hockeyapp.net/manage/auth_tokens) in the account menu.\n\nYou should generate an application specific token for this purpose.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppAppID",
+      "Label": "HockeyApp App ID",
+      "HelpText": "The ID of your App in HockeyApp. This is visible on the [Manage Apps](https://rink.hockeyapp.net/manage/apps) management page for your target app.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "MobileAppPackageStepName",
+      "Label": "Package Step Name",
+      "HelpText": "Name of the previously-deployed package step that contains the App that you want to deploy.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Name": "PackageFileName",
+      "Label": "Package File Name",
+      "HelpText": "The value is optional.\n\nIf no value is provided the scrip will search for exactly one *.apk, *.ipa, or *.appx file in the nupgk package files. Zero or multiple matches will result in an error.\n\nIf a value is provided, it will be used directly instead of searching. Use this to specify a mobile app to upload in the case of multiple apps, such as a signed and unsigned apk, or an apk and ipa in a single Nuget package.\n\nThis value must be the path and filename relative to the root of the nupkg file. You may use octopus parameters if needed, but the passed value must be the combined relative path with full filename for the package.\n\nFor creating the nupkg, the following *.nuspec example will package ALL matching Ipa, Apk (signed), and Appx files. If you have a single package as build output, the Nuget package should work by default.\n\n\t<?xml version=\"1.0\"?>\n\t<package>\n\t  <metadata>\n\t\t<id>$id$</id>\n\t\t<title>$id$</title>\n\t\t<version>$version$</version>\n\t\t<description>Mobile project packaged for Octopus deploy. $description$</description>\n\t  </metadata>\n\t  <files>\n\t\t<!-- Matches mobile package files. Note this will only include the platform being built,\n\t\t\t and should match only a single file. -->\n\n\t\t<!-- Android, Signed only -->\n\t\t<file src=\"**/Release/**/*-Signed.apk\" target=\"\" />\n\n\t\t<!-- iOS -->\n\t\t<file src=\"**/Release/**/*.ipa\" target=\"\" />\n\n\t\t<!-- Windows App -->\n\t\t<file src=\"**/*.appx\" exclude=\"**/Dependencies/**\" target=\"\" />\n\t  </files>\n\t</package>",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppNotes",
+      "Label": "HockeyApp Notes",
+      "HelpText": "optional, release notes as Textile or Markdown\n\nAs an example, you could use the Octopus variables from the Nuget package extract step as like this:\n\nDeployed from Nuget Package #{Octopus.Action[Nuget Package Extract].Package.NuGetPackageId}, Version  #{Octopus.Action[Nuget Package Extract].Package.NuGetPackageVersion}\n\nAnd get Hockey App notes like:\n\nDeployed from Nuget Package MyiOSPackage, Version 1.2.3.4\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppNotesType",
+      "Label": "HockeyApp Notes Type",
+      "HelpText": "optional, type of release notes:\n\n- 0 - Textile\n- 1 - Markdown\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppNotify",
+      "Label": "HockeyApp Notify",
+      "HelpText": "optional, notify testers (can only be set with full-access tokens):\n\n- 0 - Don't notify testers\n- 1 - Notify all testers that can install this app\n- 2 - Notify all testers\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": "1",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppStatus",
+      "Label": "HockeyApp Status",
+      "HelpText": "optional, download status (can only be set with full-access tokens):\n\n- 1: Don't allow users to download or install the version\n- 2: Available for download or installation\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": "2",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppTags",
+      "Label": "HockeyApp Tags",
+      "HelpText": "optional, restrict download to comma-separated list of tags\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppTeams",
+      "Label": "HockeyApp Teams",
+      "HelpText": "optional, restrict download to comma-separated list of team IDs; example:\n\nteams=12,23,42 with 12, 23, and 42 being the database IDs of your teams\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppUsers",
+      "Label": "HockeyApp Users",
+      "HelpText": "optional, restrict download to comma-separated list of user IDs; example:\n\n    1224,5678\nwith 1224 and 5678 being the database IDs of your users\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppMandatory",
+      "Label": "HockeyApp Mandatory",
+      "HelpText": "optional, set version as mandatory:\n\n- 0 - no\n- 1 - yes\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppCommitSha",
+      "Label": "HockeyApp Commit Sha",
+      "HelpText": "optional, set to the git commit sha for this build\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppBuildServerUrl",
+      "Label": "HockeyApp Build Server Url",
+      "HelpText": "optional, set to the URL of the build job on your build server\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "HockeyAppRepositoryUrl",
+      "Label": "HockeyApp Repository Url",
+      "HelpText": "optional, set to your source repository\n\nSee [Upload API Documentation](http://support.hockeyapp.net/kb/api/api-versions#upload-version)",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedOn": "2021-07-26T09:50:00.0000000-07:00",
+  "LastModifiedBy": "bobjwalker",
+  "$Meta": {
+    "ExportedAt": "2015-11-30T16:11:50.8150000-08:00",
+    "OctopusVersion": "2.6.4.951",
+    "Type": "ActionTemplate"
+  },
+  "Category": "hockeyapp"
+}

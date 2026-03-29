@@ -30,7 +30,11 @@ import jasmineReporters from "jasmine-reporters";
 import jasmineTerminalReporter from "jasmine-terminal-reporter";
 import eventStream from "event-stream";
 import fs from "fs";
+import http from "http";
+import https from "https";
 import jsonlint from "gulp-jsonlint";
+import path from "path";
+import { execFileSync, spawn } from "child_process";
 
 const sass = gulpSass(dartSass);
 const clientDir = "app";
@@ -38,6 +42,7 @@ const serverDir = "server";
 
 const buildDir = "build";
 const publishDir = "dist";
+const sourceStepTemplatesDir = "src/step-templates";
 
 const $ = gulpLoadPlugins({
   rename: {
@@ -47,6 +52,69 @@ const $ = gulpLoadPlugins({
 
 const reload = browserSync.reload;
 const argv = yargs.argv;
+
+function runStepTemplateGenerator(args = []) {
+  execFileSync("node", [path.join("tools", "generate-step-templates.js"), ...args], {
+    cwd: process.cwd(),
+    stdio: "inherit",
+  });
+}
+
+function generateAllMigratedTemplates() {
+  runStepTemplateGenerator(["all"]);
+}
+
+function generateFromChangedSourcePath(changedPath) {
+  runStepTemplateGenerator(["changed-path", changedPath]);
+}
+
+function openBrowser(url) {
+  if (process.env.CI) {
+    return;
+  }
+
+  if (process.platform === "darwin") {
+    spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+    return;
+  }
+
+  if (process.platform === "win32") {
+    spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();
+    return;
+  }
+
+  spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+}
+
+function waitForServer(url, { timeoutMs = 10000, pollIntervalMs = 200 } = {}) {
+  const parsedUrl = new URL(url);
+  const client = parsedUrl.protocol === "https:" ? https : http;
+  const startedAt = Date.now();
+
+  return new Promise((resolve) => {
+    function tryConnect() {
+      const request = client.get(url, (response) => {
+        response.resume();
+        resolve();
+      });
+
+      request.on("error", () => {
+        if (Date.now() - startedAt >= timeoutMs) {
+          resolve();
+          return;
+        }
+
+        setTimeout(tryConnect, pollIntervalMs);
+      });
+
+      request.setTimeout(pollIntervalMs, () => {
+        request.destroy();
+      });
+    }
+
+    tryConnect();
+  });
+}
 
 const vendorStyles = [
   "node_modules/font-awesome/css/font-awesome.min.css",
@@ -72,6 +140,11 @@ function lint(files, options = {}) {
 
 gulp.task("lint:client", lint(`${clientDir}/**/*.jsx`));
 gulp.task("lint:server", lint(`./${serverDir}/server.js`));
+gulp.task("prepare:step-templates", (done) => {
+  generateAllMigratedTemplates();
+  done();
+});
+
 gulp.task("lint:step-templates", () => {
   return gulp
     .src("./step-templates/*.json")
@@ -81,25 +154,24 @@ gulp.task("lint:step-templates", () => {
     .pipe(jsonlint.reporter());
 });
 
-gulp.task(
-  "tests",
-  gulp.series("lint:step-templates", () => {
-    return (
-      gulp
-        .src("./spec/*-tests.js")
-        // gulp-jasmine works on filepaths so you can't have any plugins before it
-        .pipe(
-          jasmine({
-            includeStackTrace: false,
-            reporter: [new jasmineReporters.JUnitXmlReporter(), process.env.TEAMCITY_VERSION ? new jasmineReporters.TeamCityReporter() : new jasmineTerminalReporter()],
-          })
-        )
-        .on("error", function () {
-          process.exit(1);
+gulp.task("test:step-templates", () => {
+  return (
+    gulp
+      .src("./spec/*-tests.js")
+      // gulp-jasmine works on filepaths so you can't have any plugins before it
+      .pipe(
+        jasmine({
+          includeStackTrace: false,
+          reporter: [new jasmineReporters.JUnitXmlReporter(), process.env.TEAMCITY_VERSION ? new jasmineReporters.TeamCityReporter() : new jasmineTerminalReporter()],
         })
-    );
-  })
-);
+      )
+      .on("error", function () {
+        process.exit(1);
+      })
+  );
+});
+
+gulp.task("tests", gulp.series("prepare:step-templates", "lint:step-templates", "test:step-templates"));
 
 function humanize(categoryId) {
   switch (categoryId) {
@@ -292,11 +364,13 @@ function provideMissingData() {
   return eventStream.map(function (file, cb) {
     var fileContent = file.contents.toString();
     var template = JSON.parse(fileContent);
-    var pathParts = file.path.split("\\");
-    var fileName = pathParts[pathParts.length - 1];
+    var fileName = path.basename(file.path);
+    var templateName = fileName.replace(/\.json$/i, "");
+    var expectedHistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/src/step-templates/" + templateName;
+    var hasBrokenGeneratedHistoryUrl = template.HistoryUrl && (template.HistoryUrl.indexOf("/step-templates/") !== -1 || template.HistoryUrl.indexOf("/opt/") !== -1);
 
-    if (!template.HistoryUrl) {
-      template.HistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/step-templates/" + fileName;
+    if (!template.HistoryUrl || hasBrokenGeneratedHistoryUrl) {
+      template.HistoryUrl = expectedHistoryUrl;
     }
 
     if (!template.Website) {
@@ -313,7 +387,7 @@ function provideMissingData() {
     template.Category = humanize(categoryId);
 
     if (!template.Logo) {
-      var logo = fs.readFileSync("./step-templates/logos/" + categoryId + ".png");
+      var logo = fs.readFileSync("./src/step-templates/logos/" + categoryId + ".png");
       template.Logo = Buffer.from(logo).toString("base64");
     }
 
@@ -323,17 +397,16 @@ function provideMissingData() {
   });
 }
 
-gulp.task(
-  "step-templates",
-  gulp.series("tests", () => {
-    return gulp
-      .src("./step-templates/*.json")
-      .pipe(provideMissingData())
-      .pipe(concat("step-templates.json", { newLine: "," }))
-      .pipe(insert.wrap('{"items": [', "]}"))
-      .pipe(argv.production ? gulp.dest(`${publishDir}/app/services`) : gulp.dest(`${buildDir}/app/services`));
-  })
-);
+gulp.task("step-templates:data", () => {
+  return gulp
+    .src("./step-templates/*.json")
+    .pipe(provideMissingData())
+    .pipe(concat("step-templates.json", { newLine: "," }))
+    .pipe(insert.wrap('{"items": [', "]}"))
+    .pipe(argv.production ? gulp.dest(`${publishDir}/app/services`) : gulp.dest(`${buildDir}/app/services`));
+});
+
+gulp.task("step-templates", gulp.series("prepare:step-templates", "lint:step-templates", "test:step-templates", "step-templates:data"));
 
 gulp.task("styles:vendor", () => {
   return gulp.src(vendorStyles, { base: "node_modules/" }).pipe(argv.production ? gulp.dest(`${publishDir}/public/styles/vendor`) : gulp.dest(`${buildDir}/public/styles/vendor`));
@@ -426,14 +499,43 @@ gulp.task(
     server.start();
     process.chdir(`../`);
 
-    browserSync.init(null, {
-      proxy: "http://localhost:9000",
-    });
+    browserSync.init(
+      null,
+      {
+        proxy: "http://localhost:9000",
+        open: false,
+      },
+      () => {
+        waitForServer("http://localhost:9000").then(() => {
+          openBrowser("http://localhost:9000");
+        });
+      }
+    );
+
+    function reloadServer(done) {
+      server.start.bind(server)();
+      done();
+    }
 
     gulp.watch(`${clientDir}/**/*.jade`, gulp.series("build:client"));
-    gulp.watch(`${clientDir}/**/*.jsx`, gulp.series("scripts", "copy:app"));
+    gulp.watch(`${clientDir}/**/*.jsx`, gulp.series("scripts", "copy:app", reloadServer));
     gulp.watch(`${clientDir}/content/styles/**/*.scss`, gulp.series("styles:client"));
-    gulp.watch("step-templates/*.json", gulp.series("step-templates"));
+    gulp.watch("step-templates/*.json", gulp.series("step-templates:data"));
+    gulp.watch(`${sourceStepTemplatesDir}/**/*`).on("all", (eventName, changedPath) => {
+      if (!changedPath) {
+        return;
+      }
+
+      generateFromChangedSourcePath(changedPath);
+      gulp.series("step-templates:data")((error) => {
+        if (error) {
+          log.error(error);
+          return;
+        }
+
+        reload();
+      });
+    });
 
     gulp.watch(`${buildDir}/**/*.*`).on("change", reload);
   })

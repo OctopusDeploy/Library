@@ -1,0 +1,156 @@
+{
+  "Id": "eed13694-0208-4614-aca9-e82309838dd8",
+  "Name": "AWS - Launch EC2 Instance",
+  "Description": "This step will launch an EC2 instance, or start an instance previously created by this step.\n\nThe goal being that only one specific instance will be created, and on subsequent deploys, if the instance is not running it will be started. If the instance was terminated, a new instance will be created in its place. Basically, this step says \"_I will make sure the specified Instance will be running after this step_\".\n\nThis step makes the following Octopus \"Output\" Variables available to subsequent steps:\n- **InstanceId** (e.g. i-a1b2c3d4e5f6g7h8i)\n- **PrivateIpAddress** (e.g. 192.168.0.100)\n- **PublicIpAddress** (e.g. 52.64.52.64)\n- Usage: _#{Octopus.Action[AWS - Launch EC2 Instance].Output.**InstanceId**}_\n\nNow what...? Well, you could use the \"UserData\" field to [automatically install and register a Tentacle](https://octopus.com/blog/auto-provision-ec2-instances-with-tentacle-installed).\n\nNote for UserData: _If you're creating your own image (AMI), you may need to [re-enable User Data](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/UsingConfig_WinAMI.html#UsingConfigInterface_WinAMI), then create the image._\n\nWith a couple of extra step templates you can:\n- Wait for the Instance to register as a Deployment Target (_Octopus - Wait for Deployment Target registration_)\n- Include the new Instance in subsequent deployment steps (_Health Check_)\n\n[AWS Tools for Windows PowerShell](http://aws.amazon.com/powershell/) must be installed on the Server/Target you plan on running this step template on.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1",
+    "Octopus.Action.RunOnServer": "false"
+  },
+  "Parameters": [
+    {
+      "Id": "45aa8520-eb05-48a9-b4ef-30d11b5e6a73",
+      "Name": "odTags",
+      "Label": "Tags",
+      "HelpText": "The Tags to be applied to the new instance. These tags will determine if a new instance will be created, or if an instance matching the tags should be in a running state.",
+      "DefaultValue": "Name=#{Octopus.Project.Name}\nEnvironment=#{Octopus.Environment.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "2411ffb3-c3fc-402a-9448-249415000c14",
+      "Name": "odImageId",
+      "Label": "ImageId",
+      "HelpText": "The Amazon Machine Image (AMI) Id. This can be the id of an image you've created yourself, or one of the AWS Community AMIs.",
+      "DefaultValue": "ami-xxxxxxxx",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "a2cc4774-b60c-4dad-9c44-074d0564b626",
+      "Name": "odInstanceType",
+      "Label": "InstanceType",
+      "HelpText": "The Instance Type (Model), e.g. t2.micro, m3.large, c4.large, etc.\nFurther reading: https://aws.amazon.com/ec2/instance-types/",
+      "DefaultValue": "t2.micro",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "dd2c238d-4758-4027-8901-b050e991bf83",
+      "Name": "odSubnetId",
+      "Label": "SubnetId",
+      "HelpText": "The Subnet Id you would like the Instance to launch in.",
+      "DefaultValue": "subnet-xxxxxxxx",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "349022a4-0ad3-46bd-b408-e456c5616577",
+      "Name": "odSecurityGroupId",
+      "Label": "SecurityGroupId",
+      "HelpText": "The Security Group Id you would like the Instance to launch with.",
+      "DefaultValue": "sg-xxxxxxxx",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "54508ead-07db-4f73-b8a9-8c3b8c91bdb1",
+      "Name": "odKeyName",
+      "Label": "KeyName",
+      "HelpText": "The name of the Key Pair that will be used to log into the new instance.",
+      "DefaultValue": "AutoDeployKeyNameExample",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "01097d0d-4ce5-4c38-afd4-527919a800f7",
+      "Name": "odRegion",
+      "Label": "Region",
+      "HelpText": "The AWS Region you would like the Instance to launch in, e.g. ap-southeast-2, us-west-2, eu-west-1, etc.\nFurther reading: https://docs.aws.amazon.com/general/latest/gr/rande.html#ec2_region",
+      "DefaultValue": "ap-southeast-2",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b4dfba68-93fe-496a-acd4-00e01d818312",
+      "Name": "odUserData",
+      "Label": "UserData (Optional)",
+      "HelpText": "The UserData is a script that will be executed on the initial startup of your EC2 Instance.\nFurther Reading: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/user-data.html",
+      "DefaultValue": "<powershell>tzutil.exe /s 'AUS Eastern Standard Time'</powershell>",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "5842e13b-af7a-4a18-bfa4-4891aded2ae9",
+      "Name": "odSpotPrice",
+      "Label": "SpotPrice (Optional)",
+      "HelpText": "The Spot Price is a variable hourly rate (often discounted), which is calculated based on the current demand for any particular Instance Type (Model).\nFurther Reading: https://aws.amazon.com/ec2/spot/pricing/",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "caa5f631-f0c5-4925-8a57-a80abb5e4300",
+      "Name": "odSpotProduct",
+      "Label": "SpotProduct (Optional)",
+      "HelpText": "The Spot Product is basically the Operating System you plan to utilise.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "Linux/Unix|Linux/Unix\nSUSE Linux|SUSE Linux\nWindows|Windows"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "43206cff-be8c-4805-9045-2f6bf302e056",
+      "Name": "odAccessKey",
+      "Label": "AccessKey (Kind-of Optional)",
+      "HelpText": "An Access Key with permissions to create the desired EC2 instance.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"AWS\\_ACCESS\\_KEY\"\nFurther Reading:\nhttps://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b0d6b3e7-3c90-4f0e-b919-78ef04608cb3",
+      "Name": "odSecretKey",
+      "Label": "SecretKey (Kind-of Optional)",
+      "HelpText": "The Secret Key associated with the above Access Key.\nNote: If empty, this step will attempt to use the value contained in the Machine Environment Variable \"AWS\\_SECRET\\_KEY\"\nFurther Reading:\nhttps://docs.aws.amazon.com/general/latest/gr/managing-aws-access-keys.html",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "tclydesdale",
+  "$Meta": {
+    "ExportedAt": "2018-01-29T12:56:55.3110000Z",
+    "OctopusVersion": "4.1.9",
+    "Type": "ActionTemplate"
+  },
+  "Category": "aws"
+}

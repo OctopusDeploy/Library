@@ -1,0 +1,146 @@
+{
+  "Id": "8b316926-0821-459b-9869-3ca98fd9087e",
+  "Name": "Upload files by FTP from package",
+  "Description": "Upload files to a remote server via File Transfer Protocol (SFTP or FTP) using WinSCP.\n\nThis step template uses the [WinSCP .NET Assembly](http://winscp.net/eng/docs/library#downloading_and_installing_the_assembly).  In the absence of WinSCP installed on the machine, it will attempt to make use of the WinSCP PowerShell module, downloading a temporary copy if not already present. \n\n# Notes on usage\n\nThis version uses a referenced package parameter and is able to be run on a Worker.\n\n## Cleaning up deployments\n\nIf you aren't deploying to an application host and don't want the deployment files to persist on the tentacle irrespective of the life cycle retention policy ensure that you set the \"Delete Previous Deployment\" to `true` and they will be removed.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Author": "twerthi",
+  "Packages": [
+    {
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "FtpPackage"
+      },
+      "Id": "76cedf6d-e8b0-4fc2-af04-a745ae6659ea",
+      "Name": "FtpPackage"
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "__SOURCE_FILE__:scriptbody.ps1",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Id": "a884e52a-0e90-4b98-ba36-916dbbb7302c",
+      "Name": "PathToWinScp",
+      "Label": "Path to WinScp",
+      "HelpText": "The directory where you extracted the WinSCP .NET Assembly.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "09f9bb2d-2c7e-402c-8824-e91c6c7dd3e4",
+      "Name": "FtpHost",
+      "Label": "Host",
+      "HelpText": "The address of your FTP server. Example: `ftp.yourhost.com`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "81768a2a-9fbb-47d0-b584-91cb1c93fc28",
+      "Name": "FtpUsername",
+      "Label": "Username",
+      "HelpText": "If no username is specified, the well-known username `anonymous` will be used.",
+      "DefaultValue": "anonymous",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f36ea459-db54-4ff8-9f9f-f6917f56f330",
+      "Name": "FtpPassword",
+      "Label": "Password",
+      "HelpText": "If no password is specified, the well-known password `guest` will be used.\n\nIf the password field is bound, the binding expression will be visible to other authorized users.",
+      "DefaultValue": "guest",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "c970e25e-e1cf-4143-81e7-ab158f80b7bf",
+      "Name": "FtpHostKeyFingerprint",
+      "Label": "Host Key Fingerprint(s)",
+      "HelpText": "By supplying a host key fingerprint (or a semicolon separated list), you will force the deployment into SFTP mode, and automatically accept the host certificates.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4c4ace47-c5a0-46e3-9898-39fb722a524d",
+      "Name": "FtpPasskey",
+      "Label": "Passkey",
+      "HelpText": "Path to the PPK passkey file, leave blank if using a Password",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0ecfc143-7470-45a2-a099-f0c6f37f58e5",
+      "Name": "FtpPasskeyPhrase",
+      "Label": "Passkey Phrase",
+      "HelpText": "If your passkey is encrypted, please supply the pass phrase.\n\nIf the password field is bound, the binding expression will be visible to other authorized users.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "b2fa7e63-c46b-4539-8d3b-c1d7c41c71ea",
+      "Name": "FtpRemoteDirectory",
+      "Label": "Remote directory",
+      "HelpText": "The directory on your FTP server in which you want files to be placed. Example: `/site/wwwroot`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f02cbc65-dffb-40cc-a0b5-d87e19346b90",
+      "Name": "FtpDeleteUnrecognizedFiles",
+      "Label": "Delete unrecognized files",
+      "HelpText": "Files can exist on the FTP server that do not exist in the NuGet package. Examples may be binaries from a previous release, or uploaded images in a CMS. Use this option to choose how to treat these files.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "e7ca0ba2-02cc-4988-acef-0f0bb12094ad",
+      "Name": "DeleteDeploymentStep",
+      "Label": "Delete Deployment Step?",
+      "HelpText": "Should this script delete the deployment - for example, if you are running this on the Octopus Server, you might want to clean up the output of the previous package deploy step when this has completed.",
+      "DefaultValue": "false",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "b7a1af1a-0670-4817-a577-132fe1db01e5",
+      "Name": "FtpPackage",
+      "Label": "Package",
+      "HelpText": "Select the package to FTP",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2020-08-08T00:22:01.9210000Z",
+    "OctopusVersion": "2020.3.2",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "harrisonmeister",
+  "Category": "winscp"
+}

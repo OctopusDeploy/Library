@@ -5,23 +5,18 @@ Have a great custom step that other Octopus users will love? Here's how to get i
 
 1. [Fork](https://github.com/OctopusDeploy/Library/fork) the Library repository
 2. Clone your fork into a directory on your own machine
-3. _Export_ your template from the Octopus server
-4. Save the exported JSON to a file under `/step-templates`
+3. If you're adding a new template, create a new folder under `/src/step-templates/<template>/`
+4. Add or update `metadata.json` and any sibling script files such as `scriptbody.ps1`, `scriptbody.sh`, `scriptbody.py`, `predeploy.ps1`, `deploy.ps1`, or `postdeploy.ps1`
 5. Check that the `LastModifiedBy` username is one you're happy to use on the site (ideally your plain GitHub username)
 6. Add Id property and set it to a GUID using the following format `abcdef00-ab00-cd00-ef00-000000abcdef`, you can use [this site](https://www.guidgen.com/) to generate one automatically
 7. Optional: Assign your template to an existing category. Have a look at existing templates to find the category that matches your template. If you don't specify it your template will be assigned to 'other' category.
-   - If you add a new category, make sure that you add an icon in `.png` format with a size of 200x200px to the `logos` folder with the same name as your category. Also, the `switch` in the `humanize` function in [`gulpfile.babel.js`](https://github.com/OctopusDeploy/Library/blob/master/gulpfile.babel.js#L92) must have a `case` statement corresponding to it.
+   - If you add a new category, make sure that you add an icon in `.png` format with a size of 200x200px to the `src/step-templates/logos` folder with the same name as your category. Also, the `switch` in the `humanize` function in [`gulpfile.babel.js`](https://github.com/OctopusDeploy/Library/blob/master/gulpfile.babel.js#L92) must have a `case` statement corresponding to it.
 8. If you're updating an existing step template, make sure the `Version` property is incremented (e.g. by 1). If the `Version` doesn't change then the [Community Library Integration](http://docs.octopusdeploy.com/display/OD/Step+Templates#StepTemplates-TheCommunityLibrary) in Octopus won't see your changes.
-9. Commit and push your changes to your fork
-10. View your fork in GitHub to create a _pull request_
+9. Run `npm run build` to regenerate the packed compatibility JSON and validate the result
+10. Commit and push your changes to your fork
+11. View your fork in GitHub to create a _pull request_
 
 Someone from the Octopus team will review your request and help to make the step consistent with the others in the library. Once it's ready we'll merge it into the main repository and publish it to [the library site](http://library.octopusdeploy.com).
-
-**Note**: If you're editing an existing template we've got a tool you can use to help with packing and unpacking the scripts stored in the step template `*.json` file.
-
-* To unpack the step template scripts into separate files alongside the main step template file, run `powershell .\tools\_unpack.ps1`.
-* You can then edit the `*.ps1` files in the `.\step-templates` folder using your favourite PowerShell editor.
-* To pack the step template script files back into the main step template, run `powershell .\tools\_pack.ps1`. 
 
 Here's a **checklist** to consider:
 
@@ -30,7 +25,7 @@ Here's a **checklist** to consider:
 * Are all parameters in the template consistent with the examples here, including help text documented with Markdown?
 * **To minimize the risk of step template parameters clashing with other variables in a project that uses the step template, ensure that you prefix your parameter names (e.g. an abbreviated name for the step template or the category of the step template**
 * Is the description of the template complete, correct Markdown?
-* Is the `.json` filename consistent with the name of the template?
+* Is the template folder name under `/src/step-templates` consistent with the name of the template?
 * Do scripts in the template validate required arguments and fail by returning a non-zero exit code when things go wrong?
 * Do scripts in the template produce worthwhile status messages as they execute?
 * Are you happy to contribute your template under the terms of the [license](https://github.com/OctopusDeploy/Library/blob/master/LICENSE.txt)? If you produced the template while working for your employer please obtain written permission from them before submitting it here.
@@ -63,7 +58,7 @@ We also accept contributions to improve the [library.octopusdeploy.com](http://l
 
 To build the library site you need to have `nodejs` installed on your system.
 
-Run the setup job to install `gulp` globally and install the npm dependencies:
+Run the setup job to install the npm dependencies:
 
 ```
 npm run setup
@@ -76,7 +71,7 @@ Congratulations, you are now ready to build and test the site locally.
 From the root of the repository, run the following command: 
 
 ```
-gulp build
+npm run build
 ```
 
 This will build a debuggable version of the library site and output it to `./build/`. To test the site, run the following command:
@@ -91,7 +86,7 @@ This will start the `express` server and you can browse the site at the followin
 While developing you can run the site in development mode so that as you make changes to the code your browser will refresh to reflect the changes you just made. To run the site in development mode, run the following command:
 
 ```
-gulp watch
+npm run dev
 ```
 
 This will start a `LiveServer` that is used as a proxy for the `express` server running on `http://localhost:9000` and `gulp` will watch for changes and when detected, refresh your browser window.
