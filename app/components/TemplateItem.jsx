@@ -54,20 +54,6 @@ export default class TemplateItem extends React.Component {
     });
   }
 
-  openHistory(event) {
-    event.preventDefault();
-
-    const historyUrl = this.state.template && this.state.template.HistoryUrl;
-    if (!historyUrl) {
-      return;
-    }
-
-    const historyWindow = window.open(historyUrl, "_blank", "noopener,noreferrer");
-    if (historyWindow) {
-      historyWindow.opener = null;
-    }
-  }
-
   getJsonBlobHeight() {
     if (this.state.showJsonBlob) {
       return "9000px";
@@ -128,7 +114,7 @@ export default class TemplateItem extends React.Component {
                 </SyntaxHighlighter>
               </div>
               <p className="align-right">
-                <a className="faint" href={this.state.template.HistoryUrl} onClick={this.openHistory.bind(this)} rel="noopener noreferrer" target="_blank">
+                <a className="faint" href={this.state.template.HistoryUrl} rel="noopener noreferrer" target="_blank">
                   History &raquo;
                 </a>
               </p>

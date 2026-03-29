@@ -1,10 +1,6 @@
 "use strict";
 
-const {
-  generateAllMigratedTemplates,
-  generateTemplate,
-  inferTemplateNameFromSourcePath,
-} = require("./source-step-template-lib");
+const { generateAllMigratedTemplates, generateTemplate, inferTemplateNameFromSourcePath } = require("./source-step-template-lib");
 
 function main() {
   const [, , command = "all", value] = process.argv;
