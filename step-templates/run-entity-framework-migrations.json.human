@@ -1,0 +1,183 @@
+{
+  "Id": "a6cd35d6-164a-4e57-a0f8-0d327129783a",
+  "Name": "Run Entity Framework migrations (Update-Database)",
+  "Description": "Runs `Update-Database` to update the database to the latest Entity Framework migrations",
+  "ActionType": "Octopus.Script",
+  "Version": 6,
+  "Properties": {
+    "Octopus.Action.Script.ScriptBody": "# A collection of functions that can be used by script steps to determine where packages installed\r
+# by previous steps are located on the filesystem.\r
+ \r
+function Find-InstallLocations {\r
+    $result = @()\r
+    $OctopusParameters.Keys | foreach {\r
+        if ($_.EndsWith('].Output.Package.InstallationDirectoryPath')) {\r
+            $result += $OctopusParameters[$_]\r
+        }\r
+    }\r
+    return $result\r
+}\r
+ \r
+function Find-InstallLocation($stepName) {\r
+    $result = $OctopusParameters.Keys | where {\r
+        $_.Equals(\"Octopus.Action[$stepName].Output.Package.InstallationDirectoryPath\",  [System.StringComparison]::OrdinalIgnoreCase)\r
+    } | select -first 1\r
+ \r
+    if ($result) {\r
+        return $OctopusParameters[$result]\r
+    }\r
+ \r
+    throw \"No install location found for step: $stepName\"\r
+}\r
+ \r
+function Find-SingleInstallLocation {\r
+    $all = @(Find-InstallLocations)\r
+    if ($all.Length -eq 1) {\r
+        return $all[0]\r
+    }\r
+    if ($all.Length -eq 0) {\r
+        throw \"No package steps found\"\r
+    }\r
+    throw \"Multiple package steps have run; please specify a single step\"\r
+}\r
+\r
+function Test-LastExit($cmd) {\r
+    if ($LastExitCode -ne 0) {\r
+        Write-Host \"##octopus[stderr-error]\"\r
+        write-error \"$cmd failed with exit code: $LastExitCode\"\r
+    }\r
+}\r
+\r
+\r
+\r
+\r
+$stepName = $OctopusParameters['NugetPackageStepName']\r
+\r
+$stepPath = \"\"\r
+if (-not [string]::IsNullOrEmpty($stepName)) {\r
+    Write-Host \"Finding path to package step: $stepName\"\r
+    $stepPath = Find-InstallLocation $stepName\r
+} else {\r
+    $stepPath = Find-SingleInstallLocation\r
+}\r
+Write-Host \"Package was installed to: $stepPath\"\r
+\r
+$baseDirectory = $OctopusParameters['BaseDirectory']\r
+\r
+$binPath = Join-Path $stepPath $baseDirectory\r
+\r
+#Locate Migrate.exe\r
+$efToolsFolder = $OctopusParameters['EfToolsFolder']\r
+$originalMigrateExe = Join-Path $efToolsFolder \"migrate.exe\"\r
+\r
+if (-Not(Test-Path $originalMigrateExe)){\r
+    throw (\"Unable to locate migrate.exe file. Specifed path $originalMigrateExe does not exist.\")\r
+}\r
+Write-Host(\"Found Migrate.Exe from $originalMigrateExe\")\r
+\r
+$migrateExe = Join-Path $binPath \"migrate.exe\"\r
+if (-Not(Test-Path $migrateExe)) {\r
+    # Move migrate.exe to ASP.NET Project's bin folder as per https://msdn.microsoft.com/de-de/data/jj618307.aspx?f=255&MSPPError=-2147217396\r
+    Copy-Item $originalMigrateExe -Destination $binPath\r
+    Write-Host(\"Copied $originalMigrateExe into $binPath\")\r
+}\r
+\r
+#Locate Assembly with DbContext class\r
+$contextDllName = $OctopusParameters['AssemblyDllName']\r
+$contextDllPath = Join-Path $binPath $contextDllName\r
+if (-Not(Test-Path $contextDllPath)){\r
+    throw (\"Unable to locate assembly file with DbContext class. Specifed path $contextDllPath does not exist.\")\r
+}\r
+Write-Host(\"Using $contextDllName from $contextDllPath\")\r
+\r
+#Locate web.config. Migrate.exe needs it for some reason, even if connection string is provided\r
+$configFile = $OctopusParameters['ConfigFileName']\r
+$configPath = Join-Path $stepPath $configFile\r
+if (-Not(Test-Path $configPath)){\r
+    throw (\"Unable to locate config file. Specifed path $webConfigPath does not exist.\")\r
+}\r
+\r
+$connectionStringName = $OctopusParameters['ConnectionStringName']\r
+\r
+$migrateCommand = \"& \"\"$migrateExe\"\" \"\"$contextDllName\"\" /connectionStringName=\"\"$connectionStringName\"\" /startupConfigurationFile=\"\"$configPath\"\" /startUpDirectory=\"\"$binPath\"\" /Verbose\"\r
+\r
+Write-Host \"##octopus[stderr-error]\"        # Stderr is an error\r
+Write-Host \"Executing: \" $migrateCommand\r
+Write-Host \r
+\r
+Invoke-Expression $migrateCommand | Write-Host\r
+\r
+# Remove migrate.exe from the bin folder as it is not part of the application\r
+If (Test-Path $migrateExe)\r
+{\r
+  Write-Host \"Deleting \" $migrateExe\r
+  Remove-Item $migrateExe\r
+}\r
+",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptSource": "Inline"
+  },
+  "Parameters": [
+    {
+      "Name": "EfToolsFolder",
+      "Label": "Path to EF Tools folder",
+      "HelpText": "Please provide a full path to a folder where Migrate.exe (along with other EF files are contained, available from EF nuget package) on Tentacle",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "BaseDirectory",
+      "Label": "Base Directory",
+      "HelpText": "Path to where your application files are located. For ASP.NET applications this would be `/bin`",
+      "DefaultValue": "/bin",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "NugetPackageStepName",
+      "Label": "Site Path",
+      "HelpText": "Name of the previously-deployed package step that contains the applications files",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "StepName"
+      }
+    },
+    {
+      "Name": "configFileName",
+      "Label": "Config File Name",
+      "HelpText": "Name of your applications config file. For ASP.NET applications this would be `web.config`, for Windows Service applications this would be `yourapplication.dll.config` and for console applications this would be `yourapplication.exe.config`",
+      "DefaultValue": "web.config",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AssemblyDllName",
+      "Label": "Name of Assembly file with EF-Context",
+      "HelpText": "Please provide a name of the assembly file where EF-context is stored",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "ConnectionStringName",
+      "Label": "ConnectionStringName",
+      "HelpText": "Name of the key in <connectionStrings> section in Web.Config",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "rikrak",
+  "$Meta": {
+    "ExportedAt": "2019-10-18T09:11:34.909Z",
+    "OctopusVersion": "2018.10.1",
+    "Type": "ActionTemplate"
+  },
+  "Category": "entityframework"
+}

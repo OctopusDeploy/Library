@@ -1,0 +1,201 @@
+{
+  "Id": "3b0f8df0-93b8-44eb-86dd-264d1283ae70",
+  "Name": "Clone Tenant",
+  "Description": "Clone an Octopus [tenant](https://octopus.com/docs/deployment-patterns/multi-tenant-deployments). The project connections and tenant tags will be cloned and the non-sensitive variables can optionally be cloned.",
+  "ActionType": "Octopus.Script",
+  "Version": 4,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$securityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+[Net.ServicePointManager]::SecurityProtocol = $securityProtocol
+
+$octopusBaseUrl = $CloneTenantStep_OctopusUrl.Trim('/')
+$apiKey = $CloneTenantStep_ApiKey
+$tenantToClone = $CloneTenantStep_TenantIdToClone
+$tenantName = $CloneTenantStep_TenantName
+$cloneVariables = $CloneTenantStep_CloneVariables
+$cloneTags = $CloneTenantStep_CloneTags
+$spaceId = $CloneTenantStep_SpaceId
+
+$ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($octopusBaseUrl)) {
+    throw \"The step parameter 'Octopus Base Url' was not found. This step requires the Octopus Server URL to function, please provide one and try again.\"
+}
+
+if ([string]::IsNullOrWhiteSpace($apiKey)) {
+    throw \"The step parameter 'Octopus API Key' was not found. This step requires an API Key to function, please provide one and try again.\"
+}
+
+if ([string]::IsNullOrWhiteSpace($tenantToClone)) {
+    throw \"The step parameter 'Id of Tenant to Clone' was not found. Please provide one and try again.\"
+}
+
+if ([string]::IsNullOrWhiteSpace($tenantName)) {
+    throw \"The step parameter 'New Tenant Name' was not found. Please provide one and try again.\"
+}
+
+function Invoke-OctopusApi {
+    param(
+        [Parameter(Position = 0, Mandatory)]$Uri,
+        [ValidateSet(\"Get\", \"Post\", \"Put\", \"Delete\")]$Method = 'Get',
+        $Body
+    )
+    
+    $uriParts = @($octopusBaseUrl, $Uri.TrimStart('/'))    
+    $uri = ($uriParts -join '/')
+
+    Write-Verbose \"Uri: $uri\"
+    
+    $requestParameters = @{
+        Uri = $uri
+        Method = $Method
+        Headers = @{ \"X-Octopus-ApiKey\" = $apiKey }
+        UseBasicParsing = $true
+    }
+    
+    if ($null -ne $Body) { $requestParameters.Add('Body', ($Body | ConvertTo-Json -Depth 10)) }
+    
+    return Invoke-WebRequest @requestParameters | % Content | ConvertFrom-Json
+}
+
+function Test-SpacesApi {
+\tWrite-Verbose \"Checking API compatibility\";
+\t$rootDocument = Invoke-OctopusApi 'api/';
+    if($rootDocument.Links -ne $null -and $rootDocument.Links.Spaces -ne $null) {
+    \tWrite-Verbose \"Spaces API found\"
+    \treturn $true;
+    }
+    Write-Verbose \"Pre-spaces API found\"
+    return $false;
+}
+
+if([string]::IsNullOrWhiteSpace($spaceId)) {
+\tif(Test-SpacesApi) {
+      \t$spaceId = $OctopusParameters['Octopus.Space.Id'];
+      \tif([string]::IsNullOrWhiteSpace($spaceId)) {
+          \tthrow \"This step needs to be run in a context that provides a value for the 'Octopus.Space.Id' system variable. In this case, we received a blank value, which isn't expected - please reach out to our support team at https://help.octopus.com if you encounter this error or try providing the Space Id parameter.\";
+      \t}
+\t}
+}
+
+$apiPrefix = \"api/\"
+$tenantUrlBase = @($octopusBaseUrl, 'app#')
+
+if ($spaceId) {
+\t$apiPrefix += $spaceId
+    $tenantUrlBase += $spaceId
+}
+
+Write-Host \"Fetching source tenant\"
+$tenant = Invoke-OctopusApi \"$apiPrefix/tenants/$tenantToClone\"
+
+$sourceTenantId = $tenant.Id
+$sourceTenantName = $tenant.Name
+$tenant.Id = $null
+$tenant.Name = $tenantName
+
+if ($cloneTags -ne $true) {
+\tWrite-Host \"Clearing tenant tags\"
+    $tenant.TenantTags = @()
+}
+
+Write-Host \"Creating new tenant\"
+$newTenant = Invoke-OctopusApi \"$apiPrefix/tenants\" -Method Post -Body $tenant
+
+if ($cloneVariables -eq $true) {
+\tWrite-Host \"Cloning variables\"
+    $variables = Invoke-OctopusApi $tenant.Links.Variables
+    $variables.TenantId = $newTenant.Id
+    $variables.TenantName = $tenantName
+
+    Invoke-OctopusApi $newTenant.Links.Variables -Method Put -Body $variables | Out-Null
+}
+
+$tenantUrl = ($tenantUrlBase + \"tenants\" + $newTenant.Id + \"overview\") -join '/'
+$sourceTenantUrl = ($tenantUrlBase + \"tenants\" + $sourceTenantId + \"overview\") -join '/'
+
+Write-Highlight \"New tenant [$tenantName]($tenantUrl) has been cloned from [$sourceTenantName]($sourceTenantUrl)\""
+  },
+  "Parameters": [
+    {
+      "Id": "cbedd129-210e-4bab-a446-3f89192653c7",
+      "Name": "CloneTenantStep_OctopusUrl",
+      "Label": "Octopus URL",
+      "HelpText": "The URL of the Octopus Server to clone the tenant to.",
+      "DefaultValue": "#{if Octopus.Web.ServerUri}#{Octopus.Web.ServerUri}#{else}#{Octopus.Web.BaseUrl}#{/if}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ea2614f0-bd41-4011-b263-7d2b12af5977",
+      "Name": "CloneTenantStep_ApiKey",
+      "Label": "Octopus API Key",
+      "HelpText": "The Octopus API Key to use for the API requests",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "b29e27fb-362e-45e2-a244-6d590875fb68",
+      "Name": "CloneTenantStep_TenantIdToClone",
+      "Label": "Id of Tenant to Clone",
+      "HelpText": "The Id of the tenant to clone. This will be in the format of *Tenants-1*",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b9b3a6c7-6c83-4a79-9a94-febc6c5818d3",
+      "Name": "CloneTenantStep_TenantName",
+      "Label": "New Tenant Name",
+      "HelpText": "The name of the tenant to create. *Note this must be unique*",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "be821ad4-b195-4b11-81c2-f432ff05b86d",
+      "Name": "CloneTenantStep_CloneVariables",
+      "Label": "Clone Variables?",
+      "HelpText": "Flag indicating whether the source tenant's variables should be cloned to the new tenant. *Note this does not copy sensitive variables*",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "831db28c-edc2-496b-b082-e6de827ca5df",
+      "Name": "CloneTenantStep_CloneTags",
+      "Label": "Clone Tags?",
+      "HelpText": "Flag indicating whether the source tenant's tags should be cloned.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "f9320a59-9752-43a5-b46a-a4d1486cfced",
+      "Name": "CloneTenantStep_SpaceId",
+      "Label": "Space Id",
+      "HelpText": "The Id of the Space used to clone the tenant. **Leave blank if you are using an Octopus version earlier than 2019.1 or if you wish to use the Octopus.Space.Id variable value.**",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2021-08-23T12:40:10.975Z",
+    "OctopusVersion": "2021.1.7687",
+    "Type": "ActionTemplate"
+  },
+  "Category": "octopus",
+  "LastModifiedBy": "benjimac93"
+}
