@@ -30,6 +30,8 @@ import jasmineReporters from "jasmine-reporters";
 import jasmineTerminalReporter from "jasmine-terminal-reporter";
 import eventStream from "event-stream";
 import fs from "fs";
+import http from "http";
+import https from "https";
 import jsonlint from "gulp-jsonlint";
 import path from "path";
 import { execFileSync, spawn } from "child_process";
@@ -82,6 +84,36 @@ function openBrowser(url) {
   }
 
   spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+}
+
+function waitForServer(url, { timeoutMs = 10000, pollIntervalMs = 200 } = {}) {
+  const parsedUrl = new URL(url);
+  const client = parsedUrl.protocol === "https:" ? https : http;
+  const startedAt = Date.now();
+
+  return new Promise((resolve) => {
+    function tryConnect() {
+      const request = client.get(url, (response) => {
+        response.resume();
+        resolve();
+      });
+
+      request.on("error", () => {
+        if (Date.now() - startedAt >= timeoutMs) {
+          resolve();
+          return;
+        }
+
+        setTimeout(tryConnect, pollIntervalMs);
+      });
+
+      request.setTimeout(pollIntervalMs, () => {
+        request.destroy();
+      });
+    }
+
+    tryConnect();
+  });
 }
 
 const vendorStyles = [
@@ -474,7 +506,9 @@ gulp.task(
         open: false,
       },
       () => {
-        openBrowser("http://localhost:9000");
+        waitForServer("http://localhost:9000").then(() => {
+          openBrowser("http://localhost:9000");
+        });
       }
     );
 
