@@ -31,6 +31,7 @@ import jasmineTerminalReporter from "jasmine-terminal-reporter";
 import eventStream from "event-stream";
 import fs from "fs";
 import jsonlint from "gulp-jsonlint";
+import path from "path";
 
 const sass = gulpSass(dartSass);
 const clientDir = "app";
@@ -292,8 +293,7 @@ function provideMissingData() {
   return eventStream.map(function (file, cb) {
     var fileContent = file.contents.toString();
     var template = JSON.parse(fileContent);
-    var pathParts = file.path.split("\\");
-    var fileName = pathParts[pathParts.length - 1];
+    var fileName = path.basename(file.path);
 
     if (!template.HistoryUrl) {
       template.HistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/step-templates/" + fileName;
