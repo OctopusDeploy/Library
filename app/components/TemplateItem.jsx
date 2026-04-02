@@ -114,7 +114,7 @@ export default class TemplateItem extends React.Component {
                 </SyntaxHighlighter>
               </div>
               <p className="align-right">
-                <a className="faint" href={this.state.template.HistoryUrl}>
+                <a className="faint" href={this.state.template.HistoryUrl} rel="noopener noreferrer" target="_blank">
                   History &raquo;
                 </a>
               </p>
