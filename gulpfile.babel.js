@@ -92,7 +92,7 @@ function waitForServer(url, { timeoutMs = 10000, pollIntervalMs = 200 } = {}) {
       });
 
       request.setTimeout(pollIntervalMs, () => {
-        request.destroy();
+        request.destroy(new Error("timeout"));
       });
     }
 

@@ -30,7 +30,7 @@ const staticAssetOptions = isDevelopment
         res.setHeader("Expires", "0");
       },
     }
-  : { maxage: "1d" };
+  : { maxAge: "1d" };
 
 app.use(express.static(path.join(__dirname, "public"), staticAssetOptions));
 app.use(express.static(path.join(__dirname, "views"), staticAssetOptions));
