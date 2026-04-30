@@ -79,12 +79,12 @@ function waitForServer(url, { timeoutMs = 10000, pollIntervalMs = 200 } = {}) {
     function tryConnect() {
       const request = client.get(url, (response) => {
         response.resume();
-        resolve();
+        resolve(true);
       });
 
       request.on("error", () => {
         if (Date.now() - startedAt >= timeoutMs) {
-          resolve();
+          resolve(false);
           return;
         }
 
@@ -482,8 +482,13 @@ gulp.task(
         open: false,
       },
       () => {
-        waitForServer("http://localhost:9000").then(() => {
-          openBrowser("http://localhost:9000");
+        waitForServer("http://localhost:9000").then((isReady) => {
+          if (isReady) {
+            openBrowser("http://localhost:9000");
+            return;
+          }
+
+          log.warn("Timed out waiting for http://localhost:9000, skipping automatic browser launch.");
         });
       }
     );
