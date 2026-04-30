@@ -1,12 +1,26 @@
 "use strict";
 
+import fs from "fs";
+import path from "path";
 import _ from "underscore";
-
-import StepTemplates from "./step-templates.json";
 
 class LibraryDb {
   constructor() {
-    this._items = _.chain(StepTemplates.items)
+    this._items = null;
+    this._all = null;
+  }
+
+  isDevelopment() {
+    return process.env.NODE_ENV === "development";
+  }
+
+  readTemplatesFromDisk() {
+    const templatePath = path.join(__dirname, "step-templates.json");
+    return JSON.parse(fs.readFileSync(templatePath, "utf8"));
+  }
+
+  hydrateTemplates(stepTemplates) {
+    const items = _.chain(stepTemplates.items)
       .map(function (t) {
         if (t.Properties) {
           var script = t.Properties["Octopus.Action.Script.ScriptBody"];
@@ -42,15 +56,39 @@ class LibraryDb {
       })
       .value();
 
-    this._all = _.indexBy(this._items, "Id");
+    return {
+      items,
+      all: _.indexBy(items, "Id"),
+    };
+  }
+
+  loadTemplates() {
+    return this.hydrateTemplates(this.readTemplatesFromDisk());
+  }
+
+  getTemplates() {
+    if (this.isDevelopment()) {
+      return this.loadTemplates();
+    }
+
+    if (!this._items || !this._all) {
+      const templates = this.loadTemplates();
+      this._items = templates.items;
+      this._all = templates.all;
+    }
+
+    return {
+      items: this._items,
+      all: this._all,
+    };
   }
 
   list(cb) {
-    cb(null, this._items);
+    cb(null, this.getTemplates().items);
   }
 
   get(id, cb) {
-    var item = this._all[id];
+    var item = this.getTemplates().all[id];
     cb(null, item);
   }
 }

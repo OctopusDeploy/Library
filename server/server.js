@@ -18,9 +18,22 @@ import LibraryStorageService from "./app/services/LibraryDb.js";
 import LibraryActions from "./app/actions/LibraryActions";
 
 let app = express();
+const isDevelopment = process.env.NODE_ENV === "development";
+const staticAssetOptions = isDevelopment
+  ? {
+      maxAge: 0,
+      etag: false,
+      lastModified: false,
+      setHeaders: (res) => {
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      },
+    }
+  : { maxAge: "1d" };
 
-app.use(express.static(path.join(__dirname, "public"), { maxage: "1d" }));
-app.use(express.static(path.join(__dirname, "views"), { maxage: "1d" }));
+app.use(express.static(path.join(__dirname, "public"), staticAssetOptions));
+app.use(express.static(path.join(__dirname, "views"), staticAssetOptions));
 app.use("/.well-known", express.static(".well-known"));
 
 app.set("views", path.join(__dirname, "views"));
@@ -74,11 +87,13 @@ app.get("*", (req, res) => {
 
         LibraryActions.sendTemplates(data, () => {
           var libraryAppHtml = ReactDOMServer.renderToStaticMarkup(<RouterContext {...renderProps} />);
+          const browserSyncClientUrl = process.env.NODE_ENV === "development" ? `${req.protocol}://${req.hostname}:3000/browser-sync/browser-sync-client.js` : null;
           res.render("index", {
             siteKeywords: config.keywords.join(),
             siteDescription: config.description,
             reactOutput: libraryAppHtml,
             stepTemplates: JSON.stringify(data),
+            browserSyncClientUrl,
           });
         });
       });

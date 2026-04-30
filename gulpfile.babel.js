@@ -30,8 +30,11 @@ import jasmineReporters from "jasmine-reporters";
 import jasmineTerminalReporter from "jasmine-terminal-reporter";
 import eventStream from "event-stream";
 import fs from "fs";
+import http from "http";
+import https from "https";
 import jsonlint from "gulp-jsonlint";
 import path from "path";
+import { spawn } from "child_process";
 
 const sass = gulpSass(dartSass);
 const clientDir = "app";
@@ -49,6 +52,54 @@ const $ = gulpLoadPlugins({
 const reload = browserSync.reload;
 const argv = yargs.argv;
 
+function openBrowser(url) {
+  if (process.env.CI) {
+    return;
+  }
+
+  if (process.platform === "darwin") {
+    spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+    return;
+  }
+
+  if (process.platform === "win32") {
+    spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();
+    return;
+  }
+
+  spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+}
+
+function waitForServer(url, { timeoutMs = 10000, pollIntervalMs = 200 } = {}) {
+  const parsedUrl = new URL(url);
+  const client = parsedUrl.protocol === "https:" ? https : http;
+  const startedAt = Date.now();
+
+  return new Promise((resolve) => {
+    function tryConnect() {
+      const request = client.get(url, (response) => {
+        response.resume();
+        resolve(true);
+      });
+
+      request.on("error", () => {
+        if (Date.now() - startedAt >= timeoutMs) {
+          resolve(false);
+          return;
+        }
+
+        setTimeout(tryConnect, pollIntervalMs);
+      });
+
+      request.setTimeout(pollIntervalMs, () => {
+        request.destroy(new Error("timeout"));
+      });
+    }
+
+    tryConnect();
+  });
+}
+
 const vendorStyles = [
   "node_modules/font-awesome/css/font-awesome.min.css",
   "node_modules/font-awesome/css/font-awesome.css.map",
@@ -64,7 +115,6 @@ function lint(files, options = {}) {
   return () => {
     return gulp
       .src(files)
-      .pipe(reload({ stream: true, once: true }))
       .pipe($.eslint(options))
       .pipe($.eslint.format("compact"))
       .pipe($.if(!browserSync.active, $.eslint.failOnError()));
@@ -323,17 +373,16 @@ function provideMissingData() {
   });
 }
 
-gulp.task(
-  "step-templates",
-  gulp.series("tests", () => {
-    return gulp
-      .src("./step-templates/*.json")
-      .pipe(provideMissingData())
-      .pipe(concat("step-templates.json", { newLine: "," }))
-      .pipe(insert.wrap('{"items": [', "]}"))
-      .pipe(argv.production ? gulp.dest(`${publishDir}/app/services`) : gulp.dest(`${buildDir}/app/services`));
-  })
-);
+gulp.task("step-templates:data", () => {
+  return gulp
+    .src("./step-templates/*.json")
+    .pipe(provideMissingData())
+    .pipe(concat("step-templates.json", { newLine: "," }))
+    .pipe(insert.wrap('{"items": [', "]}"))
+    .pipe(argv.production ? gulp.dest(`${publishDir}/app/services`) : gulp.dest(`${buildDir}/app/services`));
+});
+
+gulp.task("step-templates", gulp.series("tests", "step-templates:data"));
 
 gulp.task("styles:vendor", () => {
   return gulp.src(vendorStyles, { base: "node_modules/" }).pipe(argv.production ? gulp.dest(`${publishDir}/public/styles/vendor`) : gulp.dest(`${buildDir}/public/styles/vendor`));
@@ -426,14 +475,35 @@ gulp.task(
     server.start();
     process.chdir(`../`);
 
-    browserSync.init(null, {
-      proxy: "http://localhost:9000",
-    });
+    browserSync.init(
+      null,
+      {
+        proxy: "http://localhost:9000",
+        open: false,
+      },
+      () => {
+        waitForServer("http://localhost:9000").then((isReady) => {
+          if (isReady) {
+            openBrowser("http://localhost:9000");
+            return;
+          }
+
+          log.warn("Timed out waiting for http://localhost:9000, skipping automatic browser launch.");
+        });
+      }
+    );
+
+    function reloadServer(done) {
+      process.chdir(`${buildDir}`);
+      server.start();
+      process.chdir(`../`);
+      done();
+    }
 
     gulp.watch(`${clientDir}/**/*.jade`, gulp.series("build:client"));
-    gulp.watch(`${clientDir}/**/*.jsx`, gulp.series("scripts", "copy:app"));
+    gulp.watch(`${clientDir}/**/*.jsx`, gulp.series("scripts", "copy:app", reloadServer));
     gulp.watch(`${clientDir}/content/styles/**/*.scss`, gulp.series("styles:client"));
-    gulp.watch("step-templates/*.json", gulp.series("step-templates"));
+    gulp.watch("step-templates/*.json", gulp.series("step-templates:data"));
 
     gulp.watch(`${buildDir}/**/*.*`).on("change", reload);
   })
