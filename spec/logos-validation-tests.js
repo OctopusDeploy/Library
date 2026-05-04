@@ -2,9 +2,9 @@ var fs = require("fs");
 
 describe("logos", function () {
   it("logos have valid details", function (done) {
-    var filenameCounter = 0;
-    var stepTemplateCount = 0;
-    var dirname = "./step-templates/logos";
+    var sourceDirname = "./src/step-templates/logos";
+    var legacyDirname = "./step-templates/logos";
+    var dirname = fs.existsSync(sourceDirname) ? sourceDirname : legacyDirname;
 
     fs.readdir(dirname, function (err, filenames) {
       if (err) {
