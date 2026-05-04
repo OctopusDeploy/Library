@@ -227,7 +227,7 @@ async function confirmStep(rl, prompt) {
   return true;
 }
 
-async function step1_PrepareValidationBaseline(rl) {
+async function step1_DupeStepTemplateJsonFilesForValidationBaseline(rl) {
   log("Step 1: Prepare validation baseline", "step");
   log("This creates a frozen pre-migration copy of the current step-template JSON files.");
   log("The copied files are written to step-templates-orig/ at the repo root.");
@@ -278,7 +278,7 @@ async function step1_PrepareValidationBaseline(rl) {
   return true;
 }
 
-async function step2_MoveJsonTemplatesIntoSourceTree(rl) {
+async function step2_GitMoveStepTemplateJsonFilesToSrcAsMetadataJsonFiles(rl) {
   log("Step 2: Move JSON templates into the source tree with history", "step");
   log("Each step-template JSON file is moved with git history into src/step-templates/<template>/metadata.json.");
   log("We are choosing metadata.json as the file that will retain the existing JSON history after the split.");
@@ -329,7 +329,7 @@ async function step2_MoveJsonTemplatesIntoSourceTree(rl) {
   return true;
 }
 
-async function step3_SplitSourceTemplatesIntoConstituentFiles(rl) {
+async function step3_SplitSrcMetadataJsonFilesIntoConstituentFiles(rl) {
   log("Step 3: Split source templates into constituent files", "step");
   log("Inline script content is extracted from metadata.json into dedicated source files beside each template.");
   log("Octopus.Action.Script.ScriptBody becomes scriptbody.ps1, scriptbody.sh, or scriptbody.py based on script syntax.");
@@ -375,7 +375,7 @@ async function step3_SplitSourceTemplatesIntoConstituentFiles(rl) {
   return true;
 }
 
-async function step4_RebuildAndValidateGeneratedJson(rl) {
+async function step4_BuildStepTemplateJsonFilesFromSrcAndValidateAgainstBaseline(rl) {
   log("Step 4: Rebuild and validate generated JSON output", "step");
   log("This rebuilds step-templates/*.json from src/step-templates/ using the existing pack tooling.");
   log("The rebuilt JSON is then compared to the frozen baseline in step-templates-orig/.");
@@ -449,13 +449,13 @@ async function main() {
     log(colorize(ansiDim, `Repo root: ${repoRoot}`));
     log(colorize(ansiDim, "This script does not commit anything."));
 
-    if (!(await step1_PrepareValidationBaseline(rl))) { return; }
+    if (!(await step1_DupeStepTemplateJsonFilesForValidationBaseline(rl))) { return; }
 
-    if (!(await step2_MoveJsonTemplatesIntoSourceTree(rl))) { return; }
+    if (!(await step2_GitMoveStepTemplateJsonFilesToSrcAsMetadataJsonFiles(rl))) { return; }
 
-    if (!(await step3_SplitSourceTemplatesIntoConstituentFiles(rl))) { return; }
+    if (!(await step3_SplitSrcMetadataJsonFilesIntoConstituentFiles(rl))) { return; }
 
-    if (!(await step4_RebuildAndValidateGeneratedJson(rl))) { return; }
+    if (!(await step4_BuildStepTemplateJsonFilesFromSrcAndValidateAgainstBaseline(rl))) { return; }
   } finally {
     rl.close();
   }
