@@ -41,7 +41,7 @@ _Before submitting your PR, please delete everything above the line below._
 - [ ] `LastModifiedBy` field must be present, and (_optionally_) updated with the correct author
 - [ ] The best practices documented [here](https://github.com/OctopusDeploy/Library/wiki/Best-Practices) have been applied
 - [ ] If a new `Category` has been created:
-   - [ ] An image with the name `{categoryname}.png` must be present under the `step-templates/logos` folder
+   - [ ] An image with the name `{categoryname}.png` must be present under the `src/step-templates/logos` folder
    - [ ] The `switch` in the `humanize` function in [`gulpfile.babel.js`](https://github.com/OctopusDeploy/Library/blob/master/gulpfile.babel.js#L92) must have a `case` statement corresponding to it
 
 Fixes # . _If there is an open issue that this PR fixes add it here, otherwise just remove this line_

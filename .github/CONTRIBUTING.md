@@ -6,22 +6,19 @@ Have a great custom step that other Octopus users will love? Here's how to get i
 1. [Fork](https://github.com/OctopusDeploy/Library/fork) the Library repository
 2. Clone your fork into a directory on your own machine
 3. _Export_ your template from the Octopus server
-4. Save the exported JSON to a file under `/step-templates`
-5. Check that the `LastModifiedBy` username is one you're happy to use on the site (ideally your plain GitHub username)
-6. Add Id property and set it to a GUID using the following format `abcdef00-ab00-cd00-ef00-000000abcdef`, you can use [this site](https://www.guidgen.com/) to generate one automatically
-7. Optional: Assign your template to an existing category. Have a look at existing templates to find the category that matches your template. If you don't specify it your template will be assigned to 'other' category.
-   - If you add a new category, make sure that you add an icon in `.png` format with a size of 200x200px to the `logos` folder with the same name as your category. Also, the `switch` in the `humanize` function in [`gulpfile.babel.js`](https://github.com/OctopusDeploy/Library/blob/master/gulpfile.babel.js#L92) must have a `case` statement corresponding to it.
-8. If you're updating an existing step template, make sure the `Version` property is incremented (e.g. by 1). If the `Version` doesn't change then the [Community Library Integration](http://docs.octopusdeploy.com/display/OD/Step+Templates#StepTemplates-TheCommunityLibrary) in Octopus won't see your changes.
-9. Commit and push your changes to your fork
-10. View your fork in GitHub to create a _pull request_
+4. If you are starting from an exported JSON file, save it under `/step-templates`, run `powershell .\tools\_unpack.ps1 -SearchPattern "template-name"`, then move the resulting files into `/src/step-templates/<template-name>/`
+5. Author step templates in `/src/step-templates/<template-name>/`, with `metadata.json` beside `scriptbody.ps1`, `scriptbody.sh`, or `scriptbody.py` as needed
+6. Check that the `LastModifiedBy` username is one you're happy to use on the site (ideally your plain GitHub username)
+7. Add Id property and set it to a GUID using the following format `abcdef00-ab00-cd00-ef00-000000abcdef`, you can use [this site](https://www.guidgen.com/) to generate one automatically
+8. Optional: Assign your template to an existing category. Have a look at existing templates to find the category that matches your template. If you don't specify it your template will be assigned to 'other' category.
+   - If you add a new category, make sure that you add an icon in `.png` format with a size of 200x200px to the `src/step-templates/logos` folder with the same name as your category. Also, the `switch` in the `humanize` function in [`gulpfile.babel.js`](https://github.com/OctopusDeploy/Library/blob/master/gulpfile.babel.js#L92) must have a `case` statement corresponding to it.
+9. If you're updating an existing step template, make sure the `Version` property is incremented (e.g. by 1). If the `Version` doesn't change then the [Community Library Integration](http://docs.octopusdeploy.com/display/OD/Step+Templates#StepTemplates-TheCommunityLibrary) in Octopus won't see your changes.
+10. Commit and push your changes to your fork
+11. View your fork in GitHub to create a _pull request_
 
 Someone from the Octopus team will review your request and help to make the step consistent with the others in the library. Once it's ready we'll merge it into the main repository and publish it to [the library site](http://library.octopusdeploy.com).
 
-**Note**: If you're editing an existing template we've got a tool you can use to help with packing and unpacking the scripts stored in the step template `*.json` file.
-
-* To unpack the step template scripts into separate files alongside the main step template file, run `powershell .\tools\_unpack.ps1`.
-* You can then edit the `*.ps1` files in the `.\step-templates` folder using your favourite PowerShell editor.
-* To pack the step template script files back into the main step template, run `powershell .\tools\_pack.ps1`. 
+**Note**: This repository now treats `src/step-templates/**` as the source of truth. Build tooling must continue to generate `step-templates/*.json`, and that generated JSON is the compatibility output this repository is preserving. The exact retrieval flow used by `library.octopus.com` is not documented here, but generated JSON in the legacy location is believed to remain compatible.
 
 Here's a **checklist** to consider:
 
