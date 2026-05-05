@@ -388,6 +388,44 @@ async function step4_BuildStepTemplateJsonFilesFromSrcAndValidateAgainstBaseline
   const gulpExecutable =
     process.platform === "win32" ? path.join(repoRoot, "node_modules", ".bin", "gulp.cmd") : path.join(repoRoot, "node_modules", ".bin", "gulp");
 
+  if (!fs.existsSync(gulpExecutable)) {
+    log("Build dependencies are missing. Step 4 needs the existing gulp-based toolchain to rebuild step-template JSON files.", "note");
+
+    if (!(await confirmStep(rl, "Run npm ci to install the required build dependencies?"))) {
+      return false;
+    }
+
+    log("Running npm ci", "action");
+
+    try {
+      execFileSync("npm", ["ci"], {
+        cwd: repoRoot,
+        stdio: "inherit",
+      });
+    } catch (error) {
+      log("npm ci failed. This repository may require npm install because package-lock.json is not in sync with the current npm client.", "note");
+
+      if (!(await confirmStep(rl, "Run npm install instead?"))) {
+        throw new Error("Dependency installation failed while running npm ci.");
+      }
+
+      log("Running npm install", "action");
+
+      try {
+        execFileSync("npm", ["install"], {
+          cwd: repoRoot,
+          stdio: "inherit",
+        });
+      } catch (installError) {
+        throw new Error("Dependency installation failed while running npm install.");
+      }
+    }
+
+    if (!fs.existsSync(gulpExecutable)) {
+      throw new Error("Dependency installation completed, but the gulp executable is still missing.");
+    }
+  }
+
   execFileSync(gulpExecutable, ["step-templates"], {
     cwd: repoRoot,
     stdio: "inherit",
