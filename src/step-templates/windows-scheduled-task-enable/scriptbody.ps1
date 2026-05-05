@@ -1,0 +1,1 @@
+$taskName = $OctopusParameters['TaskName']Write-Output "Enabling $taskName..."#Check if 2008 Serverif ((Get-WmiObject Win32_OperatingSystem).Name.Contains("2008")){    schtasks /Change /Enable /TN $taskName}else{    Enable-ScheduledTask $taskName;}

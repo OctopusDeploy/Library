@@ -1,0 +1,140 @@
+# Define functions
+function Get-ModuleInstalled
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName
+    )
+
+    # Check to see if the module is installed
+    if ($null -ne (Get-Module -ListAvailable -Name $PowerShellModuleName))
+    {
+        # It is installed
+        return $true
+    }
+    else
+    {
+        # Module not installed
+        return $false
+    }
+}
+
+function Install-PowerShellModule
+{
+    # Define parameters
+    param(
+        $PowerShellModuleName,
+        $LocalModulesPath
+    )
+
+	# Check to see if the package provider has been installed
+    if ((Get-NugetPackageProviderNotInstalled) -ne $false)
+    {
+    	# Display that we need the nuget package provider
+        Write-Host "Nuget package provider not found, installing ..."
+        
+        # Install Nuget package provider
+        Install-PackageProvider -Name Nuget -Force
+    }
+
+	# Save the module in the temporary location
+    Save-Module -Name $PowerShellModuleName -Path $LocalModulesPath -Force
+}
+
+function Get-NugetPackageProviderNotInstalled
+{
+	# See if the nuget package provider has been installed
+    return ($null -eq (Get-PackageProvider -ListAvailable -Name Nuget -ErrorAction SilentlyContinue))
+}
+
+function Get-DatabaseExists
+{
+	# Define parameters
+    param ($DatabaseName)
+    
+	# Execute query
+    return Invoke-SqlQuery "SHOW DATABASES LIKE '$DatabaseName';"
+}
+
+# Define PowerShell Modules path
+$LocalModules = (New-Item "$PSScriptRoot\Modules" -ItemType Directory -Force).FullName
+$env:PSModulePath = "$LocalModules;$env:PSModulePath"
+$PowerShellModuleName = "SimplySql"
+
+# Set secure protocols
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Check to see if SimplySql module is installed
+if ((Get-ModuleInstalled -PowerShellModuleName $PowerShellModuleName) -ne $true)
+{
+    # Tell user what we're doing
+    Write-Output "PowerShell module $PowerShellModuleName is not installed, downloading temporary copy ..."
+
+    # Install temporary copy
+    Install-PowerShellModule -PowerShellModuleName $PowerShellModuleName -LocalModulesPath $LocalModules
+}
+
+# Display
+Write-Output "Importing module $PowerShellModuleName ..."
+
+# Check to see if it was downloaded
+if ((Test-Path -Path "$LocalModules\$PowerShellModuleName") -eq $true)
+{
+	# Import from temp location
+    $PowerShellModuleName =  "$LocalModules\$PowerShellModuleName"
+}
+
+# Import the module
+Import-Module -Name $PowerShellModuleName
+
+
+# Create credential object for the connection
+#$SecurePassword = ConvertTo-SecureString $BackupMySQL_Password -AsPlainText -Force
+#$ServerCredential = New-Object System.Management.Automation.PSCredential ($BackupMySQL_Username, $BackupMySQL_Password)
+
+try
+{
+
+
+	# Connect to MySQL
+    $connectionString = "Server=$BackupMySQL_ServerName;Port=$BackupMySQL_Port;Uid=$BackupMySQL_Username;Pwd=$BackupMySQL_Password;"
+
+    if ($BackupMySQL_UseSSL -eq "True")
+    {
+		# Append to connection string
+        $connectionString += "SslMode=Required;"
+    }
+    else
+    {
+    	# Disable ssl
+        $connectionString += "SslMode=none;"
+    }
+    
+    Open-MySqlConnection -ConnectionString $connectionString
+
+    # See if database exists
+    $databaseExists = Get-DatabaseExists -DatabaseName $BackupMySQL_DatabaseName
+
+    if ($databaseExists.ItemArray.Count -eq 0)
+    {
+        # Display message
+        Write-Error "Database $BackupMySQL_DatabaseName doesn't exist."
+ 
+    }
+    else
+    {
+
+        cd $BackupMySQL_MySQLPath
+
+        $backupname = '{0}{1}-{2}.sql' -f ($BackupMySQL_BackupDirectory, $BackupMySQL_DatabaseName ,(Get-Date -Format FileDatetime))
+
+        .\mysqldump.exe --databases $BackupMySQL_DatabaseName > $backupname
+                
+        # Success
+        Write-Output "$BackupMySQL_DatabaseName was backed up!"
+    }
+}
+finally
+{
+    Close-SqlConnection
+}

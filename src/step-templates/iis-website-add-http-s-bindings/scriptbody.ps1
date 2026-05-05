@@ -1,0 +1,126 @@
+# Running outside octopus
+Param(
+    [string] $AD_AddBinding_WebsiteName,
+    [string] $AD_AddBinding_HostName,
+    [UInt32] $AD_AddBinding_HttpPort = 80,
+    [UInt32] $AD_AddBinding_HttpsPort = 443,
+    [string] $AD_AddBinding_SSLThumbprint = $null,
+    [string] $AD_AddBinding_SSLCertificateLocation = "My",
+    [Int16] $AD_AddBinding_Attempts = 5,
+    [switch] $WhatIf
+)
+
+$ErrorActionPreference = "Stop"
+
+function Get-Param($Name, [switch]$Required, $Default) {
+    $result = $null
+
+    if ($null -ne $OctopusParameters) {
+        $result = $OctopusParameters[$Name]
+    }
+
+    if ($null -eq $result) {
+        $variable = Get-Variable $Name -EA SilentlyContinue
+        if ($null -ne $variable) {
+            $result = $variable.Value
+        }
+    }
+
+    if ($null -eq $result) {
+        if ($Required) {
+            throw "Missing parameter value $Name"
+        }
+        else {
+            $result = $Default
+        }
+    }
+
+    return $result
+}
+
+function Execute(
+    [Parameter(Mandatory = $true)][string] $WebsiteName,
+    [Parameter(Mandatory = $true)][string] $HostName,
+    [Parameter(Mandatory = $false)][uint32] $HttpPort = 80,
+    [Parameter(Mandatory = $false)][uint32] $HttpsPort = 443,
+    [Parameter(Mandatory = $false)][string] $SSLThumbprint = $null,
+    [Parameter(Mandatory = $false)][string] $SSLCertificateLocation = "My",
+    [Parameter(Mandatory = $false)][Int16] $Attempts = 5
+) {
+    Import-Module WebAdministration
+
+    $attemptCount = 0
+    $operationIncomplete = $true
+    $maxFailures = $Attempts
+    $sleepBetweenFailures = 1
+
+    $appId = '{00112233-4455-6677-8899-AABBCCDDEEFF}'
+
+    while ($operationIncomplete -and $attemptCount -lt $maxFailures) {
+        $attemptCount = ($attemptCount + 1)
+        if ($attemptCount -ge 2) {
+            Write-Output "Waiting for $sleepBetweenFailures seconds before retrying..."
+            Start-Sleep -s $sleepBetweenFailures
+            Write-Output "Retrying..."
+            $sleepBetweenFailures = ($sleepBetweenFailures * 2)
+        }
+        try {
+            $protocol = "http"
+            $otherProtocol = "https"
+
+            $existingBinding = Get-WebBinding -Name $WebsiteName -Port $HttpPort -HostHeader $HostName
+            $msg = "Binding '{0} *:{1}:{2} sslFlags=0' on '{3}'" -f $protocol, $HttpPort, $HostName, $WebsiteName
+            if ($null -eq $existingBinding) {
+                Write-Output "$msg doesn't exist - ADDING..."
+                if (-Not ($WhatIf)) {
+                    New-WebBinding -Name $WebsiteName -Protocol $protocol -Port $HttpPort -HostHeader $HostName -SslFlags 0
+                }
+                Write-Output "$msg - ADDED"
+            }
+            elseif ($existingBinding.protocol -contains $protocol) {
+                Write-Output "$msg  already exists - SKIPING"
+            }
+            else {
+                Write-Error "$msg can't be added because it already exists on $otherProtocol"
+            }
+            Write-Output "SSL is : $SSLThumbprint"
+            if (-Not ([string]::IsNullOrWhitespace($SSLThumbprint))) {
+                $protocol = "https"
+                $otherProtocol = "http"
+                $existingBinding = Get-WebBinding -Name $WebsiteName -Port $HttpsPort -HostHeader $HostName
+                $msg = "Binding '{0} *:{1}:{2} sslFlags=1' on '{3}'" -f $protocol, $HttpsPort, $HostName, $WebsiteName
+                if ($null -eq $existingBinding) {
+                    Write-Output "$msg doesn't exist - ADDING..."
+                    if (-Not ($WhatIf)) {
+                        New-WebBinding -Name $WebsiteName -Protocol $protocol -Port $HttpsPort -HostHeader $HostName -SslFlags 1
+                        netsh http add sslcert hostnameport=$($HostName):$HttpsPort certhash=$SSLThumbprint appid=$appId certstorename=$SSLCertificateLocation
+                    }
+                    Write-Output "$msg - ADDED"
+                }
+                elseif ($existingBinding.protocol -contains $protocol) {
+                    Write-Output "$msg  already exists - SKIPING"
+                }
+                else {
+                    Write-Error "$msg can't be added because it already exists on $otherProtocol"
+                }
+            }
+            $operationIncomplete = $false
+        }
+        catch [System.Exception] {
+            if ($attemptCount -lt ($maxFailures)) {
+                Write-Host ("Attempt $attemptCount of $maxFailures failed: " + $_.Exception.Message)
+            }
+            else {
+                throw
+            }
+        }
+    }
+}
+& Execute `
+(Get-Param 'AD_AddBinding_WebsiteName' -Required)`
+(Get-Param 'AD_AddBinding_HostName' -Required)`
+(Get-Param 'AD_AddBinding_HttpPort')`
+(Get-Param 'AD_AddBinding_HttpsPort')`
+(Get-Param 'AD_AddBinding_SSLThumbprint')`
+(Get-Param 'AD_AddBinding_SSLCertificateLocation')`
+(Get-Param 'AD_AddBinding_Attempts')
