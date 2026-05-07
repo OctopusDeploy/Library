@@ -6,7 +6,7 @@ A repository of step templates and other community-contributed extensions to Oct
 Organization
 ------------
 
-* *Step templates* are checked into `/step-templates` as raw JSON exports direct from Octopus Deploy
+* *Step templates* are in a temporary mixed migration state: legacy JSON remains under `/step-templates`, while migrated templates are authored under `/src/step-templates`
 * The *library website* is largely under `/app`, with build artifacts at the root of the repository
 * The `/tools` folder contains utilities to help with editing step templates
 
@@ -20,7 +20,12 @@ Reviewing PRs
 
 ### Reviewing script changes
 
-Step template JSON files embed scripts as single-line escaped strings, making diffs hard to read. Use the `_diff.ps1` tool to extract old and new scripts into separate files you can compare in your diff tool:
+Migrated templates keep script content beside `metadata.json` as normal source files such as `scriptbody.ps1`, `scriptbody.sh`, or `scriptbody.py`, so those changes can be reviewed directly in GitHub.
+
+> [!NOTE]
+> This repository is intentionally in a temporary mixed migration state. `step-templates/*.json` remains the compatibility output for the site and build pipeline, but new work should migrate templates into `src/step-templates/<template>/` instead of adding new legacy JSON-first templates.
+
+Use `_diff.ps1` when you need to compare the generated JSON for a template against another branch or commit:
 
 ```powershell
 # Compare ScriptBody against previous commit
@@ -34,7 +39,21 @@ This outputs readable files to `diff-output/`:
 - `template-name.ScriptBody.old.ps1`
 - `template-name.ScriptBody.new.ps1`
 
-Also handles `PreDeploy`, `Deploy`, and `PostDeploy` custom scripts if present.
+> [!NOTE]
+> Octopus Deploy still exports step templates as JSON. To migrate one or more templates incrementally, keep the exported JSON under `step-templates/`, then run `node tools/migrate-source-first.js --template <template-name> [--template <another-template-name> ...]` or `node tools/migrate-source-first.js --template-prefix <prefix>`. The script follows the same four-step flow used in the full migration tooling, but only for the selected templates. Migrated templates keep their `logo.png` beside `metadata.json` and `scriptbody.*`.
+
+```powershell
+node tools/migrate-source-first.js --template ssis-deploy-ispac-from-package-parameter.json
+node tools/migrate-source-first.js --template ssis-deploy-ispac-from-package-parameter
+node tools/migrate-source-first.js --template-prefix ssis-
+```
+
+If you need to discard an in-progress migration before committing, run:
+
+```powershell
+node tools/migrate-source-first-reset.js --template <template-name> [--template <another-template-name> ...]
+node tools/migrate-source-first-reset.js --template-prefix <prefix>
+```
 
 ### Checklist
 
@@ -45,5 +64,5 @@ When reviewing a PR, keep the following things in mind:
 * The `DefaultValue`s of `Parameter`s should be either a string or null.
 * `LastModifiedBy` field must be present, and (_optionally_) updated with the correct author
 * If a new `Category` has been created:
-   * An image with the name `{categoryname}.png` must be present under the `step-templates/logos` folder
+   * A `logo.png` file must be present beside the migrated template under `src/step-templates/<template>/`
    * The `switch` in the `humanize` function in [`gulpfile.babel.js`](https://github.com/OctopusDeploy/Library/blob/master/gulpfile.babel.js#L92) must have a `case` statement corresponding to it

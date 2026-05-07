@@ -1,4 +1,5 @@
 var fs = require("fs");
+var path = require("path");
 
 describe("step-templates", function () {
   beforeEach(function () {
@@ -159,5 +160,51 @@ describe("step-templates", function () {
       });
       done();
     });
+  });
+
+  it("keep the legacy template allowlist in sync with migrated templates", function () {
+    var gitignore = fs.readFileSync("./.gitignore", "utf8");
+    var startMarker = "# BEGIN source-first legacy template allowlist";
+    var endMarker = "# END source-first legacy template allowlist";
+    var startIndex = gitignore.indexOf(startMarker);
+    var endIndex = gitignore.indexOf(endMarker);
+
+    expect(startIndex).toBeGreaterThanOrEqual(0);
+    expect(endIndex).toBeGreaterThan(startIndex);
+
+    var section = gitignore
+      .substring(startIndex + startMarker.length, endIndex)
+      .split(/\r?\n/)
+      .map(function (line) {
+        return line.trim();
+      })
+      .filter(Boolean);
+
+    expect(section[0]).toBe("/step-templates/*.json");
+
+    var allowlistedLegacyTemplates = section
+      .slice(1)
+      .filter(function (line) {
+        return line.indexOf("!/step-templates/") === 0 && line.endsWith(".json");
+      })
+      .map(function (line) {
+        return path.basename(line, ".json");
+      })
+      .sort();
+
+    var legacyTemplates = fs
+      .readdirSync("./step-templates")
+      .filter(function (file) {
+        return file.endsWith(".json");
+      })
+      .map(function (file) {
+        return path.basename(file, ".json");
+      })
+      .filter(function (templateName) {
+        return !fs.existsSync(path.join("./src/step-templates", templateName, "metadata.json"));
+      })
+      .sort();
+
+    expect(allowlistedLegacyTemplates).toEqual(legacyTemplates);
   });
 });

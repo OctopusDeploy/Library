@@ -34,7 +34,7 @@ import http from "http";
 import https from "https";
 import jsonlint from "gulp-jsonlint";
 import path from "path";
-import { spawn } from "child_process";
+import { execFileSync, spawn } from "child_process";
 
 const sass = gulpSass(dartSass);
 const clientDir = "app";
@@ -42,6 +42,40 @@ const serverDir = "server";
 
 const buildDir = "build";
 const publishDir = "dist";
+const sourceStepTemplatesDir = "src/step-templates";
+const sourceFirstTemplateFilter = process.env.SOURCE_FIRST_TEMPLATE_FILTER
+  ? new Set(
+      process.env.SOURCE_FIRST_TEMPLATE_FILTER.split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  : null;
+const scriptDefinitions = [
+  {
+    sourceBaseName: "scriptbody",
+    sourceExtensions: [".ps1", ".sh", ".py"],
+    propertyName: "Octopus.Action.Script.ScriptBody",
+    legacyBaseName: "ScriptBody",
+  },
+  {
+    sourceBaseName: "predeploy",
+    sourceExtensions: [".ps1"],
+    propertyName: "Octopus.Action.CustomScripts.PreDeploy.ps1",
+    legacyBaseName: "PreDeploy",
+  },
+  {
+    sourceBaseName: "deploy",
+    sourceExtensions: [".ps1"],
+    propertyName: "Octopus.Action.CustomScripts.Deploy.ps1",
+    legacyBaseName: "Deploy",
+  },
+  {
+    sourceBaseName: "postdeploy",
+    sourceExtensions: [".ps1"],
+    propertyName: "Octopus.Action.CustomScripts.PostDeploy.ps1",
+    legacyBaseName: "PostDeploy",
+  },
+];
 
 const $ = gulpLoadPlugins({
   rename: {
@@ -51,6 +85,141 @@ const $ = gulpLoadPlugins({
 
 const reload = browserSync.reload;
 const argv = yargs.argv;
+
+function isDirectory(targetPath) {
+  return fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory();
+}
+
+function ensureDirectory(dirPath) {
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function listMigratedTemplates() {
+  if (!isDirectory(sourceStepTemplatesDir)) {
+    return [];
+  }
+
+  return fs
+    .readdirSync(sourceStepTemplatesDir)
+    .filter((entry) => !["logos", "tests"].includes(entry))
+    .filter((entry) => isDirectory(path.join(sourceStepTemplatesDir, entry)))
+    .filter((entry) => fs.existsSync(path.join(sourceStepTemplatesDir, entry, "metadata.json")))
+    .filter((entry) => !sourceFirstTemplateFilter || sourceFirstTemplateFilter.has(entry))
+    .sort();
+}
+
+function getLegacyJsonPath(templateName) {
+  return path.join("step-templates", `${templateName}.json`);
+}
+
+function getSourceTemplateDirectory(templateName) {
+  return path.join(sourceStepTemplatesDir, templateName);
+}
+
+function getLegacySidecarFileName(templateName, sourceFileName, definition) {
+  const extension = path.extname(sourceFileName);
+
+  return `${templateName}.${definition.legacyBaseName}${extension}`;
+}
+
+function runPack(templateName) {
+  execFileSync(process.env.PWSH_PATH || "pwsh", ["-NoProfile", "-File", path.join("tools", "_pack.ps1"), "-SearchPattern", templateName], {
+    cwd: process.cwd(),
+    stdio: "inherit",
+  });
+}
+
+function cleanGeneratedSidecars(templateName) {
+  for (const definition of scriptDefinitions) {
+    for (const extension of definition.sourceExtensions) {
+      const sidecarPath = path.join("step-templates", getLegacySidecarFileName(templateName, `${definition.sourceBaseName}${extension}`, definition));
+      if (fs.existsSync(sidecarPath)) {
+        fs.rmSync(sidecarPath, { force: true });
+      }
+    }
+  }
+}
+
+function materializeLegacyTemplate(templateName) {
+  const sourceDirectory = getSourceTemplateDirectory(templateName);
+  const metadataPath = path.join(sourceDirectory, "metadata.json");
+
+  if (!fs.existsSync(metadataPath)) {
+    return false;
+  }
+
+  ensureDirectory("step-templates");
+  fs.copyFileSync(metadataPath, getLegacyJsonPath(templateName));
+
+  for (const definition of scriptDefinitions) {
+    for (const extension of definition.sourceExtensions) {
+      const sourceFileName = `${definition.sourceBaseName}${extension}`;
+      const sourceFilePath = path.join(sourceDirectory, sourceFileName);
+
+      if (!fs.existsSync(sourceFilePath)) {
+        continue;
+      }
+
+      const legacySidecarPath = path.join("step-templates", getLegacySidecarFileName(templateName, sourceFileName, definition));
+      fs.copyFileSync(sourceFilePath, legacySidecarPath);
+      break;
+    }
+  }
+
+  return true;
+}
+
+function generateMigratedTemplate(templateName) {
+  if (!materializeLegacyTemplate(templateName)) {
+    return false;
+  }
+
+  try {
+    runPack(templateName);
+  } finally {
+    cleanGeneratedSidecars(templateName);
+  }
+
+  return true;
+}
+
+function generateAllMigratedTemplates() {
+  const templateNames = listMigratedTemplates();
+
+  if (templateNames.length === 0) {
+    return false;
+  }
+
+  templateNames.forEach((templateName) => {
+    generateMigratedTemplate(templateName);
+  });
+
+  return true;
+}
+
+function getChangedSourcePathType(changedPath) {
+  const absolutePath = path.resolve(changedPath);
+  const relativePath = path.relative(path.resolve(sourceStepTemplatesDir), absolutePath);
+
+  if (relativePath.startsWith("..")) {
+    return { type: "outside" };
+  }
+
+  const [firstSegment] = relativePath.split(path.sep).filter(Boolean);
+  if (!firstSegment) {
+    return { type: "all" };
+  }
+
+  if (firstSegment === "logos") {
+    return { type: "logos" };
+  }
+
+  if (firstSegment === "tests") {
+    return { type: "tests" };
+  }
+
+  return { type: "template", templateName: firstSegment };
+}
 
 function openBrowser(url) {
   if (process.env.CI) {
@@ -123,6 +292,11 @@ function lint(files, options = {}) {
 
 gulp.task("lint:client", lint(`${clientDir}/**/*.jsx`));
 gulp.task("lint:server", lint(`./${serverDir}/server.js`));
+gulp.task("prepare:step-templates", (done) => {
+  generateAllMigratedTemplates();
+  done();
+});
+
 gulp.task("lint:step-templates", () => {
   return gulp
     .src("./step-templates/*.json")
@@ -132,25 +306,24 @@ gulp.task("lint:step-templates", () => {
     .pipe(jsonlint.reporter());
 });
 
-gulp.task(
-  "tests",
-  gulp.series("lint:step-templates", () => {
-    return (
-      gulp
-        .src("./spec/*-tests.js")
-        // gulp-jasmine works on filepaths so you can't have any plugins before it
-        .pipe(
-          jasmine({
-            includeStackTrace: false,
-            reporter: [new jasmineReporters.JUnitXmlReporter(), process.env.TEAMCITY_VERSION ? new jasmineReporters.TeamCityReporter() : new jasmineTerminalReporter()],
-          })
-        )
-        .on("error", function () {
-          process.exit(1);
+gulp.task("test:step-templates", () => {
+  return (
+    gulp
+      .src("./spec/*-tests.js")
+      // gulp-jasmine works on filepaths so you can't have any plugins before it
+      .pipe(
+        jasmine({
+          includeStackTrace: false,
+          reporter: [new jasmineReporters.JUnitXmlReporter(), process.env.TEAMCITY_VERSION ? new jasmineReporters.TeamCityReporter() : new jasmineTerminalReporter()],
         })
-    );
-  })
-);
+      )
+      .on("error", function () {
+        process.exit(1);
+      })
+  );
+});
+
+gulp.task("tests", gulp.series("prepare:step-templates", "lint:step-templates", "test:step-templates"));
 
 function humanize(categoryId) {
   switch (categoryId) {
@@ -344,6 +517,7 @@ function provideMissingData() {
     var fileContent = file.contents.toString();
     var template = JSON.parse(fileContent);
     var fileName = path.basename(file.path);
+    var templateName = path.basename(file.path, ".json");
 
     if (!template.HistoryUrl) {
       template.HistoryUrl = "https://github.com/OctopusDeploy/Library/commits/master/step-templates/" + fileName;
@@ -363,7 +537,9 @@ function provideMissingData() {
     template.Category = humanize(categoryId);
 
     if (!template.Logo) {
-      var logo = fs.readFileSync("./step-templates/logos/" + categoryId + ".png");
+      var sourceLogoPath = "./src/step-templates/" + templateName + "/logo.png";
+      var legacyLogoPath = "./step-templates/logos/" + categoryId + ".png";
+      var logo = fs.readFileSync(fs.existsSync(sourceLogoPath) ? sourceLogoPath : legacyLogoPath);
       template.Logo = Buffer.from(logo).toString("base64");
     }
 
@@ -504,6 +680,26 @@ gulp.task(
     gulp.watch(`${clientDir}/**/*.jsx`, gulp.series("scripts", "copy:app", reloadServer));
     gulp.watch(`${clientDir}/content/styles/**/*.scss`, gulp.series("styles:client"));
     gulp.watch("step-templates/*.json", gulp.series("step-templates:data"));
+    gulp.watch(`${sourceStepTemplatesDir}/**/*`).on("all", (eventName, changedPath) => {
+      const change = changedPath ? getChangedSourcePathType(changedPath) : { type: "all" };
+
+      if (change.type === "template") {
+        generateMigratedTemplate(change.templateName);
+      } else if (change.type === "logos" || change.type === "all") {
+        generateAllMigratedTemplates();
+      } else if (change.type === "outside" || change.type === "tests") {
+        return;
+      }
+
+      gulp.series("step-templates:data")((error) => {
+        if (error) {
+          log.error(error);
+          return;
+        }
+
+        reload();
+      });
+    });
 
     gulp.watch(`${buildDir}/**/*.*`).on("change", reload);
   })
