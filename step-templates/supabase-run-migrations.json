@@ -1,0 +1,67 @@
+{
+  "Id": "937be757-a954-42e3-b315-670578a346e0",
+  "Name": "Supabase - Run Migrations",
+  "Description": "Runs database migrations against a Supabase project using the Supabase CLI.\n\nThis step will:\n1. Install the Supabase CLI if not already present\n2. Authenticate with Supabase using the access token\n3. Push pending migrations to the remote database\n\n**Prerequisites:**\n- An existing Supabase project\n- Database migrations defined in your project's `supabase/migrations/` directory\n\n**Package Reference Required:**\nThis step expects a referenced package named **`supabase-migrations`** attached to the deployment step with **Extract package** enabled. The package must contain a `supabase/migrations/` directory at its root. The step uses `Octopus.Action.Package[supabase-migrations].ExtractedPath` to locate the migrations at runtime. If no package is found it will fall back to the current working directory.\n\n**Finding your Project Ref:**\n- From the Supabase Dashboard URL: `https://app.supabase.com/project/<PROJECT_REF>/...`\n- Or go to **Project Settings → General**\n\n[Supabase CLI Documentation](https://supabase.com/docs/reference/cli/introduction)\n[Database Migrations Guide](https://supabase.com/docs/guides/migrations)",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Script.ScriptBody": "# Supabase - Run Migrations\n# This script runs database migrations against a Supabase project\n\nset -e\n\n# Export Octopus variables as environment variables\nexport SUPABASE_PROJECT_REF=\"#{SupabaseProjectRef}\"\nexport SUPABASE_DB_PASSWORD=\"#{SupabaseDbPassword}\"\nexport SUPABASE_ACCESS_TOKEN=\"#{SupabaseAccessToken}\"\nexport SUPABASE_CLI_VERSION=\"#{SupabaseCliVersion}\"\n\n# Parameter validation\nif [ -z \"$SUPABASE_PROJECT_REF\" ]; then\n    echo \"ERROR: Supabase Project Ref is required. Please provide a value for 'Project Ref'.\"\n    exit 1\nfi\n\nif [ -z \"$SUPABASE_DB_PASSWORD\" ]; then\n    echo \"ERROR: Database Password is required. Please provide a value for 'Database Password'.\"\n    exit 1\nfi\n\nif [ -z \"$SUPABASE_ACCESS_TOKEN\" ]; then\n    echo \"ERROR: Access Token is required. Please provide a value for 'Access Token'.\"\n    exit 1\nfi\n\necho \"==========================================\"\necho \"Supabase - Run Migrations\"\necho \"==========================================\"\necho \"Project Ref: $SUPABASE_PROJECT_REF\"\necho \"CLI Version: $SUPABASE_CLI_VERSION\"\necho \"==========================================\"\n\n# Check if Supabase CLI is installed\ninstall_supabase_cli() {\n    local version=\"$1\"\n    \n    echo \"Installing Supabase CLI...\"\n    \n    # Detect OS\n    if [ \"$(uname)\" = \"Darwin\" ]; then\n        # macOS\n        if [ \"$version\" = \"latest\" ]; then\n            brew install supabase/tap/supabase\n        else\n            brew install supabase/tap/supabase@\"$version\"\n        fi\n    elif [ \"$(uname)\" = \"Linux\" ]; then\n        # Linux - download binary directly from GitHub releases\n        local arch\n        arch=$(uname -m)\n        case \"$arch\" in\n            x86_64)  arch=\"amd64\" ;;\n            aarch64) arch=\"arm64\" ;;\n            *) echo \"ERROR: Unsupported architecture: $arch\"; exit 1 ;;\n        esac\n        local download_url\n        if [ \"$version\" = \"latest\" ]; then\n            download_url=\"https://github.com/supabase/cli/releases/latest/download/supabase_linux_${arch}.tar.gz\"\n        else\n            download_url=\"https://github.com/supabase/cli/releases/download/v${version}/supabase_linux_${arch}.tar.gz\"\n        fi\n        echo \"Downloading Supabase CLI from GitHub releases...\"\n        mkdir -p \"$HOME/.local/bin\"\n        curl -fsSL \"$download_url\" -o /tmp/supabase.tar.gz\n        tar -xzf /tmp/supabase.tar.gz -C \"$HOME/.local/bin\"\n        chmod +x \"$HOME/.local/bin/supabase\"\n        export PATH=\"$HOME/.local/bin:$PATH\"\n        rm -f /tmp/supabase.tar.gz\n    else\n        echo \"ERROR: Unsupported operating system: $(uname)\"\n        exit 1\n    fi\n}\n\n# Check for CLI\nif ! command -v supabase &> /dev/null; then\n    echo \"Supabase CLI not found. Installing...\"\n    install_supabase_cli \"$SUPABASE_CLI_VERSION\"\nelse\n    echo \"Supabase CLI found: $(which supabase)\"\n    CURRENT_VERSION=$(supabase --version 2>/dev/null | awk '{print $2}')\n    echo \"Current version: $CURRENT_VERSION\"\n    \n    # Optionally update if not latest\n    if [ \"$SUPABASE_CLI_VERSION\" != \"latest\" ] && [ \"$SUPABASE_CLI_VERSION\" != \"$CURRENT_VERSION\" ]; then\n        echo \"Updating CLI to version $SUPABASE_CLI_VERSION...\"\n        install_supabase_cli \"$SUPABASE_CLI_VERSION\"\n    fi\nfi\n\n# Verify CLI installation\nif ! command -v supabase &> /dev/null; then\n    echo \"ERROR: Failed to install Supabase CLI\"\n    exit 1\nfi\n\necho \"\"\necho \"==========================================\"\necho \"Authenticating with Supabase...\"\necho \"==========================================\"\n\n# Resolve the working directory - use extracted package path if available, else current dir\nWORKDIR=\"#{Octopus.Action.Package[supabase-migrations].ExtractedPath}\"\nif [ -z \"$WORKDIR\" ] || [ ! -d \"$WORKDIR\" ]; then\n    WORKDIR=\"$(pwd)\"\nfi\necho \"Supabase workdir: $WORKDIR\"\necho \"Migrations folder exists: $([ -d \"$WORKDIR/supabase/migrations\" ] && echo YES || echo NO)\"\n\n# Link the project\necho \"Linking Supabase project...\"\nsupabase link --project-ref \"$SUPABASE_PROJECT_REF\" --workdir \"$WORKDIR\"\n\n# Run migrations\necho \"\"\necho \"==========================================\"\necho \"Running database migrations...\"\necho \"==========================================\"\n\nsupabase db push \\\n    --password \"$SUPABASE_DB_PASSWORD\" \\\n    --workdir \"$WORKDIR\" \\\n    --linked\n\necho \"\"\necho \"==========================================\"\necho \"Migration completed successfully!\"\necho \"==========================================\"\n"
+  },
+  "Parameters": [
+    {
+      "Id": "dfabd994-ed32-4a2f-961d-937dfe396c4f",
+      "Name": "SupabaseProjectRef",
+      "Label": "Project Ref",
+      "HelpText": "The unique identifier of your Supabase project.\n\n**Where to find it:**\n- From your project URL: `https://app.supabase.com/project/<PROJECT_REF>/settings/general`\n- In Dashboard: **Project Settings → General → Project ID**\n\nExample: `abcdefghijklmn`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "bf64dee7-b2b4-4f48-963e-0440eee9948c",
+      "Name": "SupabaseDbPassword",
+      "Label": "Database Password",
+      "HelpText": "The password for the PostgreSQL database user (postgres).\n\n**Where to find it:**\n- In Supabase Dashboard: **Project Settings → Database → Database password**\n- Note: This is the initial password set when creating the project\n\nThis value is stored securely and will not be displayed in logs.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "acd91644-e562-427c-9995-7d10ad69491d",
+      "Name": "SupabaseAccessToken",
+      "Label": "Access Token",
+      "HelpText": "Your Supabase access token for CLI authentication.\n\n**Where to get it:**\n1. Go to [Supabase Dashboard → Account](https://app.supabase.com/account)\n2. Click **Access Tokens**\n3. Create a new token or use an existing one\n\nThis value is stored securely and will not be displayed in logs.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "9a0ff598-e8a9-4947-ad1b-91c820c0e450",
+      "Name": "SupabaseCliVersion",
+      "Label": "CLI Version",
+      "HelpText": "The version of the Supabase CLI to install.\n\n- Use `latest` to always use the newest version\n- Specify a version like `1.123.4` for a specific version\n\nDefault: `latest`",
+      "DefaultValue": "latest",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "itsmebenwalker",
+  "$Meta": {
+    "ExportedAt": "2026-05-01T00:00:00.000Z",
+    "OctopusVersion": "2026.1.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "supabase"
+}

@@ -296,6 +296,8 @@ function humanize(categoryId) {
       return "SharePoint";
     case "snowflake":
       return "Snowflake";
+    case "supabase":
+      return "Supabase";
     case "solarwinds":
       return "SolarWinds";
     case "sql":
