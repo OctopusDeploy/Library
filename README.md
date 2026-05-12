@@ -9,6 +9,7 @@ Organization
 * *Step templates* are checked into `/step-templates` as raw JSON exports direct from Octopus Deploy
 * The *library website* is largely under `/app`, with build artifacts at the root of the repository
 * The `/tools` folder contains utilities to help with editing step templates
+* The `/pr-review` folder contains a browser-only PR review tool ([Hyponome](https://octopusdeploy.github.io/Library/pr-review/)) deployed to GitHub Pages
 
 Contributing step templates or to the website
 ---------------------------------------------
@@ -18,9 +19,19 @@ Read our [contributing guidelines](https://github.com/OctopusDeploy/Library/blob
 Reviewing PRs
 -------------
 
-### Reviewing script changes
+### Hyponome (recommended)
 
-Step template JSON files embed scripts as single-line escaped strings, making diffs hard to read. Use the `_diff.ps1` tool to extract old and new scripts into separate files you can compare in your diff tool:
+The easiest way to review a PR is in the browser using **Hyponome**, our PR review microsite:
+
+**[https://octopusdeploy.github.io/Library/pr-review/](https://octopusdeploy.github.io/Library/pr-review/)**
+
+Hyponome lists open pull requests on this repository and, for each changed file, shows a true side-by-side diff in a Monaco editor. For step-template JSONs it surfaces a separate tab per embedded script that actually changed in the PR — `Octopus.Action.Script.ScriptBody`, `Octopus.Action.Terraform.Template`, custom `PreDeploy`/`Deploy`/`PostDeploy` scripts, and so on — each with syntax highlighting matching the script's language. This makes script changes readable without having to mentally unescape the JSON.
+
+It runs entirely in your browser against the public GitHub API (no sign-in, no setup). Source lives in [`/pr-review`](./pr-review/README.md); changes there auto-deploy via GitHub Pages.
+
+### Reviewing script changes locally
+
+If you'd rather review offline, or you're hitting the unauthenticated GitHub rate limit, the `_diff.ps1` tool extracts old and new scripts into separate files you can compare in your local diff tool:
 
 ```powershell
 # Compare ScriptBody against previous commit
