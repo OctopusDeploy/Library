@@ -1,0 +1,74 @@
+{
+  "Id": "a8504194-b28d-4887-9f55-b9bf0601ce95",
+  "Name": "Convex - Set Environment Variables",
+  "Description": "Pushes one or more environment variables to a Convex deployment using the [Convex CLI](https://docs.convex.dev/cli). Useful for syncing secrets and config values from Octopus into your Convex runtime environment prior to or after a deployment.\n\nVariables are provided as a newline-delimited list of `KEY=VALUE` pairs.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "deployKey=$(get_octopusvariable \"ConvexEnvSet.DeployKey\")\nenvVars=$(get_octopusvariable \"ConvexEnvSet.EnvironmentVariables\")\ndeploymentType=$(get_octopusvariable \"ConvexEnvSet.DeploymentType\")\npreviewName=$(get_octopusvariable \"ConvexEnvSet.PreviewName\")\nworkingDir=$(get_octopusvariable \"ConvexEnvSet.WorkingDirectory\")\n\nif [ -z \"$deployKey\" ]; then\n  echo \"ERROR: ConvexEnvSet.DeployKey is required.\"\n  exit 1\nfi\n\nif [ -z \"$envVars\" ]; then\n  echo \"ERROR: ConvexEnvSet.EnvironmentVariables is required.\"\n  exit 1\nfi\n\nif [ -z \"$deploymentType\" ]; then\n  deploymentType=\"prod\"\nfi\n\nexport CONVEX_DEPLOY_KEY=\"$deployKey\"\n\nif [ -n \"$workingDir\" ]; then\n  echo \"Changing to working directory: $workingDir\"\n  cd \"$workingDir\" || { echo \"ERROR: Could not change to directory '$workingDir'\"; exit 1; }\nfi\n\ndeploymentFlag=\"\"\ncase \"$deploymentType\" in\n  prod)\n    deploymentFlag=\"--prod\"\n    ;;\n  preview)\n    if [ -z \"$previewName\" ]; then\n      echo \"ERROR: ConvexEnvSet.PreviewName is required when deployment type is 'preview'.\"\n      exit 1\n    fi\n    deploymentFlag=\"--preview-name $previewName\"\n    ;;\n  dev)\n    deploymentFlag=\"\"\n    ;;\nesac\n\necho \"Setting environment variables on Convex deployment ($deploymentType)...\"\n\nsuccessCount=0\nfailCount=0\n\nwhile IFS= read -r line; do\n  line=$(echo \"$line\" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')\n  [ -z \"$line\" ] && continue\n  [[ \"$line\" == \\#* ]] && continue\n\n  if [[ \"$line\" != *=* ]]; then\n    echo \"WARNING: Skipping malformed entry (no '=' found): $line\"\n    continue\n  fi\n\n  key=\"${line%%=*}\"\n  value=\"${line#*=}\"\n\n  echo \"Setting: $key\"\n  if npx convex env set $deploymentFlag \"$key\" \"$value\"; then\n    successCount=$((successCount + 1))\n  else\n    echo \"ERROR: Failed to set variable '$key'.\"\n    failCount=$((failCount + 1))\n  fi\ndone <<< \"$envVars\"\n\necho \"Done. $successCount variable(s) set successfully, $failCount failed.\"\n\nif [ \"$failCount\" -gt 0 ]; then\n  exit 1\nfi\n"
+  },
+  "Parameters": [
+    {
+      "Id": "fdb646d3-d787-45ea-93d5-d5ab9f14b97b",
+      "Name": "ConvexEnvSet.DeployKey",
+      "Label": "Deploy Key",
+      "HelpText": "The Convex deploy key for the target project. Store this as a sensitive Octopus variable.\n\nSee: [Creating deploy keys](https://docs.convex.dev/cli#deploy-keys)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "4a71c65b-235f-4ded-9036-1f682d45aa9b",
+      "Name": "ConvexEnvSet.EnvironmentVariables",
+      "Label": "Environment Variables",
+      "HelpText": "A newline-delimited list of `KEY=VALUE` pairs to set on the deployment. Blank lines and lines starting with `#` are ignored.\n\nExample:\n```\nNEXT_PUBLIC_API_URL=https://api.example.com\nSENDGRID_API_KEY=#{SomeOctopusSecret}\n```",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "2f8b490d-dda1-4b25-937a-0c9dda365d48",
+      "Name": "ConvexEnvSet.DeploymentType",
+      "Label": "Deployment Type",
+      "HelpText": "The Convex deployment to target.\n\n- `prod` \u2014 production deployment (default)\n- `preview` \u2014 preview deployment (requires a preview name)\n- `dev` \u2014 development deployment",
+      "DefaultValue": "prod",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "prod|Production\npreview|Preview\ndev|Development"
+      }
+    },
+    {
+      "Id": "90fc61e3-6de3-465b-87bc-04e1a365e0b3",
+      "Name": "ConvexEnvSet.PreviewName",
+      "Label": "Preview Name",
+      "HelpText": "The name of the preview deployment. Only required when **Deployment Type** is `preview`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f49e1b7c-7d72-4f66-8e1b-49d423cc60b1",
+      "Name": "ConvexEnvSet.WorkingDirectory",
+      "Label": "Working Directory",
+      "HelpText": "Optional. Path to the directory containing your Convex project. Defaults to the current working directory if left blank.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "itsmebenwalker",
+  "$Meta": {
+    "ExportedAt": "2026-05-29T00:00:00.000Z",
+    "OctopusVersion": "2026.1.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "convex"
+}

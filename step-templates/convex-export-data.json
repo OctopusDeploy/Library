@@ -1,0 +1,94 @@
+{
+  "Id": "3f4519f7-78f6-4fb9-8bc5-97e138825bb8",
+  "Name": "Convex - Export Data",
+  "Description": "Exports a snapshot of your Convex deployment's data to a local file using the [Convex CLI](https://docs.convex.dev/cli). Designed to be run before a production deployment as a data backup or rollback safety net.\n\nThe export file can optionally be captured as an Octopus build artifact for storage and auditing.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "deployKey=$(get_octopusvariable \"ConvexExport.DeployKey\")\noutputPath=$(get_octopusvariable \"ConvexExport.OutputPath\")\ndeploymentType=$(get_octopusvariable \"ConvexExport.DeploymentType\")\npreviewName=$(get_octopusvariable \"ConvexExport.PreviewName\")\nworkingDir=$(get_octopusvariable \"ConvexExport.WorkingDirectory\")\ncaptureArtifact=$(get_octopusvariable \"ConvexExport.CaptureAsArtifact\")\ncmdTimeout=$(get_octopusvariable \"ConvexExport.CommandTimeout\")\n\nif [ -z \"$deployKey\" ]; then\n  echo \"ERROR: ConvexExport.DeployKey is required.\"\n  exit 1\nfi\n\nif [ -z \"$deploymentType\" ]; then\n  deploymentType=\"prod\"\nfi\n\nif [ -z \"$cmdTimeout\" ]; then\n  cmdTimeout=\"600\"\nfi\n\nexport CONVEX_DEPLOY_KEY=\"$deployKey\"\n\nif [ -n \"$workingDir\" ]; then\n  echo \"Changing to working directory: $workingDir\"\n  cd \"$workingDir\" || { echo \"ERROR: Could not change to directory '$workingDir'\"; exit 1; }\nfi\n\ntimestamp=$(date +\"%Y%m%d_%H%M%S\")\n\nif [ -z \"$outputPath\" ]; then\n  outputPath=\"convex-export-${timestamp}.zip\"\nfi\n\ndeploymentFlag=\"\"\ncase \"$deploymentType\" in\n  prod)\n    deploymentFlag=\"--prod\"\n    ;;\n  preview)\n    if [ -z \"$previewName\" ]; then\n      echo \"ERROR: ConvexExport.PreviewName is required when deployment type is 'preview'.\"\n      exit 1\n    fi\n    deploymentFlag=\"--preview-name $previewName\"\n    ;;\n  dev)\n    deploymentFlag=\"\"\n    ;;\nesac\n\necho \"Exporting Convex data from: $deploymentType\"\necho \"Output file: $outputPath\"\n\ntimeout \"$cmdTimeout\" npx convex export $deploymentFlag --path \"$outputPath\"\n\nexitCode=$?\nif [ $exitCode -ne 0 ]; then\n  echo \"ERROR: Convex export failed with exit code $exitCode.\"\n  exit $exitCode\nfi\n\nif [ ! -f \"$outputPath\" ]; then\n  echo \"ERROR: Export completed but output file not found at '$outputPath'.\"\n  exit 1\nfi\n\nfileSize=$(du -sh \"$outputPath\" | cut -f1)\necho \"Export complete. File: $outputPath ($fileSize)\"\n\nif [ \"$captureArtifact\" = \"True\" ]; then\n  new_octopusartifact \"$outputPath\"\n  echo \"Export captured as Octopus artifact.\"\nfi\n"
+  },
+  "Parameters": [
+    {
+      "Id": "ba76acd0-99e4-4aa1-8554-e0696b528ed7",
+      "Name": "ConvexExport.DeployKey",
+      "Label": "Deploy Key",
+      "HelpText": "The Convex deploy key for the target project. Store this as a sensitive Octopus variable.\n\nSee: [Creating deploy keys](https://docs.convex.dev/cli#deploy-keys)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "17b1f813-7b43-4528-bafe-5b52eac6df1b",
+      "Name": "ConvexExport.OutputPath",
+      "Label": "Output File Path",
+      "HelpText": "Optional. The local path where the export ZIP file should be written.\n\nDefaults to `convex-export-{timestamp}.zip` in the current working directory if left blank.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e7002edd-eb0d-4c2b-979e-972c095eede5",
+      "Name": "ConvexExport.DeploymentType",
+      "Label": "Deployment Type",
+      "HelpText": "The Convex deployment to export data from.\n\n- `prod` \u2014 production deployment (default)\n- `preview` \u2014 preview deployment (requires a preview name)\n- `dev` \u2014 development deployment",
+      "DefaultValue": "prod",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "prod|Production\npreview|Preview\ndev|Development"
+      }
+    },
+    {
+      "Id": "81526834-4204-4696-bfc4-3e965dcb320d",
+      "Name": "ConvexExport.PreviewName",
+      "Label": "Preview Name",
+      "HelpText": "The name of the preview deployment. Only required when **Deployment Type** is `preview`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "690649ca-3801-45d1-9a59-45e561c127f5",
+      "Name": "ConvexExport.WorkingDirectory",
+      "Label": "Working Directory",
+      "HelpText": "Optional. Path to the directory containing your Convex project. Defaults to the current working directory if left blank.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "036c1260-7b14-4c05-8948-858cc1b5c893",
+      "Name": "ConvexExport.CaptureAsArtifact",
+      "Label": "Capture as Octopus Artifact",
+      "HelpText": "When enabled, the exported file will be captured as an Octopus build artifact, making it available for download from the deployment details page.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "186fac8e-92c9-482f-adea-551cb64dd999",
+      "Name": "ConvexExport.CommandTimeout",
+      "Label": "Command Timeout (seconds)",
+      "HelpText": "Maximum number of seconds to wait for the export to complete. Defaults to 600 (10 minutes). Large datasets may require a higher value.",
+      "DefaultValue": "600",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "itsmebenwalker",
+  "$Meta": {
+    "ExportedAt": "2026-05-29T00:00:00.000Z",
+    "OctopusVersion": "2026.1.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "convex"
+}
