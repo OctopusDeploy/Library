@@ -1,0 +1,111 @@
+{
+  "Id": "c3e5a7f2-8b14-4d9c-a6e0-f1d2b3c4e5f6",
+  "Name": "Supabase - Deploy Edge Function",
+  "Description": "Deploys a Supabase Edge Function using the Supabase CLI.\n\nThis step will:\n1. Install the Supabase CLI if not already present on the worker\n2. Authenticate with Supabase using the access token\n3. Deploy the named function (or all functions) to the target project\n4. Optionally run a smoke test to confirm the function is reachable\n\n**Notes:**\n- To deploy all functions in the project, enable **Deploy All Functions**. Leave **Function Name** empty when doing so.\n- JWT verification is enabled by default. Disable it only for public functions that do not require authentication.\n- The smoke test accepts any non-5xx response — a 401 (Unauthorized) is expected when JWT verification is enabled and is treated as a pass.\n- The Supabase worker requires internet access to reach `supabase.com` and GitHub releases.\n\n**Finding your Project Ref:**\n- From the Supabase Dashboard URL: `https://app.supabase.com/project/<PROJECT_REF>/...`\n- Or go to **Project Settings → General**\n\n[Supabase Edge Functions Documentation](https://supabase.com/docs/guides/functions/deploy)\n[Supabase CLI Reference](https://supabase.com/docs/reference/cli/supabase-functions-deploy)",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.RunOnServer": "true",
+    "Octopus.Action.Script.ScriptBody": "# Supabase - Deploy Edge Function\n# This script deploys a Supabase Edge Function using the Supabase CLI\n\nset -e\n\n# Export Octopus variables as environment variables\nexport SUPABASE_PROJECT_REF=\"#{SupabaseProjectRef}\"\nexport SUPABASE_ACCESS_TOKEN=\"#{SupabaseAccessToken}\"\nexport SUPABASE_FUNCTION_NAME=\"#{SupabaseFunctionName}\"\nexport SUPABASE_DEPLOY_ALL=\"#{SupabaseDeployAll}\"\nexport SUPABASE_VERIFY_JWT=\"#{SupabaseVerifyJWT}\"\nexport SUPABASE_IMPORT_MAP_PATH=\"#{SupabaseImportMapPath}\"\nexport SUPABASE_SMOKE_TEST=\"#{SupabaseSmokeTest}\"\nexport SUPABASE_CLI_VERSION=\"#{SupabaseCliVersion}\"\n\n# Parameter validation\nif [ -z \"$SUPABASE_PROJECT_REF\" ]; then\n    echo \"ERROR: Supabase Project Ref is required. Please provide a value for 'Project Ref'.\"\n    exit 1\nfi\n\nif [ -z \"$SUPABASE_ACCESS_TOKEN\" ]; then\n    echo \"ERROR: Access Token is required. Please provide a value for 'Access Token'.\"\n    exit 1\nfi\n\nif [ \"$SUPABASE_DEPLOY_ALL\" != \"True\" ] && [ -z \"$SUPABASE_FUNCTION_NAME\" ]; then\n    echo \"ERROR: Function Name is required when 'Deploy All Functions' is not enabled.\"\n    exit 1\nfi\n\nif [ -z \"$SUPABASE_CLI_VERSION\" ]; then\n    SUPABASE_CLI_VERSION=\"latest\"\nfi\n\necho \"==========================================\"\necho \"Supabase - Deploy Edge Function\"\necho \"==========================================\"\necho \"Project Ref: $SUPABASE_PROJECT_REF\"\nif [ \"$SUPABASE_DEPLOY_ALL\" = \"True\" ]; then\n    echo \"Deploying:   ALL functions\"\nelse\n    echo \"Function:    $SUPABASE_FUNCTION_NAME\"\nfi\necho \"CLI Version: $SUPABASE_CLI_VERSION\"\necho \"==========================================\"\n\n# Check if Supabase CLI is installed\ninstall_supabase_cli() {\n    local version=\"$1\"\n\n    echo \"Installing Supabase CLI...\"\n\n    # Detect OS\n    if [ \"$(uname)\" = \"Darwin\" ]; then\n        # macOS\n        if [ \"$version\" = \"latest\" ]; then\n            brew install supabase/tap/supabase\n        else\n            brew install supabase/tap/supabase@\"$version\"\n        fi\n    elif [ \"$(uname)\" = \"Linux\" ]; then\n        # Linux - download binary directly from GitHub releases\n        local arch\n        arch=$(uname -m)\n        case \"$arch\" in\n            x86_64)  arch=\"amd64\" ;;\n            aarch64) arch=\"arm64\" ;;\n            *) echo \"ERROR: Unsupported architecture: $arch\"; exit 1 ;;\n        esac\n        local download_url\n        if [ \"$version\" = \"latest\" ]; then\n            download_url=\"https://github.com/supabase/cli/releases/latest/download/supabase_linux_${arch}.tar.gz\"\n        else\n            download_url=\"https://github.com/supabase/cli/releases/download/v${version}/supabase_linux_${arch}.tar.gz\"\n        fi\n        echo \"Downloading Supabase CLI from GitHub releases...\"\n        mkdir -p \"$HOME/.local/bin\"\n        curl -fsSL \"$download_url\" -o /tmp/supabase.tar.gz\n        tar -xzf /tmp/supabase.tar.gz -C \"$HOME/.local/bin\"\n        chmod +x \"$HOME/.local/bin/supabase\"\n        export PATH=\"$HOME/.local/bin:$PATH\"\n        rm -f /tmp/supabase.tar.gz\n    else\n        echo \"ERROR: Unsupported operating system: $(uname)\"\n        exit 1\n    fi\n}\n\nif ! command -v supabase &> /dev/null; then\n    echo \"Supabase CLI not found. Installing...\"\n    install_supabase_cli \"$SUPABASE_CLI_VERSION\"\nelse\n    echo \"Supabase CLI found: $(which supabase)\"\n    CURRENT_VERSION=$(supabase --version 2>/dev/null | awk '{print $2}')\n    echo \"Current version: $CURRENT_VERSION\"\n\n    if [ \"$SUPABASE_CLI_VERSION\" != \"latest\" ] && [ \"$SUPABASE_CLI_VERSION\" != \"$CURRENT_VERSION\" ]; then\n        echo \"Updating CLI to version $SUPABASE_CLI_VERSION...\"\n        install_supabase_cli \"$SUPABASE_CLI_VERSION\"\n    fi\nfi\n\n# Verify CLI installation\nif ! command -v supabase &> /dev/null; then\n    echo \"ERROR: Failed to install Supabase CLI\"\n    exit 1\nfi\n\necho \"\"\necho \"==========================================\"\necho \"Deploying Edge Function...\"\necho \"==========================================\"\n\n# Build deploy command as array to handle spaces in arguments safely\nDEPLOY_ARGS=(functions deploy)\n\nif [ \"$SUPABASE_DEPLOY_ALL\" = \"True\" ]; then\n    echo \"Mode: Deploy all functions\"\nelse\n    DEPLOY_ARGS+=(\"$SUPABASE_FUNCTION_NAME\")\n    echo \"Mode: Deploy function '$SUPABASE_FUNCTION_NAME'\"\nfi\n\nif [ \"$SUPABASE_VERIFY_JWT\" = \"False\" ]; then\n    DEPLOY_ARGS+=(--no-verify-jwt)\n    echo \"JWT verification: disabled\"\nfi\n\nif [ -n \"$SUPABASE_IMPORT_MAP_PATH\" ]; then\n    DEPLOY_ARGS+=(--import-map \"$SUPABASE_IMPORT_MAP_PATH\")\n    echo \"Import map: $SUPABASE_IMPORT_MAP_PATH\"\nfi\n\nDEPLOY_ARGS+=(--project-ref \"$SUPABASE_PROJECT_REF\")\n\nDEPLOY_OUTPUT=$(supabase \"${DEPLOY_ARGS[@]}\" 2>&1) || {\n    echo \"ERROR: Deploy failed.\"\n    echo \"$DEPLOY_OUTPUT\"\n    exit 1\n}\necho \"$DEPLOY_OUTPUT\"\n\necho \"\"\necho \"==========================================\"\necho \"Deploy successful!\"\necho \"==========================================\"\n\nif [ \"$SUPABASE_DEPLOY_ALL\" = \"True\" ]; then\n    echo \"All functions deployed.\"\n    echo \"Base URL: https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/\"\n    if [ \"$SUPABASE_SMOKE_TEST\" = \"True\" ]; then\n        echo \"Note: Smoke test skipped - cannot test a single endpoint when deploying all functions.\"\n    fi\nelse\n    FUNCTION_URL=\"https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/${SUPABASE_FUNCTION_NAME}\"\n    echo \"Function URL: $FUNCTION_URL\"\n\n    if [ \"$SUPABASE_SMOKE_TEST\" = \"True\" ]; then\n        echo \"\"\n        echo \"==========================================\"\n        echo \"Running smoke test...\"\n        echo \"==========================================\"\n        echo \"GET $FUNCTION_URL\"\n\n        HTTP_STATUS=$(curl -s -o /dev/null -w \"%{http_code}\" --max-time 10 \"$FUNCTION_URL\") || {\n            echo \"ERROR: Smoke test failed - could not reach $FUNCTION_URL\"\n            exit 1\n        }\n\n        echo \"HTTP status: $HTTP_STATUS\"\n\n        if [ \"${HTTP_STATUS:0:1}\" = \"5\" ]; then\n            echo \"ERROR: Smoke test failed with HTTP $HTTP_STATUS. The function returned a server error.\"\n            exit 1\n        else\n            echo \"Smoke test passed (HTTP $HTTP_STATUS).\"\n        fi\n    fi\nfi\n"
+  },
+  "Parameters": [
+    {
+      "Id": "a1b2c3d4-1234-4abc-8def-ab1234567890",
+      "Name": "SupabaseProjectRef",
+      "Label": "Project Ref",
+      "HelpText": "The unique identifier of your Supabase project.\n\n**Where to find it:**\n- From your project URL: `https://app.supabase.com/project/<PROJECT_REF>/settings/general`\n- In Dashboard: **Project Settings → General → Project ID**\n\nExample: `abcdefghijklmn`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b2c3d4e5-2345-4bcd-9ef0-bc2345678901",
+      "Name": "SupabaseAccessToken",
+      "Label": "Access Token",
+      "HelpText": "Your Supabase personal access token for CLI authentication.\n\n**Where to get it:**\n1. Go to [Supabase Dashboard → Account](https://app.supabase.com/account/tokens)\n2. Click **Access Tokens**\n3. Create a new token or use an existing one\n\nThis value is stored securely and will not be displayed in logs.",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "c3d4e5f6-3456-4cde-aef0-cd3456789012",
+      "Name": "SupabaseFunctionName",
+      "Label": "Function Name",
+      "HelpText": "The name of the Edge Function to deploy.\n\nLeave empty and enable **Deploy All Functions** to deploy every function in the project.\n\nExample: `hello-world`",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "d4e5f6a7-4567-4def-bef0-de4567890123",
+      "Name": "SupabaseDeployAll",
+      "Label": "Deploy All Functions",
+      "HelpText": "When enabled, deploys all Edge Functions in the project instead of a single named function.\n\nLeave **Function Name** empty when using this option.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "e5f6a7b8-5678-4ef0-cef0-ef5678901234",
+      "Name": "SupabaseVerifyJWT",
+      "Label": "Verify JWT",
+      "HelpText": "When enabled, the function will require a valid Supabase JWT in the `Authorization` header.\n\nDisable this only for public functions that do not require authentication. Corresponds to the `--no-verify-jwt` CLI flag when unchecked.\n\nDefault: enabled.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "f6a7b8c9-6789-4f01-def0-fa6789012345",
+      "Name": "SupabaseImportMapPath",
+      "Label": "Import Map Path",
+      "HelpText": "Optional path to a custom `import_map.json` file. When provided, passed to the CLI via `--import-map`.\n\nLeave empty to use the default import map for the function.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "a7b8c9d0-7890-4012-ef01-ab7890123456",
+      "Name": "SupabaseSmokeTest",
+      "Label": "Run Smoke Test",
+      "HelpText": "When enabled, sends a GET request to the function URL after deploy and asserts the response is not a 5xx server error.\n\nA 401 Unauthorized response is treated as a pass (expected when JWT verification is enabled). Only fails on 5xx responses or connection errors.\n\nSkipped when **Deploy All Functions** is enabled.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      },
+      "Links": {}
+    },
+    {
+      "Id": "b8c9d0e1-8901-4123-f012-bc8901234567",
+      "Name": "SupabaseCliVersion",
+      "Label": "CLI Version",
+      "HelpText": "The version of the Supabase CLI to install.\n\n- Use `latest` to always use the newest version\n- Specify a version like `1.176.6` to pin a specific release\n\nDefault: `latest`",
+      "DefaultValue": "latest",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      },
+      "Links": {}
+    }
+  ],
+  "LastModifiedBy": "itsmebenwalker",
+  "$Meta": {
+    "ExportedAt": "2026-06-02T00:00:00.000Z",
+    "OctopusVersion": "2026.1.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "supabase"
+}
