@@ -186,6 +186,8 @@ function humanize(categoryId) {
       return "Chef";
     case "clickonce":
       return "ClickOnce";
+    case "convex":
+      return "Convex";
     case "cyberark":
       return "CyberArk";
     case "dll":

@@ -1,0 +1,114 @@
+{
+  "Id": "e4bb4066-1919-49a4-a6f6-61b1fd97bb1f",
+  "Name": "Convex - Smoke Test HTTP Action",
+  "Description": "Performs a smoke test against a Convex [HTTP action](https://docs.convex.dev/functions/http-actions) endpoint after a deployment. Validates that the deployment is live and responding correctly by checking the HTTP status code and optionally asserting on the response body.\n\nUse this as a post-deploy verification step to catch failed or partial deployments early.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "deploymentUrl=$(get_octopusvariable \"ConvexSmokeTest.DeploymentUrl\")\nactionPath=$(get_octopusvariable \"ConvexSmokeTest.ActionPath\")\nexpectedStatus=$(get_octopusvariable \"ConvexSmokeTest.ExpectedStatusCode\")\nbodyAssertion=$(get_octopusvariable \"ConvexSmokeTest.ResponseBodyAssertion\")\nhttpMethod=$(get_octopusvariable \"ConvexSmokeTest.HttpMethod\")\nrequestBody=$(get_octopusvariable \"ConvexSmokeTest.RequestBody\")\nmaxRetries=$(get_octopusvariable \"ConvexSmokeTest.MaxRetries\")\nretryDelay=$(get_octopusvariable \"ConvexSmokeTest.RetryDelay\")\ncurlTimeout=$(get_octopusvariable \"ConvexSmokeTest.CurlTimeout\")\n\nif [ -z \"$deploymentUrl\" ]; then\n  echo \"ERROR: ConvexSmokeTest.DeploymentUrl is required.\"\n  exit 1\nfi\n\nif [ -z \"$actionPath\" ]; then\n  echo \"ERROR: ConvexSmokeTest.ActionPath is required.\"\n  exit 1\nfi\n\nif [ -z \"$expectedStatus\" ]; then\n  expectedStatus=\"200\"\nfi\n\nif [ -z \"$httpMethod\" ]; then\n  httpMethod=\"GET\"\nfi\n\nif [ -z \"$maxRetries\" ]; then\n  maxRetries=\"3\"\nfi\n\nif [ -z \"$retryDelay\" ]; then\n  retryDelay=\"5\"\nfi\n\nif [ -z \"$curlTimeout\" ]; then\n  curlTimeout=\"30\"\nfi\n\ndeploymentUrl=$(echo \"$deploymentUrl\" | sed 's|/$||')\nactionPath=$(echo \"$actionPath\" | sed 's|^/||')\ntargetUrl=\"${deploymentUrl}/${actionPath}\"\n\necho \"Smoke test target: $targetUrl\"\necho \"Method: $httpMethod | Expected status: $expectedStatus | Max retries: $maxRetries\"\n\nattempt=0\nsuccess=false\n\nwhile [ $attempt -lt $maxRetries ]; do\n  attempt=$((attempt + 1))\n  echo \"Attempt $attempt of $maxRetries...\"\n\n  curlArgs=(\n    -s\n    -o /tmp/convex_smoke_body\n    -w \"%{http_code}\"\n    -X \"$httpMethod\"\n    --max-time \"$curlTimeout\"\n  )\n\n  if [ -n \"$requestBody\" ]; then\n    curlArgs+=(-H \"Content-Type: application/json\" -d \"$requestBody\")\n  fi\n\n  actualStatus=$(curl \"${curlArgs[@]}\" \"$targetUrl\")\n  responseBody=$(cat /tmp/convex_smoke_body)\n\n  echo \"Response status: $actualStatus\"\n\n  if [ \"$actualStatus\" != \"$expectedStatus\" ]; then\n    echo \"WARNING: Expected status $expectedStatus but got $actualStatus.\"\n    echo \"Response body: $responseBody\"\n    if [ $attempt -lt $maxRetries ]; then\n      echo \"Retrying in ${retryDelay}s...\"\n      sleep \"$retryDelay\"\n    fi\n    continue\n  fi\n\n  if [ -n \"$bodyAssertion\" ]; then\n    if echo \"$responseBody\" | grep -qF \"$bodyAssertion\"; then\n      echo \"Body assertion passed: '$bodyAssertion' found in response.\"\n    else\n      echo \"WARNING: Body assertion failed. '$bodyAssertion' not found in response.\"\n      echo \"Response body: $responseBody\"\n      if [ $attempt -lt $maxRetries ]; then\n        echo \"Retrying in ${retryDelay}s...\"\n        sleep \"$retryDelay\"\n      fi\n      continue\n    fi\n  fi\n\n  success=true\n  break\ndone\n\nif [ \"$success\" = false ]; then\n  echo \"ERROR: Smoke test failed after $maxRetries attempt(s). Deployment may be unhealthy.\"\n  exit 1\nfi\n\necho \"Smoke test passed. Convex deployment is healthy.\"\n"
+  },
+  "Parameters": [
+    {
+      "Id": "8e928a76-2256-4b34-886f-473bf53a4e21",
+      "Name": "ConvexSmokeTest.DeploymentUrl",
+      "Label": "Deployment URL",
+      "HelpText": "The base URL of your Convex deployment.\n\nExample: `https://happy-animal-123.convex.site`\n\nFind this in your Convex dashboard under **Settings \u2192 URL & Deploy Key**.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8734c4d8-9d6c-4c33-93c8-66608f3c450e",
+      "Name": "ConvexSmokeTest.ActionPath",
+      "Label": "Action Path",
+      "HelpText": "The path to the HTTP action endpoint to test.\n\nExample: `/health` or `/api/ping`\n\nThis is the route registered in your Convex `http.ts` file.",
+      "DefaultValue": "/health",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "fc465072-d618-4487-ac00-95b40027d253",
+      "Name": "ConvexSmokeTest.HttpMethod",
+      "Label": "HTTP Method",
+      "HelpText": "The HTTP method to use for the request.",
+      "DefaultValue": "GET",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "GET|GET\nPOST|POST\nPUT|PUT\nDELETE|DELETE"
+      }
+    },
+    {
+      "Id": "961a2dc5-1bdf-46b7-bb63-08541f20c241",
+      "Name": "ConvexSmokeTest.ExpectedStatusCode",
+      "Label": "Expected HTTP Status Code",
+      "HelpText": "The HTTP status code the endpoint should return for the test to pass. Defaults to `200`.",
+      "DefaultValue": "200",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "313c7f55-0291-4591-a941-dab64822b6b2",
+      "Name": "ConvexSmokeTest.ResponseBodyAssertion",
+      "Label": "Response Body Assertion",
+      "HelpText": "Optional. A string that must be present in the response body for the test to pass.\n\nExample: `{\"status\":\"ok\"}` or simply `ok`\n\nLeave blank to skip body assertion.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "e405bd82-b839-4de7-be5b-a6619b637631",
+      "Name": "ConvexSmokeTest.RequestBody",
+      "Label": "Request Body (JSON)",
+      "HelpText": "Optional. A JSON body to send with the request. Only relevant for POST or PUT requests.\n\nLeave blank for GET requests.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "2766feca-344e-45c9-b02b-e05b24725837",
+      "Name": "ConvexSmokeTest.MaxRetries",
+      "Label": "Max Retries",
+      "HelpText": "The number of times to retry the request if it fails. Useful for allowing a brief warm-up period after deployment. Defaults to `3`.",
+      "DefaultValue": "3",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5f841ad3-12bd-4ba4-b065-26b15c1e5d71",
+      "Name": "ConvexSmokeTest.RetryDelay",
+      "Label": "Retry Delay (seconds)",
+      "HelpText": "Seconds to wait between retry attempts. Defaults to `5`.",
+      "DefaultValue": "5",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "f6063486-b004-4c6a-953d-2dc8190c8635",
+      "Name": "ConvexSmokeTest.CurlTimeout",
+      "Label": "Request Timeout (seconds)",
+      "HelpText": "Maximum seconds to wait for each individual HTTP request to complete. Defaults to `30`.",
+      "DefaultValue": "30",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "itsmebenwalker",
+  "$Meta": {
+    "ExportedAt": "2026-05-29T00:00:00.000Z",
+    "OctopusVersion": "2026.1.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "convex"
+}

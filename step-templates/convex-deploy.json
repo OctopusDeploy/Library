@@ -1,0 +1,74 @@
+{
+  "Id": "22a4a875-e5fb-44c9-86d9-16911e58c0f0",
+  "Name": "Convex - Deploy",
+  "Description": "Deploys your Convex backend functions and schema to a target deployment using the [Convex CLI](https://docs.convex.dev/cli). Supports production, preview, and named deployments via a deploy key.\n\nRequires Node.js and npx available on the worker.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "deployKey=$(get_octopusvariable \"ConvexDeploy.DeployKey\")\ndeploymentType=$(get_octopusvariable \"ConvexDeploy.DeploymentType\")\npreviewName=$(get_octopusvariable \"ConvexDeploy.PreviewName\")\nworkingDir=$(get_octopusvariable \"ConvexDeploy.WorkingDirectory\")\ncmdTimeout=$(get_octopusvariable \"ConvexDeploy.CommandTimeout\")\n\nif [ -z \"$deployKey\" ]; then\n  echo \"ERROR: ConvexDeploy.DeployKey is required.\"\n  exit 1\nfi\n\nif [ -z \"$deploymentType\" ]; then\n  deploymentType=\"prod\"\nfi\n\nif [ -z \"$cmdTimeout\" ]; then\n  cmdTimeout=\"300\"\nfi\n\nexport CONVEX_DEPLOY_KEY=\"$deployKey\"\n\nif [ -n \"$workingDir\" ]; then\n  echo \"Changing to working directory: $workingDir\"\n  cd \"$workingDir\" || { echo \"ERROR: Could not change to directory '$workingDir'\"; exit 1; }\nfi\n\nensure_node() {\n  if command -v npx &>/dev/null; then\n    echo \"Node.js found: $(node --version)\"\n    return 0\n  fi\n  export NVM_DIR=\"${NVM_DIR:-$HOME/.nvm}\"\n  if [ -s \"$NVM_DIR/nvm.sh\" ]; then\n    \\. \"$NVM_DIR/nvm.sh\"\n    if command -v npx &>/dev/null; then\n      echo \"Node.js loaded via nvm: $(node --version)\"\n      return 0\n    fi\n  fi\n  echo \"Node.js not found. Installing via nvm...\"\n  curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash\n  \\. \"$NVM_DIR/nvm.sh\"\n  nvm install --lts\n  echo \"Node.js installed: $(node --version)\"\n}\nensure_node\n\necho \"Installing dependencies...\"\nnpm install\n\necho \"Convex deployment type: $deploymentType\"\n\ncase \"$deploymentType\" in\n  prod)\n    echo \"Deploying to production...\"\n    timeout \"$cmdTimeout\" npx convex deploy --yes\n    ;;\n  preview)\n    if [ -z \"$previewName\" ]; then\n      echo \"ERROR: ConvexDeploy.PreviewName is required when deployment type is 'preview'.\"\n      exit 1\n    fi\n    echo \"Deploying to preview deployment: $previewName\"\n    timeout \"$cmdTimeout\" npx convex deploy --preview-name \"$previewName\" --yes\n    ;;\n  dev)\n    echo \"Deploying to dev deployment...\"\n    timeout \"$cmdTimeout\" npx convex deploy --yes\n    ;;\n  *)\n    echo \"ERROR: Unknown deployment type '$deploymentType'. Must be one of: prod, preview, dev\"\n    exit 1\n    ;;\nesac\n\nif [ $? -ne 0 ]; then\n  echo \"ERROR: Convex deployment failed.\"\n  exit 1\nfi\n\necho \"Convex deployment completed successfully.\"\n"
+  },
+  "Parameters": [
+    {
+      "Id": "6727833e-b393-470c-ab79-e72c3749e402",
+      "Name": "ConvexDeploy.DeployKey",
+      "Label": "Deploy Key",
+      "HelpText": "The Convex deploy key for the target project. Generate one with `npx convex deployment token` or via the Convex dashboard. Store this as a sensitive Octopus variable.\n\nSee: [Creating deploy keys](https://docs.convex.dev/cli#deploy-keys)",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "0b361a83-c5b8-441e-846a-9bc88b2d7114",
+      "Name": "ConvexDeploy.DeploymentType",
+      "Label": "Deployment Type",
+      "HelpText": "The type of Convex deployment to target.\n\n- `prod` \u2014 production deployment (default)\n- `preview` \u2014 preview deployment (requires a preview name)\n- `dev` \u2014 development deployment",
+      "DefaultValue": "prod",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "prod|Production\npreview|Preview\ndev|Development"
+      }
+    },
+    {
+      "Id": "8adff0dc-16d9-44ff-b05a-fcb7b92ff3ce",
+      "Name": "ConvexDeploy.PreviewName",
+      "Label": "Preview Name",
+      "HelpText": "The name of the preview deployment. Only required when **Deployment Type** is set to `preview`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "dc368708-12b9-4d03-aeda-e7cd8e8326c3",
+      "Name": "ConvexDeploy.WorkingDirectory",
+      "Label": "Working Directory",
+      "HelpText": "Optional. The directory containing your Convex project (where `convex/` lives). Defaults to the current working directory if left blank.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "17fc0144-7fdc-4c5b-80fb-7143d503fef6",
+      "Name": "ConvexDeploy.CommandTimeout",
+      "Label": "Command Timeout (seconds)",
+      "HelpText": "Maximum number of seconds to wait for the deploy command to complete. Defaults to 300 (5 minutes).",
+      "DefaultValue": "300",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "itsmebenwalker",
+  "$Meta": {
+    "ExportedAt": "2026-05-29T00:00:00.000Z",
+    "OctopusVersion": "2026.1.0",
+    "Type": "ActionTemplate"
+  },
+  "Category": "convex"
+}
