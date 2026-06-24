@@ -158,6 +158,8 @@ function humanize(categoryId) {
       return "1Password Connect";
     case "amazon-chime":
       return "Amazon Chime";
+    case "akeyless":
+      return "Akeyless";
     case "ansible":
       return "Ansible";
     case "apexsql":
