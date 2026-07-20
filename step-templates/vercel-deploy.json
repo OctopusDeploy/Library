@@ -1,0 +1,135 @@
+{
+  "Id": "1f76f2e4-7f3b-4eb1-8278-6503fcd78dcd",
+  "Name": "Vercel - Deploy",
+  "Description": "Triggers a git-connected deployment of a [Vercel](https://vercel.com) project via the [Vercel REST API](https://vercel.com/docs/rest-api), and optionally waits for the deployment to finish building. Supports projects connected to GitHub, GitLab, and Bitbucket repositories.\n\nThe Vercel project must be connected to the repository via Vercel's git integration (this also covers private repositories); the step never accesses the repository directly, so no git credentials are needed in Octopus.\n\nSets the output variables `DeploymentId`, `DeploymentUrl`, and `DeploymentState` for use in later steps.\n\nRequires `curl` and either `jq` or `python3` on the worker.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "#!/bin/bash\n\n# Vercel - Deploy\n# Triggers a git-connected deployment on Vercel via the REST API, and\n# optionally waits for the deployment to finish building.\n# API reference: https://vercel.com/docs/rest-api/reference/endpoints/deployments/create-a-new-deployment\n\n# Read step parameters\nApiToken=$(get_octopusvariable \"VercelDeploy.ApiToken\")\nProjectName=$(get_octopusvariable \"VercelDeploy.ProjectName\")\nGitProvider=$(get_octopusvariable \"VercelDeploy.GitProvider\")\nGitRef=$(get_octopusvariable \"VercelDeploy.GitRef\")\nRepoOrg=$(get_octopusvariable \"VercelDeploy.RepoOrg\")\nRepoName=$(get_octopusvariable \"VercelDeploy.RepoName\")\nRepoId=$(get_octopusvariable \"VercelDeploy.RepoId\")\nTarget=$(get_octopusvariable \"VercelDeploy.Target\")\nTeamId=$(get_octopusvariable \"VercelDeploy.TeamId\")\nWaitForDeployment=$(get_octopusvariable \"VercelDeploy.WaitForDeployment\")\nTimeoutSeconds=$(get_octopusvariable \"VercelDeploy.TimeoutSeconds\")\n\n# Validate required tooling\n\nif ! command -v curl >/dev/null 2>&1; then\n  echo \"ERROR: curl is required on the worker to run this step.\" >&2\n  exit 1\nfi\n\nif command -v jq >/dev/null 2>&1; then\n  JSON_TOOL=\"jq\"\nelif command -v python3 >/dev/null 2>&1; then\n  JSON_TOOL=\"python3\"\nelse\n  echo \"ERROR: jq or python3 is required on the worker to build and parse JSON.\" >&2\n  exit 1\nfi\n\n# Prints the JSON-encoded (quoted) form of $1\njson_escape() {\n  if [[ \"$JSON_TOOL\" == \"jq\" ]]; then\n    jq -cn --arg v \"$1\" '$v'\n  else\n    python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' \"$1\"\n  fi\n}\n\n# Reads JSON on stdin and prints the value at dotted path $1 (empty if missing or null)\njson_get() {\n  if [[ \"$JSON_TOOL\" == \"jq\" ]]; then\n    jq -r \".$1 // empty\" 2>/dev/null\n  else\n    python3 -c '\nimport json, sys\ntry:\n    data = json.load(sys.stdin)\nexcept Exception:\n    sys.exit(0)\ncur = data\nfor part in sys.argv[1].split(\".\"):\n    if isinstance(cur, dict) and part in cur:\n        cur = cur[part]\n    else:\n        sys.exit(0)\nif cur is None:\n    sys.exit(0)\nprint(cur if not isinstance(cur, (dict, list)) else json.dumps(cur))\n' \"$1\"\n  fi\n}\n\n# Validate required parameters\n\nif [[ -z \"$ApiToken\" ]]; then\n  echo \"ERROR: ApiToken is required.\" >&2\n  exit 1\nfi\n\nif [[ -z \"$ProjectName\" ]]; then\n  echo \"ERROR: ProjectName is required.\" >&2\n  exit 1\nfi\n\nif [[ -z \"$GitProvider\" ]]; then\n  echo \"ERROR: GitProvider is required (github, gitlab, bitbucket).\" >&2\n  exit 1\nfi\n\nif [[ -z \"$GitRef\" ]]; then\n  echo \"ERROR: GitRef is required (branch name or commit SHA).\" >&2\n  exit 1\nfi\n\nTimeoutSeconds=\"${TimeoutSeconds:-600}\"\nif ! [[ \"$TimeoutSeconds\" =~ ^[0-9]+$ ]]; then\n  echo \"ERROR: Timeout must be a whole number of seconds.\" >&2\n  exit 1\nfi\n\n# Normalise provider to lowercase\nGitProvider=$(echo \"$GitProvider\" | tr '[:upper:]' '[:lower:]')\n\n# Build gitSource payload\n\nREF_JSON=$(json_escape \"$GitRef\")\n\ncase \"$GitProvider\" in\n  github)\n    if [[ -z \"$RepoOrg\" || -z \"$RepoName\" ]]; then\n      echo \"ERROR: RepoOrg and RepoName are required for GitHub deployments.\" >&2\n      exit 1\n    fi\n    GIT_SOURCE=\"{\\\"type\\\":\\\"github\\\",\\\"org\\\":$(json_escape \"$RepoOrg\"),\\\"repo\\\":$(json_escape \"$RepoName\"),\\\"ref\\\":$REF_JSON}\"\n    ;;\n  gitlab)\n    if [[ -z \"$RepoId\" ]]; then\n      echo \"ERROR: RepoId is required for GitLab deployments.\" >&2\n      exit 1\n    fi\n    GIT_SOURCE=\"{\\\"type\\\":\\\"gitlab\\\",\\\"projectId\\\":$(json_escape \"$RepoId\"),\\\"ref\\\":$REF_JSON}\"\n    ;;\n  bitbucket)\n    if [[ -z \"$RepoOrg\" || -z \"$RepoName\" ]]; then\n      echo \"ERROR: RepoOrg (workspace) and RepoName (slug) are required for Bitbucket deployments.\" >&2\n      exit 1\n    fi\n    GIT_SOURCE=\"{\\\"type\\\":\\\"bitbucket\\\",\\\"owner\\\":$(json_escape \"$RepoOrg\"),\\\"slug\\\":$(json_escape \"$RepoName\"),\\\"ref\\\":$REF_JSON}\"\n    ;;\n  *)\n    echo \"ERROR: Unsupported GitProvider '$GitProvider'. Must be one of: github, gitlab, bitbucket.\" >&2\n    exit 1\n    ;;\nesac\n\n# Build request body\n\n# Target defaults to \"production\". Valid values: production, staging, or a custom environment identifier.\nDEPLOY_TARGET=\"${Target:-production}\"\n\nBODY=\"{\\\"name\\\":$(json_escape \"$ProjectName\"),\\\"gitSource\\\":$GIT_SOURCE,\\\"target\\\":$(json_escape \"$DEPLOY_TARGET\")}\"\n\n# Build URL with optional teamId\n\nAPI_URL=\"https://api.vercel.com/v13/deployments\"\nif [[ -n \"$TeamId\" ]]; then\n  API_URL=\"${API_URL}?teamId=${TeamId}\"\nfi\n\n# Make the API request\n\necho \"Triggering Vercel deployment...\"\necho \"  Project : $ProjectName\"\necho \"  Provider: $GitProvider\"\necho \"  Ref     : $GitRef\"\necho \"  Target  : $DEPLOY_TARGET\"\n[[ -n \"$TeamId\" ]] && echo \"  Team ID : $TeamId\"\necho \"\"\n\nRAW=$(curl --silent --show-error --max-time 120 --write-out $'\\n%{http_code}' \\\n  --request POST \"$API_URL\" \\\n  --header \"Authorization: Bearer $ApiToken\" \\\n  --header \"Content-Type: application/json\" \\\n  --data \"$BODY\")\n\nCURL_EXIT=$?\n\nif [[ $CURL_EXIT -ne 0 ]]; then\n  echo \"ERROR: curl request failed (exit code $CURL_EXIT).\" >&2\n  exit 1\nfi\n\nHTTP_STATUS=$(echo \"$RAW\" | tail -n 1)\nRESPONSE=$(echo \"$RAW\" | sed '$d')\n\n# Parse response\n\nERROR_CODE=$(echo \"$RESPONSE\" | json_get \"error.code\")\nERROR_MSG=$(echo \"$RESPONSE\" | json_get \"error.message\")\n\nif [[ -n \"$ERROR_CODE\" || \"$HTTP_STATUS\" -ge 400 ]]; then\n  echo \"ERROR: Vercel API returned an error (HTTP $HTTP_STATUS).\" >&2\n  [[ -n \"$ERROR_CODE\" ]] && echo \"  Code   : $ERROR_CODE\" >&2\n  [[ -n \"$ERROR_MSG\" ]] && echo \"  Message: $ERROR_MSG\" >&2\n  exit 1\nfi\n\n# Extract deployment details\n\nDEPLOY_ID=$(echo \"$RESPONSE\" | json_get \"id\")\nDEPLOY_URL=$(echo \"$RESPONSE\" | json_get \"url\")\nDEPLOY_STATE=$(echo \"$RESPONSE\" | json_get \"readyState\")\n\nif [[ -z \"$DEPLOY_ID\" ]]; then\n  echo \"ERROR: Could not read the deployment id from the Vercel API response.\" >&2\n  exit 1\nfi\n\necho \"Deployment created.\"\necho \"  ID    : $DEPLOY_ID\"\necho \"  State : $DEPLOY_STATE\"\necho \"  URL   : https://$DEPLOY_URL\"\n\nset_octopusvariable \"DeploymentId\" \"$DEPLOY_ID\"\nset_octopusvariable \"DeploymentUrl\" \"https://$DEPLOY_URL\"\nset_octopusvariable \"DeploymentState\" \"$DEPLOY_STATE\"\n\nif [[ \"$WaitForDeployment\" != \"True\" ]]; then\n  echo \"\"\n  echo \"Wait for deployment is disabled; not waiting for the build to finish.\"\n  exit 0\nfi\n\n# Poll until the deployment is READY, fails, or the timeout is reached\n\nSTATUS_URL=\"https://api.vercel.com/v13/deployments/${DEPLOY_ID}\"\nif [[ -n \"$TeamId\" ]]; then\n  STATUS_URL=\"${STATUS_URL}?teamId=${TeamId}\"\nfi\n\necho \"\"\necho \"Waiting up to ${TimeoutSeconds}s for the deployment to become READY...\"\n\nINTERVAL=10\nELAPSED=0\n\nwhile true; do\n  STATUS_RAW=$(curl --silent --show-error --max-time 60 \\\n    --header \"Authorization: Bearer $ApiToken\" \\\n    \"$STATUS_URL\")\n\n  if [[ $? -ne 0 ]]; then\n    echo \"WARNING: Status check failed; retrying...\" >&2\n  else\n    DEPLOY_STATE=$(echo \"$STATUS_RAW\" | json_get \"readyState\")\n    echo \"  [${ELAPSED}s] State: ${DEPLOY_STATE:-UNKNOWN}\"\n\n    case \"$DEPLOY_STATE\" in\n      READY)\n        set_octopusvariable \"DeploymentState\" \"$DEPLOY_STATE\"\n        echo \"\"\n        echo \"Deployment is READY: https://$DEPLOY_URL\"\n        exit 0\n        ;;\n      ERROR|CANCELED)\n        set_octopusvariable \"DeploymentState\" \"$DEPLOY_STATE\"\n        echo \"ERROR: Deployment finished in state $DEPLOY_STATE. Check the build logs in the Vercel dashboard.\" >&2\n        exit 1\n        ;;\n    esac\n  fi\n\n  if (( ELAPSED >= TimeoutSeconds )); then\n    set_octopusvariable \"DeploymentState\" \"${DEPLOY_STATE:-TIMED_OUT}\"\n    echo \"ERROR: Timed out after ${TimeoutSeconds}s waiting for the deployment to become READY (last state: ${DEPLOY_STATE:-unknown}).\" >&2\n    exit 1\n  fi\n\n  sleep \"$INTERVAL\"\n  ELAPSED=$((ELAPSED + INTERVAL))\ndone"
+  },
+  "Parameters": [
+    {
+      "Id": "ecbfaa42-7ff0-4830-9fcb-e759e69b92ae",
+      "Name": "VercelDeploy.ApiToken",
+      "Label": "API Token",
+      "HelpText": "A Vercel API token. Create one at [vercel.com/account/tokens](https://vercel.com/account/tokens). Consider binding this to a sensitive project variable (e.g. `#{Vercel.ApiToken}`) so it can be scoped per environment and rotated in one place.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "ee646811-9d6b-49b2-b9ba-eaa80152bf62",
+      "Name": "VercelDeploy.ProjectName",
+      "Label": "Project Name",
+      "HelpText": "The name of the Vercel project to deploy.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "c28854cc-54fb-4358-b31a-1a1da09174cc",
+      "Name": "VercelDeploy.GitProvider",
+      "Label": "Git Provider",
+      "HelpText": "The git provider the Vercel project is connected to.",
+      "DefaultValue": "github",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "github|GitHub\ngitlab|GitLab\nbitbucket|Bitbucket"
+      }
+    },
+    {
+      "Id": "8df5b54c-d212-4a95-acae-ef4b7fca1601",
+      "Name": "VercelDeploy.GitRef",
+      "Label": "Git Ref",
+      "HelpText": "The branch name or commit SHA to deploy. For repeatable deployments across environments, bind this to a commit SHA captured at release creation (e.g. from build information or a prompted variable) rather than a branch name, so every environment deploys the same commit.",
+      "DefaultValue": "main",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b62440cb-17c8-4009-aee4-cd1966189f91",
+      "Name": "VercelDeploy.RepoOrg",
+      "Label": "Repository Owner",
+      "HelpText": "GitHub org/username or Bitbucket workspace. Not required for GitLab.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "d13fdb33-d825-4921-9b3e-b5f1d42c0e94",
+      "Name": "VercelDeploy.RepoName",
+      "Label": "Repository Name",
+      "HelpText": "The repository name or Bitbucket slug. Not required for GitLab.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "96d2e419-efc5-42bd-8f58-e54045a3827c",
+      "Name": "VercelDeploy.RepoId",
+      "Label": "Repo ID",
+      "HelpText": "GitLab project ID. Only required for GitLab.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "78b9befc-ad68-4b83-b243-cbf1bd9f7cad",
+      "Name": "VercelDeploy.Target",
+      "Label": "Deployment Target",
+      "HelpText": "Valid values: production, staging, or a custom environment identifier.",
+      "DefaultValue": "production",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8fd29d5c-7f3a-406d-8ebb-aec52883ec2a",
+      "Name": "VercelDeploy.TeamId",
+      "Label": "Team ID",
+      "HelpText": "Vercel team ID. Only required for team-owned projects.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b555545c-33e8-4ea8-9c6f-bb78e2d3a7b1",
+      "Name": "VercelDeploy.WaitForDeployment",
+      "Label": "Wait For Deployment",
+      "HelpText": "If enabled, the step polls the Vercel API until the deployment reaches the READY state, and fails if the build errors, is canceled, or the timeout is reached.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "8a0ea110-68ff-4a91-86ea-0261bb677729",
+      "Name": "VercelDeploy.TimeoutSeconds",
+      "Label": "Wait Timeout (seconds)",
+      "HelpText": "How long to wait for the deployment to become READY before failing the step. Only used when Wait For Deployment is enabled.",
+      "DefaultValue": "600",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2026-07-20T10:22:34.000Z",
+    "OctopusVersion": "2026.3.6158",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "Meanski",
+  "Category": "vercel"
+}

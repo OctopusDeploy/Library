@@ -324,6 +324,8 @@ function humanize(categoryId) {
       return "Tomcat";
     case "twilio":
       return "Twilio";
+    case "vercel":
+      return "Vercel";
     case "victorops":
       return "VictorOps";
     case "webdeploy":
