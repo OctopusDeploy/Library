@@ -192,6 +192,8 @@ function humanize(categoryId) {
       return "Convex";
     case "cyberark":
       return "CyberArk";
+    case "discord":
+      return "Discord";
     case "dll":
       return "dll";
     case "dlm":
