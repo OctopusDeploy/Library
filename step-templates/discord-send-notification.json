@@ -1,0 +1,135 @@
+{
+  "Id": "5adb6692-04b1-4475-800b-fbf0652696ed",
+  "Name": "Discord - Send Notification",
+  "Description": "Posts a message and/or rich embed to a [Discord](https://discord.com) channel via a [webhook](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks). No Discord application or bot is required \u2014 create a webhook in the channel's settings (Integrations \u2192 Webhooks) and paste its URL into this step.\n\nThe embed can automatically colour itself green or red based on the deployment outcome (set Color to `auto` and use this step with a \"run always\" condition), include Project/Release/Environment fields, and link back to the deployment in Octopus.\n\nMentions (`@everyone`, roles, users) in message content are suppressed by default to prevent accidental pings from interpolated release notes.\n\nSets the output variable `MessageId` for use in later steps.\n\nRequires `curl` and either `jq` or `python3` on the worker.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "#!/bin/bash\n\n# Discord - Send Notification\n# Posts a message and/or rich embed to a Discord channel via a webhook.\n# API reference: https://discord.com/developers/docs/resources/webhook#execute-webhook\n\n# Read step parameters\nWebhookUrl=$(get_octopusvariable \"DiscordNotify.WebhookUrl\")\nContent=$(get_octopusvariable \"DiscordNotify.Content\")\nUsername=$(get_octopusvariable \"DiscordNotify.Username\")\nAvatarUrl=$(get_octopusvariable \"DiscordNotify.AvatarUrl\")\nIncludeEmbed=$(get_octopusvariable \"DiscordNotify.IncludeEmbed\")\nEmbedTitle=$(get_octopusvariable \"DiscordNotify.EmbedTitle\")\nEmbedDescription=$(get_octopusvariable \"DiscordNotify.EmbedDescription\")\nEmbedColor=$(get_octopusvariable \"DiscordNotify.Color\")\nIncludeFields=$(get_octopusvariable \"DiscordNotify.IncludeDeploymentFields\")\nSuppressMentions=$(get_octopusvariable \"DiscordNotify.SuppressMentions\")\nThreadId=$(get_octopusvariable \"DiscordNotify.ThreadId\")\n\n# System variables used for the auto colour, detail fields, and deployment link\nSysProjectName=$(get_octopusvariable \"Octopus.Project.Name\")\nSysReleaseNumber=$(get_octopusvariable \"Octopus.Release.Number\")\nSysEnvironmentName=$(get_octopusvariable \"Octopus.Environment.Name\")\nSysDeploymentError=$(get_octopusvariable \"Octopus.Deployment.Error\")\nSysServerUri=$(get_octopusvariable \"Octopus.Web.ServerUri\")\nSysDeploymentLink=$(get_octopusvariable \"Octopus.Web.DeploymentLink\")\n\n# Validate required tooling\n\nif ! command -v curl >/dev/null 2>&1; then\n  echo \"ERROR: curl is required on the worker to run this step.\" >&2\n  exit 1\nfi\n\nif command -v jq >/dev/null 2>&1; then\n  JSON_TOOL=\"jq\"\nelif command -v python3 >/dev/null 2>&1; then\n  JSON_TOOL=\"python3\"\nelse\n  echo \"ERROR: jq or python3 is required on the worker to build and parse JSON.\" >&2\n  exit 1\nfi\n\n# Prints the JSON-encoded (quoted) form of $1\njson_escape() {\n  if [[ \"$JSON_TOOL\" == \"jq\" ]]; then\n    jq -cn --arg v \"$1\" '$v'\n  else\n    python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' \"$1\"\n  fi\n}\n\n# Reads JSON on stdin and prints the value at dotted path $1 (empty if missing or null)\njson_get() {\n  if [[ \"$JSON_TOOL\" == \"jq\" ]]; then\n    jq -r \".$1 // empty\" 2>/dev/null\n  else\n    python3 -c '\nimport json, sys\ntry:\n    data = json.load(sys.stdin)\nexcept Exception:\n    sys.exit(0)\ncur = data\nfor part in sys.argv[1].split(\".\"):\n    if isinstance(cur, dict) and part in cur:\n        cur = cur[part]\n    else:\n        sys.exit(0)\nif cur is None:\n    sys.exit(0)\nprint(cur if not isinstance(cur, (dict, list)) else json.dumps(cur))\n' \"$1\"\n  fi\n}\n\n# Truncates $1 to at most $2 characters, appending an ellipsis when cut\ntruncate_to() {\n  local s=\"$1\" max=\"$2\"\n  if (( ${#s} > max )); then\n    echo \"${s:0:$((max - 1))}\u2026\"\n  else\n    echo \"$s\"\n  fi\n}\n\n# Validate required parameters\n\nif [[ -z \"$WebhookUrl\" ]]; then\n  echo \"ERROR: WebhookUrl is required.\" >&2\n  exit 1\nfi\n\nif [[ ! \"$WebhookUrl\" =~ ^https://(ptb\\.|canary\\.)?(discord|discordapp)\\.com/api/webhooks/ ]]; then\n  echo \"ERROR: WebhookUrl does not look like a Discord webhook URL (expected https://discord.com/api/webhooks/...).\" >&2\n  exit 1\nfi\n\nif [[ -z \"$Content\" && \"$IncludeEmbed\" != \"True\" ]]; then\n  echo \"ERROR: Nothing to send. Provide Content, or enable Include Embed.\" >&2\n  exit 1\nfi\n\n# Build the payload\n\nPARTS=()\n\nif [[ -n \"$Content\" ]]; then\n  Content=$(truncate_to \"$Content\" 2000)\n  PARTS+=(\"\\\"content\\\":$(json_escape \"$Content\")\")\nfi\n\n[[ -n \"$Username\" ]] && PARTS+=(\"\\\"username\\\":$(json_escape \"$Username\")\")\n[[ -n \"$AvatarUrl\" ]] && PARTS+=(\"\\\"avatar_url\\\":$(json_escape \"$AvatarUrl\")\")\n\nif [[ \"$SuppressMentions\" == \"True\" ]]; then\n  PARTS+=(\"\\\"allowed_mentions\\\":{\\\"parse\\\":[]}\")\nfi\n\nif [[ \"$IncludeEmbed\" == \"True\" ]]; then\n  EPARTS=()\n\n  if [[ -n \"$EmbedTitle\" ]]; then\n    EmbedTitle=$(truncate_to \"$EmbedTitle\" 256)\n    EPARTS+=(\"\\\"title\\\":$(json_escape \"$EmbedTitle\")\")\n  fi\n\n  if [[ -n \"$EmbedDescription\" ]]; then\n    EmbedDescription=$(truncate_to \"$EmbedDescription\" 4096)\n    EPARTS+=(\"\\\"description\\\":$(json_escape \"$EmbedDescription\")\")\n  fi\n\n  # Link the embed title back to the deployment when running in a deployment context\n  if [[ -n \"$SysServerUri\" && -n \"$SysDeploymentLink\" ]]; then\n    EPARTS+=(\"\\\"url\\\":$(json_escape \"${SysServerUri}${SysDeploymentLink}\")\")\n  fi\n\n  # Resolve the embed colour (Discord expects a decimal integer)\n  case \"$(echo \"$EmbedColor\" | tr '[:upper:]' '[:lower:]')\" in\n    auto)\n    # Green unless the deployment has an error\n    if [[ -n \"$SysDeploymentError\" ]]; then COLOR=15548997; else COLOR=5763719; fi\n      ;;\n    success) COLOR=5763719 ;;\n    failure) COLOR=15548997 ;;\n    warning) COLOR=16705372 ;;\n    info|\"\") COLOR=5793266 ;;\n    *)\n      if [[ \"$EmbedColor\" =~ ^[0-9]+$ ]]; then\n        COLOR=\"$EmbedColor\"\n      else\n        echo \"WARNING: Unrecognised Color '$EmbedColor'; using info blue.\" >&2\n        COLOR=5793266\n      fi\n      ;;\n  esac\n  EPARTS+=(\"\\\"color\\\":$COLOR\")\n\n  EPARTS+=(\"\\\"timestamp\\\":\\\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\\\"\")\n\n  if [[ \"$IncludeFields\" == \"True\" ]]; then\n    FIELDS=()\n    [[ -n \"$SysProjectName\" ]] && FIELDS+=(\"{\\\"name\\\":\\\"Project\\\",\\\"value\\\":$(json_escape \"$SysProjectName\"),\\\"inline\\\":true}\")\n    [[ -n \"$SysReleaseNumber\" ]] && FIELDS+=(\"{\\\"name\\\":\\\"Release\\\",\\\"value\\\":$(json_escape \"$SysReleaseNumber\"),\\\"inline\\\":true}\")\n    [[ -n \"$SysEnvironmentName\" ]] && FIELDS+=(\"{\\\"name\\\":\\\"Environment\\\",\\\"value\\\":$(json_escape \"$SysEnvironmentName\"),\\\"inline\\\":true}\")\n    if (( ${#FIELDS[@]} > 0 )); then\n      EPARTS+=(\"\\\"fields\\\":[$(IFS=,; echo \"${FIELDS[*]}\")]\")\n    fi\n  fi\n\n  PARTS+=(\"\\\"embeds\\\":[{$(IFS=,; echo \"${EPARTS[*]}\")}]\")\nfi\n\nPAYLOAD=\"{$(IFS=,; echo \"${PARTS[*]}\")}\"\n\n# Build the URL. wait=true makes Discord return the created message so the\n# message id can be captured as an output variable.\n\nPOST_URL=\"${WebhookUrl}?wait=true\"\nif [[ -n \"$ThreadId\" ]]; then\n  POST_URL=\"${POST_URL}&thread_id=${ThreadId}\"\nfi\n\n# Send, retrying on rate limiting (HTTP 429)\n\necho \"Sending Discord notification...\"\n[[ -n \"$Content\" ]] && echo \"  Content : $(truncate_to \"$Content\" 60)\"\n[[ \"$IncludeEmbed\" == \"True\" && -n \"$EmbedTitle\" ]] && echo \"  Embed   : $EmbedTitle\"\n[[ -n \"$ThreadId\" ]] && echo \"  Thread  : $ThreadId\"\necho \"\"\n\nMAX_ATTEMPTS=3\nATTEMPT=1\n\nwhile true; do\n  RAW=$(curl --silent --show-error --max-time 60 --write-out $'\\n%{http_code}' \\\n    --request POST \"$POST_URL\" \\\n    --header \"Content-Type: application/json\" \\\n    --data \"$PAYLOAD\")\n\n  CURL_EXIT=$?\n\n  if [[ $CURL_EXIT -ne 0 ]]; then\n    echo \"ERROR: curl request failed (exit code $CURL_EXIT).\" >&2\n    exit 1\n  fi\n\n  HTTP_STATUS=$(echo \"$RAW\" | tail -n 1)\n  RESPONSE=$(echo \"$RAW\" | sed '$d')\n\n  if [[ \"$HTTP_STATUS\" == \"429\" ]]; then\n    if (( ATTEMPT >= MAX_ATTEMPTS )); then\n      echo \"ERROR: Discord rate limited the webhook and retries were exhausted.\" >&2\n      exit 1\n    fi\n    RETRY_AFTER=$(echo \"$RESPONSE\" | json_get \"retry_after\")\n    # retry_after can be fractional seconds; round up in plain bash\n    WHOLE=\"${RETRY_AFTER%%.*}\"\n    if [[ \"$WHOLE\" =~ ^[0-9]+$ ]]; then\n      WAIT_SECONDS=$((WHOLE + 1))\n    else\n      WAIT_SECONDS=2\n    fi\n    echo \"Rate limited (429); retrying in ${WAIT_SECONDS}s (attempt $((ATTEMPT + 1))/${MAX_ATTEMPTS})...\"\n    sleep \"$WAIT_SECONDS\"\n    ATTEMPT=$((ATTEMPT + 1))\n    continue\n  fi\n\n  break\ndone\n\nif [[ \"$HTTP_STATUS\" -ge 400 ]]; then\n  ERROR_MSG=$(echo \"$RESPONSE\" | json_get \"message\")\n  ERROR_CODE=$(echo \"$RESPONSE\" | json_get \"code\")\n  echo \"ERROR: Discord API returned an error (HTTP $HTTP_STATUS).\" >&2\n  [[ -n \"$ERROR_CODE\" ]] && echo \"  Code   : $ERROR_CODE\" >&2\n  [[ -n \"$ERROR_MSG\" ]] && echo \"  Message: $ERROR_MSG\" >&2\n  exit 1\nfi\n\nMESSAGE_ID=$(echo \"$RESPONSE\" | json_get \"id\")\n\necho \"Notification sent successfully.\"\n[[ -n \"$MESSAGE_ID\" ]] && echo \"  Message ID: $MESSAGE_ID\"\n\nset_octopusvariable \"MessageId\" \"$MESSAGE_ID\""
+  },
+  "Parameters": [
+    {
+      "Id": "6f5e5a78-6498-4102-ba10-357f5c1bd3fe",
+      "Name": "DiscordNotify.WebhookUrl",
+      "Label": "Webhook URL",
+      "HelpText": "The Discord webhook URL (Channel Settings \u2192 Integrations \u2192 Webhooks). Consider binding this to a sensitive project variable (e.g. `#{Discord.WebhookUrl}`) so it can be scoped per environment and rotated in one place.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "198f797b-fd12-4a25-b203-c6d3bf49b428",
+      "Name": "DiscordNotify.Content",
+      "Label": "Message Content",
+      "HelpText": "Plain message text (supports Discord markdown). Optional when Include Embed is enabled. Maximum 2000 characters \u2014 longer values are truncated.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "6469aad0-ac4e-4a5d-a115-b1940bc6642a",
+      "Name": "DiscordNotify.Username",
+      "Label": "Username Override",
+      "HelpText": "Overrides the webhook's configured display name. Leave blank to use the name configured on the webhook.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "b3609271-4cd3-4f63-96e7-a6726dd65828",
+      "Name": "DiscordNotify.AvatarUrl",
+      "Label": "Avatar URL Override",
+      "HelpText": "Overrides the webhook's configured avatar image. Leave blank to use the avatar configured on the webhook.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "bc4073e3-43de-470f-9d21-20f25b9ede5c",
+      "Name": "DiscordNotify.IncludeEmbed",
+      "Label": "Include Embed",
+      "HelpText": "If enabled, sends a rich embed with the title, description, colour, timestamp, a link to the deployment, and optional deployment detail fields.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "4b3767ac-56f1-4f93-8245-12bf07d09ed0",
+      "Name": "DiscordNotify.EmbedTitle",
+      "Label": "Embed Title",
+      "HelpText": "Title of the embed. Maximum 256 characters \u2014 longer values are truncated.",
+      "DefaultValue": "#{Octopus.Project.Name} release #{Octopus.Release.Number} deployed to #{Octopus.Environment.Name}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "61aa08a7-c638-49ce-b800-9ceb67ce8bac",
+      "Name": "DiscordNotify.EmbedDescription",
+      "Label": "Embed Description",
+      "HelpText": "Body text of the embed (supports Discord markdown). Maximum 4096 characters \u2014 longer values are truncated.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "644b2cad-e521-4a1b-a1ab-287278f4d84e",
+      "Name": "DiscordNotify.Color",
+      "Label": "Color",
+      "HelpText": "Colour of the embed's side bar. `auto` picks green or red based on whether the deployment has an error \u2014 useful with a \"run always\" step condition. A raw decimal colour value is also accepted.",
+      "DefaultValue": "auto",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "auto|Auto (green on success, red on failure)\nsuccess|Green\nfailure|Red\nwarning|Yellow\ninfo|Blue"
+      }
+    },
+    {
+      "Id": "0bc69655-4c3d-43a9-af89-c084d1fed3e5",
+      "Name": "DiscordNotify.IncludeDeploymentFields",
+      "Label": "Include Deployment Fields",
+      "HelpText": "If enabled, adds Project, Release, and Environment fields to the embed (fields without a value, e.g. Release during a runbook run, are omitted).",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "da6f5ef7-5c60-44c3-98fb-f727f6e11bdd",
+      "Name": "DiscordNotify.SuppressMentions",
+      "Label": "Suppress Mentions",
+      "HelpText": "If enabled, `@everyone`, role, and user mentions in the message content will not ping anyone. Disable only if you intentionally want the notification to ping.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "06f05ca7-2f1c-4aa9-86ae-4eba79084040",
+      "Name": "DiscordNotify.ThreadId",
+      "Label": "Thread ID",
+      "HelpText": "Optional ID of a thread (or forum post) in the webhook's channel to post into. Leave blank to post to the channel itself.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2026-07-20T11:46:55.000Z",
+    "OctopusVersion": "2026.3.6158",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "Meanski",
+  "Category": "discord"
+}

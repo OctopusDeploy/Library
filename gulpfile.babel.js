@@ -192,6 +192,8 @@ function humanize(categoryId) {
       return "Convex";
     case "cyberark":
       return "CyberArk";
+    case "discord":
+      return "Discord";
     case "dll":
       return "dll";
     case "dlm":
@@ -324,6 +326,8 @@ function humanize(categoryId) {
       return "Tomcat";
     case "twilio":
       return "Twilio";
+    case "vercel":
+      return "Vercel";
     case "victorops":
       return "VictorOps";
     case "webdeploy":
