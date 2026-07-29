@@ -36,6 +36,7 @@ _Before submitting your PR, please delete everything above the line below._
 - [ ] `Id` should be a **GUID** that is not `00000000-0000-0000-0000-000000000000`
   - **NOTE** If you are modifying an existing step template, please make sure that you **do not** modify the `Id` property *(updating the `Id` will break the Library sync functionality in Octopus)*. 
 - [ ] `Version` should be incremented, otherwise the integration with Octopus won't update the step template correctly
+- [ ] `$Meta` must have `ExportedAt` and `OctopusVersion` updated
 - [ ] Parameter names should not start with `$`
 - [ ] **Step template parameter names (the ones declared in the JSON, not the script body) should be prefixed with a namespace so that they are less likely to clash with other user-defined variables in Octopus** (see [this issue](https://github.com/OctopusDeploy/Issues/issues/2126)). For example, use an abbreviated name of the step template or the category of the step template).
 - [ ] `LastModifiedBy` field must be present, and (_optionally_) updated with the correct author
