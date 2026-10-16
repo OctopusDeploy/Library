@@ -16,6 +16,8 @@ function New-FakeWebClient {
     return $webClient
 }
 
+function msiexec {}
+
 Describe "Upgrade Octopus Server download safety" {
     BeforeEach {
         $script:DownloadedFile = $null
@@ -83,5 +85,93 @@ Describe "Upgrade Octopus Server download safety" {
         Assert-MockCalled StopOctopusServer -Times 0
         Assert-MockCalled InstallOctopusServer -Times 0
         Assert-MockCalled StartOctopusServer -Times 0
+    }
+}
+
+Describe "Upgrade Octopus Server installation safety" {
+    It "waits for msiexec with one quoted MSI path" {
+        Mock msiexec {}
+        Mock Start-Process {
+            [pscustomobject]@{ ExitCode = 0 }
+        }
+
+        InstallOctopusServer "C:\Temp\Octopus Server.msi"
+
+        Assert-MockCalled msiexec -Times 0
+        Assert-MockCalled Start-Process -Times 1 -ParameterFilter {
+            $expectedArguments = @("/i", '"C:\Temp\Octopus Server.msi"', "/quiet", "/norestart")
+            $argumentDifference = Compare-Object $ArgumentList $expectedArguments -SyncWindow 0
+            ($FilePath -eq "msiexec.exe") -and $Wait -and $PassThru -and ($null -eq $argumentDifference)
+        }
+    }
+
+    It "terminates with the msiexec exit code when installation fails" {
+        Mock msiexec {}
+        Mock Start-Process {
+            [pscustomobject]@{ ExitCode = 1603 }
+        }
+
+        { InstallOctopusServer "C:\Temp\Octopus.msi" } | Should Throw "1603"
+    }
+
+    It "stops, installs, starts, and cleans up in order on success" {
+        $script:Operations = @()
+        Mock DownloadOctopusServer { "C:\Temp\Octopus.msi" }
+        Mock StopOctopusServer { $script:Operations += "stop" }
+        Mock InstallOctopusServer { $script:Operations += "install" }
+        Mock StartOctopusServer { $script:Operations += "start" }
+        Mock RemoveTempFile { $script:Operations += "cleanup" }
+
+        InstallSetVersionOnOctopusServer "2025.4.10250" "2026.3.15878"
+
+        $script:Operations -join "," | Should Be "stop,install,start,cleanup"
+    }
+
+    It "starts the server and cleans up when installation fails" {
+        $script:Operations = @()
+        Mock DownloadOctopusServer { "C:\Temp\Octopus.msi" }
+        Mock StopOctopusServer { $script:Operations += "stop" }
+        Mock InstallOctopusServer {
+            $script:Operations += "install"
+            throw "installation failed"
+        }
+        Mock StartOctopusServer { $script:Operations += "start" }
+        Mock RemoveTempFile { $script:Operations += "cleanup" }
+
+        { InstallSetVersionOnOctopusServer "2025.4.10250" "2026.3.15878" } | Should Throw "installation failed"
+
+        $script:Operations -join "," | Should Be "stop,install,start,cleanup"
+    }
+
+    It "cleans up without installing or starting when server stop fails" {
+        $script:Operations = @()
+        Mock DownloadOctopusServer { "C:\Temp\Octopus.msi" }
+        Mock StopOctopusServer {
+            $script:Operations += "stop"
+            throw "stop failed"
+        }
+        Mock InstallOctopusServer { $script:Operations += "install" }
+        Mock StartOctopusServer { $script:Operations += "start" }
+        Mock RemoveTempFile { $script:Operations += "cleanup" }
+
+        { InstallSetVersionOnOctopusServer "2025.4.10250" "2026.3.15878" } | Should Throw "stop failed"
+
+        $script:Operations -join "," | Should Be "stop,cleanup"
+    }
+
+    It "preserves the installation failure and reports a recovery failure" {
+        Mock DownloadOctopusServer { "C:\Temp\Octopus.msi" }
+        Mock StopOctopusServer {}
+        Mock InstallOctopusServer { throw "installation failed" }
+        Mock StartOctopusServer { throw "recovery failed" }
+        Mock RemoveTempFile {}
+        Mock Write-Warning {}
+
+        { InstallSetVersionOnOctopusServer "2025.4.10250" "2026.3.15878" } | Should Throw "installation failed"
+
+        Assert-MockCalled Write-Warning -Times 1 -ParameterFilter {
+            $Message -like "*recovery failed*"
+        }
+        Assert-MockCalled RemoveTempFile -Times 1
     }
 }
