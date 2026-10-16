@@ -175,3 +175,21 @@ Describe "Upgrade Octopus Server installation safety" {
         Assert-MockCalled RemoveTempFile -Times 1
     }
 }
+
+Describe "Upgrade Octopus Server template contract" {
+    BeforeAll {
+        $templatePath = Join-Path $PSScriptRoot ".." "upgrade-octopus-server.json"
+        $template = Get-Content -LiteralPath $templatePath -Raw | ConvertFrom-Json
+    }
+
+    It "preserves the template identity and parameters" {
+        $template.Id | Should Be "4b3a1f09-1827-41bb-88a4-894c6317922b"
+        @($template.Parameters.Name) -join "," | Should Be "InstanceName,InstallPath,SpecificOctopusServerVersionToInstall"
+    }
+
+    It "publishes version 11 with current export metadata" {
+        $template.Version | Should Be 11
+        $template.'$Meta'.ExportedAt.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ") | Should Be "2026-10-16T21:50:24.000Z"
+        $template.'$Meta'.OctopusVersion | Should Be "2026.3.15954"
+    }
+}
