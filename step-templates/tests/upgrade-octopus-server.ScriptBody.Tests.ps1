@@ -191,5 +191,7 @@ Describe "Upgrade Octopus Server template contract" {
         $template.Version | Should Be 11
         $template.'$Meta'.ExportedAt.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ") | Should Be "2026-10-16T21:50:24.000Z"
         $template.'$Meta'.OctopusVersion | Should Be "2026.3.15954"
+        $template.LastModifiedBy | Should Be "bcullman"
+        $template.LastModifiedDate.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ") | Should Be "2026-10-16T21:50:24.000Z"
     }
 }
