@@ -1,0 +1,133 @@
+{
+  "Id": "560024b5-8db1-461e-9e3f-7dc71d8a92db",
+  "Name": "BackupDrill - Backup Supabase Database",
+  "Description": "Backs up a Supabase Postgres database to your own S3-compatible bucket (AWS S3, Cloudflare R2, Backblaze B2 and others) with the open-source [BackupDrill](https://backupdrill.com) CLI. Put it before the step that runs your database migrations, so every deployment has a fresh snapshot to go back to. Each snapshot's `manifest.json` records the dump's SHA-256 checksum.\n\nIf **Run Restore Drill** is ticked, the step then restores that snapshot into a throwaway Postgres container and checks it: the dump's checksum, that `pg_restore` completes, that every table comes back and that tables which had rows are not empty. If the drill does not pass, the step fails, and with Octopus's default run conditions the steps after it, such as your migration, don't run.\n\nSets the output variable `SnapshotName` (the folder in the bucket that holds this backup).\n\n**Requirements on the worker:**\n- Node.js 20 or later. The CLI runs through `npx`, so nothing is installed globally.\n- `pg_dump` with a major version at least that of your Supabase Postgres (15, 16 or 17). The CLI refuses to run an older one.\n- For the restore drill: Docker and `pg_restore`.\n\nThe database connection string and bucket keys are passed to the CLI as environment variables, not on the command line. By default only the `public` schema is backed up.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "#!/bin/bash\n\n# BackupDrill - Backup Supabase Database\n# Backs up a Supabase Postgres database to your own S3-compatible bucket with the\n# open-source backupdrill CLI (npm package \"backupdrill\"). Optionally restores the new\n# snapshot into a throwaway Postgres container and fails the step if that restore drill fails.\n\nDatabaseUrl=$(get_octopusvariable \"BackupDrill.DatabaseUrl\")\nS3Bucket=$(get_octopusvariable \"BackupDrill.S3Bucket\")\nS3AccessKeyId=$(get_octopusvariable \"BackupDrill.S3AccessKeyId\")\nS3SecretAccessKey=$(get_octopusvariable \"BackupDrill.S3SecretAccessKey\")\nS3Endpoint=$(get_octopusvariable \"BackupDrill.S3Endpoint\")\nS3Region=$(get_octopusvariable \"BackupDrill.S3Region\")\nProjectName=$(get_octopusvariable \"BackupDrill.ProjectName\")\nSchemas=$(get_octopusvariable \"BackupDrill.Schemas\")\nRunDrill=$(get_octopusvariable \"BackupDrill.RunDrill\")\nPgBinDirectory=$(get_octopusvariable \"BackupDrill.PgBinDirectory\")\nCliVersion=$(get_octopusvariable \"BackupDrill.CliVersion\")\n\nfail() {\n  echo \"ERROR: $1\" >&2\n  exit 1\n}\n\n# Validate parameters\n\nif [[ -z \"$DatabaseUrl\" ]]; then\n  fail \"Database Connection String (BackupDrill.DatabaseUrl) is required.\"\nfi\n\ncase \"$DatabaseUrl\" in\n  postgres://* | postgresql://*) ;;\n  *) fail \"Database Connection String must start with postgresql:// (use the Session pooler connection string from the Supabase dashboard).\" ;;\nesac\n\nif [[ -z \"$S3Bucket\" ]]; then\n  fail \"Bucket (BackupDrill.S3Bucket) is required.\"\nfi\n\nif [[ -z \"$S3AccessKeyId\" || -z \"$S3SecretAccessKey\" ]]; then\n  fail \"Bucket Access Key ID (BackupDrill.S3AccessKeyId) and Bucket Secret Access Key (BackupDrill.S3SecretAccessKey) are both required.\"\nfi\n\nRunDrill=$(echo \"${RunDrill:-False}\" | tr '[:upper:]' '[:lower:]')\nif [[ \"$RunDrill\" != \"true\" && \"$RunDrill\" != \"false\" ]]; then\n  fail \"Run Restore Drill (BackupDrill.RunDrill) must be True or False.\"\nfi\n\nCliVersion=\"${CliVersion:-2}\"\n\n# Check tools before downloading anything, so a missing tool fails in seconds\n\nif [[ -n \"$PgBinDirectory\" ]]; then\n  if [[ ! -d \"$PgBinDirectory\" ]]; then\n    fail \"PostgreSQL Client Directory '$PgBinDirectory' does not exist on this worker.\"\n  fi\n  export PATH=\"$PgBinDirectory:$PATH\"\nfi\n\nif ! command -v node >/dev/null 2>&1 || ! command -v npx >/dev/null 2>&1; then\n  fail \"Node.js 20 or later (with npx) is required on the worker.\"\nfi\n\nif ! node -e 'process.exit(Number(process.versions.node.split(\".\")[0]) >= 20 ? 0 : 1)'; then\n  fail \"Node.js 20 or later is required on the worker. Found $(node --version).\"\nfi\n\n# The CLI uses BACKUPDRILL_PG_DUMP / BACKUPDRILL_PG_RESTORE when the worker sets them,\n# so only look on PATH when they are not set.\nif [[ -z \"$BACKUPDRILL_PG_DUMP\" ]] && ! command -v pg_dump >/dev/null 2>&1; then\n  fail \"pg_dump was not found. Install the PostgreSQL client tools (major version at least that of your Supabase Postgres) or set PostgreSQL Client Directory.\"\nfi\n\nif [[ \"$RunDrill\" == \"true\" ]]; then\n  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then\n    fail \"The restore drill needs a running Docker engine on the worker ('docker info' failed). Start Docker, or untick Run Restore Drill.\"\n  fi\n  if [[ -z \"$BACKUPDRILL_PG_RESTORE$BACKUPDRILL_PG_DUMP\" ]] && ! command -v pg_restore >/dev/null 2>&1; then\n    fail \"The restore drill needs pg_restore, which was not found. Install the PostgreSQL client tools or set PostgreSQL Client Directory.\"\n  fi\nfi\n\nWorkDir=$(mktemp -d)\ntrap 'rm -rf \"$WorkDir\"' EXIT\n\n# Only this step's parameters configure the CLI, so the log above matches what runs.\n# The CLI also reads BACKUPDRILL_* variables and a backupdrill.config.json in the working\n# directory; a leftover from the worker or an extracted package could otherwise change the\n# bucket path, the schemas, or turn on Storage file backups. BACKUPDRILL_PG_DUMP and\n# BACKUPDRILL_PG_RESTORE stay, because they only say where the PostgreSQL tools are.\nfor VariableName in $(compgen -e | grep '^BACKUPDRILL_'); do\n  case \"$VariableName\" in\n    BACKUPDRILL_PG_DUMP | BACKUPDRILL_PG_RESTORE) ;;\n    *) unset \"$VariableName\" ;;\n  esac\ndone\necho '{}' >\"$WorkDir/backupdrill.config.json\"\nConfigFlag=(--config \"$WorkDir/backupdrill.config.json\")\n\n# Credentials go to the CLI as environment variables, never as command-line arguments,\n# because arguments are visible to every process on the worker.\nexport BACKUPDRILL_DATABASE_URL=\"$DatabaseUrl\"\nexport BACKUPDRILL_S3_BUCKET=\"$S3Bucket\"\nexport BACKUPDRILL_S3_ACCESS_KEY_ID=\"$S3AccessKeyId\"\nexport BACKUPDRILL_S3_SECRET_ACCESS_KEY=\"$S3SecretAccessKey\"\n[[ -n \"$S3Endpoint\" ]] && export BACKUPDRILL_S3_ENDPOINT=\"$S3Endpoint\"\n[[ -n \"$S3Region\" ]] && export BACKUPDRILL_S3_REGION=\"$S3Region\"\n[[ -n \"$ProjectName\" ]] && export BACKUPDRILL_PROJECT_NAME=\"$ProjectName\"\n[[ -n \"$Schemas\" ]] && export BACKUPDRILL_SCHEMAS=\"$Schemas\"\n\nCliPackage=\"backupdrill@$CliVersion\"\n\necho \"BackupDrill - Backup Supabase Database\"\necho \"  Project name : ${ProjectName:-supabase}\"\necho \"  Schemas      : ${Schemas:-public}\"\necho \"  Bucket       : $S3Bucket\"\necho \"  Endpoint     : ${S3Endpoint:-AWS S3}\"\necho \"  Restore drill: $([[ \"$RunDrill\" == \"true\" ]] && echo yes || echo no)\"\necho \"  CLI          : $CliPackage\"\necho \"\"\n\n# The CLI prints progress on stderr and a JSON result on stdout. Send the progress to the\n# Octopus log as normal output (Octopus shows stderr as errors) and keep the JSON for parsing.\necho \"Backing up the database...\"\n# shellcheck disable=SC2069 # intended: stderr to the log, stdout to the file\nnpx --yes \"$CliPackage\" backup \"${ConfigFlag[@]}\" 2>&1 >\"$WorkDir/backup.json\"\nBackupExitCode=$?\nif [[ $BackupExitCode -ne 0 ]]; then\n  fail \"Backup failed (backupdrill exited with code $BackupExitCode). The lines above show why.\"\nfi\n\n# The snapshot name is the folder that holds the dump: <prefix>/<project>/<snapshot>/dump.pgcustom\nSnapshotName=$(node -e '\nconst lines = require(\"fs\").readFileSync(process.argv[1], \"utf8\").trim().split(\"\\n\");\nconst parts = JSON.parse(lines[lines.length - 1]).manifest.dump.key.split(\"/\");\nprocess.stdout.write(parts[parts.length - 2]);\n' \"$WorkDir/backup.json\" 2>/dev/null)\n\nif [[ -z \"$SnapshotName\" ]]; then\n  fail \"The backup finished, but the snapshot name could not be read from the CLI output.\"\nfi\n\necho \"\"\necho \"Snapshot $SnapshotName is in bucket $S3Bucket. Restore instructions are in RECOVERY.md next to the dump.\"\nset_octopusvariable \"SnapshotName\" \"$SnapshotName\"\nStepName=$(get_octopusvariable \"Octopus.Step.Name\")\necho \"Created output variable: ##{Octopus.Action[$StepName].Output.SnapshotName}\"\n\nif [[ \"$RunDrill\" != \"true\" ]]; then\n  echo \"\"\n  echo \"Backup complete. Restore drill not requested.\"\n  exit 0\nfi\n\n# Drill the snapshot this step just wrote rather than \"latest\": another deployment\n# writing to the same bucket path at the same time must not change what gets verified.\necho \"\"\necho \"Running a restore drill on snapshot $SnapshotName...\"\n# shellcheck disable=SC2069 # intended: stderr to the log, the JSON report is not needed\nnpx --yes \"$CliPackage\" drill --snapshot \"$SnapshotName\" \"${ConfigFlag[@]}\" 2>&1 >/dev/null\nDrillExitCode=$?\nif [[ $DrillExitCode -ne 0 ]]; then\n  fail \"Restore drill did not pass for snapshot $SnapshotName (backupdrill exited with code $DrillExitCode). The output above shows why.\"\nfi\n\necho \"\"\necho \"Backup complete and restore drill passed for snapshot $SnapshotName.\"\n"
+  },
+  "Parameters": [
+    {
+      "Id": "368e69af-2683-40d5-bb7f-a51ff10f2666",
+      "Name": "BackupDrill.DatabaseUrl",
+      "Label": "Database Connection String",
+      "HelpText": "The Session pooler connection string of the Supabase project. In the Supabase dashboard, click **Connect**, choose **Session pooler** and fill in your database password. It looks like `postgresql://postgres.<project-ref>:<password>@<pooler-host>:5432/postgres`.\n\nBind this to a sensitive project variable so it can be scoped per environment.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "7cf7a298-2dff-4809-8590-60afd446d8c7",
+      "Name": "BackupDrill.S3Bucket",
+      "Label": "Bucket",
+      "HelpText": "Name of the S3-compatible bucket the backup is written to. It must already exist.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2f7f6128-1422-4361-b1e6-6bcac8604182",
+      "Name": "BackupDrill.S3AccessKeyId",
+      "Label": "Bucket Access Key ID",
+      "HelpText": "Access key ID with write access to the bucket. The restore drill only reads.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "f8da708b-a2ec-4d2a-9188-750dd4883a5b",
+      "Name": "BackupDrill.S3SecretAccessKey",
+      "Label": "Bucket Secret Access Key",
+      "HelpText": "Secret access key that goes with the access key ID.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "b8169ba5-fbcd-450c-945e-e5b910fa4db8",
+      "Name": "BackupDrill.S3Endpoint",
+      "Label": "Bucket Endpoint",
+      "HelpText": "Optional. The S3-compatible endpoint URL for Cloudflare R2, Backblaze B2 or another provider, for example `https://<account-id>.r2.cloudflarestorage.com`. Leave blank for AWS S3.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "2587f65e-8e4c-488d-95b4-355fa2885683",
+      "Name": "BackupDrill.S3Region",
+      "Label": "Bucket Region",
+      "HelpText": "Optional. The bucket's region. Leave blank to use `auto`, which suits Cloudflare R2. For AWS S3, enter the bucket's region, such as `us-east-1`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "a590755c-eafe-4b00-9427-40ab30dde6d0",
+      "Name": "BackupDrill.ProjectName",
+      "Label": "Project Name",
+      "HelpText": "Optional. Name used in the bucket path (`backupdrill/<project name>/<snapshot>/`) and in the manifest. Defaults to `supabase`. Give each Supabase project that shares a bucket its own name.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "864ca0c2-b3e6-4722-8106-4bf8fbd887d3",
+      "Name": "BackupDrill.Schemas",
+      "Label": "Schemas",
+      "HelpText": "Optional. Comma-separated list of schemas to back up. Defaults to `public`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ab7805dc-eb90-4576-9286-386af26dc4e0",
+      "Name": "BackupDrill.RunDrill",
+      "Label": "Run Restore Drill",
+      "HelpText": "After the backup, restore the new snapshot into a throwaway Postgres container and check it. If the drill does not pass, this step fails. Needs Docker and `pg_restore` on the worker, and adds the time it takes to download and restore the dump.",
+      "DefaultValue": "False",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "e47ca531-af33-431e-895a-37e6fde5cf92",
+      "Name": "BackupDrill.PgBinDirectory",
+      "Label": "PostgreSQL Client Directory",
+      "HelpText": "Optional. A directory to put first on `PATH` so the step uses the `pg_dump` and `pg_restore` in it, for example `/usr/lib/postgresql/17/bin`. Useful when the worker has several PostgreSQL client versions installed.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "44d52c8d-81d7-4d08-ad97-026f8aa0210a",
+      "Name": "BackupDrill.CliVersion",
+      "Label": "CLI Version",
+      "HelpText": "Version of the `backupdrill` npm package to run. The default `2` runs the newest 2.x release. Enter an exact version such as `2.6.0` to pin it.",
+      "DefaultValue": "2",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "LastModifiedBy": "supertj",
+  "$Meta": {
+    "ExportedAt": "2026-10-22T03:25:06.000Z",
+    "OctopusVersion": "2026.4.6527",
+    "Type": "ActionTemplate"
+  },
+  "Category": "backupdrill"
+}
