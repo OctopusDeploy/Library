@@ -1,0 +1,149 @@
+{
+  "Id": "398bf160-0a90-4705-960a-992e83eb6b0c",
+  "Name": "Cloudflare Workers - Deploy",
+  "Description": "Deploys a [Cloudflare Worker](https://workers.cloudflare.com) by uploading a bundled script from a package via the [Workers script upload API](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/update/). The Worker is created if it does not already exist.\n\nThe package must contain the Worker as a **single bundled file** (imports resolved) \u2014 bundle with `wrangler deploy --dry-run --outdir dist`, esbuild, or similar before packaging. For Workers with many modules, static assets, or complex configuration, prefer running `wrangler deploy` directly.\n\nSecrets previously set on the Worker (via `wrangler secret put` or the dashboard) are preserved by default using [`keep_bindings`](https://developers.cloudflare.com/workers/configuration/multipart-upload-metadata/); other bindings (KV, R2, D1, queues, \u2026) must be re-declared in the Bindings parameter on each deploy, mirroring how `wrangler.toml` works.\n\nBy default the Worker's `workers.dev` URL is enabled after upload (Workers uploaded via the API are otherwise not reachable on `workers.dev`); untick **Enable workers.dev URL** for Workers served only from custom routes or domains.\n\nSets the output variables `Etag` and `WorkerUrl` (empty when the `workers.dev` URL is not enabled by this step) for use in later steps.\n\nRequires `curl` and either `jq` or `python3` on the worker.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [
+    {
+      "Id": "33979c98-d256-45bc-9b06-f6f745167ecf",
+      "Name": "CloudflareWorker.Package",
+      "PackageId": null,
+      "FeedId": null,
+      "AcquisitionLocation": "Server",
+      "Properties": {
+        "Extract": "True",
+        "SelectionMode": "deferred",
+        "PackageParameterName": "CloudflareWorker.Package",
+        "Purpose": ""
+      }
+    }
+  ],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "#!/bin/bash\n\n# Cloudflare Workers - Deploy\n# Uploads a Worker script (a single bundled file from a package) via the REST API.\n# API reference: https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/update/\n# Metadata reference: https://developers.cloudflare.com/workers/configuration/multipart-upload-metadata/\n\n# Read step parameters\nApiToken=$(get_octopusvariable \"CloudflareWorker.ApiToken\")\nAccountId=$(get_octopusvariable \"CloudflareWorker.AccountId\")\nScriptName=$(get_octopusvariable \"CloudflareWorker.ScriptName\")\nMainModule=$(get_octopusvariable \"CloudflareWorker.MainModule\")\nSyntax=$(get_octopusvariable \"CloudflareWorker.Syntax\")\nCompatibilityDate=$(get_octopusvariable \"CloudflareWorker.CompatibilityDate\")\nCompatibilityFlags=$(get_octopusvariable \"CloudflareWorker.CompatibilityFlags\")\nBindingsJson=$(get_octopusvariable \"CloudflareWorker.Bindings\")\nPreserveSecrets=$(get_octopusvariable \"CloudflareWorker.PreserveSecrets\")\nEnableWorkersDev=$(get_octopusvariable \"CloudflareWorker.EnableWorkersDev\")\n\n# Package system variables\nExtractedPath=$(get_octopusvariable \"Octopus.Action.Package[CloudflareWorker.Package].ExtractedPath\")\nPackageVersion=$(get_octopusvariable \"Octopus.Action.Package[CloudflareWorker.Package].PackageVersion\")\n\n# Validate required tooling\n\nif ! command -v curl >/dev/null 2>&1; then\n  echo \"ERROR: curl is required on the worker to run this step.\" >&2\n  exit 1\nfi\n\nif command -v jq >/dev/null 2>&1; then\n  JSON_TOOL=\"jq\"\nelif command -v python3 >/dev/null 2>&1; then\n  JSON_TOOL=\"python3\"\nelse\n  echo \"ERROR: jq or python3 is required on the worker to build and parse JSON.\" >&2\n  exit 1\nfi\n\n# Prints the JSON-encoded (quoted) form of $1\njson_escape() {\n  if [[ \"$JSON_TOOL\" == \"jq\" ]]; then\n    jq -cn --arg v \"$1\" '$v'\n  else\n    python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' \"$1\"\n  fi\n}\n\n# Reads JSON on stdin and prints the value at dotted path $1 (empty if missing\n# or null; numeric path parts index into arrays)\njson_get() {\n  if [[ \"$JSON_TOOL\" == \"jq\" ]]; then\n    jq -r \"getpath(\\\"$1\\\" | split(\\\".\\\") | map(if test(\\\"^[0-9]+$\\\") then tonumber else . end)) // empty\" 2>/dev/null\n  else\n    python3 -c '\nimport json, sys\ntry:\n    data = json.load(sys.stdin)\nexcept Exception:\n    sys.exit(0)\ncur = data\nfor part in sys.argv[1].split(\".\"):\n    if isinstance(cur, dict) and part in cur:\n        cur = cur[part]\n    elif isinstance(cur, list) and part.isdigit() and int(part) < len(cur):\n        cur = cur[int(part)]\n    else:\n        sys.exit(0)\nif cur is None:\n    sys.exit(0)\nprint(cur if not isinstance(cur, (dict, list)) else json.dumps(cur))\n' \"$1\"\n  fi\n}\n\n# Returns 0 when stdin is a JSON array\njson_is_array() {\n  if [[ \"$JSON_TOOL\" == \"jq\" ]]; then\n    jq -e 'type == \"array\"' >/dev/null 2>&1\n  else\n    python3 -c '\nimport json, sys\ntry:\n    sys.exit(0 if isinstance(json.load(sys.stdin), list) else 1)\nexcept Exception:\n    sys.exit(1)\n'\n  fi\n}\n\n# Validate required parameters\n\nif [[ -z \"$ApiToken\" ]]; then\n  echo \"ERROR: API Token is required.\" >&2\n  exit 1\nfi\n\nif [[ -z \"$AccountId\" ]]; then\n  echo \"ERROR: Account ID is required.\" >&2\n  exit 1\nfi\n\nif [[ -z \"$ScriptName\" ]]; then\n  echo \"ERROR: Worker Name is required.\" >&2\n  exit 1\nfi\n\nif [[ -z \"$ExtractedPath\" ]]; then\n  echo \"ERROR: The Worker Package was not extracted. Check the package reference on the step.\" >&2\n  exit 1\nfi\n\n[[ -z \"$MainModule\" ]] && MainModule=\"index.js\"\n\nSCRIPT_FILE=\"${ExtractedPath}/${MainModule}\"\nif [[ ! -f \"$SCRIPT_FILE\" ]]; then\n  echo \"ERROR: Entry point '$MainModule' not found in the extracted package ($ExtractedPath).\" >&2\n  echo \"Files in the package root:\" >&2\n  ls -1 \"$ExtractedPath\" >&2\n  exit 1\nfi\n\nSyntax=$(echo \"$Syntax\" | tr '[:upper:]' '[:lower:]')\n[[ -z \"$Syntax\" ]] && Syntax=\"module\"\n\nif [[ \"$Syntax\" != \"module\" && \"$Syntax\" != \"service-worker\" ]]; then\n  echo \"ERROR: Unsupported Syntax '$Syntax'. Must be 'module' or 'service-worker'.\" >&2\n  exit 1\nfi\n\nif [[ -n \"$CompatibilityDate\" && ! \"$CompatibilityDate\" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then\n  echo \"ERROR: Compatibility Date must be in YYYY-MM-DD format (got '$CompatibilityDate').\" >&2\n  exit 1\nfi\n\nif [[ -n \"$BindingsJson\" ]] && ! echo \"$BindingsJson\" | json_is_array; then\n  echo \"ERROR: Bindings must be a JSON array of binding objects.\" >&2\n  exit 1\nfi\n\n# Build the metadata part\n\nMAIN_BASENAME=$(basename \"$MainModule\")\n\nMETA_PARTS=()\n\nif [[ \"$Syntax\" == \"module\" ]]; then\n  META_PARTS+=(\"\\\"main_module\\\":$(json_escape \"$MAIN_BASENAME\")\")\n  MODULE_TYPE=\"application/javascript+module\"\nelse\n  META_PARTS+=(\"\\\"body_part\\\":$(json_escape \"$MAIN_BASENAME\")\")\n  MODULE_TYPE=\"application/javascript\"\nfi\n\nif [[ -n \"$CompatibilityDate\" ]]; then\n  META_PARTS+=(\"\\\"compatibility_date\\\":$(json_escape \"$CompatibilityDate\")\")\nelse\n  echo \"##octopus[stdout-warning]\"\n  echo \"No Compatibility Date set; Cloudflare will fall back to an old runtime default (2021-11-02).\"\n  echo \"##octopus[stdout-default]\"\nfi\n\nif [[ -n \"$CompatibilityFlags\" ]]; then\n  FLAGS=()\n  while IFS= read -r flag; do\n    flag=$(echo \"$flag\" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')\n    [[ -n \"$flag\" ]] && FLAGS+=(\"$(json_escape \"$flag\")\")\n  done < <(echo \"$CompatibilityFlags\" | tr ',' '\\n')\n  if (( ${#FLAGS[@]} > 0 )); then\n    META_PARTS+=(\"\\\"compatibility_flags\\\":[$(IFS=,; echo \"${FLAGS[*]}\")]\")\n  fi\nfi\n\nif [[ -n \"$BindingsJson\" ]]; then\n  META_PARTS+=(\"\\\"bindings\\\":$BindingsJson\")\nfi\n\n# Without keep_bindings, an upload removes any secrets previously set on the\n# Worker (via wrangler secret put or the dashboard)\nif [[ \"$PreserveSecrets\" == \"True\" ]]; then\n  META_PARTS+=(\"\\\"keep_bindings\\\":[\\\"secret_text\\\",\\\"secret_key\\\"]\")\nfi\n\nMETADATA=\"{$(IFS=,; echo \"${META_PARTS[*]}\")}\"\n\n# Upload the script\n\nAPI_URL=\"https://api.cloudflare.com/client/v4/accounts/${AccountId}/workers/scripts/${ScriptName}\"\n\necho \"Deploying Cloudflare Worker...\"\necho \"  Worker  : $ScriptName\"\necho \"  Entry   : $MainModule ($Syntax syntax)\"\n[[ -n \"$PackageVersion\" ]] && echo \"  Package : $PackageVersion\"\n[[ -n \"$CompatibilityDate\" ]] && echo \"  Compat  : $CompatibilityDate\"\necho \"\"\n\nRAW=$(curl --silent --show-error --max-time 120 --write-out $'\\n%{http_code}' \\\n  --request PUT \"$API_URL\" \\\n  --header \"Authorization: Bearer $ApiToken\" \\\n  --form \"metadata=${METADATA};type=application/json\" \\\n  --form \"${MAIN_BASENAME}=@${SCRIPT_FILE};type=${MODULE_TYPE};filename=${MAIN_BASENAME}\")\n\nCURL_EXIT=$?\n\nif [[ $CURL_EXIT -ne 0 ]]; then\n  echo \"ERROR: curl request failed (exit code $CURL_EXIT).\" >&2\n  exit 1\nfi\n\nHTTP_STATUS=$(echo \"$RAW\" | tail -n 1)\nRESPONSE=$(echo \"$RAW\" | sed '$d')\n\nSUCCESS=$(echo \"$RESPONSE\" | json_get \"success\")\n\nif [[ \"$HTTP_STATUS\" -ge 400 || \"$SUCCESS\" != \"True\" && \"$SUCCESS\" != \"true\" ]]; then\n  ERROR_CODE=$(echo \"$RESPONSE\" | json_get \"errors.0.code\")\n  ERROR_MSG=$(echo \"$RESPONSE\" | json_get \"errors.0.message\")\n  echo \"ERROR: Cloudflare API returned an error (HTTP $HTTP_STATUS).\" >&2\n  [[ -n \"$ERROR_CODE\" ]] && echo \"  Code   : $ERROR_CODE\" >&2\n  [[ -n \"$ERROR_MSG\" ]] && echo \"  Message: $ERROR_MSG\" >&2\n  exit 1\nfi\n\nETAG=$(echo \"$RESPONSE\" | json_get \"result.etag\")\n\necho \"Worker deployed successfully!\"\n[[ -n \"$ETAG\" ]] && echo \"  Etag: $ETAG\"\n\n# Workers uploaded via the API are not reachable on workers.dev until the\n# route is enabled for the script\nWORKER_URL=\"\"\nif [[ \"$EnableWorkersDev\" == \"True\" ]]; then\n  RAW=$(curl --silent --show-error --max-time 60 --write-out $'\\n%{http_code}' \\\n    --request POST \"${API_URL}/subdomain\" \\\n    --header \"Authorization: Bearer $ApiToken\" \\\n    --header \"Content-Type: application/json\" \\\n    --data '{\"enabled\":true}')\n\n  CURL_EXIT=$?\n\n  if [[ $CURL_EXIT -ne 0 ]]; then\n    echo \"ERROR: curl request to enable the workers.dev URL failed (exit code $CURL_EXIT).\" >&2\n    exit 1\n  fi\n\n  HTTP_STATUS=$(echo \"$RAW\" | tail -n 1)\n  RESPONSE=$(echo \"$RAW\" | sed '$d')\n  SUCCESS=$(echo \"$RESPONSE\" | json_get \"success\")\n\n  if [[ \"$HTTP_STATUS\" -ge 400 || \"$SUCCESS\" != \"True\" && \"$SUCCESS\" != \"true\" ]]; then\n    ERROR_CODE=$(echo \"$RESPONSE\" | json_get \"errors.0.code\")\n    ERROR_MSG=$(echo \"$RESPONSE\" | json_get \"errors.0.message\")\n    echo \"ERROR: The Worker was deployed, but enabling its workers.dev URL failed (HTTP $HTTP_STATUS).\" >&2\n    [[ -n \"$ERROR_CODE\" ]] && echo \"  Code   : $ERROR_CODE\" >&2\n    [[ -n \"$ERROR_MSG\" ]] && echo \"  Message: $ERROR_MSG\" >&2\n    exit 1\n  fi\n\n  # Resolve the account's workers.dev subdomain to build the URL\n  SUBDOMAIN_RESPONSE=$(curl --silent --max-time 30 \\\n    --request GET \"https://api.cloudflare.com/client/v4/accounts/${AccountId}/workers/subdomain\" \\\n    --header \"Authorization: Bearer $ApiToken\")\n  SUBDOMAIN=$(echo \"$SUBDOMAIN_RESPONSE\" | json_get \"result.subdomain\")\n\n  if [[ -n \"$SUBDOMAIN\" ]]; then\n    WORKER_URL=\"https://${ScriptName}.${SUBDOMAIN}.workers.dev\"\n    echo \"  URL : $WORKER_URL\"\n  else\n    echo \"##octopus[stdout-warning]\"\n    echo \"workers.dev is enabled for the Worker, but the account has no workers.dev subdomain yet. Choose one under Workers & Pages in the Cloudflare dashboard.\"\n    echo \"##octopus[stdout-default]\"\n  fi\nfi\n\nset_octopusvariable \"Etag\" \"$ETAG\"\nset_octopusvariable \"WorkerUrl\" \"$WORKER_URL\""
+  },
+  "Parameters": [
+    {
+      "Id": "b07b8721-a3d6-4c19-82db-26292abceb6e",
+      "Name": "CloudflareWorker.ApiToken",
+      "Label": "API Token",
+      "HelpText": "A Cloudflare [API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/) with the `Account \u2192 Workers \u2192 Admin` permission (or the legacy `Workers Scripts \u2192 Edit` permission). Consider binding this to a sensitive project variable so it can be scoped and rotated in one place.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "234925c3-536f-4c08-aefd-5c37069125b7",
+      "Name": "CloudflareWorker.AccountId",
+      "Label": "Account ID",
+      "HelpText": "The Cloudflare account ID, shown on the right of most zone pages and under **Workers & Pages** in the dashboard.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5a6df5f5-1560-4273-a5e5-3ab7b88bac75",
+      "Name": "CloudflareWorker.ScriptName",
+      "Label": "Worker Name",
+      "HelpText": "The name of the Worker to deploy to (e.g. `my-worker`). The Worker is created on first deploy.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "04bdc3d7-4ccb-4549-a65d-af5a8bcff924",
+      "Name": "CloudflareWorker.Package",
+      "Label": "Worker Package",
+      "HelpText": "The package containing the bundled Worker script.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Package"
+      }
+    },
+    {
+      "Id": "9367160a-54d7-4b86-820c-2b2eb7c50b6a",
+      "Name": "CloudflareWorker.MainModule",
+      "Label": "Entry Point",
+      "HelpText": "Path of the bundled Worker script within the package (e.g. `dist/index.js`).",
+      "DefaultValue": "index.js",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "1619ff88-e261-4694-bfaa-0b7494ff49db",
+      "Name": "CloudflareWorker.Syntax",
+      "Label": "Worker Syntax",
+      "HelpText": "`ES module` for Workers using `export default { fetch }` (the modern default); `Service Worker` for legacy Workers using `addEventListener('fetch', \u2026)`.",
+      "DefaultValue": "module",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "module|ES module\nservice-worker|Service Worker (legacy)"
+      }
+    },
+    {
+      "Id": "04e45735-aa6a-4d26-a5ac-c2e9a87c71af",
+      "Name": "CloudflareWorker.CompatibilityDate",
+      "Label": "Compatibility Date",
+      "HelpText": "The [compatibility date](https://developers.cloudflare.com/workers/configuration/compatibility-dates/) for the Workers runtime, in `YYYY-MM-DD` format (usually the value from `wrangler.toml`). Strongly recommended \u2014 if left blank, Cloudflare falls back to an old runtime default (2021-11-02).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "0f47ef33-88c0-443b-b49f-773b66ee39d9",
+      "Name": "CloudflareWorker.CompatibilityFlags",
+      "Label": "Compatibility Flags",
+      "HelpText": "Optional comma-separated [compatibility flags](https://developers.cloudflare.com/workers/configuration/compatibility-flags/), e.g. `nodejs_compat`.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "8076351f-164c-4795-b392-d18fb0f34d5c",
+      "Name": "CloudflareWorker.Bindings",
+      "Label": "Bindings",
+      "HelpText": "Optional JSON array of [bindings](https://developers.cloudflare.com/workers/configuration/multipart-upload-metadata/) to attach to the Worker, e.g. `[{\"type\": \"kv_namespace\", \"name\": \"MY_KV\", \"namespace_id\": \"\u2026\"}]`. Like `wrangler.toml`, this list replaces the Worker's existing non-secret bindings on each deploy.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    },
+    {
+      "Id": "23642c91-5575-4cb3-bdd8-e2f6e2fe5ac3",
+      "Name": "CloudflareWorker.PreserveSecrets",
+      "Label": "Preserve Existing Secrets",
+      "HelpText": "If enabled, secrets already set on the Worker (via `wrangler secret put` or the dashboard) are kept. If disabled, the upload removes any secrets not re-declared in Bindings.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "06b92254-f71f-40b7-bc50-5b5691c33332",
+      "Name": "CloudflareWorker.EnableWorkersDev",
+      "Label": "Enable workers.dev URL",
+      "HelpText": "If enabled, the Worker's `https://<worker>.<subdomain>.workers.dev` URL is turned on after upload and returned in the `WorkerUrl` output variable. Workers uploaded via the API are not reachable on `workers.dev` until this is enabled. If disabled, the step leaves the Worker's existing `workers.dev` setting unchanged, which suits Workers served only from custom routes or domains.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2026-08-19T00:00:00.000Z",
+    "OctopusVersion": "2026.3.6158",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "Meanski",
+  "Category": "cloudflare"
+}
