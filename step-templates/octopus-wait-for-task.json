@@ -1,0 +1,75 @@
+{
+  "Id": "a55ea04e-e03b-42b2-9ece-065204caa5ef",
+  "Name": "Wait for task",
+  "Description": "Wait for an Octopus task to complete",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "GitDependencies": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "$startTime = Get-Date\n$currentTime = Get-Date\n$dateDifference = $currentTime - $startTime\n$lastEnhancedLoggingWriteTime = [datetime]::MinValue\n$taskId = $OctopusParameters[\"WaitForTask.TaskId\"]\n$deploymentCancelInSeconds = [int]$OctopusParameters[\"WaitForTask.TimeoutSeconds\"]\n$numberOfWaits = 0\n$defaultUrl = $OctopusParameters[\"WaitForTask.ServerUri\"]\n$octopusApiKey = $OctopusParameters[\"WaitForTask.ApiKey\"]\n$spaceId = $OctopusParameters[\"WaitForTask.SpaceId\"]\n$cachedResults = @{}\n\nfunction Write-OctopusVerbose\n{\n    param($message)\n\n    Write-Verbose $message\n}\n\nfunction Write-OctopusInformation\n{\n    param($message)\n\n    Write-Host $message\n}\n\nfunction Write-OctopusSuccess\n{\n    param($message)\n\n    Write-Highlight $message\n}\n\nfunction Write-OctopusWarning\n{\n    param($message)\n\n    Write-Warning \"$message\"\n}\n\nfunction Write-OctopusCritical\n{\n    param ($message)\n\n    Write-Error \"$message\"\n}\n\nfunction Invoke-OctopusApi\n{\n    param\n    (\n        $octopusUrl,\n        $endPoint,\n        $spaceId,\n        $apiKey,\n        $method,\n        $item,\n        $ignoreCache\n    )\n\n    if ([string]::IsNullOrWhiteSpace($SpaceId))\n    {\n        $url = \"$OctopusUrl/api/$EndPoint\"\n    }\n    else\n    {\n        $url = \"$OctopusUrl/api/$spaceId/$EndPoint\"\n    }\n\n    try\n    {\n        if ($null -ne $item)\n        {\n            $body = $item | ConvertTo-Json -Depth 10\n            Write-OctopusVerbose $body\n\n            Write-OctopusInformation \"Invoking $method $url\"\n            return Invoke-RestMethod -Method $method -Uri $url -Headers @{\"X-Octopus-ApiKey\" = \"$ApiKey\" } -Body $body -ContentType 'application/json; charset=utf-8'\n        }\n\n        if (($null -eq $ignoreCache -or $ignoreCache -eq $false) -and $method.ToUpper().Trim() -eq \"GET\")\n        {\n            Write-OctopusVerbose \"Checking to see if $url is already in the cache\"\n            if ($cachedResults.ContainsKey($url) -eq $true)\n            {\n                Write-OctopusVerbose \"$url is already in the cache, returning the result\"\n                return $cachedResults[$url]\n            }\n        }\n        else\n        {\n            Write-OctopusVerbose \"Ignoring cache.\"\n        }\n\n        Write-OctopusVerbose \"No data to post or put, calling bog standard invoke-restmethod for $url\"\n        $result = Invoke-RestMethod -Method $method -Uri $url -Headers @{\"X-Octopus-ApiKey\" = \"$ApiKey\" } -ContentType 'application/json; charset=utf-8'\n\n        if ($cachedResults.ContainsKey($url) -eq $true)\n        {\n            $cachedResults.Remove($url)\n        }\n        Write-OctopusVerbose \"Adding $url to the cache\"\n        $cachedResults.add($url, $result)\n\n        return $result\n\n\n    }\n    catch\n    {\n        if ($null -ne $_.Exception.Response)\n        {\n            if ($_.Exception.Response.StatusCode -eq 401)\n            {\n                Write-OctopusCritical \"Unauthorized error returned from $url, please verify API key and try again\"\n            }\n            elseif ($_.Exception.Response.statusCode -eq 403)\n            {\n                Write-OctopusCritical \"Forbidden error returned from $url, please verify API key and try again\"\n            }\n            else\n            {\n                Write-OctopusVerbose -Message \"Error calling $url $($_.Exception.Message) StatusCode: $($_.Exception.Response.StatusCode )\"\n            }\n        }\n        else\n        {\n            Write-OctopusVerbose $_.Exception\n        }\n    }\n\n    Throw \"There was an error calling the Octopus API please check the log for more details\"\n}\n\nWrite-OctopusInformation \"Waiting until deployment has finished\"\n\nWhile ($dateDifference.TotalSeconds -lt $deploymentCancelInSeconds)\n{\n    $numberOfWaits += 1\n\n    Write-OctopusInformation \"Waiting 5 seconds to check status\"\n    Start-Sleep -Seconds 5\n    $taskStatusResponse = Invoke-OctopusApi -octopusUrl $defaultUrl -spaceId $spaceId -apiKey $octopusApiKey -endPoint \"tasks/$($taskId)\" -method \"GET\" -ignoreCache $true\n    $taskStatusResponseState = $taskStatusResponse.State\n\n    if ($taskStatusResponseState -eq \"Success\")\n    {\n        if ($enableEnhancedLogging -eq $true)\n        {\n            $lastEnhancedLoggingWriteTime = Get-TaskDetails -defaultUrl $defaultUrl -spaceId $spaceId -octopusApiKey $octopusApiKey -taskId $taskId -lastEnhancedLoggingWriteTime $lastEnhancedLoggingWriteTime\n        }\n        Write-OctopusSuccess \"The task has finished with a status of Success\"\n        exit 0\n    }\n    elseif($taskStatusResponseState -eq \"Failed\" -or $taskStatusResponseState -eq \"Canceled\")\n    {\n        Write-OctopusCritical \"The task has finished with a status of $taskStatusResponseState status, stopping the deployment\"\n        exit 1\n    }\n    elseif($taskStatusResponse.HasPendingInterruptions -eq $true)\n    {\n        if ($autoapproveChildManualInterventions -eq $true)\n        {\n            Submit-ChildProjectDeploymentForAutoApproval -createdDeployment $createdDeploymentResponse -parentDeploymentApprovers $parentDeploymentApprovers -defaultUrl $defaultUrl -octopusApiKey $octopusApiKey -spaceId $spaceId -parentProjectName $parentProjectName -parentReleaseNumber $parentReleaseNumber -parentEnvironmentName $parentEnvironmentName -parentDeploymentTaskId $parentDeploymentTaskId -approvalTenant $approvalTenant\n        }\n        else\n        {\n            if ($numberOfWaits -ge 10)\n            {\n                Write-OctopusWarning \"The child project has pending manual intervention(s).  Unless you approve it, this task will time out.\"\n            }\n            else\n            {\n                Write-OctopusWarning \"The child project has pending manual intervention(s).  Unless you approve it, this task will time out.\"\n            }\n        }\n    }\n\n    if ($numberOfWaits -ge 10)\n    {\n        if ($enableEnhancedLogging -eq $true)\n        {\n            $lastEnhancedLoggingWriteTime = Get-TaskDetails -defaultUrl $defaultUrl -spaceId $spaceId -octopusApiKey $octopusApiKey -taskId $taskId -lastEnhancedLoggingWriteTime $lastEnhancedLoggingWriteTime\n        }\n        else\n        {\n            Write-OctopusInformation \"The task state is currently $taskStatusResponseState\"\n            $numberOfWaits = 0\n        }\n    }\n    else\n    {\n        if ($enableEnhancedLogging -eq $true)\n        {\n            $lastEnhancedLoggingWriteTime = Get-TaskDetails -defaultUrl $defaultUrl -spaceId $spaceId -octopusApiKey $octopusApiKey -taskId $taskId -lastEnhancedLoggingWriteTime $lastEnhancedLoggingWriteTime\n        }\n        else\n        {\n            Write-OctopusInformation \"The task state is currently $taskStatusResponseState\"\n        }\n    }\n\n    $startTime = $taskStatusResponse.StartTime\n    if ($null -eq $startTime -or [string]::IsNullOrWhiteSpace($startTime) -eq $true)\n    {\n        Write-OctopusInformation \"The task is still queued, let's wait a bit longer\"\n        $startTime = Get-Date\n    }\n    $startTime = [DateTime]$startTime\n\n    $currentTime = Get-Date\n    $dateDifference = $currentTime - $startTime\n}\n\nWrite-OctopusCritical \"The cancel timeout has been reached, cancelling the deployment\""
+  },
+  "Parameters": [
+    {
+      "Id": "e8678f49-8d3c-4682-9b50-50f0891823a9",
+      "Name": "WaitForTask.TaskId",
+      "Label": "Task ID",
+      "HelpText": "The task ID to wait for",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ee997d71-b8b1-4e0f-ad5a-2b1ec6646266",
+      "Name": "WaitForTask.ServerUri",
+      "Label": "The Octopus server URI",
+      "HelpText": null,
+      "DefaultValue": "#{Octopus.Web.ServerUri}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "6527b597-3c21-469f-b483-dbf389c7dd6d",
+      "Name": "WaitForTask.ApiKey",
+      "Label": "The Octopus API key",
+      "HelpText": null,
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "4749127a-16a5-45f3-802c-f4f4729ca851",
+      "Name": "WaitForTask.SpaceId",
+      "Label": "The Octopus space ID",
+      "HelpText": null,
+      "DefaultValue": "#{Octopus.Space.Id}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "ebf119c0-d58d-41b1-9ead-2ebd66c6695b",
+      "Name": "WaitForTask.TimeoutSeconds",
+      "Label": "Timeout in seconds",
+      "HelpText": null,
+      "DefaultValue": "3600",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2026-10-29T23:21:27.385Z",
+    "OctopusVersion": "2026.4.9926",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "mcasperson",
+  "Category": "octopus"
+}
