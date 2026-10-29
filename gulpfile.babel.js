@@ -188,6 +188,8 @@ function humanize(categoryId) {
       return "Chef";
     case "clickonce":
       return "ClickOnce";
+    case "cloudflare":
+      return "Cloudflare";
     case "convex":
       return "Convex";
     case "cyberark":

@@ -1,0 +1,95 @@
+{
+  "Id": "dc5fdee8-1528-485b-a0da-13219600fff0",
+  "Name": "Cloudflare Pages - Deploy",
+  "Description": "Triggers a deployment of a git-connected [Cloudflare Pages](https://pages.cloudflare.com) project via the [Pages deployment API](https://developers.cloudflare.com/api/resources/pages/subresources/projects/subresources/deployments/methods/create/), and optionally waits for the build to finish — failing the step if the build fails.\n\nThe project's repository must already be connected and authorized in the Cloudflare Pages dashboard. Cloudflare decides the Pages environment from the branch alone (the project's production branch deploys to production, any other branch deploys a preview), so the step checks the branch against the chosen **Pages Environment** before deploying. By default, the Octopus `Production` environment deploys to Pages production and every other Octopus environment deploys a preview, which stops a Development or Staging deployment from going live by accident.\n\nCloudflare builds the latest commit on the branch. To make Octopus the only route to production, turn off automatic production deployments under the project's **Settings → Builds → Branch control**.\n\nSets the output variables `DeploymentId`, `DeploymentUrl`, `AliasUrl` (the stable branch URL of a preview, set when Wait For Completion is enabled), and `Environment` for use in later steps.\n\nRequires `curl` and either `jq` or `python3` on the worker.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "#!/bin/bash\n\n# Cloudflare Pages - Deploy\n# Triggers a deployment of a git-connected Cloudflare Pages project via the REST API,\n# optionally waiting for the build to finish.\n# API reference: https://developers.cloudflare.com/api/resources/pages/subresources/projects/subresources/deployments/methods/create/\n\n# Read step parameters\nApiToken=$(get_octopusvariable \"CloudflarePages.ApiToken\")\nAccountId=$(get_octopusvariable \"CloudflarePages.AccountId\")\nProjectName=$(get_octopusvariable \"CloudflarePages.ProjectName\")\nPagesEnvironment=$(get_octopusvariable \"CloudflarePages.Environment\")\nBranch=$(get_octopusvariable \"CloudflarePages.Branch\")\nWaitForCompletion=$(get_octopusvariable \"CloudflarePages.WaitForCompletion\")\nTimeoutSeconds=$(get_octopusvariable \"CloudflarePages.TimeoutSeconds\")\n\n# Validate required tooling\n\nif ! command -v curl >/dev/null 2>&1; then\n  echo \"ERROR: curl is required on the worker to run this step.\" >&2\n  exit 1\nfi\n\nif command -v jq >/dev/null 2>&1; then\n  JSON_TOOL=\"jq\"\nelif command -v python3 >/dev/null 2>&1; then\n  JSON_TOOL=\"python3\"\nelse\n  echo \"ERROR: jq or python3 is required on the worker to parse JSON.\" >&2\n  exit 1\nfi\n\n# Reads JSON on stdin and prints the value at dotted path $1 (empty if missing\n# or null; numeric path parts index into arrays)\njson_get() {\n  if [[ \"$JSON_TOOL\" == \"jq\" ]]; then\n    jq -r \"getpath(\\\"$1\\\" | split(\\\".\\\") | map(if test(\\\"^[0-9]+$\\\") then tonumber else . end)) // empty\" 2>/dev/null\n  else\n    python3 -c '\nimport json, sys\ntry:\n    data = json.load(sys.stdin)\nexcept Exception:\n    sys.exit(0)\ncur = data\nfor part in sys.argv[1].split(\".\"):\n    if isinstance(cur, dict) and part in cur:\n        cur = cur[part]\n    elif isinstance(cur, list) and part.isdigit() and int(part) < len(cur):\n        cur = cur[int(part)]\n    else:\n        sys.exit(0)\nif cur is None:\n    sys.exit(0)\nprint(cur if not isinstance(cur, (dict, list)) else json.dumps(cur))\n' \"$1\"\n  fi\n}\n\n# Validate required parameters\n\nif [[ -z \"$ApiToken\" ]]; then\n  echo \"ERROR: API Token is required.\" >&2\n  exit 1\nfi\n\nif [[ -z \"$AccountId\" ]]; then\n  echo \"ERROR: Account ID is required.\" >&2\n  exit 1\nfi\n\nif [[ -z \"$ProjectName\" ]]; then\n  echo \"ERROR: Project Name is required.\" >&2\n  exit 1\nfi\n\nif [[ -z \"$TimeoutSeconds\" ]]; then\n  TimeoutSeconds=600\nelif [[ ! \"$TimeoutSeconds\" =~ ^[0-9]+$ ]]; then\n  echo \"ERROR: Timeout must be a whole number of seconds (got '$TimeoutSeconds').\" >&2\n  exit 1\nfi\n\nPagesEnvironment=$(echo \"$PagesEnvironment\" | tr '[:upper:]' '[:lower:]')\n\nif [[ \"$PagesEnvironment\" != \"production\" && \"$PagesEnvironment\" != \"preview\" ]]; then\n  echo \"ERROR: Pages Environment must be 'production' or 'preview' (got '$PagesEnvironment').\" >&2\n  exit 1\nfi\n\nPROJECT_URL=\"https://api.cloudflare.com/client/v4/accounts/${AccountId}/pages/projects/${ProjectName}\"\n\n# Look up the project's production branch. Cloudflare decides the environment\n# from the branch alone: the production branch deploys to production, any other\n# branch deploys a preview.\n\nRAW=$(curl --silent --show-error --max-time 60 --write-out $'\\n%{http_code}' \\\n  --request GET \"$PROJECT_URL\" \\\n  --header \"Authorization: Bearer $ApiToken\")\n\nCURL_EXIT=$?\n\nif [[ $CURL_EXIT -ne 0 ]]; then\n  echo \"ERROR: curl request failed (exit code $CURL_EXIT).\" >&2\n  exit 1\nfi\n\nHTTP_STATUS=$(echo \"$RAW\" | tail -n 1)\nRESPONSE=$(echo \"$RAW\" | sed '$d')\n\nSUCCESS=$(echo \"$RESPONSE\" | json_get \"success\")\n\nif [[ \"$HTTP_STATUS\" -ge 400 || \"$SUCCESS\" != \"True\" && \"$SUCCESS\" != \"true\" ]]; then\n  ERROR_CODE=$(echo \"$RESPONSE\" | json_get \"errors.0.code\")\n  ERROR_MSG=$(echo \"$RESPONSE\" | json_get \"errors.0.message\")\n  echo \"ERROR: Could not read Pages project '$ProjectName' (HTTP $HTTP_STATUS).\" >&2\n  [[ -n \"$ERROR_CODE\" ]] && echo \"  Code   : $ERROR_CODE\" >&2\n  [[ -n \"$ERROR_MSG\" ]] && echo \"  Message: $ERROR_MSG\" >&2\n  exit 1\nfi\n\nPRODUCTION_BRANCH=$(echo \"$RESPONSE\" | json_get \"result.production_branch\")\n\nif [[ -z \"$PRODUCTION_BRANCH\" ]]; then\n  echo \"ERROR: Pages project '$ProjectName' has no production branch. Only git-connected projects can be deployed by this step.\" >&2\n  exit 1\nfi\n\nif [[ \"$PagesEnvironment\" == \"production\" ]]; then\n  if [[ -z \"$Branch\" ]]; then\n    Branch=\"$PRODUCTION_BRANCH\"\n  elif [[ \"$Branch\" != \"$PRODUCTION_BRANCH\" ]]; then\n    echo \"ERROR: Branch '$Branch' is not the project's production branch ('$PRODUCTION_BRANCH'), so Cloudflare would deploy it as a preview.\" >&2\n    echo \"Leave Branch blank to deploy '$PRODUCTION_BRANCH' to production, or set Pages Environment to 'preview'.\" >&2\n    exit 1\n  fi\nelse\n  if [[ -z \"$Branch\" ]]; then\n    echo \"ERROR: Preview deployments need a Branch other than the production branch ('$PRODUCTION_BRANCH').\" >&2\n    exit 1\n  elif [[ \"$Branch\" == \"$PRODUCTION_BRANCH\" ]]; then\n    echo \"ERROR: Branch '$Branch' is the project's production branch, so Cloudflare would deploy it to production, not a preview.\" >&2\n    echo \"Choose a different branch, or set Pages Environment to 'production'.\" >&2\n    exit 1\n  fi\nfi\n\n# Trigger the deployment\n\nBASE_URL=\"${PROJECT_URL}/deployments\"\n\necho \"Triggering Cloudflare Pages deployment...\"\necho \"  Project    : $ProjectName\"\necho \"  Environment: $PagesEnvironment\"\necho \"  Branch     : $Branch\"\necho \"\"\n\nRAW=$(curl --silent --show-error --max-time 60 --write-out $'\\n%{http_code}' \\\n  --request POST \"$BASE_URL\" \\\n  --header \"Authorization: Bearer $ApiToken\" \\\n  --form \"branch=$Branch\")\n\nCURL_EXIT=$?\n\nif [[ $CURL_EXIT -ne 0 ]]; then\n  echo \"ERROR: curl request failed (exit code $CURL_EXIT).\" >&2\n  exit 1\nfi\n\nHTTP_STATUS=$(echo \"$RAW\" | tail -n 1)\nRESPONSE=$(echo \"$RAW\" | sed '$d')\n\nSUCCESS=$(echo \"$RESPONSE\" | json_get \"success\")\n\nif [[ \"$HTTP_STATUS\" -ge 400 || \"$SUCCESS\" != \"True\" && \"$SUCCESS\" != \"true\" ]]; then\n  ERROR_CODE=$(echo \"$RESPONSE\" | json_get \"errors.0.code\")\n  ERROR_MSG=$(echo \"$RESPONSE\" | json_get \"errors.0.message\")\n  echo \"ERROR: Cloudflare API returned an error (HTTP $HTTP_STATUS).\" >&2\n  [[ -n \"$ERROR_CODE\" ]] && echo \"  Code   : $ERROR_CODE\" >&2\n  [[ -n \"$ERROR_MSG\" ]] && echo \"  Message: $ERROR_MSG\" >&2\n  exit 1\nfi\n\nDEPLOY_ID=$(echo \"$RESPONSE\" | json_get \"result.id\")\nDEPLOY_URL=$(echo \"$RESPONSE\" | json_get \"result.url\")\nENVIRONMENT=$(echo \"$RESPONSE\" | json_get \"result.environment\")\nALIAS_URL=$(echo \"$RESPONSE\" | json_get \"result.aliases.0\")\n\necho \"Deployment created.\"\necho \"  ID         : $DEPLOY_ID\"\necho \"  Environment: $ENVIRONMENT\"\necho \"  URL        : $DEPLOY_URL\"\n[[ -n \"$ALIAS_URL\" ]] && echo \"  Alias      : $ALIAS_URL\"\n\nset_octopusvariable \"DeploymentId\" \"$DEPLOY_ID\"\nset_octopusvariable \"DeploymentUrl\" \"$DEPLOY_URL\"\nset_octopusvariable \"AliasUrl\" \"$ALIAS_URL\"\nset_octopusvariable \"Environment\" \"$ENVIRONMENT\"\n\nif [[ -n \"$ENVIRONMENT\" && \"$ENVIRONMENT\" != \"$PagesEnvironment\" ]]; then\n  echo \"ERROR: Cloudflare created a $ENVIRONMENT deployment, but $PagesEnvironment was requested.\" >&2\n  exit 1\nfi\n\nif [[ \"$WaitForCompletion\" != \"True\" ]]; then\n  echo \"\"\n  echo \"Not waiting for the build to complete (Wait For Completion is disabled).\"\n  exit 0\nfi\n\n# Poll until the deployment succeeds, fails, or the timeout elapses\n\necho \"\"\necho \"Waiting for the deployment to complete (timeout ${TimeoutSeconds}s)...\"\n\nPOLL_INTERVAL=10\nELAPSED=0\nLAST_STAGE=\"\"\n\nwhile true; do\n  STATUS_RESPONSE=$(curl --silent --max-time 30 \\\n    --request GET \"${BASE_URL}/${DEPLOY_ID}\" \\\n    --header \"Authorization: Bearer $ApiToken\")\n\n  STAGE_NAME=$(echo \"$STATUS_RESPONSE\" | json_get \"result.latest_stage.name\")\n  STAGE_STATUS=$(echo \"$STATUS_RESPONSE\" | json_get \"result.latest_stage.status\")\n\n  if [[ -n \"$STAGE_NAME\" && \"${STAGE_NAME}:${STAGE_STATUS}\" != \"$LAST_STAGE\" ]]; then\n    echo \"  [${ELAPSED}s] stage: $STAGE_NAME ($STAGE_STATUS)\"\n    LAST_STAGE=\"${STAGE_NAME}:${STAGE_STATUS}\"\n  fi\n\n  if [[ \"$STAGE_NAME\" == \"deploy\" && \"$STAGE_STATUS\" == \"success\" ]]; then\n    # Cloudflare only assigns the branch alias once the deployment is live\n    [[ -z \"$ALIAS_URL\" ]] && ALIAS_URL=$(echo \"$STATUS_RESPONSE\" | json_get \"result.aliases.0\")\n\n    echo \"\"\n    echo \"Deployment completed successfully!\"\n    echo \"  URL  : $DEPLOY_URL\"\n    if [[ -n \"$ALIAS_URL\" ]]; then\n      echo \"  Alias: $ALIAS_URL\"\n      set_octopusvariable \"AliasUrl\" \"$ALIAS_URL\"\n    fi\n    exit 0\n  fi\n\n  if [[ \"$STAGE_STATUS\" == \"failure\" || \"$STAGE_STATUS\" == \"canceled\" ]]; then\n    echo \"\"\n    echo \"ERROR: Deployment ${STAGE_STATUS} during the '$STAGE_NAME' stage.\" >&2\n    echo \"Check the build log in the Cloudflare dashboard for details.\" >&2\n    exit 1\n  fi\n\n  if (( ELAPSED >= TimeoutSeconds )); then\n    echo \"\"\n    echo \"ERROR: Timed out after ${TimeoutSeconds}s waiting for the deployment to complete (last stage: $STAGE_NAME $STAGE_STATUS).\" >&2\n    echo \"The build may still finish; check the Cloudflare dashboard.\" >&2\n    exit 1\n  fi\n\n  sleep \"$POLL_INTERVAL\"\n  ELAPSED=$((ELAPSED + POLL_INTERVAL))\ndone"
+  },
+  "Parameters": [
+    {
+      "Id": "4434e63a-ed29-462f-88be-4fc70e9d21ba",
+      "Name": "CloudflarePages.ApiToken",
+      "Label": "API Token",
+      "HelpText": "A Cloudflare [API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/) with the `Account → Cloudflare Pages → Edit` permission. Consider binding this to a sensitive project variable so it can be scoped and rotated in one place.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "3ec8e86e-788f-4e18-b7b3-2398916b9394",
+      "Name": "CloudflarePages.AccountId",
+      "Label": "Account ID",
+      "HelpText": "The Cloudflare account ID, shown on the right of most zone pages and under **Workers & Pages** in the dashboard.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "dd3d7f84-500a-465a-af0f-5d58ae1cfe92",
+      "Name": "CloudflarePages.ProjectName",
+      "Label": "Project Name",
+      "HelpText": "The name of the Pages project (as shown in **Workers & Pages** in the dashboard).",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "5f6d9975-23e1-43fa-971c-04541f326f70",
+      "Name": "CloudflarePages.Environment",
+      "Label": "Pages Environment",
+      "HelpText": "The Pages environment to deploy to. `Production` deploys the project's production branch; `Preview` deploys the branch given below, which must not be the production branch. The default maps the Octopus `Production` environment to Pages production and every other Octopus environment to a preview.",
+      "DefaultValue": "#{if Octopus.Environment.Name == \"Production\"}production#{else}preview#{/if}",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "production|Production\npreview|Preview"
+      }
+    },
+    {
+      "Id": "a5622081-0b24-4a6f-8154-8f13f1971fdd",
+      "Name": "CloudflarePages.Branch",
+      "Label": "Branch",
+      "HelpText": "The git branch to build. For **Production**, leave blank to use the project's production branch. For **Preview**, required: a branch other than the production branch, such as `staging`. Scope this per Octopus environment (for example `#{Cloudflare.Pages.Branch}`) to give each environment its own preview branch and URL.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "4a26c4a6-59fb-4116-aea7-7f5f469eba74",
+      "Name": "CloudflarePages.WaitForCompletion",
+      "Label": "Wait For Completion",
+      "HelpText": "If enabled, the step polls the deployment until the build succeeds or fails, and fails the step on a failed build. If disabled, the step succeeds as soon as the deployment is queued.",
+      "DefaultValue": "True",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Checkbox"
+      }
+    },
+    {
+      "Id": "32d687fc-4d48-4e76-87e8-5e77e905aa50",
+      "Name": "CloudflarePages.TimeoutSeconds",
+      "Label": "Timeout (seconds)",
+      "HelpText": "How long to wait for the build to complete before failing the step. Only used when Wait For Completion is enabled.",
+      "DefaultValue": "600",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2026-08-19T00:00:00.000Z",
+    "OctopusVersion": "2026.3.6158",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "Meanski",
+  "Category": "cloudflare"
+}
