@@ -3,19 +3,19 @@
   "Name": ".NET Core - Check .NET Core Framework Version",
   "Description": "Check if given .NET Core framework version (or greater) is installed.",
   "ActionType": "Octopus.Script",
-  "Version": 5,
+  "Version": 6,
   "CommunityActionTemplateId": null,
   "Properties": {
     "Octopus.Action.Script.ScriptSource": "Inline",
     "Octopus.Action.Script.Syntax": "PowerShell",
-    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\" \nfunction Get-Parameter($Name, $Default, [switch]$Required) {\n    $result = $null\n\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n\n    if ($result -eq $null) {\n        if ($Required) {\n            throw \"Missing parameter value $Name\"\n        } else {\n            $result = $Default\n        }\n    }\n\n    return $result\n}\n\nfunction Get-DotNetCoreFrameworkVersions() {\n    $dotNetCoreVersions = @()\n    if(Test-Path \"$env:programfiles/dotnet/shared/Microsoft.NETCore.App\") {\n        $dotNetCoreVersions = (ls \"$env:programfiles/dotnet/shared/Microsoft.NETCore.App\").Name\n    }\n    return $dotNetCoreVersions\n}\n\nfunction Get-AspDotNetCoreRuntimeVersions() {\n    $aspDotNetCoreRuntimeVersions = @()\n    $DotNETCoreUpdatesPath = \"Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\Microsoft\\Updates\\.NET Core\"\n    $DotNETUpdatesPath = \"Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\Microsoft\\Updates\\.NET\"\n\n    if (Test-Path \"HKLM:\\SOFTWARE\\Wow6432Node\\Microsoft\\Updates\\.NET Core\") {\n\t    $DotNetCoreItems = (Get-Item -Path $DotNETCoreUpdatesPath).GetSubKeyNames()\n    }\n    if (Test-Path \"HKLM:\\SOFTWARE\\Wow6432Node\\Microsoft\\Updates\\.NET\") {\n        $DotNetItems = (Get-Item -Path $DotNETUpdatesPath).GetSubKeyNames()\n    }\n\t$aspDotNetCoreRuntimeVersions = $DotNetCoreItems + $DotNetItems | where { $_ -match \"^Microsoft (ASP)?\\.NET Core (?<version>[\\d\\.]+(.*?)?) \"} | foreach { $Matches['version'] }\n\n    return $aspDotNetCoreRuntimeVersions\n}\n\n$targetVersion = (Get-Parameter \"TargetVersion\" -Required).Trim()\n$exact = [boolean]::Parse((Get-Parameter \"Exact\" -Required))\n$CheckASPdotNETCore = [boolean]::Parse((Get-Parameter \"CheckASPdotNETCore\" -Required))\n\n$matchedVersions = Get-DotNetCoreFrameworkVersions | Where-Object { if ($exact) { $_ -eq $targetVersion } else { $_ -ge $targetVersion }  }\nif (!$matchedVersions) { \n    throw \"Can't find .NET Core Runtime $targetVersion installed in the machine.\"\n}\n\n$matchedVersions | foreach { Write-Host \"Found .NET Core Runtime $_ installed in the machine.\" }\n\nif ($CheckASPdotNETCore) {\n    $matchedAspVersions = Get-AspDotNetCoreRuntimeVersions\n    if (!$matchedAspVersions) {\n        throw \"Can't find ASP.NET Core Runtime installed in the machine.\"\n    }\n\n    $matchedAspVersions | foreach { Write-Host \"Found ASP.NET Core Runtime $_ installed in the machine.\" }\n}"
+    "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\"\n\nfunction Get-Parameter($Name, $Default, [switch]$Required) {\n    $result = $null\n    if ($OctopusParameters -ne $null) {\n        $result = $OctopusParameters[$Name]\n    }\n    if ([string]::IsNullOrWhiteSpace($result)) {\n        if ($Required) {\n            throw \"Required parameter $Name not specified\"\n        }\n\n        $result = $Default\n    }\n    return $result\n}\n\nfunction ConvertTo-DotNetVersion([string]$VersionText) {\n    # Splits \"10.0.0-rc.1.25451.107\" into the numeric part (as [version]) and the pre-release label.\n    # Returns $null when the text is not a version, so stray folders are ignored.\n    $parts = $VersionText.Trim().Split(\"-\", 2)\n    $number = $parts[0]\n    if ($number -notmatch \"\\.\") {\n        $number = \"$number.0\"\n    }\n    $parsed = $null\n    if (-not [version]::TryParse($number, [ref]$parsed)) {\n        return $null\n    }\n    $preRelease = if ($parts.Length -gt 1) { $parts[1] } else { \"\" }\n    return [pscustomobject]@{ Text = $VersionText.Trim(); Number = $parsed; PreRelease = $preRelease }\n}\n\nfunction Compare-DotNetVersion($Left, $Right) {\n    # Returns -1, 0 or 1. Numeric parts are compared as versions (so 10.0 > 6.0), and a pre-release\n    # is lower than the release with the same number, following the SemVer 2.0 precedence rules.\n    $result = $Left.Number.CompareTo($Right.Number)\n    if ($result -ne 0) {\n        return [Math]::Sign($result)\n    }\n    if (-not $Left.PreRelease -and -not $Right.PreRelease) {\n        return 0\n    }\n    if (-not $Left.PreRelease) {\n        return 1\n    }\n    if (-not $Right.PreRelease) {\n        return -1\n    }\n    $leftIds = $Left.PreRelease.Split(\".\")\n    $rightIds = $Right.PreRelease.Split(\".\")\n    for ($i = 0; $i -lt [Math]::Max($leftIds.Length, $rightIds.Length); $i++) {\n        if ($i -ge $leftIds.Length) {\n            return -1\n        }\n        if ($i -ge $rightIds.Length) {\n            return 1\n        }\n        $leftIsNumber = $leftIds[$i] -match \"^\\d+$\"\n        $rightIsNumber = $rightIds[$i] -match \"^\\d+$\"\n        if ($leftIsNumber -and $rightIsNumber) {\n            $result = ([long]$leftIds[$i]).CompareTo([long]$rightIds[$i])\n        } elseif ($leftIsNumber) {\n            $result = -1\n        } elseif ($rightIsNumber) {\n            $result = 1\n        } else {\n            $result = [string]::Compare($leftIds[$i], $rightIds[$i], [StringComparison]::OrdinalIgnoreCase)\n        }\n        if ($result -ne 0) {\n            return [Math]::Sign($result)\n        }\n    }\n    return 0\n}\n\nfunction Get-InstalledRuntimeVersions($SharedFrameworkName) {\n    # Each installed runtime is a folder under <dotnet>\\shared\\<framework>\\<version>, which is also what \"dotnet --list-runtimes\" reports.\n    # ProgramW6432 points at the 64-bit Program Files even when the script runs in a 32-bit PowerShell host.\n    $programFiles = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }\n    $sharedFrameworkPath = Join-Path $programFiles \"dotnet\\shared\\$SharedFrameworkName\"\n    if (-not (Test-Path $sharedFrameworkPath)) {\n        return @()\n    }\n    return @(Get-ChildItem $sharedFrameworkPath -Directory | ForEach-Object { ConvertTo-DotNetVersion $_.Name } | Where-Object { $_ -ne $null })\n}\n\nfunction Assert-RuntimeInstalled($RuntimeName, $SharedFrameworkName, $TargetVersion, [bool]$Exact) {\n    $installedVersions = Get-InstalledRuntimeVersions $SharedFrameworkName | Sort-Object { $_.Number }, { -not $_.PreRelease }, { $_.PreRelease }\n    $matchedVersions = @($installedVersions | Where-Object {\n        $comparison = Compare-DotNetVersion $_ $TargetVersion\n        if ($Exact) { $comparison -eq 0 } else { $comparison -ge 0 }\n    })\n    if ($matchedVersions.Count -eq 0) {\n        $installedText = if ($installedVersions) { ($installedVersions | ForEach-Object { $_.Text }) -join \", \" } else { \"none\" }\n        $requirement = if ($Exact) { \"exactly $($TargetVersion.Text)\" } else { \"$($TargetVersion.Text) or greater\" }\n        throw \"Can't find $RuntimeName $requirement installed in the machine. Installed versions: $installedText.\"\n    }\n    $matchedVersions | ForEach-Object { Write-Host \"Found $RuntimeName $($_.Text) installed in the machine.\" }\n}\n\n$targetVersionText = (Get-Parameter \"TargetVersion\" -Required).Trim()\n$exact = [boolean]::Parse((Get-Parameter \"Exact\" -Required))\n$checkAspNetCore = [boolean]::Parse((Get-Parameter \"CheckASPdotNETCore\" -Required))\n$targetVersion = ConvertTo-DotNetVersion $targetVersionText\nif ($targetVersion -eq $null) {\n    throw \"TargetVersion '$targetVersionText' is not a valid .NET version. Use a version such as 8.0, 8.0.11 or 10.0.0-rc.1.\"\n}\n\nAssert-RuntimeInstalled \".NET Core Runtime\" \"Microsoft.NETCore.App\" $targetVersion $exact\nif ($checkAspNetCore) {\n    Assert-RuntimeInstalled \"ASP.NET Core Runtime\" \"Microsoft.AspNetCore.App\" $targetVersion $exact\n}"
   },
   "Parameters": [
     {
       "Id": "f386deb4-36fb-4116-ad4a-5bceed89fa5b",
       "Name": "TargetVersion",
       "Label": "Target .NET Core framework version",
-      "HelpText": "The target .NET Core framework version you expect to be installed in the machine. For example, 2.0.5.",
+      "HelpText": "The .NET runtime version you expect to be installed on the machine, for example 8.0 or 8.0.11. Versions are compared numerically (so 10.0 is newer than 6.0) and pre-release versions such as 10.0.0-rc.1 are supported.",
       "DefaultValue": "2.0.5",
       "DisplaySettings": {
         "Octopus.ControlType": "SingleLineText"
@@ -26,7 +26,7 @@
       "Id": "7312dd89-2174-47d7-bdfd-2745fb812f58",
       "Name": "Exact",
       "Label": "Exact",
-      "HelpText": "If you check \"Exact\", it means the installed .NET Core framework version MUST match target version.\n\nOtherwise, as long as the installed .NET Coreframework version is greater than or equal to target version, the check will pass.",
+      "HelpText": "If you check \"Exact\", it means the installed .NET Core framework version MUST match target version.\n\nOtherwise, as long as the installed .NET Core framework version is greater than or equal to target version, the check will pass.\n\nThe same rule applies to the ASP.NET Core runtime check.",
       "DefaultValue": "false",
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
@@ -36,8 +36,8 @@
     {
       "Id": "4f0b738b-8f06-4c93-a27f-49b3cd06ea9a",
       "Name": "CheckASPdotNETCore",
-      "Label": "Check ASP.NET Core Module",
-      "HelpText": "If you check \"Check ASP.NET Core Module\", it means this step will check if ASP.NET Core module is installed in the host or not.",
+      "Label": "Check ASP.NET Core Runtime",
+      "HelpText": "If you check \"Check ASP.NET Core Runtime\", this step will also check that the ASP.NET Core runtime (Microsoft.AspNetCore.App, installed by the ASP.NET Core Runtime installer or the Hosting Bundle) matching the target version is installed, using the same \"Exact\" rule.",
       "DefaultValue": "false",
       "DisplaySettings": {
         "Octopus.ControlType": "Checkbox"
@@ -46,10 +46,10 @@
     }
   ],
   "$Meta": {
-    "ExportedAt": "2018-06-13T08:43:39.365Z",
-    "OctopusVersion": "2018.4.1",
+    "ExportedAt": "2026-11-04T07:02:59.635Z",
+    "OctopusVersion": "2026.4.9745",
     "Type": "ActionTemplate"
   },
-  "LastModifiedBy": "FinnianDempsey",
+  "LastModifiedBy": "JeremyCamplin",
   "Category": "dotnetcore"
 }
