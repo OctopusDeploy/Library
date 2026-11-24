@@ -1,0 +1,65 @@
+{
+  "Id": "1fdde084-0364-428f-8801-c14a1ec2d57e",
+  "Name": "Cloudflare - Purge Cache",
+  "Description": "Purges the [Cloudflare](https://www.cloudflare.com) cache for a zone via the [cache purge API](https://developers.cloudflare.com/api/resources/cache/methods/purge/) \u2014 typically run after a deployment so visitors get fresh content immediately.\n\nSupports purging everything, or purging selectively by URL, cache-tag, hostname, or URL prefix (all methods are available on every Cloudflare plan; purge rate limits vary by plan). Lists longer than the API limit of 30 items per request are purged automatically in batches.\n\nRequires `curl` and either `jq` or `python3` on the worker.",
+  "ActionType": "Octopus.Script",
+  "Version": 1,
+  "CommunityActionTemplateId": null,
+  "Packages": [],
+  "Properties": {
+    "Octopus.Action.Script.ScriptSource": "Inline",
+    "Octopus.Action.Script.Syntax": "Bash",
+    "Octopus.Action.Script.ScriptBody": "#!/bin/bash\n\n# Cloudflare - Purge Cache\n# Purges the Cloudflare cache for a zone via the REST API.\n# API reference: https://developers.cloudflare.com/api/resources/cache/methods/purge/\n\n# Read step parameters\nApiToken=$(get_octopusvariable \"CloudflarePurge.ApiToken\")\nZoneId=$(get_octopusvariable \"CloudflarePurge.ZoneId\")\nPurgeType=$(get_octopusvariable \"CloudflarePurge.PurgeType\")\nPurgeItems=$(get_octopusvariable \"CloudflarePurge.Items\")\n\n# Validate required tooling\n\nif ! command -v curl >/dev/null 2>&1; then\n  echo \"ERROR: curl is required on the worker to run this step.\" >&2\n  exit 1\nfi\n\nif command -v jq >/dev/null 2>&1; then\n  JSON_TOOL=\"jq\"\nelif command -v python3 >/dev/null 2>&1; then\n  JSON_TOOL=\"python3\"\nelse\n  echo \"ERROR: jq or python3 is required on the worker to build and parse JSON.\" >&2\n  exit 1\nfi\n\n# Prints the JSON-encoded (quoted) form of $1\njson_escape() {\n  if [[ \"$JSON_TOOL\" == \"jq\" ]]; then\n    jq -cn --arg v \"$1\" '$v'\n  else\n    python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' \"$1\"\n  fi\n}\n\n# Reads JSON on stdin and prints the value at dotted path $1 (empty if missing\n# or null; numeric path parts index into arrays)\njson_get() {\n  if [[ \"$JSON_TOOL\" == \"jq\" ]]; then\n    jq -r \"getpath(\\\"$1\\\" | split(\\\".\\\") | map(if test(\\\"^[0-9]+$\\\") then tonumber else . end)) // empty\" 2>/dev/null\n  else\n    python3 -c '\nimport json, sys\ntry:\n    data = json.load(sys.stdin)\nexcept Exception:\n    sys.exit(0)\ncur = data\nfor part in sys.argv[1].split(\".\"):\n    if isinstance(cur, dict) and part in cur:\n        cur = cur[part]\n    elif isinstance(cur, list) and part.isdigit() and int(part) < len(cur):\n        cur = cur[int(part)]\n    else:\n        sys.exit(0)\nif cur is None:\n    sys.exit(0)\nprint(cur if not isinstance(cur, (dict, list)) else json.dumps(cur))\n' \"$1\"\n  fi\n}\n\n# Validate required parameters\n\nif [[ -z \"$ApiToken\" ]]; then\n  echo \"ERROR: API Token is required.\" >&2\n  exit 1\nfi\n\nif [[ -z \"$ZoneId\" ]]; then\n  echo \"ERROR: Zone ID is required.\" >&2\n  exit 1\nfi\n\nPurgeType=$(echo \"$PurgeType\" | tr '[:upper:]' '[:lower:]')\n[[ -z \"$PurgeType\" ]] && PurgeType=\"everything\"\n\ncase \"$PurgeType\" in\n  everything|files|tags|hosts|prefixes) ;;\n  *)\n    echo \"ERROR: Unsupported Purge Type '$PurgeType'. Must be one of: everything, files, tags, hosts, prefixes.\" >&2\n    exit 1\n    ;;\nesac\n\n# Parse the item list (newline- and comma-separated, blanks ignored)\n\nITEMS=()\nif [[ \"$PurgeType\" != \"everything\" ]]; then\n  while IFS= read -r line; do\n    line=$(echo \"$line\" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')\n    [[ -n \"$line\" ]] && ITEMS+=(\"$line\")\n  done < <(echo \"$PurgeItems\" | tr ',' '\\n')\n\n  if (( ${#ITEMS[@]} == 0 )); then\n    echo \"ERROR: Purge Type '$PurgeType' requires at least one item in Items to Purge.\" >&2\n    exit 1\n  fi\nfi\n\n# Sends one purge request with body $1, retrying on rate limiting (HTTP 429).\nAPI_URL=\"https://api.cloudflare.com/client/v4/zones/${ZoneId}/purge_cache\"\n\npurge_request() {\n  local body=\"$1\"\n  local max_attempts=3\n  local attempt=1\n\n  while true; do\n    RAW=$(curl --silent --show-error --max-time 60 --write-out $'\\n%{http_code}' \\\n      --request POST \"$API_URL\" \\\n      --header \"Authorization: Bearer $ApiToken\" \\\n      --header \"Content-Type: application/json\" \\\n      --data \"$body\")\n\n    local curl_exit=$?\n\n    if [[ $curl_exit -ne 0 ]]; then\n      echo \"ERROR: curl request failed (exit code $curl_exit).\" >&2\n      exit 1\n    fi\n\n    HTTP_STATUS=$(echo \"$RAW\" | tail -n 1)\n    RESPONSE=$(echo \"$RAW\" | sed '$d')\n\n    if [[ \"$HTTP_STATUS\" == \"429\" ]]; then\n      if (( attempt >= max_attempts )); then\n        echo \"ERROR: Cloudflare rate limited the purge request and retries were exhausted.\" >&2\n        exit 1\n      fi\n      local wait_seconds=$((attempt * 5))\n      echo \"Rate limited (429); retrying in ${wait_seconds}s (attempt $((attempt + 1))/${max_attempts})...\"\n      sleep \"$wait_seconds\"\n      attempt=$((attempt + 1))\n      continue\n    fi\n\n    break\n  done\n\n  SUCCESS=$(echo \"$RESPONSE\" | json_get \"success\")\n\n  if [[ \"$HTTP_STATUS\" -ge 400 || \"$SUCCESS\" != \"True\" && \"$SUCCESS\" != \"true\" ]]; then\n    ERROR_CODE=$(echo \"$RESPONSE\" | json_get \"errors.0.code\")\n    ERROR_MSG=$(echo \"$RESPONSE\" | json_get \"errors.0.message\")\n    echo \"ERROR: Cloudflare API returned an error (HTTP $HTTP_STATUS).\" >&2\n    [[ -n \"$ERROR_CODE\" ]] && echo \"  Code   : $ERROR_CODE\" >&2\n    [[ -n \"$ERROR_MSG\" ]] && echo \"  Message: $ERROR_MSG\" >&2\n    exit 1\n  fi\n}\n\n# Purge\n\necho \"Purging Cloudflare cache...\"\necho \"  Zone : $ZoneId\"\necho \"  Type : $PurgeType\"\n\nif [[ \"$PurgeType\" == \"everything\" ]]; then\n  echo \"\"\n  purge_request '{\"purge_everything\":true}'\nelse\n  echo \"  Items: ${#ITEMS[@]}\"\n  echo \"\"\n\n  # The API accepts at most 30 items per request, so purge in batches\n  BATCH_SIZE=30\n  TOTAL=${#ITEMS[@]}\n  OFFSET=0\n  BATCH_NUM=1\n\n  while (( OFFSET < TOTAL )); do\n    BATCH=(\"${ITEMS[@]:$OFFSET:$BATCH_SIZE}\")\n\n    ENCODED=()\n    for item in \"${BATCH[@]}\"; do\n      ENCODED+=(\"$(json_escape \"$item\")\")\n    done\n\n    BODY=\"{\\\"$PurgeType\\\":[$(IFS=,; echo \"${ENCODED[*]}\")]}\"\n\n    if (( TOTAL > BATCH_SIZE )); then\n      if (( ${#BATCH[@]} == 1 )); then\n        echo \"Batch $BATCH_NUM (1 item)...\"\n      else\n        echo \"Batch $BATCH_NUM (${#BATCH[@]} items)...\"\n      fi\n    fi\n\n    purge_request \"$BODY\"\n\n    OFFSET=$((OFFSET + BATCH_SIZE))\n    BATCH_NUM=$((BATCH_NUM + 1))\n  done\nfi\n\necho \"Cache purged successfully.\""
+  },
+  "Parameters": [
+    {
+      "Id": "5152986c-c38c-4a39-be9c-ab4841a32333",
+      "Name": "CloudflarePurge.ApiToken",
+      "Label": "API Token",
+      "HelpText": "A Cloudflare [API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/) with the `Zone \u2192 Cache Purge \u2192 Purge` permission for the zone. Consider binding this to a sensitive project variable (e.g. `#{Cloudflare.ApiToken}`) so it can be scoped and rotated in one place.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Sensitive"
+      }
+    },
+    {
+      "Id": "5d2dbca5-7736-47d4-b2ca-490e77141410",
+      "Name": "CloudflarePurge.ZoneId",
+      "Label": "Zone ID",
+      "HelpText": "The zone ID of the domain, shown in the **API** section of the domain's Overview page in the Cloudflare dashboard.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Id": "51ce3132-ca16-4252-9982-26762264e690",
+      "Name": "CloudflarePurge.PurgeType",
+      "Label": "Purge Type",
+      "HelpText": "What to purge. `Everything` clears the entire cache for the zone. The selective options purge only the entries listed in Items to Purge.",
+      "DefaultValue": "everything",
+      "DisplaySettings": {
+        "Octopus.ControlType": "Select",
+        "Octopus.SelectOptions": "everything|Everything\nfiles|By URL\ntags|By cache-tag\nhosts|By hostname\nprefixes|By URL prefix"
+      }
+    },
+    {
+      "Id": "be6b9c35-8774-44bc-8857-e4fd9e9bf7b2",
+      "Name": "CloudflarePurge.Items",
+      "Label": "Items to Purge",
+      "HelpText": "The URLs, cache-tags, hostnames, or prefixes to purge \u2014 one per line (comma-separated also accepted). Ignored when Purge Type is `Everything`. URLs must be absolute (e.g. `https://example.com/styles.css`). More than 30 items are purged in batches of 30 automatically.",
+      "DefaultValue": "",
+      "DisplaySettings": {
+        "Octopus.ControlType": "MultiLineText"
+      }
+    }
+  ],
+  "StepPackageId": "Octopus.Script",
+  "$Meta": {
+    "ExportedAt": "2026-08-19T00:00:00.000Z",
+    "OctopusVersion": "2026.3.6158",
+    "Type": "ActionTemplate"
+  },
+  "LastModifiedBy": "Meanski",
+  "Category": "cloudflare"
+}
