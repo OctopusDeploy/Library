@@ -1,148 +1,158 @@
 {
     "Id": "b163a315-24b7-4bf8-9cca-d9011f57019a",
     "Name": "Send Email using MailKit",
-    "Description": "This step template supports sending an email using the [MailKit](https://github.com/jstedfast/MailKit) library, a cross-platform .NET library for IMAP, POP3, and SMTP.\n\n- Support for multiple TO addresses (separated by `,`).\n- Support for multiple CC addresses (separated by `,`).\n- *Optional* support for a separate `reply-to` address.\n\nThis step **does not** support running on PowerShell: Windows Desktop Edition.\n\n---\n\n**Required:** \n- The `MailKit` and `MimeKit` packages are installed on the target or worker. If the packages can't be found, the step will attempt to download them from [https://www.nuget.org](https://www.nuget.org).\n- PowerShell Core (including when running on Windows).\n\n*Notes:*\n\n- Tested on Octopus `2025.1`.\n- Tested on Windows and Linux with PowerShell Core only.",
+    "Description": "This step template supports sending an email using the [MailKit](https://github.com/jstedfast/MailKit) library, a cross-platform .NET library for IMAP, POP3, and SMTP.\n\n- Support for multiple TO addresses (separated by `,`).\n- Support for multiple CC addresses (separated by `,`).\n- *Optional* support for a separate `reply-to` address.\n\nThis step **does not** support running on PowerShell: Windows Desktop Edition.\n\n---\n\n**Required:** \n- The `MailKit` and `MimeKit.Core` packages are installed on the target or worker. If the packages can't be found, the step will attempt to download them from [https://www.nuget.org](https://www.nuget.org).\n- From MimeKit 5, `MimeKit` is a meta-package with no assemblies, so the step installs `MimeKit.Core` instead. Both packages are pinned to the same version (default `5.0.0`).\n- PowerShell Core (including when running on Windows).\n\n*Notes:*\n\n- Tested on Octopus `2025.1`.\n- Tested on Windows and Linux with PowerShell Core only.",
     "ActionType": "Octopus.Script",
-    "Version": 1,
+    "Version": 2,
     "CommunityActionTemplateId": null,
     "Packages": [],
     "GitDependencies": [],
     "Properties": {
-      "Octopus.Action.PowerShell.Edition": "Core",
-      "Octopus.Action.EnabledFeatures": "Octopus.Features.SelectPowerShellEditionForWindows",
-      "Octopus.Action.Script.ScriptSource": "Inline",
-      "Octopus.Action.Script.Syntax": "PowerShell",
-      "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\";\n\nif ($PSEdition -eq \"Core\") {\n    $PSStyle.OutputRendering = \"PlainText\"\n}\n$emailSubject = $OctopusParameters[\"SendEmail.Subject\"]\n$emailSmtpServer = $OctopusParameters[\"SendEmail.SmtpServer\"]\n$emailSmtpPort = $OctopusParameters[\"SendEmail.SmtpPort\"]\n$emailCredentialsUsername = $OctopusParameters[\"SendEmail.Credentials.Username\"]\n$emailCredentialsPassword = $OctopusParameters[\"SendEmail.Credentials.Password\"]\n$emailSecureSocketOption = $OctopusParameters[\"SendEmail.SecureSocketOption\"]\n\n$validSecureSocketOptions = @(\"None\", \"Auto\", \"SslOnConnect\", \"StartTls\", \"StartTlsWhenAvailable\")\nif(-not $validSecureSocketOptions.Contains($emailSecureSocketOption)) {\n    Write-Error \"Invalid SecureSocketOption: $emailSecureSocketOption. Must be one of: $($validSecureSocketOptions -join \", \").\"\n    return\n}\n\n$emailFromAddress = $OctopusParameters[\"SendEmail.FromAddress\"]\n$emailToAddresses = $OctopusParameters[\"SendEmail.TOAddresses\"]\n$emailCcAddresses = $OctopusParameters[\"SendEmail.CCAddresses\"]\n$emailReplyToAddress = $OctopusParameters[\"SendEmail.ReplyToAddress\"]\n\n$HtmlBody = $OctopusParameters[\"SendEmail.HtmlBody\"]\n$TextBody = $OctopusParameters[\"SendEmail.TextBody\"]\n\nWrite-Verbose \"Checking for MimeKit and MailKit packages.\"\ntry {\n    \n    $MimeKitPackage = (Get-Package MimeKit -ErrorAction Stop) | Select-Object -First 1\n} \ncatch {\n    $MimeKitPackage = $null\n}\nif ($null -eq $MimeKitPackage) {\n    Write-Output \"Downloading MimeKit from nuget.org.\"\n    Install-Package -Name 'MimeKit' -Source \"https://www.nuget.org/api/v2\" -SkipDependencies -Force -Scope CurrentUser\n    $MimeKitPackage = (Get-Package MimeKit) | Select-Object -First 1\n}\n\ntry {\n    $MailKitPackage = (Get-Package MailKit -ErrorAction Stop) | Select-Object -First 1\n} \ncatch {\n    $MailKitPackage = $null\n}\nif ($null -eq $MailKitPackage) {\n    Write-Output \"Downloading MailKit from nuget.org.\"\n    Install-Package -Name 'MailKit' -Source \"https://www.nuget.org/api/v2\" -SkipDependencies -Force -Scope CurrentUser\n    $MailKitPackage = (Get-Package MailKit) | Select-Object -First 1\n}\n\n$MimeKitPath = Join-Path (Get-Item $MimeKitPackage.source).Directory.FullName \"lib/netstandard2.1/MimeKit.dll\"\n$MailKitPath = Join-Path (Get-Item $MailKitPackage.source).Directory.FullName \"lib/netstandard2.1/MailKit.dll\"\n\nAdd-Type -Path $MimeKitPath\nAdd-Type -Path $MailKitPath\n\n# Validation/Setting of Secure Socket Options needed after libraries loaded\nswitch($emailSecureSocketOption) {\n    \"Auto\" {\n        $secureSocketOption = [MailKit.Security.SecureSocketOptions]::Auto\n    }\n    \"None\" {\n        $secureSocketOption = [MailKit.Security.SecureSocketOptions]::None\n    }\n    \"SslOnConnect\" {\n        $secureSocketOption = [MailKit.Security.SecureSocketOptions]::SslOnConnect\n    }\n    \"StartTls\" {\n        $secureSocketOption = [MailKit.Security.SecureSocketOptions]::StartTls\n    }\n    \"StartTlsWhenAvailable\" {\n        $secureSocketOption = [MailKit.Security.SecureSocketOptions]::StartTlsWhenAvailable\n    }\n    default {\n        Write-Error \"Invalid SecureSocketOption: $emailSecureSocketOption. Must be one of: $($validSecureSocketOptions -join \", \").\"\n        return\n    }\n}\n\n$SMTP = New-Object MailKit.Net.Smtp.SmtpClient\n\n$Message = New-Object MimeKit.MimeMessage\n$ContentBuilder = [MimeKit.BodyBuilder]::new()\n\n$ContentBuilder.HtmlBody = $HtmlBody\n$ContentBuilder.TextBody = $TextBody\nWrite-Verbose \"Setting From address: $emailFromAddress\" \n$Message.From.Add($emailFromAddress)\n$toAddresses = $emailToAddresses -split \",\"\nWrite-Verbose \"Setting TO addresses: $emailToAddresses\"\nforeach($toAddress in $toAddresses) {\n    $Message.To.Add($toAddress)\n}\n\nif(-not [string]::IsNullOrWhitespace($emailCcAddresses)) {\n    Write-Verbose \"Setting CC addresses: $emailCcAddresses\"\n    $ccAddresses = $emailCcAddresses -split \",\"\n    foreach($ccAddress in $ccAddresses) {\n        $Message.Cc.Add($ccAddress)\n    }\n}\nif(-not [string]::IsNullOrWhitespace($emailReplyToAddress)) {\n    Write-Verbose \"Setting ReplyTo address: $emailReplyToAddress\"\n    $Message.ReplyTo.Add($emailReplyToAddress)\n}\n\nWrite-Verbose \"Setting subject to: $emailSubject\"\n$Message.Subject = $emailSubject\nWrite-Verbose \"Setting MimeMessage Body contents\"\n$Message.Body = $ContentBuilder.ToMessageBody()\nWrite-Verbose \"Connecting to SMTP server: $emailSmtpServer on port: $emailSmtpPort (using SecureSocketOption=$emailSecureSocketOption)\"\n$SMTP.Connect($emailSmtpServer, $emailSmtpPort, $secureSocketOption)\nWrite-Verbose \"Authenticating...\"\n$SMTP.Authenticate($emailCredentialsUsername, $emailCredentialsPassword)\nWrite-Output \"Sending email...\"\n$SMTP.Send($Message)\nWrite-Output \"Email sent.\"\n$SMTP.Disconnect($true)\n$SMTP.Dispose()"
+        "Octopus.Action.PowerShell.Edition": "Core",
+        "Octopus.Action.EnabledFeatures": "Octopus.Features.SelectPowerShellEditionForWindows",
+        "Octopus.Action.Script.ScriptSource": "Inline",
+        "Octopus.Action.Script.Syntax": "PowerShell",
+        "Octopus.Action.Script.ScriptBody": "$ErrorActionPreference = \"Stop\";\n\nif ($PSEdition -eq \"Core\") {\n    $PSStyle.OutputRendering = \"PlainText\"\n}\n$emailSubject = $OctopusParameters[\"SendEmail.Subject\"]\n$emailSmtpServer = $OctopusParameters[\"SendEmail.SmtpServer\"]\n$emailSmtpPort = $OctopusParameters[\"SendEmail.SmtpPort\"]\n$emailCredentialsUsername = $OctopusParameters[\"SendEmail.Credentials.Username\"]\n$emailCredentialsPassword = $OctopusParameters[\"SendEmail.Credentials.Password\"]\n$emailSecureSocketOption = $OctopusParameters[\"SendEmail.SecureSocketOption\"]\n\n$validSecureSocketOptions = @(\"None\", \"Auto\", \"SslOnConnect\", \"StartTls\", \"StartTlsWhenAvailable\")\nif(-not $validSecureSocketOptions.Contains($emailSecureSocketOption)) {\n    Write-Error \"Invalid SecureSocketOption: $emailSecureSocketOption. Must be one of: $($validSecureSocketOptions -join \", \").\"\n    return\n}\n\n$emailFromAddress = $OctopusParameters[\"SendEmail.FromAddress\"]\n$emailToAddresses = $OctopusParameters[\"SendEmail.TOAddresses\"]\n$emailCcAddresses = $OctopusParameters[\"SendEmail.CCAddresses\"]\n$emailReplyToAddress = $OctopusParameters[\"SendEmail.ReplyToAddress\"]\n\n$HtmlBody = $OctopusParameters[\"SendEmail.HtmlBody\"]\n$TextBody = $OctopusParameters[\"SendEmail.TextBody\"]\n\n# MimeKit 5 split into packages: \"MimeKit\" is now a meta-package with no DLLs.\n# The core library is in MimeKit.Core. MimeKit.Core and MailKit are pinned to the\n# same version so they always match. Override with SendEmail.MailKitVersion if set.\n$mailKitVersion = $OctopusParameters[\"SendEmail.MailKitVersion\"]\nif ([string]::IsNullOrWhiteSpace($mailKitVersion)) {\n    $mailKitVersion = \"5.0.0\"\n}\n\n# Load order matters: MimeKit.Core first, then MailKit.\n$requiredPackages = @(\"MimeKit.Core\", \"MailKit\")\n\nfunction Get-BestLibDir {\n    param($Package)\n\n    if (-not $Package -or -not $Package.Source) {\n        throw \"Package object is null or has no Source. Did Install-Package/Get-Package succeed?\"\n    }\n\n    $packageDir = Split-Path $Package.Source -Parent\n    $root = Join-Path $packageDir \"lib\"\n    if (-not (Test-Path $root)) {\n        $contents = (Get-ChildItem -Path $packageDir).Name -join \", \"\n        throw \"No lib folder for $($Package.Name) $($Package.Version). Package contains: $contents\"\n    }\n\n    $runtimeMajor = [Environment]::Version.Major\n\n    $best = Get-ChildItem -Path $root -Directory | ForEach-Object {\n        $name = $_.Name\n        $rank = if ($name -match '^net(\\d+)\\.\\d+$' -and [int]$Matches[1] -le $runtimeMajor) { 1000 + [int]$Matches[1] }\n                elseif ($name -eq \"netstandard2.1\") { 500 }\n                elseif ($name -eq \"netstandard2.0\") { 400 }\n                else { -1 }   # skips net462/net47/net48 and builds newer than the runtime\n        [pscustomobject]@{ Dir = $_.FullName; Rank = $rank }\n    } | Where-Object { $_.Rank -ge 0 -and (Get-ChildItem -Path $_.Dir -Filter *.dll) } |\n        Sort-Object Rank -Descending | Select-Object -First 1\n\n    if (-not $best) {\n        $available = (Get-ChildItem -Path $root -Directory).Name -join \", \"\n        throw \"No compatible build of $($Package.Name) under $root for .NET $runtimeMajor. Available: $available\"\n    }\n    $best.Dir\n}\n\nWrite-Verbose \"Runtime: .NET $([Environment]::Version)\"\nWrite-Verbose \"Checking for MimeKit.Core and MailKit $mailKitVersion packages.\"\n\nforeach ($packageName in $requiredPackages) {\n    $package = Get-Package -Name $packageName -ProviderName NuGet -RequiredVersion $mailKitVersion -ErrorAction SilentlyContinue |\n        Select-Object -First 1\n\n    if ($null -eq $package) {\n        Write-Output \"Downloading $packageName $mailKitVersion from nuget.org.\"\n        Install-Package -Name $packageName -RequiredVersion $mailKitVersion -Source \"https://www.nuget.org/api/v2\" -SkipDependencies -Force -Scope CurrentUser | Out-Null\n        $package = Get-Package -Name $packageName -ProviderName NuGet -RequiredVersion $mailKitVersion | Select-Object -First 1\n    }\n\n    $libDir = Get-BestLibDir -Package $package\n\n    foreach ($dll in Get-ChildItem -Path $libDir -Filter *.dll) {\n        $asmName = [System.Reflection.AssemblyName]::GetAssemblyName($dll.FullName)\n        $loaded = [AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq $asmName.Name } | Select-Object -First 1\n\n        if ($loaded) {\n            if ($loaded.GetName().Version -ne $asmName.Version) {\n                Write-Warning \"$($asmName.Name) $($loaded.GetName().Version) is already loaded in this session; expected $($asmName.Version).\"\n            }\n            continue\n        }\n\n        Write-Verbose \"Loading $($asmName.Name) $($asmName.Version) from $($dll.FullName)\"\n        Add-Type -Path $dll.FullName\n    }\n}\n\n# Validation/Setting of Secure Socket Options needed after libraries loaded\nswitch($emailSecureSocketOption) {\n    \"Auto\" {\n        $secureSocketOption = [MailKit.Security.SecureSocketOptions]::Auto\n    }\n    \"None\" {\n        $secureSocketOption = [MailKit.Security.SecureSocketOptions]::None\n    }\n    \"SslOnConnect\" {\n        $secureSocketOption = [MailKit.Security.SecureSocketOptions]::SslOnConnect\n    }\n    \"StartTls\" {\n        $secureSocketOption = [MailKit.Security.SecureSocketOptions]::StartTls\n    }\n    \"StartTlsWhenAvailable\" {\n        $secureSocketOption = [MailKit.Security.SecureSocketOptions]::StartTlsWhenAvailable\n    }\n    default {\n        Write-Error \"Invalid SecureSocketOption: $emailSecureSocketOption. Must be one of: $($validSecureSocketOptions -join \", \").\"\n        return\n    }\n}\n\n$SMTP = New-Object MailKit.Net.Smtp.SmtpClient\n\ntry {\n    $Message = New-Object MimeKit.MimeMessage\n    $ContentBuilder = [MimeKit.BodyBuilder]::new()\n\n    $ContentBuilder.HtmlBody = $HtmlBody\n    $ContentBuilder.TextBody = $TextBody\n    Write-Verbose \"Setting From address: $emailFromAddress\"\n    $Message.From.Add($emailFromAddress)\n    $toAddresses = $emailToAddresses -split \",\"\n    Write-Verbose \"Setting TO addresses: $emailToAddresses\"\n    foreach($toAddress in $toAddresses) {\n        $Message.To.Add($toAddress.Trim())\n    }\n\n    if(-not [string]::IsNullOrWhitespace($emailCcAddresses)) {\n        Write-Verbose \"Setting CC addresses: $emailCcAddresses\"\n        $ccAddresses = $emailCcAddresses -split \",\"\n        foreach($ccAddress in $ccAddresses) {\n            $Message.Cc.Add($ccAddress.Trim())\n        }\n    }\n    if(-not [string]::IsNullOrWhitespace($emailReplyToAddress)) {\n        Write-Verbose \"Setting ReplyTo address: $emailReplyToAddress\"\n        $Message.ReplyTo.Add($emailReplyToAddress)\n    }\n\n    Write-Verbose \"Setting subject to: $emailSubject\"\n    $Message.Subject = $emailSubject\n    Write-Verbose \"Setting MimeMessage Body contents\"\n    $Message.Body = $ContentBuilder.ToMessageBody()\n    Write-Verbose \"Connecting to SMTP server: $emailSmtpServer on port: $emailSmtpPort (using SecureSocketOption=$emailSecureSocketOption)\"\n    $SMTP.Connect($emailSmtpServer, $emailSmtpPort, $secureSocketOption)\n    Write-Verbose \"Authenticating...\"\n    $SMTP.Authenticate($emailCredentialsUsername, $emailCredentialsPassword)\n    Write-Output \"Sending email...\"\n    # MailKit 5 replaced Send(MimeMessage) with Send(ISendRequest). Wrap the message in a\n    # SendRequest and pass the CancellationToken explicitly so PowerShell resolves the overload.\n    $sendRequest = [MailKit.SendRequest]::new($Message)\n    $sendResult = $SMTP.Send($sendRequest, [System.Threading.CancellationToken]::None)\n    Write-Verbose \"Server response: $($sendResult.ResponseText)\"\n    if ($sendResult.RejectedRecipients.Count -gt 0) {\n        Write-Warning \"Rejected recipients: $($sendResult.RejectedRecipients -join \", \")\"\n    }\n    Write-Output \"Email sent.\"\n    $SMTP.Disconnect($true)\n}\nfinally {\n    $SMTP.Dispose()\n}"
     },
     "Parameters": [
-      {
-        "Id": "65b67843-2cd5-48a5-ac9d-611de16246a7",
-        "Name": "SendEmail.SmtpServer",
-        "Label": "SMTP Server",
-        "HelpText": "The SMTP Server address e.g. `smtp.gmail.com`",
-        "DefaultValue": "",
-        "DisplaySettings": {
-          "Octopus.ControlType": "SingleLineText"
+        {
+            "Id": "65b67843-2cd5-48a5-ac9d-611de16246a7",
+            "Name": "SendEmail.SmtpServer",
+            "Label": "SMTP Server",
+            "HelpText": "The SMTP Server address e.g. `smtp.gmail.com`",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "3d87558e-aa18-46af-85bb-644890d6654b",
+            "Name": "SendEmail.SmtpPort",
+            "Label": "SMTP Port",
+            "HelpText": "The SMTP Port used for connecting. Typical SMTP ports are: \n- `25`\n- `587` (STARTTLS)\n- `465` (SSL)",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "0c1f7ae0-8cd4-45a5-b53b-e5019ad5ecb0",
+            "Name": "SendEmail.SecureSocketOption",
+            "Label": "SSL Option",
+            "HelpText": "The [SSL Option](https://mimekit.net/docs/html/T_MailKit_Security_SecureSocketOptions.htm) to use:\n- `None`: No SSL or TLS encryption should be used\n- `Auto`: Allow the [IMailService](https://mimekit.net/docs/html/T_MailKit_IMailService.htm) to decide which SSL or TLS options to use (default). If the server does not support SSL or TLS, then the connection will continue without any encryption.\n- `SslOnConnect`: The connection should use SSL or TLS encryption immediately.\n- `StartTls`: Elevates the connection to use TLS encryption immediately after reading the greeting and capabilities of the server. If the server does not support the STARTTLS extension, then the connection will fail and a NotSupportedException will be thrown.\n- `StartTlsWhenAvailable`: Elevates the connection to use TLS encryption immediately after reading the greeting and capabilities of the server, but only if the server supports the STARTTLS extension.\n\nDefault: `Auto`.",
+            "DefaultValue": "Auto",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Select",
+                "Octopus.SelectOptions": "None|None\nAuto|Auto\nSslOnConnect|Use SSL\nStartTls|Use STARTTLS\nStartTlsWhenAvailable|Start Tls When Available"
+            }
+        },
+        {
+            "Id": "208a3bab-b331-4fa6-a122-459593a4c98f",
+            "Name": "SendEmail.Credentials.Username",
+            "Label": "Authentication Username",
+            "HelpText": "The username to authenticate with the SMTP Server.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Sensitive"
+            }
+        },
+        {
+            "Id": "d42aba20-174a-4b51-af88-78d332f09a08",
+            "Name": "SendEmail.Credentials.Password",
+            "Label": "Authentication Password",
+            "HelpText": "The password to authenticate with the SMTP Server.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "Sensitive"
+            }
+        },
+        {
+            "Id": "8eafb51b-599b-4c51-8d35-974c5843c9cb",
+            "Name": "SendEmail.Subject",
+            "Label": "Email Subject",
+            "HelpText": "The Email Subject",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "bc4d18f8-e096-4911-84ce-e35268c83934",
+            "Name": "SendEmail.FromAddress",
+            "Label": "From Address",
+            "HelpText": "The sender address of the Email",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "302fb573-5720-47b6-bbd7-7d0077ca75ba",
+            "Name": "SendEmail.TOAddresses",
+            "Label": "TO addresses",
+            "HelpText": "The recipients of the Email. Multiple addresses can be supplied, separated by a `,`.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "be2267f6-36b0-4f7e-a7cf-f274e56aff2f",
+            "Name": "SendEmail.CCAddresses",
+            "Label": "(Optional) CC addresses",
+            "HelpText": "The *optional* CC (carbon-copy) recipients of the Email. Multiple addresses can be supplied, separated by a `,`.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "b43c49fd-3214-4310-a8cf-10489a3c858f",
+            "Name": "SendEmail.ReplyToAddress",
+            "Label": "(Optional) Reply-to address",
+            "HelpText": "The *optional* `reply-to` address.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
+        },
+        {
+            "Id": "9e07a17f-a044-4f6f-ac0c-5d131058a270",
+            "Name": "SendEmail.HtmlBody",
+            "Label": "HTML Message Body",
+            "HelpText": "The HTML message body of the Email.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "MultiLineText"
+            }
+        },
+        {
+            "Id": "bd111434-193d-413b-9d7e-279381061a0c",
+            "Name": "SendEmail.TextBody",
+            "Label": "Plain Text Message Body",
+            "HelpText": "The Text message body of the Email.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "MultiLineText"
+            }
+        },
+        {
+            "Id": "2b936aca-3400-4e48-b347-cf5dcb1f5f24",
+            "Name": "SendEmail.MailKitVersion",
+            "Label": "MailKit Version",
+            "HelpText": "*Optional* The version of the `MailKit` and `MimeKit.Core` packages to install and load from nuget.org. Both packages use the same version. Leave blank to use the default of `5.0.0`.",
+            "DefaultValue": "",
+            "DisplaySettings": {
+                "Octopus.ControlType": "SingleLineText"
+            }
         }
-      },
-      {
-        "Id": "3d87558e-aa18-46af-85bb-644890d6654b",
-        "Name": "SendEmail.SmtpPort",
-        "Label": "SMTP Port",
-        "HelpText": "The SMTP Port used for connecting. Typical SMTP ports are: \n- `25`\n- `587` (STARTTLS)\n- `465` (SSL)",
-        "DefaultValue": "",
-        "DisplaySettings": {
-          "Octopus.ControlType": "SingleLineText"
-        }
-      },
-      {
-        "Id": "0c1f7ae0-8cd4-45a5-b53b-e5019ad5ecb0",
-        "Name": "SendEmail.SecureSocketOption",
-        "Label": "SSL Option",
-        "HelpText": "The [SSL Option](https://mimekit.net/docs/html/T_MailKit_Security_SecureSocketOptions.htm) to use:\n- `None`: No SSL or TLS encryption should be used\n- `Auto`: Allow the [IMailService](https://mimekit.net/docs/html/T_MailKit_IMailService.htm) to decide which SSL or TLS options to use (default). If the server does not support SSL or TLS, then the connection will continue without any encryption.\n- `SslOnConnect`: The connection should use SSL or TLS encryption immediately.\n- `StartTls`: Elevates the connection to use TLS encryption immediately after reading the greeting and capabilities of the server. If the server does not support the STARTTLS extension, then the connection will fail and a NotSupportedException will be thrown.\n- `StartTlsWhenAvailable`: Elevates the connection to use TLS encryption immediately after reading the greeting and capabilities of the server, but only if the server supports the STARTTLS extension.\n\nDefault: `Auto`.",
-        "DefaultValue": "Auto",
-        "DisplaySettings": {
-          "Octopus.ControlType": "Select",
-          "Octopus.SelectOptions": "None|None\nAuto|Auto\nSslOnConnect|Use SSL\nStartTls|Use STARTTLS\nStartTlsWhenAvailable|Start Tls When Available"
-        }
-      },
-      {
-        "Id": "208a3bab-b331-4fa6-a122-459593a4c98f",
-        "Name": "SendEmail.Credentials.Username",
-        "Label": "Authentication Username",
-        "HelpText": "The username to authenticate with the SMTP Server.",
-        "DefaultValue": "",
-        "DisplaySettings": {
-          "Octopus.ControlType": "Sensitive"
-        }
-      },
-      {
-        "Id": "d42aba20-174a-4b51-af88-78d332f09a08",
-        "Name": "SendEmail.Credentials.Password",
-        "Label": "Authentication Password",
-        "HelpText": "The password to authenticate with the SMTP Server.",
-        "DefaultValue": "",
-        "DisplaySettings": {
-          "Octopus.ControlType": "Sensitive"
-        }
-      },
-      {
-        "Id": "8eafb51b-599b-4c51-8d35-974c5843c9cb",
-        "Name": "SendEmail.Subject",
-        "Label": "Email Subject",
-        "HelpText": "The Email Subject",
-        "DefaultValue": "",
-        "DisplaySettings": {
-          "Octopus.ControlType": "SingleLineText"
-        }
-      },
-      {
-        "Id": "bc4d18f8-e096-4911-84ce-e35268c83934",
-        "Name": "SendEmail.FromAddress",
-        "Label": "From Address",
-        "HelpText": "The sender address of the Email",
-        "DefaultValue": "",
-        "DisplaySettings": {
-          "Octopus.ControlType": "SingleLineText"
-        }
-      },
-      {
-        "Id": "302fb573-5720-47b6-bbd7-7d0077ca75ba",
-        "Name": "SendEmail.TOAddresses",
-        "Label": "TO addresses",
-        "HelpText": "The recipients of the Email. Multiple addresses can be supplied, separated by a `,`.",
-        "DefaultValue": "",
-        "DisplaySettings": {
-          "Octopus.ControlType": "SingleLineText"
-        }
-      },
-      {
-        "Id": "be2267f6-36b0-4f7e-a7cf-f274e56aff2f",
-        "Name": "SendEmail.CCAddresses",
-        "Label": "(Optional) CC addresses",
-        "HelpText": "The *optional* CC (carbon-copy) recipients of the Email. Multiple addresses can be supplied, separated by a `,`.",
-        "DefaultValue": "",
-        "DisplaySettings": {
-          "Octopus.ControlType": "SingleLineText"
-        }
-      },
-      {
-        "Id": "b43c49fd-3214-4310-a8cf-10489a3c858f",
-        "Name": "SendEmail.ReplyToAddress",
-        "Label": "(Optional) Reply-to address",
-        "HelpText": "The *optional* `reply-to` address.",
-        "DefaultValue": "",
-        "DisplaySettings": {
-          "Octopus.ControlType": "SingleLineText"
-        }
-      },
-      {
-        "Id": "9e07a17f-a044-4f6f-ac0c-5d131058a270",
-        "Name": "SendEmail.HtmlBody",
-        "Label": "HTML Message Body",
-        "HelpText": "The HTML message body of the Email.",
-        "DefaultValue": "",
-        "DisplaySettings": {
-          "Octopus.ControlType": "MultiLineText"
-        }
-      },
-      {
-        "Id": "bd111434-193d-413b-9d7e-279381061a0c",
-        "Name": "SendEmail.TextBody",
-        "Label": "Plain Text Message Body",
-        "HelpText": "The Text message body of the Email.",
-        "DefaultValue": "",
-        "DisplaySettings": {
-          "Octopus.ControlType": "MultiLineText"
-        }
-      }
     ],
     "StepPackageId": "Octopus.Script",
     "$Meta": {
-      "ExportedAt": "2025-02-26T14:52:39.564Z",
-      "OctopusVersion": "2025.2.937",
-      "Type": "ActionTemplate"
+        "ExportedAt": "2026-11-27T08:05:00.000Z",
+        "OctopusVersion": "2027.1.611",
+        "Type": "ActionTemplate"
     },
     "LastModifiedBy": "harrisonmeister",
     "Category": "email"
-  }
+}
